@@ -1,0 +1,30 @@
+
+<form method="POST" action="{{url_for('library.book.breakdown_chapters', author=author.name, title=title)}}">   
+  <div class="wa-cluster wa-align-items-baseline">
+    <div>
+      <wa-textarea 
+        style="width: 600px"
+        rows="40"
+        name="raw"
+        value="{{book}}">
+      </wa-textarea>
+    </div>
+
+    <div class="wa-stack">    
+        <wa-radio-group label="Split chapters based on:" name="splitstyle" value="1">
+          <wa-radio value="number">Chapter Number on a line by itself</wa-radio>
+          <wa-radio value="roman">Roman Numeral on a line by itself</wa-radio>
+          <wa-radio value="allcaps_and_chapter_roman">ALL CAPS <i>and</i> Chapter Roman Numeral</wa-radio>
+          <wa-radio value="CHAPTER_roman_title">CHAPTER III. Chapter Title</wa-radio>
+          <wa-radio value="all_caps_title">Chapter Title in ALL CAPS</wa-radio>
+          <wa-radio value="unpunctuated_single_line">Chapter Title - Unpunctuated Single Line</wa-radio>        
+          <wa-radio value="single_chapter">Single Chapter</wa-radio>
+          <wa-radio value="bible_breakdown">Biblical Structure</wa-radio>
+        </wa-radio-group>
+
+        <wa-button 
+          type="submit" 
+          variant="brand">Breakdown Chapters</wa-button>
+    </div>  
+  </div>
+</form>

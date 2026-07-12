@@ -1,0 +1,306 @@
+{
+  "3": {
+    "inputs": {
+      "text": "{{TEXT}}",
+      "speed": 1,
+      "lang": "English (American)",
+      "speaker": [
+        "34",
+        0
+      ]
+    },
+    "class_type": "KokoroGenerator",
+    "_meta": {
+      "title": "Kokoro Generator"
+    }
+  },
+  "24": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_00_NAME}}",
+      "weight": "{{SPEAKER_00_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Required Voice Selection"
+    }
+  },
+  "25": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_01_NAME}}",
+      "weight": "{{SPEAKER_01_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 1"
+    }
+  },
+  "26": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_02_NAME}}",
+      "weight": "{{SPEAKER_02_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 2"
+    }
+  },
+  "27": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_03_NAME}}",
+      "weight": "{{SPEAKER_03_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 4"
+    }
+  },
+  "28": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_04_NAME}}",
+      "weight": "{{SPEAKER_04_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 3"
+    }
+  },
+  "29": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_05_NAME}}",
+      "weight": "{{SPEAKER_05_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 5"
+    }
+  },
+  "30": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_06_NAME}}",
+      "weight": "{{SPEAKER_06_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 6"
+    }
+  },
+  "31": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_07_NAME}}",
+      "weight": "{{SPEAKER_07_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 8"
+    }
+  },
+  "32": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_08_NAME}}",
+      "weight": "{{SPEAKER_08_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 7"
+    }
+  },
+  "33": {
+    "inputs": {
+      "speaker_name": "{{SPEAKER_09_NAME}}",
+      "weight": "{{SPEAKER_09_WEIGHT:FLOAT}}",
+      "language": [
+        "37",
+        0
+      ],
+      "gender": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightedSpeaker",
+    "_meta": {
+      "title": "Optional Voice Layer 9"
+    }
+  },
+  "34": {
+    "inputs": {
+      "speaker_0": [
+        "24",
+        0
+      ],
+      "speaker_1": [
+        "25",
+        0
+      ],
+      "speaker_2": [
+        "26",
+        0
+      ],
+      "speaker_3": [
+        "28",
+        0
+      ],
+      "speaker_4": [
+        "27",
+        0
+      ],
+      "speaker_5": [
+        "29",
+        0
+      ],
+      "speaker_6": [
+        "30",
+        0
+      ],
+      "speaker_7": [
+        "32",
+        0
+      ],
+      "speaker_8": [
+        "31",
+        0
+      ],
+      "speaker_9": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "KokoroWeightCombiner",
+    "_meta": {
+      "title": "Kokoro Weight Combiner"
+    }
+  },
+  "37": {
+    "inputs": {
+      "language": "English (American)"
+    },
+    "class_type": "KokoroLanguageFilter",
+    "_meta": {
+      "title": "Kokoro Language Filter"
+    }
+  },
+  "38": {
+    "inputs": {
+      "gender": "Male"
+    },
+    "class_type": "KokoroGenderFilter",
+    "_meta": {
+      "title": "Kokoro Gender Filter"
+    }
+  },
+  "41": {
+    "inputs": {
+      "output_file_path": "{{PRONUNCIATION_DIR}}",
+      "file_name": "{{PRONUNCIATION_FILENAME}}",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "42",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "42": {
+    "inputs": {
+      "text": "sˌO mˈɛni vˈYsᵻz blˈɛndᵻd təɡˈɛðəɹ, hˌu kæn sˈA wˌʌt ðə ɹəzˈʌlt ɪz?",
+      "anything": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "easy showAnything",
+    "_meta": {
+      "title": "IPA Pronunciation"
+    }
+  },
+  "44": {
+    "inputs": {
+      "filename_prefix": "{{FILENAME_PREFIX}}",
+      "audioUI": "",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Save Audio (FLAC)"
+    }
+  }
+}

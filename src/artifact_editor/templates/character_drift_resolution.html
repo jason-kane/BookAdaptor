@@ -1,0 +1,33 @@
+<div id="character_drift_resolution">
+    <h2>Character Drift Resolution</h2>
+
+    <p>Unattached Speakers - these are speakers referenced in the xml but we do not have a character with that name.</p>
+    <p>We want to either create a character using the new character form (above), or rename references from this unattached speaker to another, valid speaker.</p>
+    <p>These should be so obvious as to make this feel stupid.</p>
+    <div class="wa-stack">
+        {% for speaker in unattached_speakers %}
+            <h3>"{{ speaker }}"</h3>
+            <form>
+                <div class="wa-cluster">
+                    <wa-select
+                        name="rename_to"
+                        hx-post="/{{ chapterurl }}/characters/{{ speaker }}/rename"
+                        hx-target="#character_drift_resolution"
+                        hx-swap="outerHTML transition:true">
+                        <wa-option value="">Select Character</wa-option>
+                        {% for character in characters %}
+                            <wa-option value="{{ character }}">{{ characters[character]['name'] }}</wa-option>
+                        {% endfor %}
+                    </wa-select>
+                
+                    <wa-button
+                    hx-post="/{{ chapterurl }}/characters/{{ speaker }}/drift_resolution"
+                    hx-target="#character_drift_resolution"
+                    hx-swap="outerHTML transition:true">Rename</wa-button>
+                
+                </div>               
+            </form>
+            
+        {% endfor %}
+
+</div>

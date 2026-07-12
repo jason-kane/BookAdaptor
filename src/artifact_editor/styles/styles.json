@@ -1,0 +1,82 @@
+[
+    {
+        "name": "no style",
+        "prompt": "{prompt} ",
+        "negative_prompt": " "
+    },
+    {
+        "name": "sai-line art_Uncategorized",
+        "prompt": "Line Art Drawing mode, {prompt}, \u00acA sleek and minimalist style used in creating Line Art Drawings. The style emphasizes professional, modern, and graphic line art with clean vector graphics.",
+        "negative_prompt": "anime, photorealistic, 35mm film, deformed, glitch, blurry, noisy, off-center, deformed, cross-eyed, closed eyes, bad anatomy, ugly, discharacterd, mutated, realism, realistic, impressionism, expressionism, oil, acrylic"
+    },
+    {
+        "prompt": "Woodblock Printing mode, {prompt}, \u00acA traditional and artistic style used in creating Woodblock Prints. The style involves creating prints using carved wood blocks, often showcasing a handcrafted and timeless aesthetic.",
+        "name": "Woodblock Printing",
+        "negative_prompt": "lithography, digital art"
+    },
+    {
+        "name": "Fairy Tale Art",
+        "prompt": "Fairy Tale Art mode, {prompt}, \u00acA whimsical and enchanting style used in creating Fairy Tale art. The style emphasizes magical characters, enchanted forests, and the moral lessons often found in fairy tales.",
+        "negative_prompt": "Mythic Fantasy Art, digital design"
+    },
+    {
+        "name": "Dark Fantasy Art",
+        "prompt": "Dark Fantasy Art mode, {prompt}, \u00acA grim and gothic style used in creating dark fantasy art. The style emphasizes horror elements, gothic themes, and bleak landscapes, often reflecting the darker aspects of fantasy worlds.",
+        "negative_prompt": "Steampunk Fantasy Art, digital design"
+    },
+    {
+        "name": "Americana",
+        "prompt": "Americana mode, Norman Rockwell inspired: {prompt}, \u00acA painted nostalgia style that captures the essence of American culture, history, and landscapes. The style often features iconic symbols, rural scenes, and a sense of nostalgia.",
+        "negative_prompt": "European Art, digital design"
+    },
+    {
+        "name": "Athens",
+        "prompt": "Athens mode, {prompt}, \u00acA historic and culturally rich style used in creating art related to Athens. The style emphasizes ancient ruins, Greek philosophy, and the iconic Acropolis, often reflecting the city's deep cultural heritage.",
+        "negative_prompt": "Dublin, digital design"
+    },
+    {
+        "name": "Steampunk",
+        "prompt": "Steampunk mode, {prompt}, \u00acA retrofuturistic and imaginative style used in creating Steampunk art. The style emphasizes steam-powered machinery, Victorian aesthetics, and inventive designs, often blending historical elements with futuristic innovation.",
+        "negative_prompt": "cyberpunk, digital design"
+    },
+    {
+        "name": "wizardofoz",
+        "prompt": "Wizard of Oz mode, {prompt}, \u00acA whimsical and fantastical page illustration style used in creating illustrations for the Wizard of Oz. The style uses strong black on paper strokes and simple outlines, with watercolor fill of major characters. The style emphasizes magical wonder characters, enchanted landscapes, and the imaginative world of Oz.",
+        "negative_prompt": "Dark Fantasy Art, digital design"
+    },
+    {
+        "name": "2D Game Art",
+        "prompt": "2D Game Art mode, {prompt}, \u00ac2D Game Art is a style that focuses on creating pixelated environments, characters, and objects for two-dimensional video games. It highlights pixel art, where the visibility of individual pixels adds to the visual charm. The style uses flat colors and clean lines to craft striking and immersive worlds, often seen in platformers, side-scrollers, and retro games. The result is a blend of functionality with nostalgic aesthetics.",
+        "negative_prompt": "3D modeling, traditional art"
+    },
+    {
+        "name": "3D Animation",
+        "prompt": "3D Animation mode, {prompt}, \u00acThe style is centered around the creation of three-dimensional imagery and environments, widely used in films, video games, and virtual reality. 3D Animation is celebrated for its depth and realism, allowing for lifelike movements and detailed character design. The process includes complex modeling, texturing, lighting, and rendering techniques to bring animated scenes to life.",
+        "negative_prompt": "2D animation, traditional art"
+    },
+    {
+        "name": "Abstract Expressionism",
+        "prompt": "Abstract Expressionism mode, {prompt}, \u00acA dynamic and emotive style that emphasizes spontaneous, gestural brushwork and the expression of deep emotions through non-representational forms. Abstract Expressionism is often characterized by its bold use of color, texture, and large-scale compositions. It is a style that seeks to convey the artist's emotional state rather than depict a specific subject, creating powerful, often chaotic visual experiences.",
+        "negative_prompt": "realism, digital design"
+    },
+    {
+        "name": "Agnes Martin",
+        "prompt": "Agnes Martin mode, {prompt}, \u00acA serene and meditative style that emphasizes simplicity, repetition, and subtle variations. Agnes Martin's work is characterized by its serene grids, transcendent fields, quiet repetitions, and sublime reduction. The style is used to create compositions that evoke a sense of calm and introspection.",
+        "negative_prompt": "Dense textures, symbolic shapes, irregular gestures, figurative elements"
+    },
+    {
+        "name": "Andy Warhol",
+        "prompt": "Andy Warhol mode, {prompt}, \u00acA pop art style that emphasizes mass production aesthetics, celebrity culture, and consumerist commentary. Andy Warhol's work is characterized by its use of silkscreen printing, bold colors, and repetition of iconic images. The style is used to create compositions that explore the intersection of art, commerce, and popular culture.",
+        "negative_prompt": "Unique objects, high art mediums, introspective themes, focus on anonymity"
+    },
+    {
+        "name": "Art Nouveau",
+        "prompt": "Art Nouveau mode, {prompt}, \u00acAn elegant and organic style that emerged in the late 19th century, characterized by flowing lines, natural forms, and decorative beauty. Art Nouveau is often associated with architecture, design, and fine arts, using motifs inspired by nature, such as plants, flowers, and animals. The style is used to create visually harmonious compositions that celebrate the unity of form and function.",
+        "negative_prompt": "minimalism, digital design"
+    },
+    {
+        "name": "Greek Mythology Art",
+        "prompt": "Greek Mythology Art mode, {prompt}, \u00acA classical and mythical style used in creating Greek Mythology Art. The style emphasizes gods, theiroes, and epic tales from Greek mythology, often reflecting the grandeur and drama of ancient Greece.",
+        "negative_prompt": "Norse Mythology Art, digital design"
+    }
+]

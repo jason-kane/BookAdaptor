@@ -1,0 +1,43 @@
+<div id="phrase-{{phrase_xml['index']}}" class="wa-card phrase-card">
+    <form>
+        <input type="hidden" name="phrase_index" value="{{phrase_xml['index']}}">
+        <input type="hidden" name="page" value="{{page}}">
+        <div class="wa-stack">
+            {{text_phrase|safe}}
+            {{phrase_latex_image|safe}}
+
+            <div class="wa-cluster wa-align-items-start">
+                <div id="speaker-choice-{{phrase_xml['index']}}">
+                    {{speaker_selector(chapter, phrase_xml)|safe}}
+                </div>
+                <div>
+                    {{pronunciation_textarea(chapter, phrase_xml)|safe}}
+                </div>
+            </div>
+
+            <div class="wa-flank:start">
+                <div class="wa-stack">
+                    <div id="duration-{{phrase_xml['index']}}"
+                        style="font-size: 1.5em; color: black; background: white;">
+                        {{pretty_duration(phrase_xml)|safe}}
+                    </div>
+                </div>
+
+                <div class="wa-stack">
+                    {{pronunciation_helper(chapter, phrase_xml)|safe}}
+                </div>
+            </div>
+
+            <div class="wa-cluster">
+                {{audio_player(chapter, phrase_xml)|safe}}
+                {{generate_audio_button(chapter, phrase_xml)|safe}}
+                {{repronounce_button(chapter, phrase_xml)|safe}}
+                {{merge_with_previous_button(chapter, phrase_xml, previous_phrase, page)|safe}}
+                {{add_image_slot_button(chapter, phrase_xml, page)|safe}}
+                {{add_edit_delay(chapter, phrase_xml, page)[0]|safe}}
+                {{split_phrase_button(chapter, phrase_xml)|safe}}
+            </div>
+            {{add_edit_delay(chapter, phrase_xml, page)[1]|safe}}
+        </div>
+    </form>
+</div>

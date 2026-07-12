@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}     
+<title>Table of Contents</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .chapter-card {
+        border: 3px solid #410f80;
+        cursor: pointer;
+    }
+    .chapter-card:hover {
+        border-color: #ff00ff;  
+    }
+    .youtube-badge {
+        background-color: #ff0000;
+        color: #ffffff;
+        position: absolute;
+        right: -3px;
+        top: -2px;        
+    }
+    .chapter-container {
+        position: relative;
+        height: 30em;
+        width: 13.5em;
+    }
+    .label {
+        font-weight: bold;
+        width: 5em;
+    }
+    .chapter-container:hover {
+        background-color: #333333;
+        border-color: white;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<h2>{{ pretty_title }}</h2>
+<h3>By <i>{{author.pretty_name}}</i></h3>
+{{ book_metadata|safe }}
+{{ chapter_list|safe }}
+{% endblock %}

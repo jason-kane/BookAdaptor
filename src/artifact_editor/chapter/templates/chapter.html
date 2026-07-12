@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+.potential-cover {
+    border: 2px solid transparent;
+}
+.potential-cover:hover {
+    border: 2px solid blue;
+}   
+</style>
+{% endblock %}
+
+{% block title %}     
+<title>Table of Contents</title>
+{% endblock %}
+
+{% block body %}
+<h1>{{author.name}}</h1>
+<h2>{{title}}</h2>
+<h3>{{chapter.cosmetic}}</h3>
+
+<div class="wa-stack" style="width: 20em">
+    {{ chapter_style_selector|safe }}
+    {{ chapter_mood|safe }}
+    {{ chapter_theme|safe }}
+</div>
+
+<div class="wa-cluster">
+    <div class="wa-stack">
+        <img width="25%" src="{{ chapter_image_url }}"></img>
+        Current Chapter Cover
+    </div>
+
+    <div class="wa-grid">
+        {% for image in image_list %}
+            <img
+                class="potential-cover"
+                hx-put="set_chapter_cover"
+                hx-vals='{"filename": "{{ image.filename }}", "index": "{{ image.index }}"}'
+                src="{{ image.url }}"
+                alt="{{ image.alt }}">
+        {% endfor %}
+    </div>
+</div>
+
+{% endblock %}

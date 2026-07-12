@@ -1,0 +1,51 @@
+    <tr id="pronounce_{{key}}">
+        <input type="hidden" name="key" value="{{key}}">
+        <td name="word">{{word}}</td>
+        <td>
+            <div class="wa-stack">
+                <wa-input
+                    hx-post="set_pronunciation"
+                    hx-target="#pronounce_{{key}}"
+                    hx-swap="outerHTML"                        
+                    name="pronunciation"
+                    hx-include="#pronounce_{{key}}"
+                    value="{{pronun}}"
+                    hx-trigger="change delay:125ms">
+                </wa-input>
+
+                <div class="wa-cluster">
+                    <wa-input
+                        label="SoundsLike"
+                        hint="Try an english word with the sound you want to help find the IPA symbols."
+                        hx-post="{{ url_for('library.book.chapter.audio.pronunciation.soundslike', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
+                        hx-target="#soundslike_{{key}}"
+                        hx-swap="outerHTML"
+                        name="soundslike"
+                        hx-include="#pronounce_{{key}}"
+                        value="{{soundslike}}"
+                        hx-trigger="change delay:125ms">
+                    </wa-input>
+
+                    <wa-textarea id="soundslike_{{key}}" placeholder="International Phonetic Alphabet (IPA)" disabled></wa-textarea>
+                </div>
+
+                <div>Syllables: </div>
+                <div class="wa-cluster" id="syllables_{{key}}">
+                    {{syllables|safe}}
+                </div>
+
+                <audio controls="">
+                    <source src="{{ url_for('library.book.chapter.audio.pronunciation.get_pronunciation_audio', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) + '?cachebuster=' + cachebuster }}" type="audio/wav">
+                </audio>
+            </div>
+        </td>
+        <td>
+            <div class="wa-cluster">
+                <wa-button
+                    hx-delete="{{ url_for('library.book.chapter.audio.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) }}"
+                    hx-target="#global_pronunciation"
+                    hx-swap="outerHTML"
+                >Delete</wa-button>
+            </div>
+        </td>
+    </tr>

@@ -1,0 +1,103 @@
+{% set AUDIO = True %}
+{% set TIMELINE_WORKSHOP = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<script src="/static/js/audio_timeline.js"></script>
+{% endblock %}
+
+{% block title %}
+<title>Timeline Workshop</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+  .card-media {
+    max-width: 512px;
+  }
+  .paragraph {
+    border: 1px solid var(--wa-color-neutral-300);
+    background-color: rgb(54, 54, 54);
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 20px;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wa-cluster timeline-block">
+{% for paragraph in paragraphs %}
+    <fieldset class="paragraph wa-cluster wa-align-items-start">
+        <legend>Paragraph {{ paragraph.index }}</legend>
+    {% for block in paragraph.images %}
+        <div class="wa-cluster">
+            <wa-card class="card-media" with-footer>
+                <div slot="media" class="wa-frame:square">
+                    {% if block.animation %}
+                    <video
+                        src="{{get_animation_url(chapter, block.image['index'])}}"
+                        controls
+                    ></video>
+                    {% else %}
+                    <img
+                        src="{{ url_for('library.book.chapter.images.show_image_by_index', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, height=300, image_index=block.image['index']) }}"
+                        alt="A kitten dances across the tabletop mewing a little song."
+                    ></img>
+                    {% endif %}
+                </div>
+
+                {% for phrase in block.phrases %}
+                    <p>{% if 'chapter' in phrase.attrs %}<strong>{{ phrase.attrs['chapter'] }}:{{ phrase.attrs['verse'] }}</strong> {% endif %}{{ phrase.text }}</p>
+                {% endfor %}
+                
+                <wa-button slot="footer-actions" variant="brand">Action Button</wa-button>
+                <wa-button
+                    slot="footer-actions" 
+                    hx-post="{{ url_for('library.book.chapter.images.fancy_image', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block.image['index']) }}"
+                    hx-on::beforeRequest="beforeRequest(this,event)"
+                    hx-on::afterRequest="afterRequest(this,event)"
+                    variant="danger"
+                    hx-swap="none">Calling Fancy</wa-button>                
+            
+                <div class="wa-stack">
+                    <div style="color: {{ block.foreground }}; background-color: {{ block.background }}; padding: 10px; border-radius: 5px;">
+                        <p>{{ block.variation_message }} ({{ block.frame_variation | round(2) }} :: {{ block.frames }} vs. {{ avg_image_frames }})</p>
+                    </div>
+                    <p>Frames: {{ block.frames }} ({{ block.first_frame }} - {{ block.last_frame }})</p>
+                    <p>Duration: {{ block.duration | round(2) }} seconds (avg. {{ avg_image_duration }} seconds)</p>
+                    {% if block.animation %}
+                    <form>
+                        {{ animation_configuration(chapter, block["image"].attrs['index'], 0, default_method=block["image"].attrs['t2i'])[0]|safe }}
+                    <wa-button
+                        variant="outline"
+                        hx-post="{{ url_for('library.book.chapter.images.build_animation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block.image['index']) }}"
+                        hx-target="body"
+                    >Re-Animate</wa-button>
+                    </form>
+                    {% endif %}
+
+                    {% if not block.animation %}
+                    <form>
+                    {{ animation_configuration(chapter, block["image"].attrs['index'], 0, default_method="wan_2_2_5b")[0]|safe }}
+                    <wa-button
+                        variant="outline"
+                        hx-post="{{ url_for('library.book.chapter.images.build_animation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block['image']['index']) }}"
+                        hx-target="body"
+                    >Animate</wa-button>
+                    </form>
+                    {% endif %}
+                    <div class="wa-cluster">
+                        <b>Workshops:</b>
+                        <a href="{{ url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block['image']['index']) }}">Image</a>               
+                        <a href="{{ url_for('library.book.chapter.frames.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, frame_index=block.first_frame) }}">Frame</a>               
+                        <a href="{{ url_for('library.book.chapter.audio.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, page=block.paragraph_index + 1) }}">Audio</a>
+                    </div>
+                </div>
+            </wa-card>
+        </div>
+    {% endfor %}
+    </fieldset> 
+{% endfor %}
+</div>
+{% endblock %}

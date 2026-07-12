@@ -1,0 +1,289 @@
+
+def xml_to_list_of_wav_old(chapterdir, workdir, xml_text):
+    """
+    xml_text is a single stringified <phrase/> tag.
+
+    return a sorted list of wav filenames, the caller will glue them together.
+
+    we are an audio object.  our children are tags which are the names of
+    characters.  content that is not tagged defaults to the narrator.
+
+    We need a sequence of audio files.  each audio file only includes one
+    speaker.  The more back and forth between characters, the more audio files.
+
+    The files are also split up above us with multiple <audio> tags when one
+    character is speaking.  This lets us decide where breaks go between
+    generated fragments.  We aren't letting xtts break sentences so we must do it.
+
+    These breaks are also the chunks where the text display highlights text.
+    """
+    log.info("xml_to_list_of_wav() xml_text: %s", xml_text)
+    bookdir = os.path.join(chapterdir.strip('/'), "..", "..")
+    mybook = booklib.get_book(chapterdir)
+
+    audiodir = os.path.join(const.LIBRARY_DIR, workdir, "audio")
+    os.makedirs(audiodir, exist_ok=True)
+
+    phrase = BeautifulSoup(xml_text, "xml").find('phrase')
+    paragraph_id, phrase_counter = phrase.attrs["id"].split('_')
+    if phrase is None:
+        log.error("No <phrase> tag found in xml_text")
+        return []
+    out = []
+    index = 0
+       
+    # at this point speaker is required.
+    log.info(f'phrase.attrs: {phrase.attrs}')
+    speaker_name = phrase.attrs['speaker']
+    
+    character = characters.get_character(
+        mybook,
+        chapterdir,
+        speaker_name
+    )
+
+    for text_to_speak in phrase.children:
+        # text = None
+
+        # # optional override with <character>words</character> syntax
+        # if child.name:
+        #     log.info(f'child.name: {child.name}')
+        #     if child.name.upper() in ['AUDIO',]:
+        #         child.name = "NARRATOR"
+
+        #     character_name = child.name
+
+        #     character = characters.get_character(
+        #         chapterdir,
+        #         character_name
+        #     )
+        #     text = child.get_text()
+        # else:
+        #     if character is None:
+        #         log.info('Defaulting to NARRATOR')
+        #         character_name = "NARRATOR"
+        #         character = characters.NARRATOR
+
+        #     text = child
+        
+        # <audio helpers="cat:dog">hello there little cat</audio>
+        # would actually say "hello there little dog"
+        #
+        # we can use this to try and fix mispronunciations by using something
+        # that will make the TTS likely to say the word correctly.
+        #
+        # we have a similar helper for images to get better consistency for image generation.
+        # <image helpers="toto:little black dog">toto is sitting next to dorothy</image>
+        #
+        # ends up generating a prompt based on "little black dog is sitting next to dorothy"
+        #
+        # why the hassle?  It keeps saing "Nameless" like (viet)-NAM-less and it bothers me.
+        # Fix is helpers="Nameless:Name less"
+        #
+
+        # clear problematic latex bits that are prone to leaking through.
+        for ltx, rpl in ((r"\\", ""), (r"\nobreak", ""), ("—", " ")):
+            text_to_speak = text_to_speak.replace(ltx, rpl)
+        
+        override = False            
+        # this is going to get slow.
+        pronunciation_dict = pronunciation.get_global_pronunciations(bookdir)
+        log.info('Adjusting pronunciations with %s', pronunciation_dict)
+
+        for key in pronunciation_dict:
+            p = pronunciation_dict[key]
+            
+            if not p["pronunciation"]:
+                continue
+
+            index = None
+
+            while index is None or index >= 0:
+                if index:
+                    index = text_to_speak.find(p["word"], index + 1)
+                else:
+                    index = text_to_speak.find(p["word"])
+                    # lower().find(word.lower(), index + 1)
+
+                if index >= 0 and text_to_speak[index - 1] != '[':
+                    # log.info(f'Replacing {word} in {text_to_speak} with pronunciation {pronunciation_dict[word]}')
+                    # the trick is we only want to replace _whole_ words and not get fooled by punctuation.
+                    # that makes this less of a foot-gun
+
+                    log.info(f'Replacing {p["word"]} in {text_to_speak} with pronunciation {p["pronunciation"]} at {index}')
+                    #log.info(f'{text_to_speak[index:]=}')
+                    #log.info(f'{text_to_speak[index:index + len(word)]=}  ==>  {pronunciation_dict[word]}')
+                    #log.info(f'{text_to_speak[:index]=}')
+
+                    text_to_speak = f'{text_to_speak[:index]} [{p["word"]}](/{p["pronunciation"]}/) {text_to_speak[index + len(p["word"]):]}'
+                    # text_to_speak = re.sub(
+                    #     rf'\b{word}\b',
+                    #     f'[{word}](/{pronunciation_dict[word]}/) ', 
+                    #     text_to_speak,
+                    #     flags=re.IGNORECASE
+                    # )
+                    # since we're replacing words in the text to change the
+                    # pronunciation we need to generate a new pronunciation for this
+                    # phrase.  override will that care of that.
+                    #
+                    # How do we keep that from happening every single time?  that
+                    # means the pronunciation for this phrase in general can't be
+                    # adjusted!  dumbass.
+                    #
+                    # just allow it through.  We will augment the globals change
+                    # action, so when a global pronunciation override is add/deleted
+                    # we re-pronounce every phrase that includes those values; we
+                    # trigger that result be simply removing the now-invalid
+                    # pronunciation strings.
+                    #
+                    # So here, we just obey whatever the pronunciation string says,
+                    # and generate a new string when it is missing.
+                else:
+                    if index is None:
+                        log.info(f'A Word {p["word"]} not found in {text_to_speak}')   
+                    elif index < 0:
+                        log.info(f'B Word {p["word"]} not found in {text_to_speak}')
+
+        # # sometimes we want to blindly replace A with B, like Mr. with Mister or
+        # # auto-expand an acronym like TTS to Text to Speech.  These "helpers"
+        # # replacements are (obv?) only for audio purposes.
+
+        try:
+            helpers = phrase.phrase.attrs.get('helpers')
+        except AttributeError:
+            helpers = phrase.attrs.get('helpers')
+
+        if helpers:
+            # helpers="first:second,third:fourth"
+            #
+            # (input str): the first went to third, fun.
+            # (audio out): the second went to fourth, fun.
+            #
+            for helper in helpers.split(","):
+                word, replacement = helper.split(":")
+                text_to_speak = text_to_speak.replace(word, replacement)
+
+        text_to_speak = " ".join(text_to_speak.split()).strip()
+        if text_to_speak and character:
+            # we're good to go.
+
+            log.info(f'Speaking "{text_to_speak}" as {speaker_name}')
+                
+            if text_to_speak == "***":
+                # dinkus, say nothing.
+                log.info('Dinkus found, generating silence')
+                duration = float(phrase.attrs.get('duration', '1.0'))
+                # a duration length wav file of silence.
+                sample_rate = 24000
+                nframes = int(sample_rate * duration)
+                wavfile = os.path.join(
+                    audiodir, f"page_{index}_{duration}_dinkus.wav"
+                )
+
+                with wave.open(wavfile, 'w') as h:
+                    h.setnchannels(1)
+                    h.setsampwidth(2)  # 16 bits
+                    h.setframerate(sample_rate)
+                    h.setnframes(nframes)
+                    h.setcomptype('NONE', 'not compressed')
+                    h.writeframes(b'\0' * nframes * 2)
+
+                pronunciation_ipa = ""
+            
+            else:                
+                # string or None
+                pronunciation_ipa = phrase.attrs.get('pronunciation')
+
+                log.info(f'Pronunciation: {pronunciation_ipa}')
+                log.info(f'phrase.attrs: {phrase.attrs}')
+
+                # before, for the more common case where we've already pronounced
+                # at least once.  Reprocessing the accent is not a big deal, and
+                # I want to keep that code exercised right now.
+                #
+                # later we will believe filtered_pronounciation if it exists.
+                if pronunciation_ipa and character.get('pronunciation_filter'):
+                    filter_value = int(character.get('pronunciation_filter'))
+                    log.info(f'Filtering pronunciation for: {filter_value}')
+                    # filtered_pronunciation
+                    # wait, seriously?  Hell yes.
+                    pronunciation_ipa = utterances.accentByYear(year=filter_value).apply(pronunciation_ipa)
+                    phrase.attrs['filtered_pronunciation'] = pronunciation_ipa
+                else:
+                    log.info('No one shot pronunciation filter applied')
+                    log.info(f'{phrase.attrs=}')
+
+                wavfile, pronunciation_ipa = _create_audio_kokoro(
+                    character_name=speaker_name,
+                    character=character,
+                    text=text_to_speak,
+                    pronunciation_ipa=pronunciation_ipa,
+                    # this is an absolute path 
+                    wavfile=os.path.join(audiodir, f"page_{index}_{phrase_counter}.wav"),
+                    chapterargs=chapter.args
+                )
+
+                if pronunciation_ipa and character.get('pronunciation_filter'):
+                    if phrase.attrs.get('filtered_pronunciation') is None:
+                        # first time, we now have generated modern IPA.
+
+                        filter_value = int(character.get('pronunciation_filter'))
+                        log.info(f'Filtering pronunciation for: {filter_value}')
+                        log.info(f'Before: {pronunciation_ipa}')
+                        # wait, seriously?  Hell yes.
+                        filtered_pronunciation = utterances.accentByYear(year=filter_value).apply(pronunciation_ipa)
+                        log.info(f' After: {filtered_pronunciation}')
+
+                        wavfile, filtered_pronunciation = _create_audio_kokoro(
+                            character_name=speaker_name,
+                            character=character,
+                            text=text_to_speak,
+                            pronunciation_ipa=filtered_pronunciation,
+                            # this is an absolute path 
+                            wavfile=os.path.join(audiodir, f"page_{index}_{phrase_counter}.wav"),
+                            chapter_args=chapter.args
+                        )
+
+                        phrase.attrs['filtered_pronunciation'] = filtered_pronunciation
+                        pronunciation_ipa = filtered_pronunciation
+                else:
+                    log.info('No one shot pronunciation filter applied')
+                    log.info(f'{phrase.attrs=}')
+
+                if wavfile and character.get('effects', ''):
+                    for key, config_dict in character.get('effects', {}).items():
+                        log.info('Applying effect %s %s', key, config_dict)
+                        effect = audio_effects.registry.get_effect(key)
+                
+                        wavpath = os.path.dirname(wavfile)
+                        wavname = os.path.basename(wavfile)
+                        wavbase = os.path.splitext(wavname)[0]
+
+                        out_wavfile = os.path.join(
+                            wavpath,
+                            wavbase + f".{key}.wav"
+                        )
+
+                        effect().apply(
+                            config_dict,
+                            input_wav_filename=wavfile,
+                            output_wav_filename=out_wavfile
+                        )
+
+                        wavfile = out_wavfile
+
+            if wavfile:
+                index += 1
+                out.append((
+                    os.path.join(
+                        bookdir, 
+                        wavfile
+                    ),
+                    pronunciation_ipa
+                ))
+
+    # tuples of ('wavfile', 'pronunciation')
+    # in many cases there will only be one entry.  Do not assume.
+    log.info(f'Returning {out}')
+    return out
+

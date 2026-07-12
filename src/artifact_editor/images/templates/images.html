@@ -1,0 +1,452 @@
+{% set IMAGES = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+
+<script src="https://unpkg.com/cropperjs"></script>
+<script src="/static/js/images.js"></script>
+
+<link rel="stylesheet" href="/static/styles/codemirror.css">
+
+<script type="importmap">
+  {
+    "imports": {
+      "style-mod": "https://esm.sh/style-mod",
+      "w3c-keyname": "https://esm.sh/w3c-keyname",
+      "crelt": "https://esm.sh/crelt",
+      "@marijn/find-cluster-break": "https://esm.sh/@marijn/find-cluster-break",
+      "@lezer/": "https://esm.sh/*@lezer/",
+      "@codemirror/": "https://esm.sh/*@codemirror/",
+      "codemirror": "https://esm.sh/*codemirror",
+      "codemirror-lang-latex": "https://cdn.jsdelivr.net/npm/codemirror-lang-latex@0.2.0/dist/index.js"
+    }
+  }
+</script>
+
+<script>
+    {% include 'thumbnail_listeners.js' %}
+</script>
+
+<script>
+    {% if override != None %}
+    htmx.onLoad(function(content) {      
+        // trigger this event
+        const tg = content.querySelector("#image-tab-group");
+
+        if (tg) {
+            tg.active = "{{ override }}"
+            const chosen_tab = tg.querySelector("[panel='" + "{{ override }}" + "']")
+            htmx.trigger(chosen_tab, "click")
+            return
+        } 
+        // wait for this element to exist
+        const observer = new MutationObserver((mutationsList, observer) => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    const tg = content.querySelector("#image-tab-group");
+                    if (tg) {
+                        tg.active = "{{ override }}"
+                        const chosen_tab = tg.querySelector("[panel='" + "{{ override }}" + "']")
+                        htmx.trigger(chosen_tab, "click")
+                        observer.disconnect(); // Stop observing once the element is found
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Start observing the content for changes
+        observer.observe(content, { childList: true, subtree: true });
+    });
+    {% endif %}
+</script>
+{% endblock %}
+
+{% block title %}
+<title>Artifact Editor</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+    {{ css_styles }}
+</style>
+
+<style>
+    .container {
+      margin: 20px auto;
+      max-width: 640px;
+    }
+
+    img {
+    display: block;
+
+    /* This rule is very important, please don't ignore this */
+    max-width: 100%;
+    }
+
+    cropper-canvas {
+      height: 360px;
+    }
+
+    .carousel-big-picture {
+        max-width: 400px;
+        max-height: 400px;
+    }
+    .image:hover {
+        border: 2px solid rgb(226, 116, 226);
+        opacity: 0.6;
+    }
+    .image {
+        border: 2px solid black;
+    }
+    .basic-bar:hover {
+        border: 1px dashed yellow;
+    }
+    .basic-bar {
+        background-color: lightgray;
+        height: 200px;
+        display: inline-block;
+        margin: 0%;
+        overflow: hidden;
+    }
+    .bb-img-selected {
+        height: 200px;
+        border: 3px groove gold;
+    }
+    .bb-img {
+        height: 200px;
+    }
+    .thumbnails {
+        display: flex;
+        justify-content: center;
+    }
+
+    .scroller {
+        display: flex;
+        gap: var(--wa-space-s);
+        overflow-x: auto;
+        scrollbar-width: none;
+        scroll-behavior: smooth;
+        scroll-padding: var(--wa-space-s);
+    }
+
+    .scroller::-webkit-scrollbar {
+        display: none;
+    }
+
+    .image {
+        width: 64px;
+        object-fit: cover;
+
+        opacity: 0.2;
+        will-change: opacity;
+        transition: 250ms opacity;
+
+        cursor: pointer;
+    }
+
+    .image.active {
+        opacity: 1;
+    }
+
+    .label-on-left {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: var(--wa-space-l);
+        align-items: center;
+
+        wa-input,
+        wa-textarea {
+            grid-column: 1 / -1;
+            grid-row-end: span 2;
+            display: grid;
+            grid-template-columns: subgrid;
+            gap: 0 var(--wa-space-l);
+            align-items: center;
+        }
+
+        ::part(label) {
+        text-align: right;
+        }
+
+        ::part(hint) {
+        grid-column: 2;
+        }
+    }
+
+    .label-on-left {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: var(--wa-space-l);
+        align-items: center;
+
+        wa-input,
+        wa-textarea {
+            grid-column: 1 / -1;
+            grid-row-end: span 2;
+            display: grid;
+            grid-template-columns: subgrid;
+            gap: 0 var(--wa-space-l);
+            align-items: center;
+        }
+
+        ::part(label) {
+        text-align: right;
+        }
+
+        ::part(hint) {
+        grid-column: 2;
+        }
+    }        
+
+    @keyframes fade-in {
+        from { opacity: 0; }
+    }
+    
+    @keyframes fade-out {
+        to { opacity: 0; }
+    }
+    
+    @keyframes slide-from-right {
+        from { transform: translateX(90px); }
+    }
+    
+    @keyframes slide-to-left {
+        to { transform: translateX(-90px); }
+    }
+    
+    .smooth {
+        transition: all 1s ease-in;
+    }
+
+    .slide-it {
+        view-transition-name: slide-it;
+    }
+
+    @keyframes pulse-green-anim {
+        0% { border-color: initial; border-width: initial; border-style: initial;}
+        50% { border: 6px solid #4CAF50;} /* Peak green */
+        100% { border-color: initial; border-width: initial; border-style: initial;}
+    }
+
+    .pulse-green {
+        animation: pulse-green-anim 1s ease-out;
+    }
+    
+    ::view-transition-old(slide-it) {
+        animation: 180ms cubic-bezier(0.4, 0, 1, 1) both fade-out,
+        600ms cubic-bezier(0.4, 0, 0.2, 1) both slide-to-left;
+    }
+    ::view-transition-new(slide-it) {
+        animation: 420ms cubic-bezier(0, 0, 0.2, 1) 90ms both fade-in,
+        600ms cubic-bezier(0.4, 0, 0.2, 1) both slide-from-right;
+    }
+    .plain_image:hover {
+        border: 4px solid rgb(100, 96, 100)
+    }
+    .plain_image {
+        border: 4px solid black;
+    }
+    .selected_image {
+        border: 4px solid #EDE;
+    }
+    .highlight {
+        padding: 3px 5px 3px 5px;
+        color: black; 
+        background-color: yellow;
+    }
+    .card-image {
+        max-width: 128px;
+    }
+
+    .imgheight {
+        float:left;
+        border: 1px solid black;
+    }
+
+    .imgheight:hover {
+        border: 1px solid #DED;
+    }
+    .imgheight img {
+        border-radius: unset;
+    }
+    .img-25 {
+        height:25px;
+        width:25px;            
+    }
+
+    .img-50 {
+        height:50px;
+        width:50px;
+    }
+
+    .img-100 {
+        height:100px;
+        width:100px;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        grid-gap: 0px;
+        > div {
+                background: black;
+                &::before {
+                content: "";
+                display: block;
+                grid-area: 1 / 1 / 2 / 2;
+            }
+            img {
+                grid-area: 1 / 1 / 2 / 2;
+                float: left;
+            }
+        }
+    }
+    .loc_ur {
+        clip-path: polygon(30% 0, 100% 0%, 100% 100%, 20% 100%);
+    }
+    .loc_sr {
+        clip-path: polygon(20% 0, 100% 0%, 100% 100%, 10% 100%);
+    }
+    .loc_dr {
+        clip-path: polygon(10% 0, 100% 0%, 100% 100%, 0% 100%);
+    }
+
+    .loc_uc {
+        clip-path: polygon(15% 0%, 80% 0%, 85% 100%, 10% 100%);
+    }
+    .loc_cs {
+        clip-path: polygon(10% 0%, 90% 0%, 95% 100%, 5% 100%)
+    }
+    .loc_dc {
+        clip-path: polygon(5% 0, 95% 0%, 100% 100%, 0% 100%);
+    }
+
+    .loc_ul {
+        clip-path: polygon(0 0, 60% 0%, 70% 100%, 0% 100%);
+    }
+    .loc_sl {
+        clip-path: polygon(0 0, 80% 0%, 90% 100%, 0% 100%);
+    }
+    .loc_dl {
+        clip-path: polygon(0 0, 90% 0%, 100% 100%, 0% 100%);
+    }
+
+    .interactive-image {
+        position: relative; /* Container for absolute positioned crosshair */
+        cursor: crosshair;  /* Changes cursor on hover */
+    }
+
+    /* Base styles for the crosshair */
+    .crosshair::before,
+    .crosshair::after {
+        content: '';
+        position: absolute;
+        background: red; /* Customize crosshair color */
+    }
+
+    /* Vertical line of the crosshair */
+    .crosshair::before {
+        width: 1px;
+        height: 100%;
+        top: 0;
+        left: var(--x-coord); /* Uses CSS variable set by server */
+        transform: translateX(-50%);
+    }
+
+    /* Horizontal line of the crosshair */
+    .crosshair::after {
+        width: 100%;
+        height: 1px;
+        top: var(--y-coord); /* Uses CSS variable set by server */
+        left: 0;
+        transform: translateY(-50%);
+    }        
+
+</style>
+
+{% endblock %}
+
+{% block body %}
+<div class="wa-stack wa-align-items-center">
+    <wa-toast id="toast"></wa-toast>
+
+    <div id="model_container"></div>
+    <div id="forex">
+        {{image_forex|safe}}
+    </div>
+
+    <!-- global image commands -->
+    <div class="wa-cluster">
+        {{draw_all_missing_images_button|safe}}
+        {{draw_all_missing_tmi_images_button|safe}}
+        {{generate_missing_image_metadata_button|safe}}
+        <wa-button 
+            id="advanced-button"
+            appearance="outlined"
+            onclick="showAdvanced()"
+            variant="danger">Advanced</wa-button>
+    </div>
+    
+    <div id="advanced" class="wa-cluster" style="display: none;">
+        <wa-button
+            hx-post="action/fancy"
+            hx-on::beforeRequest="beforeRequest(this,event)"
+            hx-on::afterRequest="afterRequest(this,event)"
+            variant="danger"
+            hx-swap="none">Calling Fancy</wa-button>
+        <wa-button
+            hx-post="actions/apply_fancy_here_to_end"
+            hx-on::beforeRequest="beforeRequest(this,event)"
+            hx-on::afterRequest="afterRequest(this,event)"
+            variant="danger"
+            hx-swap="none">Fancy Here to End</wa-button>            
+        <wa-button
+            hx-post="actions/apply_zmi"
+            hx-vals='{"index": "{{image_index}}"}'
+            hx-on::beforeRequest="beforeRequest(this,event)"
+            hx-on::afterRequest="afterRequest(this,event)"
+            variant="danger"
+            hx-swap="none">Apply ZMI</wa-button>
+        <wa-button
+            hx-post="actions/apply_zmi_here_to_end"
+            hx-vals='{"index": "{{image_index}}"}'
+            hx-on::beforeRequest="beforeRequest(this,event)"
+            hx-on::afterRequest="afterRequest(this,event)"
+            variant="danger"
+            hx-swap="none">ZMI Here to End</wa-button>
+        <wa-button 
+            hx-post="action/reindex_images"
+            type="submit" 
+            variant="danger"
+            name="reindex_images">Reindex Images</wa-button>
+
+        <wa-button 
+            hx-post="action/reprompt_redraw_all"
+            type="submit" 
+            variant="danger"
+            name="reprompt_redraw_all">Re-Prompt and Redraw All Images</wa-button>
+
+        <wa-button 
+            hx-post="action/clear_zero_duration_images" 
+            hx-target="#image-strip" 
+            hx-swap="outerHTML transition:true"
+            name="clear_zero_duration_images">Remove Null Duration Images</wa-button>
+        
+            <wa-button
+            hx-post="action/swap_with_previous_image" 
+            hx-target="#image-strip" 
+            hx-swap="outerHTML transition:true"
+            name="swap_with_previous_image">Swap with Previous Image</wa-button>            
+    </div>
+
+    <div style="width: 50em;">
+        {{text_with_highlight|safe}}
+    </div>
+
+    <div class="wa-cluster wa-align-items-start" id="image-strip" style="width: 100%;">
+        {{image_strip|safe}}
+    </div>
+</div>
+
+{% endblock %}

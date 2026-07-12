@@ -1,0 +1,26 @@
+            <form>
+                <input type="hidden" name="min_tier" value="{min_tier}">
+                <input type="hidden" name="max_tier" value="{max_tier}">
+                <div class="wa-flank ranking">                   
+                    <wa-button 
+                        hx-put="rank_up/{image_name}" 
+                        hx-target="#card_{image_tag}"
+                        hx-swap="outerHTML transition:true"
+                        appearance="filled"
+                        variant="success">
+                        <wa-icon name="angle-up" label="Rank Up"></wa-icon>
+                    </wa-button>
+
+                    <div class="wa-flank:end">                     
+                        {rank_str}
+                        <wa-button 
+                            hx-put="rank_down/{image_name}"
+                            hx-target="#card_{image_tag}"
+                            hx-swap="outerHTML transition:true"
+                            appearance="filled"
+                            variant="danger">
+                            <wa-icon name="angle-down" label="Rank Down"></wa-icon>
+                        </wa-button>
+                    </div>
+                </div>
+            </form>

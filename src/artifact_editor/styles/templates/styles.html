@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}<title>Styles</title>{% endblock %}
+
+{% block styles %}
+<style>
+    .history-item {
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .image_sample {
+        max-width: 300px;
+        display: block;
+        margin-bottom: 10px;
+    }
+    .card-overview {
+        width: 325px;
+    }
+    ::part(body) {
+        padding: 0;
+    }
+    ::part(footer) {
+        padding: 0.25em;
+    }
+    .ranking {
+        background-color: rgb(74, 74, 74);
+        color: white;
+        border-radius: 8px;
+    }
+    .ranking wa-button {
+        height: 46px;
+    }
+    #rating_filter {
+        margin-left: 50px;
+        margin-right: 50px;
+    }
+    .chosen {
+        border: 4px solid red;
+    }
+
+</style>
+{% endblock %}
+
+{% block body %}
+
+<wa-slider 
+    id="rating_filter" 
+    name="rating_filter"
+    range
+    min="0" 
+    max="7"
+    hx-get="history"
+    hx-vals="js:{min_tier: this.minValue, max_tier: this.maxValue}"
+    hx-target="#history"
+    hx-swap="innerHTML"
+    min-value="{{ min_tier }}"
+    max-value="{{ max_tier }}"
+    step="1"
+>
+    <span slot="reference">F{{ count[0] }} ({{ fcount[0] }})</span>
+    <span slot="reference">D{{ count[1] }} ({{ fcount[1] }})</span>
+    <span slot="reference">C{{ count[2] }} ({{ fcount[2] }})</span>
+    <span slot="reference">B{{ count[3] }} ({{ fcount[3] }})</span>
+    <span slot="reference">A{{ count[4] }} ({{ fcount[4] }})</span>
+    <span slot="reference">S{{ count[5] }} ({{ fcount[5] }})</span>
+    <span slot="reference">SS{{ count[6] }} ({{ fcount[6] }})</span>
+    <span slot="reference">SSS{{ count[7] }} ({{ fcount[7] }})</span>
+</wa-slider>
+
+<div class="wa-cluster" id="history">{{ history|safe }}</div>
+
+<div class="wa-cluster">
+    <div class="wa-stack">
+        <h1>Styles!</h1>    
+        <form>
+            <textarea name="prompt" rows="4" cols="50">{{ base_prompt }}</textarea>
+            <br>
+            <wa-select name="style">
+            {% for style in chosen_styles %}
+                <wa-option value="{{ style }}">{{ style }}</wa-option>
+            {% endfor %}
+            </wa-select>
+            <wa-button 
+                hx-post="draw_sample"
+                variant="danger"
+                hx-swap="none">Draw Sample</wa-button>
+            <wa-button 
+                hx-post="draw_all_styles"
+                variant="danger"
+                hx-swap="none">Draw ALL Samples</wa-button>                
+        </form>
+        
+        <form>
+            <div class="wa-cluster">
+                <wa-select name="style">
+                    {% for style in all_styles %}
+                        {% if style not in chosen_styles %}
+                        <wa-option value="{{ as_id(style['name']) }}">{{ style['name'] }}</wa-option>
+                        {% endif %}
+                    {% endfor %}
+                </wa-select>
+                <wa-button 
+                    hx-post="add_style"
+                    variant="primary"
+                    hx-swap="none">Add Style</wa-button>    
+            </div>
+        </form>
+        
+        <form>
+            <div class="wa-cluster">
+                <wa-select name="style">
+                    {% for style in chosen_styles %}
+                        <wa-option value="{{ style['name'] }}">{{ style['name'] }}</wa-option>
+                    {% endfor %}
+                </wa-select>
+                <wa-button 
+                    hx-post="remove_style"
+                    variant="primary"
+                    hx-swap="none">Remove Style</wa-button>            
+            </div>
+        </form>
+    </div>
+
+    <div class="wa-stack">
+        <h1>Loras!</h1>
+        <form>
+            <textarea
+                name="prompt"
+                rows="4"
+                cols="50"
+            >{{ base_prompt }}</textarea>
+            <br>
+            {{ lora_selector|safe }}
+            <wa-button 
+                hx-post="draw_sample"
+                variant="danger"
+                hx-swap="none">Draw Sample</wa-button> 
+            <wa-button 
+                hx-post="draw_all_lora"
+                variant="danger"
+                hx-swap="none">Draw ALL Lora</wa-button>                    
+        </form>
+    </div>
+
+    <wa-button 
+        hx-post="export_styles"
+        variant="danger"
+        hx-swap="none">Export Styles as Pages</wa-button>
+
+</div>
+
+{% endblock %}

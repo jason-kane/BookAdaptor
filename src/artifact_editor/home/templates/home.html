@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html
+  class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo">
+
+<head>
+  <!-- HTMX -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
+    integrity="sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G"
+    crossorigin="anonymous"></script>
+
+  <!-- Theme + color palette -->
+  <link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/themes/glossy.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/color/palettes/elegant.css"
+  />
+
+  <!-- Native styles/CSS reset -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/native.css" />
+
+  <!-- CSS utilities -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/utilities.css" />
+
+  <!-- Fonts -->
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Fraunces:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+
+  <!-- Web Awesome autoloader -->
+  <script
+    type="module"
+    src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/webawesome.loader.js"
+  ></script>
+
+  <!-- custom theme overrides -->
+  <style>
+    :root {
+      --wa-font-family-body: Figtree, sans-serif;
+      --wa-font-family-heading: Figtree, sans-serif;
+      --wa-font-family-code: "Chivo Mono", monospace;
+      --wa-font-family-longform: Fraunces, serif;
+      --wa-font-weight-body: 400;
+      --wa-font-weight-heading: 800;
+      --wa-font-weight-code: 400;
+      --wa-font-weight-longform: 350;
+      --wa-border-radius-scale: 1.33;
+      --wa-border-width-scale: 1;
+      --wa-space-scale: 1.125;
+    }
+  </style>
+
+  <style>
+
+    .chapter-card {
+        border: 3px solid #410f80;
+        cursor: pointer;
+    }
+    .chapter-card:hover {
+        border-color: #ff00ff;  
+    }
+    .broken-badge {
+        background-color: #000000;
+        color: #ffffff;
+        position: absolute;
+        right: -3px;
+        top: -2px;        
+    }    
+    .beta-badge {
+        background-color: #ff0000;
+        color: #ffffff;
+        position: absolute;
+        right: -3px;
+        top: -2px;        
+    }
+    .module-container {
+        position: relative;
+        height: 20em;
+        width: 15em;
+    }
+    .label {
+        font-weight: bold;
+        width: 5em;
+    }
+    .module-container:hover {
+        background-color: #333333;
+        border-color: white;
+    }    
+  </style>
+
+  <script>
+    function beforeRequest(obj, event) {
+      obj.setAttribute('loading', '');
+    }
+    function afterRequest(obj, event) {
+      obj.removeAttribute('loading');
+      htmx.process(obj);
+    }
+    function showAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "block";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = hideAdvanced;
+      advanced_button.innerText = "Hide Advanced";
+      advanced_button.appearance = "filled";
+    }
+    function hideAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "none";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = showAdvanced;
+      advanced_button.innerText = "Advanced";
+      advanced_button.appearance = "outlined";
+    }
+    function get_pixel(axis, obj, event) {
+      if (axis === 'x') {
+        return obj.offsetX;
+      } else if (axis === 'y') {
+        return obj.offsetY;
+      }
+    }
+  </script>
+  <title>Home</title>
+</head>
+
+    <body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+        <div class="wa-stack">
+            <div class="wa-split">
+            <wa-breadcrumb>
+                <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
+            </wa-breadcrumb>
+            </div>
+        </div>
+
+        <h1>Welcome.</h1>
+
+        <div class="wa-grid">
+            <a href="{{ url_for('library.library') }}">
+                <wa-card class="module-container">
+<!-- 
+photograph of interior of large two story circular classic personal library
+with custom shelves and thousands of books, a built-in ladder and one
+overstuffed reading chair with a reading light.  No people.
+-->
+                    <wa-badge class="beta-badge" appearance="outlined" variant="warning">Beta</wa-badge>
+                    <img slot="media" src="/static/images/library.png" alt="Library Image"/>
+                    <h2>Library</h2>
+                </wa-card>
+            </a>
+
+            <a href="{{ url_for('therapy.therapy_base') }}">
+                <wa-card class="module-container">
+                    <wa-badge class="broken-badge" appearance="outlined" variant="neutral">Broken</wa-badge>
+                    <img slot="media" src="/static/images/therapy.png" alt="Therapy Image"/>
+                    <h2>Therapy</h2>
+                </wa-card>
+            </a>        
+
+            <a href="{{ url_for('styles.styles_base') }}">
+                <wa-card class="module-container">
+                    <wa-badge class="broken-badge" appearance="outlined" variant="neutral">Broken</wa-badge>
+                    <img slot="media" src="/static/images/styler.png" alt="Styles Image"/>
+                    <h2>Styler</h2>
+                </wa-card>
+            </a>
+
+            <a href="http://localhost:61208" target="_blank">
+                <wa-card class="module-container">
+                    <img slot="media" src="/static/images/glances.png" alt="Glances Image"/>
+                    <h2>Glances</h2>
+                </wa-card>
+            </a>
+
+            <a href="http://localhost:8188/" target="_blank">
+                <wa-card class="module-container">
+                    <img slot="media" src="/static/images/comfyui.png" alt="Comfy UI Image"/>
+                    <h2>Comfy UI</h2>
+                </wa-card>
+            </a>
+
+        </div>
+
+    </body>
+</html>

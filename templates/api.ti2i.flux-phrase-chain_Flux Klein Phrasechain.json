@@ -1,0 +1,542 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2": {
+    "inputs": {
+      "prompt": [
+        "72",
+        0
+      ],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": true,
+      "clip": [
+        "1",
+        0
+      ],
+      "image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "3": {
+    "inputs": {
+      "prompt": [
+        "92",
+        0
+      ],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": true,
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "63": {
+    "inputs": {
+      "filename_prefix": "%%FILENAME_PREFIX%%",
+      "images": [
+        "151:65",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "67": {
+    "inputs": {
+      "separator": " ",
+      "prompt1": [
+        "68",
+        0
+      ],
+      "prompt2": [
+        "74",
+        0
+      ]
+    },
+    "class_type": "easy promptConcat",
+    "_meta": {
+      "title": "PromptConcat"
+    }
+  },
+  "68": {
+    "inputs": {
+      "string": "Convert this scene description into a prompt suitable for z-image-turbo. Only include the optimized prompt.\n"
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Better Multiline String 💡"
+    }
+  },
+  "69": {
+    "inputs": {
+      "string": "Act as a master prompt engineer specializing in <meta.author> <meta.title>. Analyze the provided source text and image. The image is a depiction of the paragraph marked #FOCUS PARAGRAPH.  Your task is to provide a description of the changes needed to update this illustration to focus entirely on the specific phrase indicated by <PHRASE>. generate a highly detailed, atmospheric image description suitable for high-fidelity visual generation.\n\nAdhere strictly to the following constraints:\n\nContextual Integration: The description of the previous paragraph is available in [PRIOR_RESULT]. Use this information to maintain continuity when relevant.\nCharacter & Action Precision: Focus on the specific actions mentioned in the #FOCUS PARAGRAPH while maintaining character traits and roles.\nAtmospheric Depth: Utilize the specified lighting (<meta.lighting>) and mood (<meta.mood>) to create depth. Describe textures, shadows, and environmental details that evoke the \"<meta.theme>\" theme without being overly explicit or gory.\n\nFormat: Output ONLY the things that should change in the scene description.\nDo not include conversational filler, explanations, or markdown headers.\n\nEnsure the output captures the specific narrative moment within the broader context of the story.\n\n"
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Master Prompt"
+    }
+  },
+  "70": {
+    "inputs": {
+      "string": "%%META%%\n",
+      "chain": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Meta Block"
+    }
+  },
+  "71": {
+    "inputs": {
+      "string": "%%PRIOR_RESULT%%",
+      "chain": [
+        "96",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Prior Result"
+    }
+  },
+  "72": {
+    "inputs": {
+      "string": "%%SOURCE%%",
+      "chain": [
+        "71",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Source Block"
+    }
+  },
+  "74": {
+    "inputs": {
+      "output_file_path": "%%OUTPUT_DIR%%",
+      "file_name": "%%SCENE_DESCRIPTION_FN%%",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "87": {
+    "inputs": {
+      "text_positive": [
+        "93",
+        0
+      ],
+      "text_negative": "",
+      "Custom": "wizardofoz",
+      "style_weight_Custom": 1,
+      "offset_Custom": 0,
+      "log_prompt": true
+    },
+    "class_type": "CustomStyler",
+    "_meta": {
+      "title": "Custom Styler"
+    }
+  },
+  "88": {
+    "inputs": {
+      "output_file_path": "%%OUTPUT_DIR%%",
+      "file_name": "%%PROMPT_FN%%",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "91": {
+    "inputs": {
+      "string": "%%SCENE%%",
+      "chain": [
+        "95",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Meta Block"
+    }
+  },
+  "92": {
+    "inputs": {
+      "source": [
+        "67",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "93": {
+    "inputs": {
+      "source": [
+        "88",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "94": {
+    "inputs": {
+      "string": "[CHAPTER META]\n\n",
+      "chain": [
+        "69",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Chapter Meta Marker"
+    }
+  },
+  "95": {
+    "inputs": {
+      "string": "[PARAGRAPH META]\n\n",
+      "chain": [
+        "70",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Paragraph Meta Marker"
+    }
+  },
+  "96": {
+    "inputs": {
+      "string": "[PRIOR RESULT]\n\n",
+      "chain": [
+        "91",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Prior Result Marker"
+    }
+  },
+  "97": {
+    "inputs": {
+      "image": "%%PREVIOUS_IMAGE%%"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "151:61": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "151:98": {
+    "inputs": {
+      "noise": [
+        "151:73",
+        0
+      ],
+      "guider": [
+        "151:101",
+        0
+      ],
+      "sampler": [
+        "151:61",
+        0
+      ],
+      "sigmas": [
+        "151:62",
+        0
+      ],
+      "latent_image": [
+        "151:66",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "151:65": {
+    "inputs": {
+      "samples": [
+        "151:98",
+        0
+      ],
+      "vae": [
+        "151:124",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "151:73": {
+    "inputs": {
+      "noise_seed": 167900645989449
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "151:99": {
+    "inputs": {
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "151:100": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "151:66": {
+    "inputs": {
+      "width": [
+        "151:102",
+        0
+      ],
+      "height": [
+        "151:102",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "151:101": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "151:99",
+        0
+      ],
+      "positive": [
+        "151:125",
+        0
+      ],
+      "negative": [
+        "151:123",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFGGuider"
+    }
+  },
+  "151:62": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "151:102",
+        0
+      ],
+      "height": [
+        "151:102",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2Scheduler"
+    }
+  },
+  "151:102": {
+    "inputs": {
+      "image": [
+        "151:80",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "151:123": {
+    "inputs": {
+      "conditioning": [
+        "151:82",
+        0
+      ],
+      "latent": [
+        "151:127",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "151:80": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "151:124": {
+    "inputs": {
+      "vae_name": "full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "151:125": {
+    "inputs": {
+      "conditioning": [
+        "151:126",
+        0
+      ],
+      "latent": [
+        "151:127",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "151:126": {
+    "inputs": {
+      "text": [
+        "87",
+        0
+      ],
+      "clip": [
+        "151:100",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "151:82": {
+    "inputs": {
+      "conditioning": [
+        "151:126",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "151:127": {
+    "inputs": {
+      "pixels": [
+        "151:80",
+        0
+      ],
+      "vae": [
+        "151:124",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}
+<title>Author {{author.pretty_name}}</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+  .clickable-card {
+    position: relative;
+    cursor: pointer;
+    border: 3px solid #410f80;
+  }
+  .clickable-card:hover {
+    border-color: #ff00ff;
+  }
+  .card-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    text-indent: -9999px; /* Hide link text */
+  }   
+</style>
+{% endblock %}
+
+
+
+{% block body %}
+       
+        <div class="wa-stack">
+
+            <h1>Author {{author.pretty_name}}</h1>
+            
+            <div class="wa-cluster">
+                {% for title,bookdir in books %}
+                <wa-card class="card-media clickable-card" style="width: 200px;">
+                  <a class="card-link" href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}"></a>  
+                  <img
+                      slot="media"
+                      src="{{ url_for('library.book_cover', author=author.name, title=title) }}"
+                      alt="Cover of {{title}}"
+                  ></img>
+                  <h4>{{title}}</h4>
+                </wa-card>
+                {% endfor %}
+            </div>
+
+        </div>
+
+{% endblock %}

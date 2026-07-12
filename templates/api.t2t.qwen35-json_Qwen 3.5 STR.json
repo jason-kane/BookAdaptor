@@ -1,0 +1,65 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "3": {
+    "inputs": {
+      "prompt": "{{SYSTEM_PROMPT}}\n\n{{PROMPT}}",
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": "{{SEED:INT}}",
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": false,
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "4": {
+    "inputs": {
+      "source": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "7": {
+    "inputs": {
+      "output_file_path": "{{OUTPUT_DIR}}",
+      "file_name": "{{FILE_NAME}}",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  }
+}

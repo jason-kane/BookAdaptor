@@ -1,0 +1,61 @@
+{% set MUSIC = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<script src="/static/js/music.js"></script>
+{% endblock %}
+
+{% block title %}
+<title>Music</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wa-cluster">
+    <h1>Music</h1>
+</div>
+
+<div class="wa-cluster">
+    {{buttons|safe}}
+</div>
+
+<p>BPM</p>
+<p>Key</p>
+<p>Time signature</p>
+
+[Genre] + [Tempo] + [Instruments] + [Mood] + [Vocal style]
+
+<pre>horizontal frame strip, 
+    one frame per _word_ in the text 
+    for each such frame,
+    you can choose the degree of dramatic/emotional intensity in the music.
+
+    Research:  What does ace-step 1.5 support?  Especially for instrumental, it looks grim.
+    A different LLM may be needed, or a multi-step process,
+    I'm thinking prompt->MIDI, then MIDI->MP3, then MP3->MP3 via LLM to smooth out the cheap-ass MIDI sound
+    That has the delightful bonus of giving us editable sheet music, which would be awesome.
+
+    https://www.vexflow.com/
+    https://github.com/vexflow/vexflow/
+
+    https://opensheetmusicdisplay.org/
+
+    https://hermandong.com/muspy/doc/muspy.html
+
+    Looks like:
+        LLM -> ? -> MusicXML -> VexFlow (for SVG display)
+    
+        I just need to find a suitable LLM for MusicXML generation.
+        We can also convert musicxml to midi for external tools.
+
+    Then the prompt includes that emotional timeline, so 
+    the music tracks with the story.
+</pre>
+
+<p>Emotional timeline</p>
+
+{% endblock %}

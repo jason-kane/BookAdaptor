@@ -1,0 +1,107 @@
+<div class="wa-stack sound-card">
+    <div class="wa-cluster">
+        {{ local_sound_selector(chapter, sound_xml, page) |safe}}
+    </div>
+    
+    <div class="wa-cluster">
+        <div class="wa-stack">
+            <h3>Original: {{ src }}</h3>
+            <audio controls>
+                <source src="{{ url_for('library.sounds_src', src=src) }}" type="audio/wav">
+            </audio>
+        </div>
+        
+        <div class="wa-stack">
+            <h3>Your Sound: {{ src }}</h3>
+            <audio controls>
+                <source src="{{ url_for('library.sounds_src', src=src) }}" type="audio/wav">
+            </audio>
+        </div>
+    </div>
+
+    <wa-slider
+        label="Select Range"
+        hint="Select portion of wav to include"
+        name="sound_range"
+        range
+        min="0"
+        step="0.01"
+        max="{{ duration }}"
+        min-value="0"
+        max-value="{{ duration }}"
+        with-tooltip
+        id="slider__range"
+    >
+        <span slot="reference">0</span>
+        <span slot="reference">{{ "{:.2f}".format(duration / 4) }}</span>
+        <span slot="reference">{{ "{:.2f}".format(duration / 2) }}</span>
+        <span slot="reference">{{ "{:.2f}".format(3 * duration / 4) }}</span>
+        <span slot="reference">{{ "{:.2f}".format(duration) }}</span>
+    </wa-slider>
+    
+    <wa-slider
+        label="Volume"
+        hint="Adjust the volume of the sound"
+        name="volume"
+        min="0"
+        step="0.01"
+        max="11"
+        min-value="0"
+        max-value="11"
+        with-tooltip
+        id="slider__volume"
+    >
+        <span slot="reference">0</span>
+        <span slot="reference">1</span>
+        <span slot="reference">2</span>
+        <span slot="reference">3</span>
+        <span slot="reference">4</span>
+        <span slot="reference">5</span>
+        <span slot="reference">6</span>
+        <span slot="reference">7</span>
+        <span slot="reference">8</span>
+        <span slot="reference">9</span>
+        <span slot="reference">10</span>
+        <span slot="reference">11</span>
+    </wa-slider>
+
+    <pre>
+    * persistence for start/end offsets
+    * persistence for volume
+
+    * button to add a new sound (from freesound) to global sounds
+    
+    Find sound modal:
+        oauth2 to freesound
+        close button for modal 
+        
+        UI for finding and choosing the sound
+        
+        initial display is a search by phrase input widget with "search" button
+
+        Search result pushes the input widget to the top, and displays a 
+        paginated list of search results.
+
+        choose from paginated 'name' list
+        on-select displays the description and makes this the 'selected'
+        
+        sound.  The selected sound is what plays and is chosen when you click the relevant widgets.
+        
+        play widget with 'choose' button that closes the modal and populates the sound tag.
+    https://gist.github.com/ffont/3607ba4af9814f3877cd42894a564222
+
+    # TODO:
+    * microphone input to record a new sound
+    * with name and description, added like a freesound
+
+    # TODO:
+    * non-blocking vs blocking sound option 
+    
+    -- non-blocking sounds are layered on top of any existing audio, starting
+    exactly when the previous phrase (or sound) completes.  
+
+    # TODO (easy):
+    * delete sound slot button
+    * add sound slot button
+    </pre>
+</div>

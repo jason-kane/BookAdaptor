@@ -1,0 +1,28 @@
+.horizontal-card {
+    margin-top: 5px;
+    width: 800px;
+}
+
+.ai-avatar {
+    background-color: #093b39;
+    border-radius: var(--wa-panel-border-radius) 0 0 var(--wa-panel-border-radius);
+    width: 70px;
+    height: -webkit-fill-available;
+}
+
+.user-avatar {
+    background-color: #3b090b;
+    border-radius: var(--wa-panel-border-radius) 0 0 var(--wa-panel-border-radius);
+    width: 70px;
+    height: -webkit-fill-available;
+}
+
+.comment {
+    border-radius: var(--wa-panel-border-radius);
+    border-style: var(--wa-panel-border-style);
+    border-color: var(--wa-color-surface-border);
+    border-width: var(--wa-panel-border-width);
+    box-shadow: var(--wa-shadow-s);
+    margin-top: 5px;
+    width: 760px;
+}

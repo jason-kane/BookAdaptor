@@ -1,0 +1,66 @@
+{% set VIDEO = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<link href="https://vjs.zencdn.net/8.22.0/video-js.css" rel="stylesheet" />
+{% endblock %}
+
+{% block title %}
+<title>Artifact Editor: Video</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+    #the-canvas {
+        border: 1px solid black;
+        direction: ltr;
+    }        
+</style>
+{% endblock %}
+
+{% block body %}
+    <h1>Video Rendering</h1>
+    <div class="wa-cluster">
+        {{replace_masterplan_button|safe}}
+        {{render_masterplan_button|safe}}
+        {{clear_all_transitions_button|safe}}
+        {{clear_all_frames_button|safe}}
+        <wa-button 
+            id="advanced-button"
+            appearance="outlined"
+            onclick="showAdvanced()"
+            variant="danger">Advanced</wa-button>
+    </div>
+    <div id="advanced" class="wa-cluster" style="display: none;">
+        {{calculate_paragraph_durations_button|safe}}
+        {{clear_adjusted_images_button|safe}}
+    </div>
+        
+    {% if filename %}
+        <p>Video file: <strong>{{filename}}</strong></p>
+        <video
+            id="my-video"
+            class="video-js"
+            controls
+            preload="auto"
+            width="640"
+            height="264"
+            poster="cover.png"
+            data-setup="{}"
+        >
+        <source src="{{filename}}" type="video/mp4" />
+        <p class="vjs-no-js">
+            To view this video please enable JavaScript, and consider upgrading to a
+            web browser that
+            <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+        </p>
+        </video>
+        {% else %}
+        <p>No video file found.</p>
+    {% endif %}
+
+</div>
+
+<script src="https://vjs.zencdn.net/8.22.0/video.min.js"></script>
+</body>
+{% endblock %}

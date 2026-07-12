@@ -1,0 +1,148 @@
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    command: [ "redis-server", "--bind", "0.0.0.0" ]
+    networks:
+      - home-network
+
+  # chat:
+  #   image: srwarenet/locallightchat:latest
+  #   depends_on:
+  #     - comfyui
+  #   ports:
+  #     - "6400:80"
+  #   networks:
+  #     - home-network
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./src/artifact_editor/static/:/var/www/static/:ro
+    depends_on:
+      - artifactserver
+      - comfyui
+      - websocket
+      - glances
+    networks:
+      - home-network
+
+  artifactserver:
+    build:
+      context: ./src/
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+    entrypoint: [ "gunicorn", "--reload", "--timeout", "600", "-w", "4", "--log-level", "info", "--capture-output", "--error-logfile", "-", "--access-logfile", "-" ]
+    command: [ "--bind", "0.0.0.0:8080", "artifact_editor.app:create_app()" ]
+
+    volumes:
+      - ./src:/app
+      - ./active:/active
+      - ./assets:/assets
+      - ./comfy/ComfyUI/input:/input
+      - ./comfy/ComfyUI/output:/output
+      - ./comfy/ComfyUI/user/default/workflows:/workflows
+      - ./templates:/templates
+      - ./comfy/ComfyUI/custom_nodes:/custom_nodes
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - FORCE_COLOR=1
+      - COLUMNS=160
+      - CONTAINER_MODE=1
+      - COMFYUI_WORKFLOWS_DIR=/workflows
+      - COMFYUI_WORKFLOW_TEMPLATES_DIR=/templates
+      - COMFYUI_INPUT_DIR=/root/ComfyUI/input
+      - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
+      - COMFYUI_API_URL=http://comfyui:8188/
+      - COMFYUI_UI_URL=http://localhost:8188/
+    networks:
+      - home-network
+
+  comfyui:
+    init: true
+    container_name: comfyui-megapak
+    image: "yanwk/comfyui-boot:cu130-megapak-pt211"
+    command: [ "bash", "/runner-scripts/entrypoint.sh", "--listen", "0.0.0.0", "--enable-cors-header" ]
+    build:
+      context: ./comfy/ComfyUI-Docker/cu130-megapak-pt211/
+      dockerfile: Dockerfile
+    ports:
+      - "8188:8188"
+    volumes:
+      - "./dot-cache:/root/.cache"
+      - "./dot-config:/root/.config"
+      - "./dot-local:/root/.local"
+      - "./user-scripts:/root/user-scripts"
+      - "./comfy/ComfyUI/custom_nodes:/root/ComfyUI/custom_nodes"
+      - "./comfy/ComfyUI/models:/root/ComfyUI/models"
+      - "./comfy/ComfyUI/hf-hub:/root/.cache/huggingface/hub"
+      - "./comfy/ComfyUI/torch-hub:/root/.cache/torch/hub"
+      - "./comfy/ComfyUI/input:/root/ComfyUI/input"
+      - "./comfy/ComfyUI/output:/root/ComfyUI/output"
+      - "./comfy/ComfyUI/user:/root/ComfyUI/user"
+      - "./comfy/ComfyUI/user-profile:/root/ComfyUI/user-profile"
+      - "./comfy/ComfyUI_frontend/dist:/usr/local/lib/python3.13/site-packages/comfyui_frontend_package/static"
+    environment:
+      - CLI_ARGS=
+    security_opt:
+      # - "label=type:nvidia_container_t"
+      - "label=disable"
+      - "seccomp=unconfined"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    networks:
+      - home-network
+
+  websocket:
+    build:
+      context: ./src/
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./src/:/app
+    entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
+    networks:
+      - home-network
+
+  glances:
+    image: nicolargo/glances:latest-full
+    restart: always
+    pid: "host"
+    privileged: false
+    volumes:
+      - "/:/rootfs:ro"
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/os-release:/etc/os-release:ro
+      - ./glances.conf:/app/glances/conf/glances.conf
+    tmpfs:
+      - /tmp
+    ports:
+      - "61208:61208"
+      - "61209:61209"
+    environment:
+      - GLANCES_OPT=-C /app/glances/conf/glances.conf -w --disable-plugin ip --enable-mcp --enable-plugin smart
+      - TZ=America/Los_Angeles
+      - PYTHONPYCACHEPREFIX=/tmp/py_caches
+    networks:
+      - home-network
+
+networks:
+  home-network:
+    driver: bridge

@@ -1,0 +1,22 @@
+<table id="global_pronunciation" style="width: 80%" class="wa-zebra-rows wa-hover-rows">
+    <thead>
+        <tr>
+            <th>Word</th>
+            <th>IPA Pronunciation</th>
+        </tr>
+    </thead>
+
+{% for word in global_pronunciation_list %}
+    {% include "plain_row.html" %}
+{% endfor %}
+
+    <tr>
+        <td><wa-input name="add_word" placeholder="Word"></wa-input></td>
+        <td><wa-input name="add_pron" placeholder="IPA Pronunciation"></wa-input></td>
+        <td><wa-button
+                hx-post="{{add_global_pronunciation_url}}"
+                hx-target="#global_pronunciation"
+                hx-include="[name='add_word'], [name='add_pron']"
+                hx-swap="outerHTML">Add</wa-button></td>
+    </tr>
+</table>

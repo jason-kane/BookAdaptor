@@ -1,0 +1,77 @@
+{% set PUBLISH = True %}
+{% set GITHUB = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<script src="/static/js/github.js"></script>
+{% endblock %}
+
+{% block title %}
+<title>GitHub Publish View</title>
+{% endblock %}
+
+{% block styles %}
+{% endblock %}
+
+{% block body %}
+<div class="wa-stack">
+    <form>
+        <wa-input 
+            id="github-repo-url"
+            label="GitHub Repository"
+            name="git_url"
+            value="{{ git_url }}"
+            placeholder="git@github.com:jason-kane/library.git">
+        </wa-input>
+
+        <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token"> 
+            (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
+        </a>
+        
+        <h3>tldr;</h3>
+        <pre>github profile picture -> settings -> developer settings -> personal access tokens</pre>
+        <p>We need a fine grained access token with "pull request read and write" permission to the repository you have chosen.</p>
+
+        <wa-input 
+            id="github-repo-token"
+            label="GitHub Token"
+            name="github_token"
+            value="{{ github_token }}"
+            placeholder="Enter your GitHub token">
+        </wa-input>
+
+        <wa-input 
+            id="github-commit-message"
+            label="Description of Changes (commit message)"
+            name="commit_message"
+            value=""
+            placeholder="Describe the changes you made to this chapter.">
+        </wa-input>
+
+        <wa-button
+            id="github-publish-button"
+            variant="primary"
+            hx-post="save"
+        >Save Chapter to GitHub</wa-button>
+    </form>
+    
+    github repo url (persisted to chapter config)
+        
+    (ssh key with access ) (ie: ~/.ssh/*) (not persisted by us)
+    (https personal access token) (TODO)
+    (github deploy key with write access to the repository)? (TODO)
+    
+    in the clone, we create:
+    /library/{author}/{title}/{chapter}/
+    
+    it does _not_ include the final video.  It does include txt, xml, various
+    .json, and generated images I'm still on the fence reg. animation frames,
+    transition frames and camera motion frames.
+
+    Clone,
+    copy files into the directory, 
+    commit modified files
+    push commit to github
+    issue a pull request
+</div>
+{% endblock %}

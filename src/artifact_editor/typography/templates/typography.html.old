@@ -1,0 +1,153 @@
+{% set TYPOGRAPHY = True %}
+{% extends "base.html" %}
+
+{% block title %}
+<title>Typography</title>
+{% endblock %}
+
+{% block styles %}
+<style>{{pygments_css|safe}}</style>
+<style>
+    #editor {
+        width: 50%;
+    }
+
+    .CodeMirror {
+        height: 50em;
+    }
+</style>
+<!-- <link href="/static/styles/prism.min.css" rel="stylesheet" /> -->
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/styles/codemirror.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/javascript/javascript.js"></script>
+
+<script src="/static/js/pdf.mjs" type="module"></script>
+
+<script src="/static/js/typography.js"></script>
+<script>
+    var flask = null;
+
+    document.addEventListener("DOMContentLoaded", function () {
+            //  mode: "javascript",
+        flask = CodeMirror(
+            document.getElementById("editor"),
+            {
+                mode: 'stex',
+                lineNumbers: true,
+                theme: 'monokai',
+                extensions: [
+                    CodeMirror.basicSetup
+                ],
+                viewportMargin: Infinity
+            }
+        );
+        
+        htmx.ajax('GET', "{{url_for('library.book.chapter.typography.serve_chapter_latex', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}", {
+            handler: function(elt, info) {
+                if (info.xhr.status === 200) {
+                    flask.setValue(info.xhr.responseText);
+                } else {
+                    console.error('Failed to load chapter LaTeX:', info.xhr.status, info.xhr.statusText);
+                }
+            },
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+    });   
+</script>
+
+<script type="module">
+    // wait until the DOM is loaded before trying to access the canvas element
+    document.addEventListener("DOMContentLoaded", function () {
+        var { pdfjsLib } = globalThis;
+        // The workerSrc property shall be specified.
+        // this is why we're a module.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.mjs';
+        
+        latex_rerender(null, null);  
+    });
+</script>
+{% endblock %}
+
+
+{% block body %}
+<h1>Typography</h1>
+<div class="wa-cluster">
+    {{draw_missing_text_button|safe}}
+    {{refresh_examples|safe}}
+    {{hyper_redraw_all_text_button|safe}}
+    <wa-button 
+        id="advanced-button"
+        appearance="outlined"
+        onclick="showAdvanced()"
+        variant="danger">Advanced</wa-button>
+</div>
+<div id="advanced" class="wa-cluster" style="display: none;">
+    {{clear_all_text_button|safe}}
+    {{redraw_all_text_button|safe}}
+    {{rebuild_camera_button|safe}}
+    {{verify_text_images_button|safe}}
+    {{clear_highlight_dimensions_button|safe}}
+    {{reset_camera_button|safe}}
+    {{evaluate_camera_rate_button|safe}}
+    {{build_missing_highlight_geometry_button|safe}}
+</div>
+
+
+<div>
+    <wa-select 
+        hx-put="{{url_for('library.book.chapter.typography.set_text_structure', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}"
+        name="TEXT_STRUCTURE"
+        label="Text Structure"
+        value="{{chapter.config.get('TEXT_STRUCTURE', 'novel')}}">
+        <wa-option value="novel">Novel</wa-option>
+        <wa-option value="verse">Verse</wa-option>
+        <wa-option value="play">Play</wa-option>
+        <wa-option value="scripture">Scripture</wa-option>
+    </wa-select>
+</div>
+
+<div class="wa-cluster wa-align-items-start">
+    <div class="wa-stack" id="editor">       
+        
+    </div>   
+
+    <div class="wa-stack">
+        <wa-button 
+            pill
+            hx-post="{{url_for('library.book.chapter.typography.regenerate', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}"
+            hx-target="#the-canvas"
+            hx-on::after-request="latex_rerender(this, event)"
+            hx-vals='js:{latex:flask.doc.getValue()}'
+            id="regenerate">
+            <wa-icon slot="start" src="/static/fontawesome7/svgs/solid/chevron-right.svg"></wa-icon>
+            Redraw PDF
+            <wa-icon slot="end" src="/static/fontawesome7/svgs/solid/chevron-right.svg"></wa-icon>
+        </wa-button>
+
+        <wa-button 
+            pill
+            hx-post="{{url_for('library.book.chapter.typography.save', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}"
+            id="save">Save</wa-button>            
+    </div>
+
+    <div class="wa-stack">
+        <div class="wa-flank">
+            <wa-button id="prev">Previous</wa-button>
+            <div class="wa-flank:end">
+                <span>Page: <span id="page_num"></span> / <span id="page_count"></span></span>
+                <wa-button id="next">Next</wa-button>
+            </div>
+        </div>
+    
+        <div style="width:523px;height:46em;overflow-y:scroll;">
+            <canvas id="the-canvas"></canvas>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

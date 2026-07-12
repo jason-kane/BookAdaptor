@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}
+<title>Your Library</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+  .clickable-card {
+    position: relative;
+    cursor: pointer;
+    border: 3px solid #410f80;
+    height: 20em;
+  }
+  .clickable-card:hover {
+    border-color: #ff00ff;
+  }
+  .card-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    text-indent: -9999px; /* Hide link text */
+  }   
+  .author {
+    border: 1px solid var(--wa-color-neutral-300);
+    border-radius: var(--wa-border-radius-m);
+    background: #484848;
+    border: 1px solid grey;
+    padding: 12px;
+    min-height: 422px;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wa-cluster">
+    {% for author in authors %}
+    <div class="wa-stack author">
+        <h2><a href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.name}}</a></h2>
+
+        <div class="wa-cluster">
+            {% for book in author.books %}                
+            <wa-card class="card-media clickable-card" style="width: 200px;">   
+                <a class="card-link" href="{{ url_for('library.book.table_of_contents', author=author.name, title=book.title) }}"></a>
+                <img
+                    slot="media"
+                    src="{{ url_for('library.book_cover', author=author.name, title=book.title) }}"
+                    alt="Cover of {{book.title}} by {{author.pretty_name}}"
+                />
+                <h4>{{book.title}}</h4>
+            </wa-card>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

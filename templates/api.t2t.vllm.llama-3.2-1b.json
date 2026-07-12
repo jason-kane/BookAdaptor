@@ -1,0 +1,149 @@
+{
+  "32": {
+    "inputs": {
+      "source": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "33": {
+    "inputs": {
+      "model": "neuralmagic/Llama-3.2-1B-Instruct-quantized.w8a8",
+      "force_regen": true,
+      "prompt": "{{PROMPT}}",
+      "system_prompt": "{{SYSTEM_PROMPT}}",
+      "client": [
+        "34",
+        0
+      ],
+      "options": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_ChatCompletion",
+    "_meta": {
+      "title": "OpenAI API - Chat Completion"
+    }
+  },
+  "34": {
+    "inputs": {
+      "base_url": "http://vllm:8000/v1/",
+      "max_retries": 2,
+      "timeout": 600,
+      "api_key": "-"
+    },
+    "class_type": "OAIAPI_Client",
+    "_meta": {
+      "title": "OpenAI API - Client"
+    }
+  },
+  "35": {
+    "inputs": {
+      "max_tokens": "{{MAX_TOKENS:INT}}",
+      "other_options": [
+        "36",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_MaxTokens",
+    "_meta": {
+      "title": "OpenAI API - Max Tokens"
+    }
+  },
+  "36": {
+    "inputs": {
+      "top_p": "{{TOP_P:FLOAT}}",
+      "other_options": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_TopP",
+    "_meta": {
+      "title": "OpenAI API - Top P"
+    }
+  },
+  "37": {
+    "inputs": {
+      "seed": 42
+    },
+    "class_type": "OAIAPI_Seed",
+    "_meta": {
+      "title": "OpenAI API - Seed"
+    }
+  },
+  "38": {
+    "inputs": {
+      "temperature": "{{TEMPERATURE:FLOAT}}",
+      "other_options": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_Temperature",
+    "_meta": {
+      "title": "OpenAI API - Temperature"
+    }
+  },
+  "39": {
+    "inputs": {
+      "instructions_role": false,
+      "other_options": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_DeveloperRole",
+    "_meta": {
+      "title": "OpenAI API - Developer Role"
+    }
+  },
+  "40": {
+    "inputs": {
+      "presence_penalty": "{{PRESENCE_PENALTY:FLOAT}}",
+      "other_options": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_PresencePenalty",
+    "_meta": {
+      "title": "OpenAI API - Presence Penalty"
+    }
+  },
+  "41": {
+    "inputs": {
+      "frequency_penalty": "{{FREQUENCY_PENALTY:FLOAT}}",
+      "other_options": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "OAIAPI_FrequencyPenalty",
+    "_meta": {
+      "title": "OpenAI API - Frequency Penalty"
+    }
+  },
+  "42": {
+    "inputs": {
+      "output_file_path": "{{OUTPUT_FILE_PATH}}",
+      "file_name": "{{FILE_NAME}}",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  }
+}

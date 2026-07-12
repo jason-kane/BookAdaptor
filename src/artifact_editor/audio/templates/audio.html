@@ -1,0 +1,227 @@
+{% set AUDIO = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/styles/codemirror.css">
+
+<script type="importmap">
+  {
+    "imports": {
+      "style-mod": "https://esm.sh/style-mod",
+      "w3c-keyname": "https://esm.sh/w3c-keyname",
+      "crelt": "https://esm.sh/crelt",
+      "@marijn/find-cluster-break": "https://esm.sh/@marijn/find-cluster-break",
+      "@lezer/": "https://esm.sh/*@lezer/",
+      "@codemirror/": "https://esm.sh/*@codemirror/",
+      "codemirror": "https://esm.sh/*codemirror",
+      "codemirror-lang-latex": "https://cdn.jsdelivr.net/npm/codemirror-lang-latex@0.2.0/dist/index.js"
+    }
+  }
+</script>
+
+<script src="/static/js/audio.js" type="module"></script>
+{% endblock %}
+
+{% block title %}
+<title>Phrase Workshop</title>
+{% endblock %}
+    
+{% block styles %}
+<style>
+    .phrase-card {
+        padding: var(--wa-space-l);
+        border: solid 1px var(--wa-color-neutral-300);
+        border-radius: var(--wa-radius-l);
+        background: rgb(47, 58, 79);
+    }
+    .image-card {
+        padding: var(--wa-space-l);
+        border: solid 1px var(--wa-color-neutral-300);
+        border-radius: var(--wa-radius-l);
+        background: rgb(58, 79, 47);
+    }
+    .sound-card {
+        padding: var(--wa-space-l);
+        border: solid 1px var(--wa-color-neutral-300);
+        border-radius: var(--wa-radius-l);
+        background: rgb(52, 47, 79);
+    }
+    .phrase-latex {
+        height: 200px;
+    }
+    .phrase-typography {
+        width: 40em;
+    }
+    /* Targets the CodeMirror wrapper */
+    .cm-editor {
+    height: 100%;
+    }
+
+    /* Internal scroller must be configured to handle overflow */
+    .cm-scroller {
+    overflow: auto;
+    }    
+    .label-on-left {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: var(--wa-space-l);
+        align-items: center;
+
+        wa-input,
+        wa-textarea {
+            grid-column: 1 / -1;
+            grid-row-end: span 2;
+            display: grid;
+            grid-template-columns: subgrid;
+            gap: 0 var(--wa-space-l);
+            align-items: center;
+        }
+
+        ::part(label) {
+        text-align: right;
+        }
+
+        ::part(hint) {
+        grid-column: 2;
+        }
+    } 
+    .card-header {
+        max-width: 300px;
+    }
+
+    .card-header [slot='header'] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .card-header h3 {
+        margin: 0;
+    }
+
+    .card-header wa-icon-button {
+        font-size: var(--wa-font-size-m);
+    }
+
+    .image-placeholder {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 150px;
+        width: 150px;
+    }
+    .phrase_split {
+        width: 30em;
+    }
+    .phrase-text {
+        width: 30em;
+    }
+    .soundslike-input {
+        width: 14em;
+    }
+    .soundslike-output {
+        width: 15em;
+    }
+    .pronunciation-input {
+        width: 30em;
+    }
+    wa-button.idle {
+        border-radius: 30px;
+        border: solid 2px;
+        background: #86091e;
+        border-top-color: #ff7ac1;
+        border-left-color: #ff7ac1;
+        border-bottom-color: #ad005c;
+        border-right-color: #ad005c;
+        font-size: 1.125rem;
+        box-shadow: 0 2px 10px #0002;
+        transition: all var(--wa-transition-slow) var(--wa-transition-easing);
+    }    
+    wa-icon.idle {
+        color: white;
+        font-size: 1.125rem;
+        box-shadow: 0 2px 10px #0002;
+        transition: all var(--wa-transition-slow) var(--wa-transition-easing);
+    }
+    wa-button.active {
+        border: solid 2px;
+        background: #189f11;
+        border-radius: 30px;
+        border-top-color: #83ff7a;
+        border-left-color: #d7ff7a;
+        border-bottom-color: #17ad00;
+        border-right-color: #00ad00;
+        font-size: 1.125rem;
+        box-shadow: 0 2px 10px #0002;
+        transition: all var(--wa-transition-slow) var(--wa-transition-easing);
+        --fa-beat-scale: 2.0;
+        animation: rotator 4s infinite;
+    }
+    wa-icon.active {
+        color: white;
+        font-size: 1.125rem;
+        box-shadow: 0 2px 10px #0002;
+        transition: all var(--wa-transition-slow) var(--wa-transition-easing);
+    }
+    /* spin the border colors */
+    @keyframes rotator {
+        0%   {
+            border-top-color: #83ff7a;
+            border-left-color: #d7ff7a;
+            border-bottom-color: #17ad00;
+            border-right-color: #00ad00; 
+        }
+        25%  {
+            border-top-color: #d7ff7a;
+            border-left-color: #17ad00;
+            border-bottom-color: #00ad00; 
+            border-right-color: #83ff7a;
+        }
+        50%  {
+            border-top-color: #17ad00;
+            border-left-color: #00ad00;
+            border-bottom-color: #83ff7a; 
+            border-right-color: #d7ff7a;
+        }
+        75%  {
+            border-top-color: #00ad00;
+            border-left-color: #83ff7a;
+            border-bottom-color: #d7ff7a; 
+            border-right-color: #17ad00;
+        }
+        100% {
+            border-top-color: #83ff7a;
+            border-left-color: #d7ff7a;
+            border-bottom-color: #17ad00;
+            border-right-color: #00ad00; 
+        } /* Return to start for smooth loop */
+    }
+
+    .CodeMirror {
+        height: 75px;
+        height: auto;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<h1>Phrase Workshop</h1>
+<div class="wa-cluster">
+    {{generate_all_missing_audio_button|safe}}
+    {{recalculate_all_phrase_frames_button|safe}}
+    <wa-button 
+        id="advanced-button"
+        appearance="outlined"
+        onclick="showAdvanced()"
+        variant="danger">Advanced</wa-button>
+</div>
+<div id="advanced" class="wa-cluster" style="display: none;">
+    {{repronounce_where_missing_button|safe}}
+    {{reset_audio_cache_json_button|safe}}
+    {{regenerate_all_audio_button|safe}}    
+</div>
+
+<div id="phrases" class="wa-stack wa-align-items-stretch" style="width: 95%;">
+    {{phrase_sequence|safe}}
+</div>
+{% endblock %}

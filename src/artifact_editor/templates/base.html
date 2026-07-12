@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html
+  class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo"
+>
+
+<head>
+  <!-- HTMX -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
+    integrity="sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G"
+    crossorigin="anonymous"></script>
+
+  <!-- Theme + color palette -->
+  <link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/themes/glossy.css"
+  /><link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/color/palettes/elegant.css"
+  />
+
+  <!-- Native styles/CSS reset -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/native.css" />
+
+  <!-- CSS utilities -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/utilities.css" />
+
+  <!-- Fonts -->
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Fraunces:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+
+  <!-- Web Awesome autoloader -->
+  <script
+    type="module"
+    src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/webawesome.loader.js"
+  ></script>
+
+  <!-- custom theme overrides -->
+  <style>
+    :root {
+      --wa-font-family-body: Figtree, sans-serif;
+      --wa-font-family-heading: Figtree, sans-serif;
+      --wa-font-family-code: "Chivo Mono", monospace;
+      --wa-font-family-longform: Fraunces, serif;
+      --wa-font-weight-body: 400;
+      --wa-font-weight-heading: 800;
+      --wa-font-weight-code: 400;
+      --wa-font-weight-longform: 350;
+      --wa-border-radius-scale: 1.33;
+      --wa-border-width-scale: 1;
+      --wa-space-scale: 1.125;
+    }
+  </style>
+
+  <script>
+    function beforeRequest(obj, event) {
+      obj.setAttribute('loading', '');
+    }
+    function afterRequest(obj, event) {
+      obj.removeAttribute('loading');
+      htmx.process(obj);
+    }
+    function showAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "block";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = hideAdvanced;
+      advanced_button.innerText = "Hide Advanced";
+      advanced_button.appearance = "filled";
+    }
+    function hideAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "none";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = showAdvanced;
+      advanced_button.innerText = "Advanced";
+      advanced_button.appearance = "outlined";
+    }
+    function get_pixel(axis, obj, event) {
+      if (axis === 'x') {
+        return obj.offsetX;
+      } else if (axis === 'y') {
+        return obj.offsetY;
+      }
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+  {% block styles %}{% endblock %}
+
+  {% block title %}
+  <title>Artificer Base</title>
+  {% endblock %}
+</head>
+
+<body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+  {% block body_wrapper %}
+  <div class="wa-stack">
+    <div class="wa-split">
+      <wa-breadcrumb>
+        <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
+        <wa-breadcrumb-item href="/library/">Library</wa-breadcrumb-item>
+        {% if author %}<wa-breadcrumb-item
+          href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.pretty_name}}</wa-breadcrumb-item>{%
+        endif %}
+        {% if title %}<wa-breadcrumb-item
+          href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}">{{title}}</wa-breadcrumb-item>{%
+        endif %}
+        {% if chapter %}<wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">{{chapter.number}}: {{chapter.cosmetic}}</wa-breadcrumb-item>{% endif %}
+        {% if chapter %}
+        <wa-breadcrumb-item href="">{{pretty_language}}</wa-breadcrumb-item>
+        <wa-breadcrumb-item>
+          <wa-dropdown>
+            <wa-button slot="trigger" with-caret size="medium" appearance="filled">
+              {{section_cosmetic or 'Workshops'}}
+            </wa-button>
+            <a
+              href="{{ url_for('library.book.chapter.text.text_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Text</wa-dropdown-item></a>
+            <a
+              href="{{ url_for('library.book.chapter.characters.characters_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
+            <wa-dropdown-item>
+              Phrases
+              <wa-dropdown-item slot="submenu"><a
+                  href="{{ url_for('library.book.chapter.audio.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Phrase Workshop</a></wa-dropdown-item>
+              <wa-dropdown-item slot="submenu"><a
+                  href="{{ url_for('library.book.chapter.audio.pronunciation.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Pronunciation Guide</a></wa-dropdown-item>
+              <wa-dropdown-item slot="submenu"><a
+                  href="{{ url_for('library.book.chapter.audio.timeline.timeline', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Timeline</a></wa-dropdown-item>
+            </wa-dropdown-item>
+            <a href="{{ url_for('library.book.chapter.typography.base_typography', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Typography</wa-dropdown-item></a>
+            <a href="{{ url_for('library.book.chapter.images.base', author=author.name, title=title, chapter_number=chapter.number, language=language, image_index=0) }}"><wa-dropdown-item>Images</wa-dropdown-item></a>            
+            <a href="{{ url_for('library.book.chapter.frames.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Frames</wa-dropdown-item></a>
+            <a href="{{ url_for('library.book.chapter.music.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Music</wa-dropdown-item></a>
+            <a href="{{ url_for('library.book.chapter.video.base_video', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Video</wa-dropdown-item></a>
+          </wa-dropdown>
+        </wa-breadcrumb-item>
+        {% endif %}
+        
+        {% if chapter %}
+        <wa-breadcrumb-item>
+          <wa-dropdown>
+            <wa-button slot="trigger" with-caret size="medium" appearance="filled">
+              Publish
+            </wa-button>
+            <a href="{{ url_for('library.book.chapter.publish.youtube.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Youtube</wa-dropdown-item></a>
+            <a href="{{ url_for('library.book.chapter.publish.tiktok.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>TikTok</wa-dropdown-item></a>
+            <a href="{{ url_for('library.book.chapter.publish.github.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>GitHub</wa-dropdown-item></a>
+          </wa-dropdown>
+        </wa-breadcrumb-item>
+        {% endif %}
+      </wa-breadcrumb>
+    </div>
+
+    {% block body %}
+    {% endblock %}
+  </div>
+  {% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo">
+    <head>
+        <title>Styles Page {{ page_index }}</title>
+        <style>
+            .sample_image {
+                display: block;
+                margin-bottom: 10px;
+            }
+            .history-item {
+                border: 1px solid #ccc;
+                padding: 5px;
+                margin-bottom: 10px;
+                width: 256px;
+            }
+        </style>
+  
+        <!-- Theme + color palette -->
+        <link
+            rel="stylesheet"
+            href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.5.0/styles/themes/glossy.css"
+        />
+        <link
+            rel="stylesheet"
+            href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.5.0/styles/color/palettes/elegant.css"
+        />
+
+        <!-- Native styles/CSS reset -->
+        <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.5.0/styles/native.css" />
+
+        <!-- CSS utilities -->
+        <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.5.0/styles/utilities.css" />
+
+        <!-- Fonts -->
+        <link
+            rel="stylesheet"
+            href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+        />
+        <link
+            rel="stylesheet"
+            href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+        />
+        <link
+            rel="stylesheet"
+            href="https://fonts.bunny.net/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap"
+        />
+        <link
+            rel="stylesheet"
+            href="https://fonts.bunny.net/css2?family=Fraunces:ital,wght@0,100..900;1,100..900&display=swap"
+        />
+
+        <!-- Web Awesome autoloader -->
+        <script
+            type="module"
+            src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.5.0/webawesome.loader.js"
+        ></script>
+    </head>
+    <body>
+        <wa-page>
+            <header slot="header">
+                <h1>Style Samples</h1>
+            </header>
+
+            <div slot="subheader" class="wa-stack">
+                <div class="wa-split">
+                    <span class="wa-caption-m">Showing {{ 1 + (page_index - 1) * per_page }} to {{ page_index * per_page }} of {{ total_results }} Results</span>
+                    {{ pagination|safe }}
+                </div>
+            </div>
+
+            <p>The base {prompt} is:
+            <textarea>{{ base_prompt }}</textarea>
+            <p>All images are generated with z-image-turbo using the provided prompt.</p>
+            <p>I hope you find this to be useful.  The included ratings are based entirely on how well suited the style is for my needs.  Feel free to ignore them.</p>
+            <p>These are all first results with a random seed.</p>
+            <p>Styles are from <a href="https://github.com/TripleHeadedMonkey/ComfyUI_MileHighStyler" target="_blank">ComfyUI_MileHighStyler</a></p>
+
+            <div class="wa-cluster wa-align-items-start">
+                {% for style in styles %}
+                <div class="history-item">
+                    <h2>{{ style.name }}</h2>
+                    <img class="sample_image" src="images/{{ style.image }}" class="image_sample">
+                    <p>Rating: {{ tier_to_letter(style.ranking) }}</p>
+                    <p>{{ style.prompt }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </wa-page>
+    </body>
+</html>

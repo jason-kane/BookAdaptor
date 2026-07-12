@@ -1,0 +1,57 @@
+{% set FRAMES = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<script src="/static/js/frames.js"></script>
+{% endblock %}
+
+{% block title %}
+<title>Frames</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .frame-nav {
+        flex-shrink: 0;
+        flex-grow: 0;
+        width:127px; 
+        height:auto;
+        border: 1px solid black;
+    }
+    .frame-nav:hover {
+        border: 1px solid rgb(221, 255, 0);
+        cursor: pointer;
+    }
+    #frame_image.loading {
+        opacity: 0.5;
+        pointer-events: none;
+        cursor: wait;
+        filter: blur(2px);
+        transition: opacity 0.3s, filter 0.3s;
+        will-change: opacity, filter;
+        display: block;
+        backface-visibility: hidden;
+        transform: translateZ(0);
+        perspective: 1000px;
+        transform-style: preserve-3d;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wa-cluster">
+    <h1>Frames</h1>
+    <p>({{aspect}})</p>
+</div>
+
+<div class="wa-cluster">
+    {{buttons|safe}}
+</div>
+
+{{frame_navigator(chapter, frame_index)|safe}}
+
+<div id="frame-display" class="wa-stack">
+    {{frame_display(chapter, frame_index)|safe}}
+</div>
+
+{% endblock %}

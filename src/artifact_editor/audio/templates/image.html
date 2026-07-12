@@ -1,0 +1,22 @@
+<div class="wa-cluster image-card" id="image-{{image_xml.attrs['index']}}">
+    <div style="width: 25em">
+        {{image_or_video|safe}}
+    </div>
+    <div class="wa-stack">
+        <div>Frames: <b>{{image_xml.attrs.get('frames', 'X')}}</b></div>
+        <wa-checkbox name="has_animation" {{ 'checked' if image_xml.attrs.get('animation', 'false' )=='true' else '' }}>Animation</wa-checkbox>
+        <wa-checkbox name="has_transition" {{ 'checked' if image_xml.attrs.get('transition_type', 'cut' ) !='cut' else '' }}>Transition</wa-checkbox>
+    </div>
+    <div class="wa-stack">
+        <wa-button
+            hx-delete="{{ url_for('library.book.chapter.audio.delete_image_slot', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=image_xml.attrs['index']) }}"
+            hx-swap="none" 
+            hx-trigger="click"
+            hx-on::after-request="htmx.remove( htmx.find('#image-{{image_xml.attrs['index']}}'))" variant="danger">Destroy
+            Image Slot</wa-button>
+
+        <wa-button
+            href="{{ url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=image_xml.attrs['index']) }}">View
+            in Image Workshop</wa-button>
+    </div>
+</div>

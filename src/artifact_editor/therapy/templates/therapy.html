@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html
+    class="wa-theme-playful wa-dark wa-palette-rudimentary wa-brand-indigo wa-neutral-gray wa-success-green wa-warning-yellow wa-danger-red">
+
+<head>
+    <!-- HTMX -->
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"
+        integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
+        integrity="sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G"
+        crossorigin="anonymous"></script>
+
+    <!-- Web Awesome -->
+    <script src="https://kit.webawesome.com/98b31541fcd34215.js" crossorigin="anonymous"></script>
+
+    <!-- Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Quill -->
+    <script src="/static/js/quill.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
+
+    <script src="/static/js/therapy.js"></script>
+    <link rel="stylesheet" href="/static/styles/therapy.css">
+    </link>
+
+    <script>
+        var quillEditors = {};
+
+        function post_update(i, side, delta) {
+            
+            // htmx.ajax('POST', '/therapy/update_query/' + quill_query.index, {
+            //             //selectOOB: '',
+            //             //extension: 'json-enc',
+            //             //event: source,
+            //             values: {
+            //                 'delta': JSON.stringify(quill_query.getContents())
+            //             },
+            //             target: null,  // '#bf-' + quill_query.index,
+            //             swap: 'none', // outerHTML',                        
+            //             headers: {
+            //                 'Content-Type': 'application/x-www-form-urlencoded'
+            //             }
+            //         }).then((response) => {
+            //             destroy_quill_editor(quill_query.index);
+            //             add_quill_editor(quill_query.index);
+                        
+            //             quillEditors.push(quill_query);
+            //             quill_query.setContents(response); // reset the editor content to prevent cursor jump
+            //         }).catch((error) => {
+            //             console.error('Error updating query:', error);
+            //         });
+
+            htmx.ajax('POST', '/therapy/update_' + side + '/' + i, {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: JSON.stringify({
+                    delta: delta
+                }),
+                swap: 'none',
+                onError: function (err) {
+                    console.error('Error updating:', err);
+                }
+            });
+        }
+
+        function destroy_quill_editor(i) {
+            const editorIndex = quillEditors.findIndex(editor => editor.index === i);
+            if (editorIndex !== -1) {
+                quillEditors[editorIndex].off('text-change'); // remove event listener
+                quillEditors.splice(editorIndex, 1); // remove from array
+            }
+        }
+
+        function add_quill_editor(i) {
+            if (document.querySelector('#editor-query-' + i)) {
+                var quill_query = new Quill('#editor-query-' + i, {
+                    modules: {
+                        syntax: true,
+                        toolbar: [
+                            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+                            ['blockquote', 'code-block'],
+                        ]
+                    },
+                    theme: 'snow'
+                })
+                quill_query.index = i; // store the index on the quill instance
+                quill_query.on('text-change', (delta, oldDelta, source) => {
+                    // get the html content of the editor
+                    // send the html content to the server using htmx
+                    post_update(quill_query.index, 'query', quill_query.getContents());
+                    
+                });
+
+                post_update(quill_query.index, 'query');
+                quillEditors.push(quill_query);
+            }
+            
+            if (document.querySelector('#editor-response-' + i)) {
+                var quill_response = new Quill('#editor-response-' + i, {
+                    modules: {
+                        syntax: true,
+                        toolbar: [
+                            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+                            ['blockquote', 'code-block'],
+                        ]
+                    },
+                    theme: 'snow'
+                })
+                quill_response.index = i; // store the index on the quill instance
+                quill_response.on('text-change', function () {
+                    // get the html content of the editor
+                    //var html = quill_response.root.innerHTML;
+                    // send the html content to the server using htmx
+                    post_update(quill_response.index, 'response', quill_response.getContents());
+                });
+                post_update(quill_response.index, 'response');
+                quillEditors.push(quill_response);
+            }
+        }
+
+    // wait for the DOM to load
+    var quillEditors = [];
+    document.addEventListener('DOMContentLoaded', function () {
+        // for every element with class 'editor', initialize a quill editor
+        // const quillEditors = [];
+        var i = 0;
+        document.querySelectorAll('.editor').forEach((editorElement) => {
+            add_quill_editor(i);
+            i++;         
+        });
+    });
+    </script>
+</head>
+
+<body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+    <h1>Conversation</h1>
+
+    <!-- <button id="start-button">Start Recording</button>
+        <button id="stop-button" disabled>Stop Recording</button>
+        <audio id="audio-playback" controls></audio>
+        <a id="download-link" style="display: none;">Download Audio</a> -->
+
+    <div id="conversation">
+        {% for entry in history %}
+        {{ entry_format(loop.index0, entry)|safe }}
+        {% endfor %}
+    </div>
+
+    <div>
+        <wa-textarea name="text" id="say-textarea" rows="5" cols="50">
+        </wa-textarea>
+
+        <wa-button id="start-listening-button" onClick="startListening()">Listen</wa-button>
+
+        <wa-button id="say-button" variant="primary" hx-post="/therapy/say" hx-include="#say-textarea"
+            hx-target="#conversation" hx-swap="beforeend" hx-on::before-request="beforeConversationRequest(this,event)"
+            hx-on::after-request="afterConversationRequest(this,event)">Submit</wa-button>
+    </div>
+</body>
+
+</html>

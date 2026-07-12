@@ -1,0 +1,66 @@
+{% set CHARACTERS = True %}
+{% extends "base.html" %}
+
+{% block scripts %}
+<script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.js"></script>
+<script src="/static/js/characters.js"></script>
+{% endblock %}
+
+{% block title %}
+<title>Characters</title>
+{% endblock %}
+    
+{% block styles %}
+<style>
+    .inactive::part(thumb) {
+        background-color: grey;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div id="character_cards">
+    {{ all_character_cards|safe }}
+</div>
+
+<h2>Create New Character</h2>
+<div 
+    style="border: 1px solid #e0e0e0; padding: 16px; border-radius: var(--wa-border-radius-m); position: relative;" 
+    id="character_add_form"
+>
+    <div>
+        <form id="character_add_scope">
+            <wa-input 
+                label="Character Name:" 
+                name="name"></wa-input>
+
+            <wa-textarea 
+                label="Description:" 
+                name="description"
+                id="character_add_description"
+                rows="6"
+            ></wa-textarea>
+
+            <wa-select 
+                label="TTS Engine" 
+                name="tts_engine"
+                value="kokoro">
+                <wa-option value="kokoro">Kokoro</wa-option>
+            </wa-select>
+            
+            <wa-button 
+                class="save-character-button"
+                hx-post="{{ url_for('library.book.chapter.characters.add_character', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
+                hx-target="#character_add_form"
+                hx-on::before-request="beforeRequest(this,event)"
+                hx-on::after-request="afterRequest(this,event)"
+                hx-swap="outerHTML transition:true">Save New Character</wa-button>           
+        </form>
+    </div>    
+</div>
+
+{{ drift_resolution_widget|safe }}
+
+{{ import_character_form|safe }}
+
+{% endblock %}

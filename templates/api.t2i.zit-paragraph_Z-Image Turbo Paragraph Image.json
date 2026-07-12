@@ -1,0 +1,379 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2": {
+    "inputs": {
+      "prompt": [
+        "72",
+        0
+      ],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": true,
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "3": {
+    "inputs": {
+      "prompt": [
+        "92",
+        0
+      ],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": true,
+      "clip": [
+        "64",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "63": {
+    "inputs": {
+      "filename_prefix": "%%FILENAME_PREFIX%%",
+      "images": [
+        "90:8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "64": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "67": {
+    "inputs": {
+      "separator": " ",
+      "prompt1": [
+        "68",
+        0
+      ],
+      "prompt2": [
+        "74",
+        0
+      ]
+    },
+    "class_type": "easy promptConcat",
+    "_meta": {
+      "title": "PromptConcat"
+    }
+  },
+  "68": {
+    "inputs": {
+      "string": "Convert this scene description into a prompt suitable for z-image-turbo. Only include the optimized prompt.\n"
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Better Multiline String 💡"
+    }
+  },
+  "69": {
+    "inputs": {
+      "string": "Act as a master prompt engineer specializing in <meta.author> <meta.title>. Analyze the provided source text, specifically the paragraph marked with #FOCUS PARAGRAPH, to generate a highly detailed, atmospheric image description suitable for high-fidelity visual generation.\n\nAdhere strictly to the following constraints:\n\n[PARAGRAPH META] is the LAW!!\n\nContextual Integration: The description of the previous paragraph is available in [PRIOR_RESULT]. Use this information to maintain continuity when relevant.\nCharacter & Action Precision: Focus on the specific actions mentioned in the #FOCUS PARAGRAPH while maintaining character traits and roles.\nAtmospheric Depth: Utilize the specified lighting (<meta.lighting>) and mood (<meta.mood>) to create depth. Describe textures, shadows, and environmental details that evoke the \"<meta.theme>\" theme without being overly explicit or gory.\n\nFormat: Output ONLY the contents of the [RESULT] block containing the scene description. Do not include conversational filler, explanations, or markdown headers.\n\nEnsure the output captures the specific narrative moment within the broader context of the story.\n\n"
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Master Prompt"
+    }
+  },
+  "70": {
+    "inputs": {
+      "string": "%%META%%\n",
+      "chain": [
+        "69",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Meta Block"
+    }
+  },
+  "71": {
+    "inputs": {
+      "string": "%%PRIOR_RESULT%%\n",
+      "chain": [
+        "91",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Prior Result"
+    }
+  },
+  "72": {
+    "inputs": {
+      "string": "%%SOURCE%%\n",
+      "chain": [
+        "71",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Source Block"
+    }
+  },
+  "74": {
+    "inputs": {
+      "output_file_path": "%%OUTPUT_DIR%%",
+      "file_name": "%%SCENE_DESCRIPTION_FN%%",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "87": {
+    "inputs": {
+      "text_positive": [
+        "93",
+        0
+      ],
+      "text_negative": "",
+      "Custom": "wizardofoz",
+      "style_weight_Custom": 1,
+      "offset_Custom": 0,
+      "log_prompt": true
+    },
+    "class_type": "CustomStyler",
+    "_meta": {
+      "title": "Custom Styler"
+    }
+  },
+  "88": {
+    "inputs": {
+      "output_file_path": "%%OUTPUT_DIR%%",
+      "file_name": "%%PROMPT_FN%%",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "91": {
+    "inputs": {
+      "string": "%%SCENE%%\n",
+      "chain": [
+        "70",
+        0
+      ]
+    },
+    "class_type": "BetterString",
+    "_meta": {
+      "title": "Meta Block"
+    }
+  },
+  "92": {
+    "inputs": {
+      "source": [
+        "67",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "93": {
+    "inputs": {
+      "source": [
+        "88",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "90:30": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "90:29": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "90:33": {
+    "inputs": {
+      "conditioning": [
+        "90:27",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "90:8": {
+    "inputs": {
+      "samples": [
+        "90:89",
+        0
+      ],
+      "vae": [
+        "90:29",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "90:28": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "90:27": {
+    "inputs": {
+      "text": [
+        "87",
+        0
+      ],
+      "clip": [
+        "90:30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "90:13": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "90:89": {
+    "inputs": {
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "90:11",
+        0
+      ],
+      "positive": [
+        "90:27",
+        0
+      ],
+      "negative": [
+        "90:33",
+        0
+      ],
+      "latent_image": [
+        "90:13",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "90:11": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "90:28",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  }
+}
