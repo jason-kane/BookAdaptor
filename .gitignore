@@ -1,5 +1,7 @@
 active/**/*
 dot-cache/*
+dot-config/*
+dot-local/*
 src/.github_token
 **/__pycache__/*
 src/pages/**/*

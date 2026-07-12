@@ -1,6 +1,6 @@
 services:
   redis:
-    image: redis:latest
+    image: redis:8.8
     ports:
       - "6379:6379"
     command: [ "redis-server", "--bind", "0.0.0.0" ]
