@@ -10,7 +10,7 @@ These aren't as modular as they seem to be.
 
 Library
 =======
-Split into Local, Shelf, Shared and Global
+Split into Local(rename?), Shelf, Shared and Global
 
 Local is your "active"
 Shelf is your "shelf", still local, still private.
