@@ -305,7 +305,7 @@ def base(author, title, chapter_number, language):
             chapter
         ),
         # htmx_single_clip_card=htmx_single_clip_card,
-        section="audio",
+        section="phrase.workshop",
         section_cosmetic="Phrases › Workshop",
     )
 
@@ -577,8 +577,8 @@ def regenerate_phrase(
     if os.path.exists(wavfile):
         if force:
             # _regenerate_ phrase
-            os.remove(wavfile)
             log.info(f"Deleted existing wav file: {wavfile}")
+            os.remove(wavfile)            
         else:
             log.info(f"Phrase {phrase_index} already has an audio file: {wavfile}")
             return htmx.phrase_editor(chapter, phrase_xml, page), 200

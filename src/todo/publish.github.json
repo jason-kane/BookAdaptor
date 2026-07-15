@@ -1,0 +1,44 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "size": "huge"
+      },
+      "insert": "GitHub Publish"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Example of \"Published\" book:"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf",
+        "link": "https://github.com/jason-kane/library"
+      },
+      "insert": "https://github.com/jason-kane/library"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The idea is to find the smallest thing that can be imported to re-create the \"same\" output video."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

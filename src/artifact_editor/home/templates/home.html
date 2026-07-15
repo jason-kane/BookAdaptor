@@ -153,7 +153,7 @@
         // Get the drawer and button elements
         const drawer = document.getElementById("todo-drawer");
         const openButton = document.getElementById("todo");
-        quill_editor = null;
+        let quill_editor = null;
         
         openButton.addEventListener('click', () => {
           // Initialize Quill editor when the drawer is opened
@@ -178,13 +178,17 @@
             // Listen for text changes in the Quill editor and auto-save
             // https://quilljs.com/docs/api#text-change
             quill_editor.on('text-change', (delta, oldDelta, source) => {
-              htmx.ajax('POST', 'save_todo', {
+              // Right now _every_ change is being sent to the server.  
+              // This is a little ridiculous.  If we can soak and bundle
+              // changes for a few seconds, that would be less noisy.
+              htmx.ajax('POST', '/todo/', {
                   headers: {
                       'Content-Type': 'application/x-www-form-urlencoded'
                   },
-                  body: JSON.stringify({
-                      delta: delta  // quill_editor.getContents()?
-                  }),
+                  values: {
+                      delta: JSON.stringify(quill_editor.getContents()),
+                      key: 'home'
+                  },
                   swap: 'none',
                   onError: function (err) {
                       console.error('Error updating:', err);
@@ -192,6 +196,22 @@
               });
             });
           }
+
+          // Retrieve any existing todo content, we do this every time
+          // because a change may have come from another tab.
+          htmx.ajax('GET', '/todo/', {
+            swap: 'none',
+            values: {
+              key: 'home'
+            },
+            handler: function(target, info) {
+              if (info.xhr.status === 200) {
+                quill_editor.setContents(JSON.parse(info.xhr.responseText));
+              } else {
+                console.error('Error fetching todo:', info.xhr.statusText);
+              }
+            }
+          });
 
           drawer.open = true;
         });
@@ -234,7 +254,6 @@
   <body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
     <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
       <div id="editor" class="editor" style="height: 300px;"></div>
-      <!-- <wa-button slot="footer" variant="brand" data-drawer="close">Close</wa-button> -->
     </wa-drawer>
 
     <div class="wa-stack">

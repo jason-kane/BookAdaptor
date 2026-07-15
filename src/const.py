@@ -91,6 +91,11 @@ PAGES_DIR = os.path.join(
     "pages"
 )
 
+TODO_DIR = os.path.join(
+    SRC_DIR,
+    "todo"
+)
+
 COMFY_DIRS = {
     # from the perspective of...
     "artifactserver": {

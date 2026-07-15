@@ -1,0 +1,14 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Doesn't do anything yet, it's a placeholder for a fun notion."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

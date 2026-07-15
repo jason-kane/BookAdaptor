@@ -1,0 +1,74 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Split into Local(rename?), Shelf, Shared and Global"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Local is your \"active\""
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Shelf is your \"shelf\", still local, still private."
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "shared is published to your public github"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "global pulls basic title metadata and cover images from an online source."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "TOOD: Method \"import\" someone elses shared github. It will work like a remote shelf (downloading single books on-demand)"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Choosing a shelf or global book copies it into active."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

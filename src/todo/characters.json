@@ -1,0 +1,65 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf",
+        "size": "huge"
+      },
+      "insert": "Character Workshop"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The Narrator should be special cased so it has voice controls, but no description or image."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The \"Global Character\" stuff is buggy junk."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Tab panels for each character would be an improvement. The vertical flow is very tedious in a book with many characters."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Characters have three potential scopes, global, book and chapter."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "We don't have a good way to capture changes to a character description over the course of the story. It mostly doens't matter, but there are times it will really matter."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

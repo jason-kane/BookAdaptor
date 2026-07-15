@@ -111,6 +111,7 @@ def table_of_contents(author, title):
 
     return render_template(
         "book.html",
+        section="book",
         book_metadata=book_metadata,
         language="english",
         pretty_language="English",

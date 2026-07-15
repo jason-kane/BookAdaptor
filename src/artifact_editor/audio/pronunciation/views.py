@@ -59,8 +59,8 @@ def base(author, title, chapter_number, language):
         find_unpronouncable_words_button=htmx.find_unpronouncable_words_button(chapter),
         try_cmu_dict_button=htmx.try_cmu_dict_button(chapter),
         global_pronunciation_list=pronunciation.global_pronunciation_list(chapter),
-        section="audio",
-        section_cosmetic="Audio › Pronunciation Guide",
+        section="phrase.pronunciation",
+        section_cosmetic="Phrase › Pronunciation Guide",
         add_global_pronunciation_url=url_for(
             'library.book.chapter.audio.pronunciation.add_global_pronunciation',
             **chapter.kwargs,

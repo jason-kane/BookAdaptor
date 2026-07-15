@@ -1,0 +1,84 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The top image nav (forex) is both buggy and a total failure at different resolutions."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "As far as I'm aware all the top buttons are broken."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The highlighted xml thing, that I like."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Scene is redundant with Prompt now. Prompt options other than workflow are broken; we should just lock it to workflow and remove the selector, I only hesitate since that whole plugin system took so long to get working nicely."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Upload is broken."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "I like Citation, but haven't actually used it for anything yet."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "I assume both Camera and Transition are broken since I haven't used them in a long while."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Add video_ltx2_2_id_lora w/talkvid to try and make video with characters lips that sync. Should be reasonably easy, a prompt change, a lora and including the audio (which might need to be .flac or .mp3)"
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

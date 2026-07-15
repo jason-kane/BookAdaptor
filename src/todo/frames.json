@@ -1,0 +1,13 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "size": "huge"
+      },
+      "insert": "Frames"
+    },
+    {
+      "insert": "\n\nThere are hidden dependencies in frames, I think if you haven't generated a masterplan it throws a 500.\n"
+    }
+  ]
+}

@@ -70,6 +70,13 @@
     }
   </style>
 
+  <!-- Highlight.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Quill -->
+  <script src="/static/js/quill.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
+
   <script>
     function beforeRequest(obj, event) {
       obj.setAttribute('loading', '');
@@ -103,7 +110,106 @@
         return obj.offsetY;
       }
     }
-  </script>
+      // Wait for the DOM to finish loading
+      document.addEventListener('DOMContentLoaded', () => {
+        // Get the drawer and button elements
+        const drawer = document.getElementById("todo-drawer");
+        const openButton = document.getElementById("todo");
+        let quill_editor = null;
+        
+        openButton.addEventListener('click', () => {
+          // Initialize Quill editor when the drawer is opened
+          // but only the first time.
+          if (!quill_editor) {
+            quill_editor = new Quill('#todo-editor', {
+              modules: {
+                  syntax: true,
+                  toolbar: [
+                      [{'font': []}, {'size': []}],
+                      ['bold', 'italic', 'underline', 'strike'], // toggled buttons
+                      ['color', 'background'], // defaults from theme
+                      ['blockquote', 'code-block'], // blockquote, code block
+                      [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
+                      ['link'], // links
+                      ['blockquote', 'code-block'],
+                  ]
+              },
+              theme: 'snow'
+            });
+
+            // Listen for text changes in the Quill editor and auto-save
+            // https://quilljs.com/docs/api#text-change
+            quill_editor.on('text-change', (delta, oldDelta, source) => {
+              // Right now _every_ change is being sent to the server.  
+              // This is a little ridiculous.  If we can soak and bundle
+              // changes for a few seconds, that would be less noisy.
+              htmx.ajax('POST', '/todo/', {
+                  headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  values: {
+                      delta: JSON.stringify(quill_editor.getContents()),
+                      key: '{{ section }}'
+                  },
+                  swap: 'none',
+                  onError: function (err) {
+                      console.error('Error updating:', err);
+                  }
+              });
+            });
+          }
+
+          // Retrieve any existing todo content, we do this every time
+          // because a change may have come from another tab.
+          htmx.ajax('GET', '/todo/', {
+            swap: 'none',
+            values: {
+              key: '{{ section }}'
+            },
+            handler: function(target, info) {
+              if (info.xhr.status === 200) {
+                quill_editor.setContents(JSON.parse(info.xhr.responseText));
+              } else {
+                console.error('Error fetching todo:', info.xhr.statusText);
+              }
+            }
+          });
+
+          drawer.open = true;
+        });
+      });
+    </script>
+
+    <style>
+      .ql-snow * {
+        box-shadow: none;
+        margin-bottom: 0;
+        transition: none;
+        color:rgb(242, 242, 242);
+      }
+      .ql-snow .ql-stroke {
+        stroke: rgb(242, 242, 242);
+      }
+      .ql-snow .ql-picker-options {
+        background-color: #000000;
+      }
+      .ql-snow .ql-picker-options .ql-picker-item {
+        background-color: #000000;
+      }
+      .ql-toolbar.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      .ql-container.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      #todo-drawer {
+        /* --size: 33vw; */
+        --size: 475px;
+      }
+    </style>
+
   {% block scripts %}{% endblock %}
   {% block styles %}{% endblock %}
 
@@ -113,6 +219,9 @@
 </head>
 
 <body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+  <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
+    <div id="todo-editor" class="todo-editor" style="height: 300px;"></div>
+  </wa-drawer>
   {% block body_wrapper %}
   <div class="wa-stack">
     <div class="wa-split">
@@ -168,6 +277,7 @@
         </wa-breadcrumb-item>
         {% endif %}
       </wa-breadcrumb>
+      <wa-button id="todo" appearance="outlined" variant="neutral">Dev TODO</wa-button>
     </div>
 
     {% block body %}

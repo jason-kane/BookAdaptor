@@ -1,0 +1,54 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The \"Text Structure\" select is borked"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Hyper Redraw works. Now that the old redraw is obsolete I don't think this needs to be called \"Hyper\" anymore."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "When Hyper finishes, it doesn't do anything helpful. You have to manually reload the page."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Similarly, \"Draw Missing Text\" is obsolete, \"Redraw All Text\" is obsolete. I don't think Clear Highlight Dimensions or Build Missing Highlight Geometry matter anymore either."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Reset Camera / Evaluate Camera Rate are both important, but are not really about typography."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

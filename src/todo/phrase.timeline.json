@@ -1,0 +1,23 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "size": "huge"
+      },
+      "insert": "Timeline"
+    },
+    {
+      "insert": "\n\nmaybe fixed?\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Opening the timeline is ... well, ouch. It's trying to call Comfy to generate an audio but something fell off the rails. Timeline is broken."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

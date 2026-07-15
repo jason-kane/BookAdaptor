@@ -178,6 +178,7 @@ def base(author, title, chapter_number, language):
 
     return render_template(
         "github.html",
+        section="publish.github",
         author=author,
         title=title,
         chapter_number=chapter_number,

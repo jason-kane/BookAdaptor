@@ -1,0 +1,75 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf",
+        "size": "huge"
+      },
+      "insert": "Phrase Workshop"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "FIXED 7/14: Generate All Missing Audio doesn't work; "
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "I haven't tried the other top level buttons in a while. Assumed to be broken."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The difference between \"(Re)generate Audio\" and \"Re-pronounce\" is unclear."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The \"split phrase\" system is kind of shit, but with some modest effort it can be fixed."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "The \"Animation\" and \"Transition\" checkboxes are pointless."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "There appears to be a chicken/egg problem between Phrase workshop and rendering the latex."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

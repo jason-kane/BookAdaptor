@@ -54,7 +54,8 @@ def library():
 
     return render_template(
         "library.html", 
-        authors=authors
+        authors=authors,
+        section="library"
     )
 
     

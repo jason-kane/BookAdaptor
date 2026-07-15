@@ -1,0 +1,35 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf",
+        "size": "huge"
+      },
+      "insert": "Video Workshop"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "We shouldn't need \"Regenerate Master Plan\" anymore. Everything that would benefit from a MP refresh should do it automatically now (only takes a momement)"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "We should only need \"Render\" and \"Clear\", where Render tries to generate everything that isn't already done, and clear wipes the slate."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

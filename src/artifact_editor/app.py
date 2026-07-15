@@ -128,6 +128,7 @@ def create_app():
     print('Importing blueprints...')
 
     from artifact_editor.home.views import bp as home
+    from artifact_editor.todo.views import bp as todo
 
     from artifact_editor.author.views import bp as author
     from artifact_editor.library.views import bp as library
@@ -229,6 +230,11 @@ def create_app():
     app.register_blueprint(
         library,
         url_prefix="/library"
+    )
+
+    app.register_blueprint(
+        todo,
+        url_prefix="/todo"
     )
 
     app.register_blueprint(

@@ -1,0 +1,45 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf",
+        "size": "huge"
+      },
+      "insert": "Pronunciation Guide"
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "I like this one. The SoundsLike approach is quite powerful as a technique to both create new and correct old IPA representations of words."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "There is still the Bow problem. Correct pronunciation depends on context to identify the correct word."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "Pronunciation guide menu thinks it is Audio>Pronunciation Guide (\"Phrases\" used to be \"Audio\")"
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}

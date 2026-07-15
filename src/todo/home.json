@@ -1,0 +1,14 @@
+{
+  "ops": [
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "These aren't as modular as they seem to be."
+    },
+    {
+      "insert": "\n\n"
+    }
+  ]
+}
