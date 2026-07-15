@@ -612,7 +612,7 @@ def phrase_latex(chapter, phrase_xml):
     </wa-textarea>
     """
 
-
+# not used
 def phrase_latex_rainbow(chapter, phrase_xml):
     if phrase_xml.find_parent('paragraph').attrs.get('fullscreen', 'false') == 'true':
         return ""
@@ -692,10 +692,6 @@ def phrase_editor(chapter, phrase_xml, page, split=None):
         add_edit_delay=add_edit_delay,
         split_phrase_button=split_phrase_button,
     )
-    
-
-    # {phrase_latex_rainbow(chapter, phrase_xml)}
-    return out
 
 
 def split_phrase_text(chapter, phrase_xml, split, page):

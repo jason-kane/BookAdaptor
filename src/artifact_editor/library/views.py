@@ -197,12 +197,7 @@ def save_book_style(author, title):
         book_config['default_style'] = style
         config.save_config(bookdir, book_config)
 
-    out=book_form(
-        bookurl=bookurl,
-        author=author,
-        title=title
-    )
-    return out, 200
+    return "", 200
 
 
 @bp.route("/sounds/<src>")
