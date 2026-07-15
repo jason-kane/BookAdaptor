@@ -165,12 +165,12 @@ def _get_style(category_name, style_tag):
     """
     log.info("Looking for style '%s' in category '%s'", style_tag, category_name)
     if style_tag in ["none", ]:
-        return None, {
+        return (None, {
             "name": "None",
             "prompt": "{prompt}",
             "negative_prompt": "",
             "tag": "none"
-        }
+        })
 
     category_name = category_name.removeprefix("category_")
     for dirname in os.listdir(const.COMFY_DIRS["artifactserver"]["STYLES_DIR"]):
@@ -218,14 +218,14 @@ def _get_style(category_name, style_tag):
                         with open(pfn, "w") as f:
                             json.dump(styles, f, indent=4)
 
-                return style_file, style
+                return (style_file, style)
                 
-    return None, None
+    return (None, None)
 
 
 def get_style(category_name, style_tag):
     style_file, style = _get_style(category_name, style_tag)
-    
+    log.info('get_style returning style: %s', style)
     # this should exist:
     # os.path.join(
     #     const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],

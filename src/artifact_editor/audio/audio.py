@@ -482,88 +482,52 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
 
     pronunciation_fn = wavfile + ".pronunciation"
     if os.path.exists(pronunciation_fn):
+        log.info("Removing stale pronunciation file: %s", pronunciation_fn)
         os.unlink(pronunciation_fn)
 
-    done_flag_fn = os.path.join(
-        const.LIBRARY_DIR,
-        chapter.chapterdir,
-        "speak.flag",
+    llm.text_2_audio(
+        chapter,
+        phrase_xml.get_text(),
+        phrase_xml.attrs.get("speaker", "Narrator"),
+        wavfile,
+        force=False
     )
 
-    if os.path.exists(done_flag_fn):
-        os.unlink(done_flag_fn)
+    if not os.path.exists(wavfile):
+        # for whatever reason, there isn't an error, or a wavfile. this
+        # usually means the string is "***" or something similarly
+        # unpronouncable.
+        log.error(f"Audio file {wavfile} does not exist after generation.")
+        return None, None
 
-    retries = 5
-    success = False
-    while retries and not success:
-    # regenerate the wav for this phrase
-        llm.text_2_audio(
-            chapter,
-            phrase_xml.get_text(),
-            phrase_xml.attrs.get("speaker", "Narrator"),
-            wavfile,
-            force=False
-        )
+    try:
+        get_wav_duration(wavfile)
+    except FileNotFoundError:
+        log.error(f"Missing expected file {wavfile}")
+        if os.path.exists(wavfile):
+            log.error("umm, yeah, wave() is kind of stupid")
+        else:
+            log.error("For real!  It is legit missing.")
+        raise
 
-        # log.info("Submitting speak task to gpu queue")
-        # redis.Redis(host="redis").rpush(
-        #     "gpu_tasks",
-        #     json.dumps(
-        #         [
-        #             "speak",
-        #             chapter.args,
-        #             str(phrase_xml), 
-        #             wavfile, 
-        #             workdir, 
-        #             done_flag_fn,
-        #         ]
-        #     ),
-        # )
-        # wait_for(done_flag_fn)
+    except EOFError:
+        log.error(f"Corrupt or invalid {wavfile}")
+        os.unlink(wavfile)
+        return None, None
 
-        # ok, we have the audio file.  But.. is it correct?
-        # if not, we need to re-generate it.
-
-        if not os.path.exists(wavfile):
-            # for whatever reason, there isn't an error, or a wavfile. this
-            # usually means the string is "***" or something similarly
-            # unpronouncable.
-            log.error(f"Audio file {wavfile} does not exist after generation.")
-            return None, None
-
-        try:
-            get_wav_duration(wavfile)
-        except FileNotFoundError:
-            log.error(f"Missing expected file {wavfile}")
-            if os.path.exists(wavfile):
-                log.error("umm, yeah, wave() is kind of stupid")
-            else:
-                log.error("For real!  It is legit missing.")
-            retries -= 1
-            raise
-
-        except EOFError:
-            log.error(f"Corrupt or invalid {wavfile}")
-            os.unlink(wavfile)
-            retries -= 1
-            continue
-
-        if delay > 0:
-            wav_append_delay(wavfile, delay)
-
-        success = True
-
-    if not success:
-        log.error(f"Failed to generate valid audio: {wavfile}")
+    if delay > 0:
+        wav_append_delay(wavfile, delay)
 
     # global_pronunciation_map = {v['word']: v for v in pronunciation.global_pronunciation_list(chapter)}
 
     pronunciation_ipa = None
     # did speak() leave behind a pronunciation treat?
     if os.path.exists(wavfile + ".pronunciation"):
+        log.info('Found pronunciation file: %s', wavfile + ".pronunciation")
         # were there any problems?
         with open(wavfile + ".pronunciation", "r") as h:
             pronunciation_ipa = h.read().strip()
+            log.info('Raw pronunciation IPA: "%s"', pronunciation_ipa)
 
             # fix some whitespace problems
             pronunciation_ipa = pronunciation_ipa.replace(" , ", ", ")
@@ -601,6 +565,7 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
                     word = word.strip("_,;.!?:()\"’“”'").lower()
 
                     if "❓" in pron:
+                        log.info(f'Attempting to pronounce {word} using eng_to_ipa.jonvert()')
                         p = eng_to_ipa.jonvert(word)
                         if "*" in p:
                             log.error(f"Eng-to-IPA also failed for word: {word}")
@@ -1071,6 +1036,7 @@ def generate_all_audio(chapter, force=True):
                 )
                 return "Phrase not found", 404
 
+            phrase_xml = chapter.get_phrase(phrase_index)
             if os.path.exists(wavfile):
                 if force:
                     # the simple way to avoid deeper caching
@@ -1082,21 +1048,58 @@ def generate_all_audio(chapter, force=True):
                     )
                     continue
 
-            _, pronunciation = speak(
-                chapter=chapter,
-                phrase_xml=phrase_xml,
-                wavfile=wavfile,
-                workdir=os.path.join(os.path.dirname(wavfile).lstrip("/")),
-                delay=float(phrase_xml.attrs.get("delay", 0)),
+            # _, pronunciation = speak(
+            #     chapter=chapter,
+            #     phrase_xml=phrase_xml,
+            #     wavfile=wavfile,
+            #     workdir=os.path.join(os.path.dirname(wavfile).lstrip("/")),
+            #     delay=float(phrase_xml.attrs.get("delay", 0)),
+            # )
+            llm.text_2_audio(
+                chapter,
+                phrase_xml.get_text(),
+                phrase_xml.attrs.get("speaker", "Narrator"),
+                wavfile,
+                force=False
             )
+
+            # do we already have a pronunciation file for this phrase?
+            if os.path.exists(wavfile.replace(".wav", ".pronunciation.txt")):
+                # good, this is the right way.
+                with open(wavfile.replace(".wav", ".pronunciation.txt"), "r") as f:
+                    new_pronunciation = f.read().strip()
+            else:
+                # look in the comfy output directory
+                try:
+                    # /root/ComfyUI/output/audio/ph_0_Fables_6020c8ae_0a40.pronunciation.txt
+                    pronunciation_filename = os.path.join(
+                        const.COMFY_DIRS["artifactserver"]['OUTPUT_DIR'],
+                        "audio",
+                        os.path.basename(wavfile).replace(".wav", ".pronunciation.txt"),
+                    )
+
+                    with open(pronunciation_filename, 'r') as f:
+                        # wavfile.replace(".wav", ".pronunciation") + ".txt", "r") as f:
+                        new_pronunciation = f.read().strip()
+                        log.info(f"Found pronunciation file: {pronunciation_filename}")
+                        log.info(f"New pronunciation: {new_pronunciation}")
+
+                except FileNotFoundError:
+                    new_pronunciation = None
 
             # in-place pad audio with silence, just enough to be an exact fps mulitple
             log.info("[generate_all_audio] Padding audio file to frame")
             wav_pad_to_frame(wavfile)
-            phrase_xml.attrs["src"] = os.path.basename(wavfile)
 
-            if pronunciation:
-                phrase_xml.attrs["pronunciation"] = pronunciation
+            phrase_xml.attrs["src"] = os.path.basename(wavfile)
+            duration = get_wav_duration(wavfile)
+
+            log.info("Duration measured as: %s seconds", duration)
+            phrase_xml.attrs["duration"] = str(duration)
+            phrase_xml.attrs["frames"] = int(duration * const.FPS)
+
+            if new_pronunciation:
+                phrase_xml.attrs["pronunciation"] = new_pronunciation
 
             chapter.save_xml()
 

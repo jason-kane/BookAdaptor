@@ -77,9 +77,11 @@ We don't have a good way to capture changes to a character description over the 
 Phrase Workshop
 ===============
 
-Generate All Missing Audio doesn't work; I haven't tried the other top level buttons in a while.  Assumed to be broken.
+FIXED 7/14: Generate All Missing Audio doesn't work; 
 
-There isn't an important difference between "(Re)generate Audio" and "Re-pronounce".  Make them one button.1
+I haven't tried the other top level buttons in a while.  Assumed to be broken.
+
+The difference between "(Re)generate Audio" and "Re-pronounce" is unclear.
 
 The "split phrase" system is kind of shit, but with some modest effort it can be fixed.
 
@@ -127,6 +129,8 @@ Upload is broken.
 I like Citation, but haven't actually used it for anything yet.
 
 I assume both Camera and Transition are broken since I haven't used them in a long while.
+
+Add video_ltx2_2_id_lora w/talkvid to try and make video with  characters lips that sync.  Should be reasonably easy, a prompt change, a lora and including the audio (which might need to be .flac or .mp3)
 
 Frame Workshop
 ==============

@@ -25,8 +25,7 @@ def image_scene_workshop(
         style = chapter.get_chapter_style()
         if not style:
             # otherwise, use the book style if there is one.
-            book_config = chapter.get_book_config()
-            style = book_config.get("default_style")
+            style = chapter.config.get("default_style")
             if not style:
                 log.warning("No style found for image, chapter, or book.")
             else:

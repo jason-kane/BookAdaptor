@@ -642,7 +642,10 @@ class Chapter:
         # the last frame, start with highest numbered animation dir
         for animation_dir in sorted(all_animation_dirs, reverse=True):
             frame = sorted(os.listdir(animation_dir), reverse=True)
-            return os.path.join(animation_dir, frame[0])
+            try:
+                return os.path.join(animation_dir, frame[0])
+            except IndexError:
+                continue
 
         if not recursed:
             # re-generate the frames from the video file(s) (if it/they exist(s))

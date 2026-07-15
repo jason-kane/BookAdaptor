@@ -332,6 +332,11 @@ def soundslike(author, title, chapter_number, language):
     if not "*" in p:
         log.info(f"Eng-to-IPA suggests {p} for word: {soundslike}")
 
+        # the response from jonvert isn't exactly what Kokoro expects, so we
+        # need to massage it a bit.  For example, jonvert returns an ascii "g"
+        # for the voiced velar plosive, but Kokoro expects "ɡ".
+        p = p.replace('g', 'ɡ')  # replace g with the proper IPA character
+
         response = make_response(
             f"""<wa-textarea
                 id="soundslike_{key}" 

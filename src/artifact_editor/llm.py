@@ -129,7 +129,7 @@ def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
         template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = "af_heart"
         template_environment[f"SPEAKER_{voice_index:02d}_WEIGHT"] = 0.0
 
-    template_environment["TEXT"] = spoken_text
+    template_environment["TEXT"] = spoken_text.strip()
     template_environment["FILENAME_PREFIX"] = os.path.join("audio", os.path.basename(outputfile))
 
     template_environment["PRONUNCIATION_DIR"] = os.path.join(
@@ -139,7 +139,7 @@ def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
     template_environment["PRONUNCIATION_FILENAME"] = os.path.basename(outputfile).replace(".wav", ".pronunciation")
 
     #const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]
-
+    log.info("Running LLM workflow with template_environment: %s", json.dumps(template_environment, indent=2))
     response = comfy.run_workflow(
         workflow,
         template_environment=template_environment

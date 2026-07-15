@@ -1357,7 +1357,7 @@ class VerseToLatex(XmlToLatex):
                     
                     rainbow_series.append(f"\\definecolor{{B{rainbow_int:X}}}{{RGB}}{{{r},{g},{b}}}")
                     if phrase_str.endswith(r"\nobreak\\"):
-                        # put the nobreak _outside_ the highlight.
+                        # move the nobreak so it is _outside_ the highlight.
                         phrase_str = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase_str[:-len(r'\nobreak\\')]}}}" + r"\nobreak\\" + "\n"
                     else:
                         phrase_str = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase_str}}}\n"
@@ -1373,7 +1373,7 @@ class VerseToLatex(XmlToLatex):
             
             # when the last line of the stanza ends with \\ it messes up the spacing.
             if rainbow or highlight_phrase_index == phrase_index:
-                eol = "\\nobreak\\\\}\n"
+                eol = r"}\nobreak\\" + "\n"
                 if chapter_contents.endswith(eol):
                     chapter_contents = chapter_contents[:-1 * len(eol)] + "}\n"
             else:
@@ -1448,23 +1448,24 @@ class VerseToLatex(XmlToLatex):
             width = "3.6in"
         # \usepackage{luaquotes}
         with open(tex_fn, "w") as h:
+            # ,10pt
             h.write(
-                r"""\documentclass[parskip=full,10pt]{scrartcl}
+                r"""\documentclass[parskip=full]{scrartcl}
 \usepackage[paperheight=%sin,paperwidth=%s,top=0.5in,bottom=4in,left=0.0625in,right=0.0625in,heightrounded]{geometry}
-
 \addtokomafont{title}{\centering}
 \addtokomafont{author}{\centering}
 \usepackage[english]{babel}
 \usepackage[T1]{fontenc}
+\usepackage{froufrou}
+\usepackage[osf]{libertinus-otf}
 
-\usepackage[autostyle=true]{csquotes}
+\usepackage{luaquotes}
 \usepackage{luacolor}
 \usepackage{lua-ul}
 \usepackage{titling}
+\usepackage{microtype}
 
 \usepackage{verse,anyfontsize}
-
-\setlength{\vgap}{0.25em}
 
 %s
 

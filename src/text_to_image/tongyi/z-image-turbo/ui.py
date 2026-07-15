@@ -256,16 +256,17 @@ class TSQNZImageTurboProviderUI(TongyiZImageTurboProviderUI):
 
         # the currently selected style, applied to the current prompt.
         if style:
-            prompt_filter, negative_prompt = styles.get_style(style)
+            style_dict = styles.get_style(
+                category_name="Custom",
+                style_tag=style
+            )
         else:
-            prompt_filter, negative_prompt = None, None
-
-        #        if "styled_prompt" in image_xml.attrs:
-        #            log.info("Using existing styled_prompt from image_xml")
-        #            styled_prompt = image_xml.attrs["styled_prompt"]
-        if prompt_filter:
+            style_dict = {}
+    
+        if style_dict:
+            prompt_filter = style_dict.get("prompt", "{prompt}")
+            negative_prompt = style_dict.get("negative_prompt", "")
             styled_prompt = prompt_filter.format(prompt=prompt)
-            image_xml.attrs["styled_prompt"] = styled_prompt
 
         # outerHTML transition:true
         # response includes oob-swap directives.
