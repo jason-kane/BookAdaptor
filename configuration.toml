@@ -8,6 +8,7 @@ DEBUG = false
 LIBRARY_DIR = "/active"
 SRC_DIR = "/app"
 ASSETS_DIR = "/assets"
+STYLES_DIR = "/custom_nodes/ComfyUI_MileHighStyler/data"
 
 # when we make API calls to comfyui:
 COMFYUI_API_URL = "http://comfyui:8188/"
@@ -59,7 +60,7 @@ WORKFLOWS_DIR = "/workflows/"
 WORKFLOW_TEMPLATES_DIR = "/templates/"
 OUTPUT_DIR = "/output/"
 INPUT_DIR = "/input/"
-STYLES_DIR = "/custom_nodes/ComfyUI_MileHighStyler/data"
+
 
 # same directories, but from inside the comfyui container
 [COMFY_DIRS.comfyui]
