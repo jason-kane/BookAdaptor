@@ -678,7 +678,7 @@ def set_style_tier(category_name, style_tag):
 
     style_file, _ = styles._get_style(category_name, style_tag)
     style_pfn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category_name,
         style_file
     )
@@ -1327,7 +1327,7 @@ def styles_base():
     all_categories = []
     #    "Original",
     #]
-    style_dir = const.COMFY_DIRS["artifactserver"]["STYLES_DIR"]
+    style_dir = const.STYLES_DIR
     all_categories, count = get_categories_and_counts(style_dir, default_tier)
                            
     # for category_index, category in enumerate(all_categories):

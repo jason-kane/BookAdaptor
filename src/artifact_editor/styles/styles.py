@@ -94,7 +94,7 @@ def all_styles():
     No biggie.
     """
     custom_styles_fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         "Custom",
         "custom.json"
     )
@@ -171,19 +171,19 @@ def _get_style(category_name, style_tag):
         })
 
     category_name = category_name.removeprefix("category_")
-    for dirname in os.listdir(const.COMFY_DIRS["artifactserver"]["STYLES_DIR"]):
+    for dirname in os.listdir(const.STYLES_DIR):
         if dirname.lower() == category_name.lower():
             category_name = dirname
             break
 
     for style_file in glob.glob(os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category_name,
         "*.json"
     )):
         
         pfn = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
             category_name,
             style_file
         )
@@ -226,7 +226,7 @@ def get_style(category_name, style_tag):
     log.info('get_style returning style: %s', style)
     # this should exist:
     # os.path.join(
-    #     const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+    #     const.STYLES_DIR,
     #     category_name,
     #     style_file
     # ), "r"
@@ -236,7 +236,7 @@ def get_style(category_name, style_tag):
 def style_groups_in_category(category):
     groups = []
     category_dir = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category,
     )
     for fn in os.listdir(category_dir):
@@ -250,7 +250,7 @@ def styles_in_group(category, group, **filters):
     max_tier = int(filters.get("max_tier", 999))
 
     fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category,
         group + ".json"
     )
@@ -258,7 +258,7 @@ def styles_in_group(category, group, **filters):
     all_styles = []
     if fn.endswith(".json"):
         pfn = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
             category,
             fn
         )
@@ -306,7 +306,7 @@ def set_style_tier(category_name, style_tag, tier):
 
     style["tier"] = tier
     fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category_name,
         style_file
     )
@@ -354,11 +354,11 @@ def all_categories():
     categories = []
     for fn in os.listdir(
         os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
         )
     ):
         if os.path.isdir(os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
             fn,
         )):
             categories.append({
@@ -377,7 +377,7 @@ def mark_style_as_chosen(category_name, style_tag, chosen=True):
 
     style["chosen"] = chosen
     fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+        const.STYLES_DIR,
         category_name,
         style_file
     )
@@ -404,7 +404,7 @@ def mark_style_as_chosen(category_name, style_tag, chosen=True):
     if chosen:
         # copy the style into the Custom category
         custom_fn = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
             custom_category,
             "custom.json"
         )
@@ -426,7 +426,7 @@ def mark_style_as_chosen(category_name, style_tag, chosen=True):
     else:
         # remove this style from the Custom category
         custom_fn = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
+            const.STYLES_DIR,
             custom_category,
             "custom.json"
         )
