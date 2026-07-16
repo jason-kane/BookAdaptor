@@ -19,6 +19,7 @@ NARRATOR = configuration.get("NARRATOR", {})
 LIBRARY_DIR = configuration.get("LIBRARY_DIR", "/active")
 SRC_DIR = configuration.get("SRC_DIR", "/app")
 ASSETS_DIR = configuration.get("ASSETS_DIR", "/assets")
+STYLES_DIR = configuration.get("STYLES_DIR", "/styles")
 
 LORA_DIR = os.path.join(
     LIBRARY_DIR,

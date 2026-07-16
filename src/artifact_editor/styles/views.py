@@ -1325,37 +1325,14 @@ def styles_base():
     }
 
     all_categories = []
-    #    "Original",
-    #]
     style_dir = const.STYLES_DIR
-    all_categories, count = get_categories_and_counts(style_dir, default_tier)
-                           
-    # for category_index, category in enumerate(all_categories):
-        # if category == "Original":
-        #     style_history, card_details, count, fcount = history_cards(**filters)
-        #     grouper = Grouper(style_history, card_details, count, fcount)
+    all_categories, count = get_categories_and_counts(style_dir, default_tier)                          
 
-        #     for key in count:
-        #         count[key] = f"{count[key]} {fcount[key]}"
-
-        #     total_filtered_results = sum([fcount[g] for g in fcount])
-        #     if total_filtered_results:
-        #         groupings_count = get_groupings_count(total_filtered_results)
-        #         groupings = grouper.groupings(groupings_count)
-
-        #         if group is None and groupings:
-        #             group = groupings[0]["tag"]
-        #         elif group is None:
-        #             group = ""
-        #     else:
-        #         groupings = []
-
-        # else:
-        # list of all the styles in this category
-
+    # why isn't the value from get_categories_and_counts() being used?  
+    # Because it is wrong.
     all_categories = styles.all_categories()
     category = None
-    #count = {}
+
     fcount = {}
 
     # log.info("groupings=%s", groupings)
