@@ -49,10 +49,10 @@ class WorkflowTemplate:
 
 
 def get_workflow_templates(interface="ui", mode="t2i"):
-    for fn in os.listdir(const.COMFYUI_WORKFLOW_TEMPLATES_DIR):
+    for fn in os.listdir(const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"]):
         if fn.startswith(f"{interface}.{mode}.") and fn.endswith(".json"):
             yield WorkflowTemplate(
-                os.path.join(const.COMFYUI_WORKFLOW_TEMPLATES_DIR, fn)
+                os.path.join(const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"], fn)
             )
 
 

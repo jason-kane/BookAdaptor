@@ -1,0 +1,93 @@
+# https://toml.io/en/
+
+DEBUG = false
+
+# paths _inside_ the artifacteditor container
+# these should align with any mischief you are
+# doing in the docker-compose.yml file.
+LIBRARY_DIR = "/active"
+SRC_DIR = "/app"
+ASSETS_DIR = "/assets"
+
+# when we make API calls to comfyui:
+COMFYUI_API_URL = "http://comfyui:8188/"
+
+# when we provide a link to a comfyui workflow
+COMFYUI_UI_URL = "http://localhost:8188/"
+
+# global output FPS
+FPS = 25
+
+# for frame generation, disabling can make 
+# debugging massively easier, but it is 
+# many times slower.
+MULTIPROCESS = true
+
+# Unless you wanna try to make a 4k video, these 
+# are the target dimensions for the images we 
+# generate (typically upscaled from 1024x1024).
+# if this isn't square it will cause some
+# chaos.
+IMG_TARGET_WIDTH = 1080
+IMG_TARGET_HEIGHT = 1080
+
+# big fat rich default narrator
+[NARRATOR]
+gender = "male"
+age = "old"
+accent = "british"
+accent_strength = 1.25
+file = "NARRATOR.wav"
+audio_appearances = 149
+visual_appearances = 0
+tag = "Narrator"
+name = "Narrator"
+voice_gender = "male"
+voice_language = "english"
+voice_accent = "british"
+is_global = true
+voices = [
+    {id="bm_daniel", name="Daniel", strength=79},
+    {id="bm_george", name="George", strength=15},
+    {id="bm_fable", name="Fable", strength=86},
+    {id="bm_lewis", name="Lewis", strength=52},
+]
+
+# directory from inside the artifacteditor container
+[COMFY_DIRS.artifactserver]
+WORKFLOWS_DIR = "/workflows/"
+WORKFLOW_TEMPLATES_DIR = "/templates/"
+OUTPUT_DIR = "/output/"
+INPUT_DIR = "/input/"
+CUSTOM_NODES = "/custom_nodes/"
+STYLES_DIR = "/custom_nodes/ComfyUI_MileHighStyler/data"
+
+# same directories, but from inside the comfyui container
+[COMFY_DIRS.comfyui]
+WORKFLOWS_DIR = "/root/ComfyUI/user/default/workflows/"
+WORKFLOW_TEMPLATES_DIR = "/root/ComfyUI/user/default/templates/"
+OUTPUT_DIR = "/root/ComfyUI/output/"
+INPUT_DIR = "/root/ComfyUI/input/"
+
+# text on the left, image on the right
+# image gets a square box, as big as will fit
+# text gets whatever is left.
+[GEOMETRY.widescreen]
+HSIZE = 1920
+VSIZE = 1080
+SIZE = [1920, 1080]
+ASPECT_RATIO = 1.7777
+TEXT_HEIGHT = 1080
+# screen width 1920 - image width 1080 = 840
+TEXT_WIDTH = 840
+
+# image on the top, text on the bottom.
+# image gets a square box, as big as will fit
+# text gets whatever is left.
+[GEOMETRY.portrait]
+HSIZE = 1080
+VSIZE = 1920
+SIZE = [1080, 1920]
+ASPECT_RATIO = 0.5625
+TEXT_HEIGHT = 840
+TEXT_WIDTH = 1080

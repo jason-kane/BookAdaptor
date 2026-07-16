@@ -659,12 +659,12 @@ def regenerate_ui():
 
     # this is the pisser that will show up in your workflow list.
     workflow_name = f"style_{style_tag}_sample"
-    workflow_fn = os.path.join(const.COMFYUI_WORKFLOWS_DIR, workflow_name + ".json")
+    workflow_fn = os.path.join(const.COMFY_DIRS["comfyui"]["WORKFLOWS_DIR"], workflow_name + ".json")
     with open(workflow_fn, "w") as h:
         json.dump(workflow, h)
 
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFY_DIRS["comfyui"]["UI_URL"] + f"?workflow={workflow_name}.json"
 
     return flask.redirect(workflow_url, code=302)
 

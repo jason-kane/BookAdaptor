@@ -1,3 +1,6 @@
+"""
+OBSOLETE!!  All of this is moving to comfyui workflows
+"""
 import fcntl
 import gc
 import os
@@ -33,6 +36,7 @@ import logger
 
 log = logger.log(__name__)
 
+TEXT_TO_IMAGE = "flux-schnell"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 POPPY_FPS = 25
@@ -443,15 +447,15 @@ def _get_image(text, image_path, detailed_prompt=None, negative_prompt=None):
     else:
         log.info(f"len(text.split()) = {wordcount}")
     
-    log.info(f'Using engine: {const.TEXT_TO_IMAGE}')
+    log.info(f'Using engine: {TEXT_TO_IMAGE}')
 
-    if const.TEXT_TO_IMAGE == "flux":
+    if TEXT_TO_IMAGE == "flux":
         # no negative prompt support
         image = local_flux(prompt)
         image.save(image_path, )
         return image
 
-    elif const.TEXT_TO_IMAGE == "flux-schnell":
+    elif TEXT_TO_IMAGE == "flux-schnell":
         # no negative prompt support
         image = local_flux_schnell(
             prompt,
@@ -461,7 +465,7 @@ def _get_image(text, image_path, detailed_prompt=None, negative_prompt=None):
         image.save(image_path)
         return image
 
-    elif const.TEXT_TO_IMAGE == "stable-diffusion":
+    elif TEXT_TO_IMAGE == "stable-diffusion":
         # can't do this in parallel.  this is gonna be slow. using a lock.
 
         with open('.lock', "w+") as f:
@@ -488,7 +492,7 @@ def _get_image(text, image_path, detailed_prompt=None, negative_prompt=None):
 
         return image
 
-    elif const.TEXT_TO_IMAGE == "dall-e":
+    elif TEXT_TO_IMAGE == "dall-e":
         # will still fallback to local stable-diffusion
         dalle_client = get_dalle_client()
 

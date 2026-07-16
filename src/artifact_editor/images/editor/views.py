@@ -120,12 +120,12 @@ def outpaint_to_fullscreen_ui(author, title, chapter_number, language, image_ind
         return "No workflow available for this image.", 400
     
     workflow_name = f"{workflow_template}_{chapter.nice}_img_{image_xml.attrs['index']}"
-    workflow_fn = os.path.join(const.COMFYUI_WORKFLOWS_DIR, workflow_name + ".json")
+    workflow_fn = os.path.join(const.COMFY_DIRS["comfyui"]["WORKFLOWS_DIR"], workflow_name + ".json")
     with open(workflow_fn, "w") as h:
         json.dump(workflow, h)
     
     log.info('Opening workflow in ComfyUI: %s', workflow_name)
-    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFY_DIRS["comfyui"]["UI_URL"] + f"?workflow={workflow_name}.json"
 
     chapter.save_xml()
 

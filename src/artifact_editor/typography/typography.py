@@ -27,6 +27,7 @@ log = logger.log(__name__)
 Image.MAX_IMAGE_PIXELS = 933120000
 FIRST_PAGE_TOP_MARGIN = 150
 PAPER_HEIGHT = 200  # inches
+HIGHLIGHT_COMMAND = r"\highLight"
 
 
 def get_chapter_tex(chapter, aspect):
@@ -930,12 +931,12 @@ class NovelToLatex(XmlToLatex):
                     if phrase_xml == highlight_phrase or highlight_phrase is None:
                         # this _phrase_ should be highlighted
                         if phrase.endswith(r"\nobreak\\"):
-                            phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}" + r"\nobreak\\" + "\n"
+                            phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}" + r"\nobreak\\" + "\n"
                         else:
-                            phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                            phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                     elif highlight_paragraph:
                         if phrase_xml.parent == highlight_phrase.parent:
-                            phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                            phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                         else:
                             phrase += "\n"
                     else:
@@ -1132,10 +1133,10 @@ class NovelToLatex(XmlToLatex):
                 if highlight:
                     if phrase_xml == highlight_phrase or highlight_phrase is None:
                         # this _phrase_ should be highlighted
-                        phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                        phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                     elif highlight_paragraph:
                         if phrase_xml.parent == highlight_phrase.parent:
-                            phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                            phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                         else:
                             phrase += "\n"
                     else:
@@ -1362,10 +1363,10 @@ class VerseToLatex(XmlToLatex):
                     else:
                         phrase_str = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase_str}}}\n"
                 elif highlight_paragraph:
-                    phrase_str = const.HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
+                    phrase_str = HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
                 elif highlight_phrase_index == phrase_index:
                     # this _phrase_ should be highlighted
-                    phrase_str = const.HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
+                    phrase_str = HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
                 else:
                     phrase_str += "\n"
 
@@ -1388,10 +1389,10 @@ class VerseToLatex(XmlToLatex):
 
             # if phrase_xml == highlight_phrase or highlight_phrase is None:
             #     # this _phrase_ should be highlighted
-            #     phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+            #     phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
             # elif highlight_paragraph is not None:
             #     if phrase_xml.parent == highlight_paragraph:
-            #         phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+            #         phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
             #     else:
             #         phrase += "\n"                
             # else:
@@ -1513,10 +1514,10 @@ class PlayToLatex(XmlToLatex):
 
             if phrase_xml == highlight_phrase or highlight_phrase is None:
                 # this _phrase_ should be highlighted
-                phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}"
+                phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}"
             elif highlight_paragraph is not None:
                 if phrase_xml.parent == highlight_paragraph:
-                    phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}"
+                    phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}"
                 # else:
                 #     phrase += "\n"                
             # else:
@@ -1695,10 +1696,10 @@ class ScriptureToLatex(XmlToLatex):
                     phrase = f"\\color{{V{rainbow_int:X}}}\\highLight[V{rainbow_int:X}]{{{phrase}}}\n"
                 else:
                     if verse == highlight_phrase or highlight_phrase is None:
-                        phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                        phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                     elif highlight_paragraph is not None:
                         if verse.parent == highlight_paragraph:
-                            phrase = const.HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+                            phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
                         else:
                             phrase += "\n"
                     else:

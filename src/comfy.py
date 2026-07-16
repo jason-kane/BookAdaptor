@@ -19,7 +19,7 @@ def load_workflow_template(interface, mode, workflow_name: str) -> dict:
     log.info('Loading workflow template', interface=interface, mode=mode, workflow_name=workflow_name)
     try:
         workflow_fn = glob.glob(os.path.join(
-            const.COMFYUI_WORKFLOW_TEMPLATES_DIR,
+            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
             f"{interface}.{mode}.{workflow_name}*.json"
         ))[0]
     except IndexError:
@@ -30,7 +30,7 @@ def load_workflow_template(interface, mode, workflow_name: str) -> dict:
         raise ValueError(f"Workflow file not found for interface '{interface}', mode '{mode}', workflow name '{workflow_name}'.")
     
     workflow_fn = glob.glob(os.path.join(
-        const.COMFYUI_WORKFLOW_TEMPLATES_DIR,
+        const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
         f"{interface}.{mode}.{workflow_name}*.json"
     ))[0]
 

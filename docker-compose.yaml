@@ -52,6 +52,7 @@ services:
       - ./comfy/ComfyUI/user/default/workflows:/workflows
       - ./templates:/templates
       - ./comfy/ComfyUI/custom_nodes:/custom_nodes
+      - ./configuration.toml:/app/configuration.toml
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
