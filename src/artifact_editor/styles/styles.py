@@ -94,9 +94,7 @@ def all_styles():
     No biggie.
     """
     custom_styles_fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["CUSTOM_NODES"],
-        "ComfyUI_MileHighStyler",
-        "data",
+        const.COMFY_DIRS["artifactserver"]["STYLES_DIR"],
         "Custom",
         "custom.json"
     )

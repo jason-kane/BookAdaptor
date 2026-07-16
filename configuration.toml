@@ -59,7 +59,6 @@ WORKFLOWS_DIR = "/workflows/"
 WORKFLOW_TEMPLATES_DIR = "/templates/"
 OUTPUT_DIR = "/output/"
 INPUT_DIR = "/input/"
-CUSTOM_NODES = "/custom_nodes/"
 STYLES_DIR = "/custom_nodes/ComfyUI_MileHighStyler/data"
 
 # same directories, but from inside the comfyui container
