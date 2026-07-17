@@ -2,10 +2,76 @@
   "ops": [
     {
       "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
+        "underline": true,
+        "size": "huge",
+        "bold": true
       },
-      "insert": "The top image nav (forex) is both buggy and a total failure at different resolutions."
+      "insert": "Bugs"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "size": "large"
+      },
+      "insert": "Generate Meta from text button doesn't work"
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "As\u00a0far\u00a0as\u00a0I'm\u00a0aware\u00a0all\u00a0the\u00a0top\u00a0buttons\u00a0are\u00a0broken."
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "Upload\u00a0is\u00a0broken."
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "I\u00a0assume\u00a0both\u00a0Camera\u00a0and\u00a0Transition\u00a0are\u00a0broken\u00a0since\u00a0I\u00a0haven't\u00a0used\u00a0them\u00a0in\u00a0a\u00a0long\u00a0while."
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "underline": true,
+        "size": "huge",
+        "bold": true
+      },
+      "insert": "Design Problems"
     },
     {
       "insert": "\n\n"
@@ -15,7 +81,64 @@
         "background": "#121314",
         "color": "#bbbebf"
       },
-      "insert": "As far as I'm aware all the top buttons are broken."
+      "insert": "The top image nav (forex) is both buggy and a total failure at different resolutions."
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "Scene\u00a0is\u00a0redundant\u00a0with\u00a0Prompt\u00a0now.\u00a0Prompt\u00a0options\u00a0other\u00a0than\u00a0workflow\u00a0are\u00a0broken;\u00a0we\u00a0should\u00a0just\u00a0lock\u00a0it\u00a0to\u00a0workflow\u00a0and\u00a0remove\u00a0the\u00a0selector,\u00a0I\u00a0only\u00a0hesitate\u00a0since\u00a0that\u00a0whole\u00a0plugin\u00a0system\u00a0took\u00a0so\u00a0long\u00a0to\u00a0get\u00a0working\u00a0nicely."
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "underline": true,
+        "size": "huge",
+        "bold": true
+      },
+      "insert": "New Features"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "Add\u00a0video_ltx2_2_id_lora\u00a0w/talkvid\u00a0to\u00a0try\u00a0and\u00a0make\u00a0video\u00a0with\u00a0characters\u00a0lips\u00a0that\u00a0sync.\u00a0Should\u00a0be\u00a0reasonably\u00a0easy,\u00a0a\u00a0prompt\u00a0change,\u00a0a\u00a0lora\u00a0and\u00a0including\u00a0the\u00a0audio\u00a0(which\u00a0might\u00a0need\u00a0to\u00a0be\u00a0.flac\u00a0or\u00a0.mp3)"
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
+      "insert": "\n"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "underline": true,
+        "size": "huge",
+        "bold": true
+      },
+      "insert": "Observations"
     },
     {
       "insert": "\n\n"
@@ -35,50 +158,10 @@
         "background": "#121314",
         "color": "#bbbebf"
       },
-      "insert": "Scene is redundant with Prompt now. Prompt options other than workflow are broken; we should just lock it to workflow and remove the selector, I only hesitate since that whole plugin system took so long to get working nicely."
-    },
-    {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "Upload is broken."
-    },
-    {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
       "insert": "I like Citation, but haven't actually used it for anything yet."
     },
     {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "I assume both Camera and Transition are broken since I haven't used them in a long while."
-    },
-    {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "Add video_ltx2_2_id_lora w/talkvid to try and make video with characters lips that sync. Should be reasonably easy, a prompt change, a lora and including the audio (which might need to be .flac or .mp3)"
-    },
-    {
-      "insert": "\n\n"
+      "insert": "\n\n\n\n"
     }
   ]
 }

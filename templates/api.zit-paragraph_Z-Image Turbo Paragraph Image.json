@@ -185,7 +185,7 @@
         0
       ],
       "text_negative": "",
-      "Custom": "wizardofoz",
+      "Custom": "{{STYLE}}",
       "style_weight_Custom": 1,
       "offset_Custom": 0,
       "log_prompt": true

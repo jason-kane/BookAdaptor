@@ -19,26 +19,17 @@ def image_scene_workshop(
     image_xml,
 ):
     # use the image style if there is one.
-    style = image_xml.attrs.get("style")
-    if not style:
-        # otherwise, use the chapter style if there is one.
-        style = chapter.get_chapter_style()
-        if not style:
-            # otherwise, use the book style if there is one.
-            style = chapter.config.get("default_style")
-            if not style:
-                log.warning("No style found for image, chapter, or book.")
-            else:
-                log.info('Using book style: %s', style)
-        else:
-            log.info('Using chapter style: %s', style)
-    else:
-        log.info('Using image style: %s', style)
+    style = chapter.get_image_style(image_xml)
 
     image_index = image_xml.attrs["index"]
     style_ui = styles_htmx.style_selector(
         selected_style=style,
-        url="set_image_style"
+        url=url_for(
+            "library.book.chapter.images.save_style",
+            **chapter.kwargs,
+            image_index=image_index,
+        ),
+        target="none"
     )
     description_ui = description(chapter, image_xml)
     setting_ui = setting(chapter, image_xml)

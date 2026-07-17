@@ -645,7 +645,7 @@
       "widgets_values": [
         "",
         "",
-        "wizardofoz",
+        "{{STYLE}}",
         1,
         0,
         true

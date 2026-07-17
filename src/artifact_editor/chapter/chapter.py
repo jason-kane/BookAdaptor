@@ -19,7 +19,6 @@ import logger
 from artifact_editor import (
     camera,
     config,
-    styles,
     tools,
     typography,
 )
@@ -28,6 +27,7 @@ from artifact_editor.masterplan import masterplan
 from artifact_editor.tools import tags_to_dict
 from artifact_editor.typography import page_segment
 from artifact_editor.audio.pronunciation.pronunciation import get_global_pronunciations
+from artifact_editor.styles import styles
 
 log = logger.log(__name__)
 
@@ -565,6 +565,25 @@ class Chapter:
         self.soup.find("book").attrs["style"] = style
         self.save_xml()
 
+    def get_image_style(self, image_xml):
+        style = image_xml.attrs.get("style")
+        if not style:
+            # otherwise, use the chapter style if there is one.
+            style = self.get_chapter_style()
+            if not style:
+                # otherwise, use the book style if there is one.
+                style = self.config.get("default_style")
+                if not style:
+                    log.warning("No style found for image, chapter, or book.")
+                else:
+                    log.info('Using book style: %s', style)
+            else:
+                log.info('Using chapter style: %s', style)
+        else:
+            log.info('Using image style: %s', style)
+
+        return style
+
     def get_prompt(self, image_xml):
         """
         Get the prompt for a given image, if it exists.
@@ -943,6 +962,9 @@ class Chapter:
         # image frame immediately prior to the image we want to draw.
         input_image = os.path.basename(source_image)
 
+        style_name = self.get_image_style(image_xml)
+        style = styles.get_style('Custom', style_name)
+
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
         # and get {"cow": 5} instead of {"cow": "5"} in the final workflow.
@@ -967,7 +989,7 @@ class Chapter:
             "SCENE_DESCRIPTION_FN": scene_description_fn,
             "SCENE": json.dumps(scene, indent=2),
             "SOURCE": our_source,
-            "STYLE": "Denslow",
+            "STYLE": style['name'],
             "SYSTEM_PROMPT": "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
         }
 

@@ -1,8 +1,8 @@
 {
   "id": "3b8b3cd8-1fe2-4a9d-8fcc-b7650544d625",
   "revision": 0,
-  "last_node_id": 151,
-  "last_link_id": 222,
+  "last_node_id": 153,
+  "last_link_id": 225,
   "nodes": [
     {
       "id": 1,
@@ -31,6 +31,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
         "Node name for S&R": "CLIPLoader",
         "enableTabs": false,
         "tabWidth": 65,
@@ -39,8 +41,6 @@
         "secondTabText": "Send Back",
         "secondTabOffset": 80,
         "secondTabWidth": 65,
-        "cnr_id": "comfy-core",
-        "ver": "0.18.1",
         "models": [
           {
             "name": "qwen3.5_4b_bf16.safetensors",
@@ -64,7 +64,7 @@
       ],
       "size": [
         297.515625,
-        562.65625
+        560
       ],
       "flags": {},
       "order": 11,
@@ -113,6 +113,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
         "Node name for S&R": "TextGenerate",
         "enableTabs": false,
         "tabWidth": 65,
@@ -120,9 +122,7 @@
         "hasSecondTab": false,
         "secondTabText": "Send Back",
         "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "cnr_id": "comfy-core",
-        "ver": "0.18.1"
+        "secondTabWidth": 65
       },
       "widgets_values": [
         "\n\n\n\n\n",
@@ -143,12 +143,12 @@
       "id": 3,
       "type": "TextGenerate",
       "pos": [
-        1408.280347592833,
-        1166.36520025219
+        1488.2183447798407,
+        1868.850630077408
       ],
       "size": [
         460.015625,
-        534.65625
+        532
       ],
       "flags": {},
       "order": 15,
@@ -197,6 +197,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
         "Node name for S&R": "TextGenerate",
         "enableTabs": false,
         "tabWidth": 65,
@@ -204,9 +206,7 @@
         "hasSecondTab": false,
         "secondTabText": "Send Back",
         "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "cnr_id": "comfy-core",
-        "ver": "0.18.1"
+        "secondTabWidth": 65
       },
       "widgets_values": [
         "",
@@ -227,15 +227,15 @@
       "id": 63,
       "type": "SaveImage",
       "pos": [
-        3925.913836027359,
-        885.2395713004548
+        598.4630927316014,
+        94.58135159396892
       ],
       "size": [
-        917,
-        954.765625
+        870.171875,
+        900.140625
       ],
       "flags": {},
-      "order": 20,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -244,11 +244,17 @@
           "link": 220
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
       "properties": {
-        "Node name for S&R": "SaveImage",
         "cnr_id": "comfy-core",
         "ver": "0.3.64",
+        "Node name for S&R": "SaveImage",
         "enableTabs": false,
         "tabWidth": 65,
         "tabXOffset": 10,
@@ -299,6 +305,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfyui-easy-use",
+        "ver": "1.3.6",
         "Node name for S&R": "easy promptConcat"
       },
       "widgets_values": [
@@ -339,10 +347,12 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
-        "Convert this to a change summary suitable for Flux Klein to update the previous image to better reflect the updated <PHRASE>.\n"
+        "Convert this to a change summary suitable for Flux Klein to update the previous image to better reflect the updated <PHRASE>.  Only include the summary.  Do not include any reasoning.\n"
       ]
     },
     {
@@ -378,10 +388,12 @@
       ],
       "title": "Master Prompt",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
-        "Act as a master prompt engineer specializing in <meta.author> <meta.title>. Analyze the provided source text and image. The image is a depiction of the paragraph marked #FOCUS PARAGRAPH.  Your task is to provide a description of the changes needed to update this illustration to focus entirely on the specific phrase indicated by <PHRASE>. generate a highly detailed, atmospheric image description suitable for high-fidelity visual generation.\n\n[PARAGRAPH META] is the law and must be obeyed absolutely!\n\nAdhere strictly to the following constraints:\n\nContextual Integration: The description of the previous paragraph is available in [PRIOR_RESULT]. Use this information to maintain continuity when relevant.\nCharacter & Action Precision: Focus on the specific actions mentioned in the #FOCUS PARAGRAPH while maintaining character traits and roles.\nAtmospheric Depth: Utilize the specified lighting (<meta.lighting>) and mood (<meta.mood>) to create depth. Describe textures, shadows, and environmental details that evoke the \"<meta.theme>\" theme without being overly explicit or gory.\n\nFormat: Output ONLY the things that should change in the scene description.\nDo not include conversational filler, explanations, or markdown headers.\n\nEnsure the output captures the specific narrative moment within the broader context of the story. Hint:  The \"action\" fields for characters in [PARAGRAPH META] are golden. They are correct.\n\n"
+        "Act as a master prompt engineer specializing in <meta.author> <meta.title>. Analyze the provided source text and image. The image is a depiction of the paragraph marked #FOCUS PARAGRAPH.  Your task is to provide a description of the changes needed to update this illustration to focus entirely on the specific phrase indicated by <PHRASE>. generate a highly detailed, atmospheric image description suitable for high-fidelity visual generation.\n\n[PARAGRAPH META] is the law and must be obeyed absolutely!\n\nAdhere strictly to the following constraints:\n\nCharacter & Action Precision: Focus on the specific actions mentioned in the #FOCUS PARAGRAPH while maintaining character traits and roles.\n\nAtmospheric Depth: Utilize the specified lighting (<meta.lighting>) and mood (<meta.mood>) to create depth. Describe textures, shadows, and environmental details that evoke the \"<meta.theme>\" theme without being overly explicit or gory.\n\nFormat: Output ONLY the things that should change in the scene description.\nDo not include conversational filler, explanations, or markdown headers.\n\nEnsure the output captures the specific narrative moment within the broader context of the story. Hint:  The \"action\" fields for characters in [PARAGRAPH META] are golden. They are correct.\n\n"
       ]
     },
     {
@@ -417,6 +429,8 @@
       ],
       "title": "Meta Block",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -456,6 +470,8 @@
       ],
       "title": "Prior Result",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -495,6 +511,8 @@
       ],
       "title": "Source Block",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -543,6 +561,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfyui-easy-use",
+        "ver": "1.3.6",
         "Node name for S&R": "easy saveText"
       },
       "widgets_values": [
@@ -556,8 +576,8 @@
       "id": 87,
       "type": "CustomStyler",
       "pos": [
-        2830.0223526265527,
-        1164.878555269391
+        3030.214284109286,
+        1340.999600281365
       ],
       "size": [
         400,
@@ -581,7 +601,7 @@
           "name": "text_positive",
           "type": "STRING",
           "links": [
-            219
+            224
           ]
         },
         {
@@ -591,12 +611,14 @@
         }
       ],
       "properties": {
+        "cnr_id": "ComfyUI_MileHighStyler",
+        "ver": "44b7605cd25eb2dc830a3342654ac6a8ca11ea9e",
         "Node name for S&R": "CustomStyler"
       },
       "widgets_values": [
         "",
         "",
-        "wizardofoz",
+        "{{STYLE}}",
         1,
         0,
         true
@@ -606,8 +628,8 @@
       "id": 88,
       "type": "easy saveText",
       "pos": [
-        1923.6593668415765,
-        1339.115240400186
+        2056.8893621532557,
+        1796.941951562138
       ],
       "size": [
         270,
@@ -644,6 +666,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfyui-easy-use",
+        "ver": "1.3.6",
         "Node name for S&R": "easy saveText"
       },
       "widgets_values": [
@@ -686,6 +710,8 @@
       ],
       "title": "Meta Block",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -696,8 +722,8 @@
       "id": 92,
       "type": "PreviewAny",
       "pos": [
-        795.6892554167363,
-        1795.352007530607
+        788.742698304966,
+        1600.0765687219528
       ],
       "size": [
         504.75,
@@ -723,6 +749,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.27.1",
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [
@@ -735,8 +763,8 @@
       "id": 93,
       "type": "PreviewAny",
       "pos": [
-        2264.841712870868,
-        1802.8923101089558
+        2472.995738756592,
+        1482.53528277763
       ],
       "size": [
         478.359375,
@@ -762,6 +790,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.27.1",
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [
@@ -803,6 +833,8 @@
       ],
       "title": "Chapter Meta Marker",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -842,6 +874,8 @@
       ],
       "title": "Paragraph Meta Marker",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -881,6 +915,8 @@
       ],
       "title": "Prior Result Marker",
       "properties": {
+        "cnr_id": "comfyui-better-strings",
+        "ver": "1.0.0",
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
@@ -891,12 +927,12 @@
       "id": 97,
       "type": "LoadImage",
       "pos": [
-        -1320.5224638884288,
-        854.3613423686746
+        -837.8208647745411,
+        57.42081171275328
       ],
       "size": [
-        282.796875,
-        340
+        942.828125,
+        923.828125
       ],
       "flags": {},
       "order": 3,
@@ -918,6 +954,8 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.27.1",
         "Node name for S&R": "LoadImage"
       },
       "widgets_values": [
@@ -929,15 +967,15 @@
       "id": 151,
       "type": "63318632-44fd-4aed-9962-a9ba433de1bf",
       "pos": [
-        3350.3479973224194,
-        888.1157436045968
+        1767.648323926206,
+        354.97774963828203
       ],
       "size": [
         468.859375,
         520.71875
       ],
       "flags": {},
-      "order": 19,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -947,7 +985,7 @@
           "widget": {
             "name": "text"
           },
-          "link": 219
+          "link": 225
         },
         {
           "name": "image",
@@ -965,32 +1003,8 @@
         }
       ],
       "properties": {
-        "proxyWidgets": [
-          [
-            "99",
-            "unet_name"
-          ],
-          [
-            "100",
-            "clip_name"
-          ],
-          [
-            "124",
-            "vae_name"
-          ],
-          [
-            "126",
-            "text"
-          ],
-          [
-            "73",
-            "noise_seed"
-          ],
-          [
-            "73",
-            "control_after_generate"
-          ]
-        ],
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
         "enableTabs": false,
         "tabWidth": 65,
         "tabXOffset": 10,
@@ -998,17 +1012,73 @@
         "secondTabText": "Send Back",
         "secondTabOffset": 80,
         "secondTabWidth": 65,
-        "cnr_id": "comfy-core",
-        "ver": "0.8.2",
         "ue_properties": {
           "widget_ue_connectable": {
             "text": true
           },
           "version": "7.7",
           "input_ue_unconnectable": {}
-        }
+        },
+        "proxyWidgetErrorQuarantine": [
+          {
+            "originalEntry": [
+              "73",
+              "control_after_generate"
+            ],
+            "reason": "missingSubgraphInput",
+            "attemptedAtVersion": 1
+          }
+        ],
+        "previewExposures": []
       },
-      "widgets_values": []
+      "widgets_values": [
+        "flux-2-klein-9b-fp8.safetensors",
+        "qwen_3_8b_fp8mixed.safetensors",
+        "full_encoder_small_decoder.safetensors",
+        "The scene shifts to a close-up of Tip, now standing in the dim, misty forest of the Country of the Gillikins. The lighting changes from natural dawn sunlight to a moody, ethereal glow filtering through dense trees, casting long shadows across his face and the rough grass beneath him. His expression is one of determined worry as he looks around, searching for a way out. The background features ancient, gnarled trees and a faint, ominous silhouette of Mombi in her black robes looming in the distance against a pale moon. The texture of the image remains consistent with aged paper, but the focus is entirely on Tip's small figure against the vast, mysterious wilderness, emphasizing the supernatural threat and the need for survival.",
+        145711952204402
+      ]
+    },
+    {
+      "id": 152,
+      "type": "PreviewAny",
+      "pos": [
+        2468.676540759183,
+        673.1750303895069
+      ],
+      "size": [
+        478.359375,
+        556.421875
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 224
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            225
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.27.1",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
     }
   ],
   "links": [
@@ -1157,14 +1227,6 @@
       "IMAGE"
     ],
     [
-      219,
-      87,
-      0,
-      151,
-      0,
-      "STRING"
-    ],
-    [
       220,
       151,
       0,
@@ -1187,6 +1249,22 @@
       3,
       0,
       "CLIP"
+    ],
+    [
+      224,
+      87,
+      0,
+      152,
+      0,
+      "STRING"
+    ],
+    [
+      225,
+      152,
+      0,
+      151,
+      0,
+      "STRING"
     ]
   ],
   "groups": [],
@@ -1197,8 +1275,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 7,
-          "lastNodeId": 151,
-          "lastLinkId": 222,
+          "lastNodeId": 153,
+          "lastLinkId": 225,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -1283,6 +1361,18 @@
               -816,
               644
             ]
+          },
+          {
+            "id": "07319e0a-cb2a-4ecc-b206-bef9e2bebed6",
+            "name": "noise_seed",
+            "type": "INT",
+            "linkIds": [
+              223
+            ],
+            "pos": [
+              0,
+              0
+            ]
           }
         ],
         "outputs": [
@@ -1328,6 +1418,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "KSamplerSelect",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1336,8 +1428,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1411,6 +1501,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "SamplerCustomAdvanced",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1419,8 +1511,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1469,6 +1559,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "VAEDecode",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1477,8 +1569,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1501,7 +1591,17 @@
             "flags": {},
             "order": 1,
             "mode": 0,
-            "inputs": [],
+            "inputs": [
+              {
+                "localized_name": "noise_seed",
+                "name": "noise_seed",
+                "type": "INT",
+                "widget": {
+                  "name": "noise_seed"
+                },
+                "link": 223
+              }
+            ],
             "outputs": [
               {
                 "localized_name": "NOISE",
@@ -1513,6 +1613,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "RandomNoise",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1521,8 +1623,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1570,6 +1670,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "UNETLoader",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1578,8 +1680,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "models": [
                 {
                   "name": "flux-2-klein-9b-fp8.safetensors",
@@ -1634,6 +1734,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "CLIPLoader",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1642,8 +1744,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "models": [
                 {
                   "name": "qwen_3_8b_fp8mixed.safetensors",
@@ -1708,6 +1808,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "EmptyFlux2LatentImage",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1716,8 +1818,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1775,6 +1875,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "CFGGuider",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1783,8 +1885,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1840,6 +1940,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "Flux2Scheduler",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1848,8 +1950,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1911,6 +2011,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "GetImageSize",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1919,8 +2021,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -1971,6 +2071,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "ReferenceLatent",
               "enableTabs": false,
               "tabWidth": 65,
@@ -1979,8 +2081,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2024,6 +2124,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "ImageScaleToTotalPixels",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2032,8 +2134,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2084,6 +2184,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "VAELoader",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2092,8 +2194,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "models": [
                 {
                   "name": "full_encoder_small_decoder.safetensors",
@@ -2153,6 +2253,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "ReferenceLatent",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2161,8 +2263,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2217,6 +2317,8 @@
             ],
             "title": "CLIP Text Encode (Positive Prompt)",
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "CLIPTextEncode",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2225,8 +2327,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2275,6 +2375,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.9.1",
               "Node name for S&R": "ConditioningZeroOut",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2283,8 +2385,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.9.1",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2335,6 +2435,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.8.2",
               "Node name for S&R": "VAEEncode",
               "enableTabs": false,
               "tabWidth": 65,
@@ -2343,8 +2445,6 @@
               "secondTabText": "Send Back",
               "secondTabOffset": 80,
               "secondTabWidth": 65,
-              "cnr_id": "comfy-core",
-              "ver": "0.8.2",
               "ue_properties": {
                 "widget_ue_connectable": {},
                 "version": "7.7",
@@ -2668,6 +2768,14 @@
             "target_id": 123,
             "target_slot": 0,
             "type": "CONDITIONING"
+          },
+          {
+            "id": 223,
+            "origin_id": -10,
+            "origin_slot": 5,
+            "target_id": 73,
+            "target_slot": 0,
+            "type": "INT"
           }
         ],
         "extra": {
@@ -2680,13 +2788,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.31015773852514855,
+      "scale": 0.4995121394721399,
       "offset": [
-        526.1639102945727,
-        631.8976669314803
+        2358.605950378692,
+        -509.77107199375075
       ]
     },
-    "frontendVersion": "1.45.8"
+    "frontendVersion": "1.47.6"
   },
   "version": 0.4
 }

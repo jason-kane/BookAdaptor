@@ -221,7 +221,7 @@ def _get_style(category_name, style_tag):
     return (None, None)
 
 
-def get_style(category_name, style_tag):
+def get_style(category_name, style_tag) -> dict:
     style_file, style = _get_style(category_name, style_tag)
     log.info('get_style returning style: %s', style)
     # this should exist:

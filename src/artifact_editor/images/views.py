@@ -380,12 +380,12 @@ def comfyui_workflow_open(
 
     # this is the pisser that will show up in your workflow list.
     workflow_name = f"{workflow_template}_{chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
-    workflow_fn = os.path.join(const.COMFY_DIRS["comfyui"]["WORKFLOWS_DIR"], workflow_name + ".json")
+    workflow_fn = os.path.join(const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_name + ".json")
     with open(workflow_fn, "w") as h:
         json.dump(workflow, h)
 
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFY_DIRS["comfyui"]["UI_URL"] + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
 
     # 3. This workflow needs to become the one we use from now on for this image.
     # image_xml.attrs["workflow_name"] = workflow_name
@@ -467,7 +467,7 @@ def save_style(author, title, chapter_number, language, image_index=0):
     image.attrs["style"] = request.form["style"]
     chapter.save_xml()
 
-    return htmx.style(chapter, image_index)
+    return "", 200
 
 
 @bp.route("/<int:image_index>/actions/create_clip_prompt", methods=["POST"])
