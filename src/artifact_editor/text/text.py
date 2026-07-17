@@ -5,7 +5,6 @@ from collections import Counter
 
 import nltk
 import torch
-from bs4 import BeautifulSoup
 
 import logger
 from artifact_editor.characters.characters import (
@@ -46,22 +45,23 @@ def detect_paragraph_technique(paragraph_text):
     """
     # Simple heuristic: if there are quote marks in the text, assume it's dialog.
     if '"' in paragraph_text or "“" in paragraph_text or "”" in paragraph_text:
-        log.info('Quotation marks found, choosing dialog technique')
+        log.info("Quotation marks found, choosing dialog technique")
         return "dialog"
-    
+
     # If there are no quotes but there is a pattern of character names followed by colons,
     # we can assume it's a socratic dialog.
     if re.search(r"^\s*[A-Z ]+:\s", paragraph_text):
-        log.info('Simple character names found, choosing socratic technique')
+        log.info("Simple character names found, choosing socratic technique")
         return "socratic"
 
     # Default to dialog if nothing else matches
-    log.info('Unable to detect technique, defaulting to dialog')
-    log.info('basis: %s', paragraph_text)
+    log.info("Unable to detect technique, defaulting to dialog")
+    log.info("basis: %s", paragraph_text)
     return "dialog"
 
 
 MAX_PHRASE = 10
+
 
 def chunk_string(line):
     if len(line.split()) > MAX_PHRASE:
@@ -87,7 +87,16 @@ def chunk_string(line):
 
 
 previous_speaker = None
-def socratic_to_paragraph(soup, chapterdir, paragraph_text, paragraph, hints, characters_dict):
+
+
+def socratic_to_paragraph(
+    soup,
+    chapterdir,
+    paragraph_text,
+    paragraph,
+    hints,
+    characters_dict,
+):
     """
     Process a paragraph of text using the socratic dialog technique.
 
@@ -114,7 +123,7 @@ def socratic_to_paragraph(soup, chapterdir, paragraph_text, paragraph, hints, ch
         if paragraph_text.strip()[-1] == ")":
             paragraph_text = paragraph_text.strip()[1:-1]
 
-    pre_colon = paragraph_text.split("\n")[0].split(':')[0]
+    pre_colon = paragraph_text.split("\n")[0].split(":")[0]
     if pre_colon == pre_colon.upper():
         speaker_name = pre_colon
         spoken_text = paragraph_text.split(":", maxsplit=1)[1]
@@ -124,19 +133,17 @@ def socratic_to_paragraph(soup, chapterdir, paragraph_text, paragraph, hints, ch
         spoken_text = paragraph_text
 
     previous_speaker = speaker_name
-    
+
     character_names = characters_dict.keys()
-    
+
     # Normalize speaker name to tag
     speaker = name_to_tag(speaker_name)
-   
+
     if speaker not in character_names:
         add_character(
-            chapterdir=chapterdir,
-            character_name=name_to_tag(speaker),
-            chardict={}
+            chapterdir=chapterdir, character_name=name_to_tag(speaker), chardict={}
         )
-        character_names = get_all_characters(chapterdir).keys()        
+        character_names = get_all_characters(chapterdir).keys()
 
     paragraph.add_element("image")
 
@@ -159,14 +166,14 @@ def sentence_NER(text):
         model=model,
         tokenizer=tokenizer,
         aggregation_strategy="simple",
-        device=device
+        device=device,
     )
 
     ner_results = nlp(text)
     return ner_results
 
 
-def llm_query(prompt:str) -> str:
+def llm_query(prompt: str) -> str:
     """
     Query the LLM with the given prompt and return the response.
 
@@ -188,15 +195,9 @@ def llm_query_old(prompt):
         filename="Meta-Llama-3.1-8B-Instruct-IQ2_M.gguf",
         verbose=False,
         n_gpu_layers=10,
-        n_ctx=1024 + 512
+        n_ctx=1024 + 512,
     )
-    out = llm.create_chat_completion(
-        messages = [
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ])
+    out = llm.create_chat_completion(messages=[{"role": "user", "content": prompt}])
     log.info(f"{out=}")
     full = out["choices"][0]["message"]["content"]
     return full, full
@@ -210,8 +211,8 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
     the speaker based on the context and the characters present in the scene.
     """
     characters_dict = characters_dict.copy()
-    if 'Narrator' in characters_dict:
-        del characters_dict['Narrator']
+    if "Narrator" in characters_dict:
+        del characters_dict["Narrator"]
 
     speaker = None
     log.info(f"{segment=}")
@@ -235,15 +236,15 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
     for name in ner_people_names:
         for character_name, character in characters_dict.items():
             if name in character_name:
-                log.info(f'!! Adding {character_name} to local characters !!')
+                log.info(f"!! Adding {character_name} to local characters !!")
                 local_characters[character_name] = character
 
             elif name in " ".join(character.get("alias", [])):
-                log.info(f'!! Alias Adding {character_name} to local characters !!')
+                log.info(f"!! Alias Adding {character_name} to local characters !!")
                 local_characters[character_name] = character
-    
+
     if not local_characters:
-        log.info('Unable to reduce potential speakers with NER')
+        log.info("Unable to reduce potential speakers with NER")
         local_characters = characters_dict
 
     def parse_llm_response(in_str):
@@ -251,14 +252,14 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
         All this for the range of responses we get from:
             "Using a single quoted string identify the speaker for one
             utterance."
-        
+
         That is the LLM piece, to identify, given one string in a piece of
         literaterary writing that occurs in a larger context of surrounding
         text, identify the speaker of each phrase enclosed in quotation marks
         (parsed out mechanically). Almost any LLM can try and perform this task.
-        I'm trying Phi 3.1 mini 128k instruct gguf right now. 
+        I'm trying Phi 3.1 mini 128k instruct gguf right now.
         I shoudl try Phi-4-mini 3.8B
-        
+
         in_str is the plain string response from Phi.  There are a pretty wide
         variety of responses that can become valid with a little cleanup.
         Prompt better, use a better LLM, and maybe this part won't suck so much.
@@ -281,7 +282,8 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
 
             for key in as_json:
                 if key.strip().lower() in [
-                    "speaker", "narrator",
+                    "speaker",
+                    "narrator",
                 ]:
                     value = as_json[key]
                     if type(value) is bool:
@@ -292,7 +294,7 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
                                 break
                     else:
                         speaker = as_json[key]
-        
+
         # not elif, because if the json stuff doesn't work out we want
         # to fall through into this stuff.
         if speaker is None:
@@ -313,9 +315,9 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
             else:
                 for regex in [
                     r"^([A-Z]*)$",  # we got a one word reply, use it
-                    #r"IS \"(.*)\"",  # is "Mr. White"
+                    # r"IS \"(.*)\"",  # is "Mr. White"
                     r"DICT_KEYS\(['(.*)']\)",  # dict_keys(['Mr. White'])
-                    #r"IS (?!:NOT )(.*)[\.\,\!\?\:\;]",
+                    # r"IS (?!:NOT )(.*)[\.\,\!\?\:\;]",
                     r"ANSWER: \"?(.*)\"?",
                     r"\*\*ANSWER:\*\* \"?(.*)\"?",
                 ]:
@@ -342,7 +344,7 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
                 if in_str in character.get("alias", []):
                     speaker = character_name
                     break
-        
+
         if speaker is None:
             log.info(f"!! Unable to identify speaker in LLM response: {in_str} !!")
             return None
@@ -365,7 +367,7 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
         alpha_response = llm.str_prompt(
             prompt=f"In this paragraph:\n\n{evaluate_text}\n\nUsing a single quoted string identify the speaker for one utterance. {hints}. Only respond with one of these possible answers: {local_characters.keys()}\n\nThe utterance is:\n\n{segment}",
             system_prompt="You are a helpful assistant that identifies the speaker of a given utterance in a paragraph of text. You will be provided with a paragraph and an utterance, and you must identify the speaker of that utterance based on the context of the paragraph. You will only respond with the name of the speaker in a single quoted string. If you cannot identify the speaker, respond with 'Unknown'.",
-            force=True
+            force=True,
         )
 
         alpha_answer = parse_llm_response(alpha_response)
@@ -377,7 +379,7 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
         # )
         # beta_answer = parse_llm_response(beta_response)
         # answers.append(beta_answer)
-        
+
         # if alpha_answer not in local_characters.keys():
         #     for name, ch in local_characters.items():
         #         if alpha_answer in ch.get("alias", []):
@@ -399,9 +401,9 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
 
     speaker = None
     if better_answers:
-        log.info(f"{better_answers=}")    
+        log.info(f"{better_answers=}")
         speaker = Counter(better_answers).most_common(1)[0][0]
-    
+
     if not speaker:
         speaker = Counter(answers).most_common(1)[0][0]
 
@@ -412,7 +414,7 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
     #     name_to_tag(alpha_answer) in local_characters.keys() and name_to_tag(beta_answer) in local_characters.keys()
     # ) or (
     #     name_to_tag(alpha_answer) not in local_characters.keys() and name_to_tag(beta_answer) not in local_characters.keys()
-    # ):    
+    # ):
     #     if alpha_answer != beta_answer:
     #         print(f"Speaker identified as both {alpha_answer} and {beta_answer}.")
     #         # tiebreaker
@@ -442,10 +444,8 @@ def identify_speaker_old(segment, paragraph_text, hints, characters_dict):
     #     # beta is a clearly more compliant response
     #     speaker = beta_answer
 
-
     log.info(f"===> {speaker=}")
     return speaker
-
 
 
 def identify_speaker(segment, paragraph_text, hints, characters_dict):
@@ -454,25 +454,31 @@ def identify_speaker(segment, paragraph_text, hints, characters_dict):
     the speaker based on the context and the characters present in the scene.
     """
     characters_dict = characters_dict.copy()
-    if 'Narrator' in characters_dict:
-        del characters_dict['Narrator']
+    if "Narrator" in characters_dict:
+        del characters_dict["Narrator"]
 
     speaker = None
-    log.info("identify_speaker()", segment=segment, paragraph_text=paragraph_text, hints=hints, characters_dict=characters_dict)
+    log.info(
+        "identify_speaker()",
+        segment=segment,
+        paragraph_text=paragraph_text,
+        hints=hints,
+        characters_dict=characters_dict,
+    )
 
     def parse_llm_response(in_str):
         """
         All this for the range of responses we get from:
             "Using a single quoted string identify the speaker for one
             utterance."
-        
+
         That is the LLM piece, to identify, given one string in a piece of
         literaterary writing that occurs in a larger context of surrounding
         text, identify the speaker of each phrase enclosed in quotation marks
         (parsed out mechanically). Almost any LLM can try and perform this task.
-        I'm trying Phi 3.1 mini 128k instruct gguf right now. 
+        I'm trying Phi 3.1 mini 128k instruct gguf right now.
         I shoudl try Phi-4-mini 3.8B
-        
+
         in_str is the plain string response from Phi.  There are a pretty wide
         variety of responses that can become valid with a little cleanup.
         Prompt better, use a better LLM, and maybe this part won't suck so much.
@@ -495,7 +501,8 @@ def identify_speaker(segment, paragraph_text, hints, characters_dict):
 
             for key in as_json:
                 if key.strip().lower() in [
-                    "speaker", "narrator",
+                    "speaker",
+                    "narrator",
                 ]:
                     value = as_json[key]
                     if type(value) is bool:
@@ -506,7 +513,7 @@ def identify_speaker(segment, paragraph_text, hints, characters_dict):
                                 break
                     else:
                         speaker = as_json[key]
-        
+
         # not elif, because if the json stuff doesn't work out we want
         # to fall through into this stuff.
         if speaker is None:
@@ -527,9 +534,9 @@ def identify_speaker(segment, paragraph_text, hints, characters_dict):
             else:
                 for regex in [
                     r"^([A-Z]*)$",  # we got a one word reply, use it
-                    #r"IS \"(.*)\"",  # is "Mr. White"
+                    # r"IS \"(.*)\"",  # is "Mr. White"
                     r"DICT_KEYS\(['(.*)']\)",  # dict_keys(['Mr. White'])
-                    #r"IS (?!:NOT )(.*)[\.\,\!\?\:\;]",
+                    # r"IS (?!:NOT )(.*)[\.\,\!\?\:\;]",
                     r"ANSWER: \"?(.*)\"?",
                     r"\*\*ANSWER:\*\* \"?(.*)\"?",
                 ]:
@@ -556,7 +563,7 @@ def identify_speaker(segment, paragraph_text, hints, characters_dict):
                 if in_str in character.get("alias", []):
                     speaker = character_name
                     break
-        
+
         if speaker is None:
             log.info(f"!! Unable to identify speaker in LLM response: {in_str} !!")
             return None
@@ -586,22 +593,30 @@ The specific utterance is:
             
 {segment}""",
             system_prompt="You are a helpful assistant that "
-                "identifies the speaker of a specific utterance "
-                "in a paragraph of text. You will be provided "
-                "with a paragraph and an utterance, and you must "
-                "identify the speaker of that utterance based on "
-                "the context of the paragraph. You will only "
-                "respond with the name of the speaker in a single "
-                "quoted string. If you cannot identify the speaker, "
-                "respond with 'Unknown'.",
-            force=True
+            "identifies the speaker of a specific utterance "
+            "in a paragraph of text. You will be provided "
+            "with a paragraph and an utterance, and you must "
+            "identify the speaker of that utterance based on "
+            "the context of the paragraph. You will only "
+            "respond with the name of the speaker in a single "
+            "quoted string. If you cannot identify the speaker, "
+            "respond with 'Unknown'.",
+            force=True,
         )
         log.info(f"{alpha_response=}")
 
         alpha_answer = parse_llm_response(alpha_response)
         answers.append(alpha_answer)
 
-        log.error('answers', answers=answers, alpha_answer=alpha_answer, segment=segment, paragraph_text=paragraph_text, hints=hints, characters_dict=characters_dict)
+        log.error(
+            "answers",
+            answers=answers,
+            alpha_answer=alpha_answer,
+            segment=segment,
+            paragraph_text=paragraph_text,
+            hints=hints,
+            characters_dict=characters_dict,
+        )
         # raise ValueError()
 
         # and verify
@@ -610,7 +625,7 @@ The specific utterance is:
         # )
         # beta_answer = parse_llm_response(beta_response)
         # answers.append(beta_answer)
-        
+
         if alpha_answer not in characters_dict.keys():
             for name, ch in characters_dict.items():
                 if alpha_answer in ch.get("alias", []):
@@ -632,9 +647,9 @@ The specific utterance is:
 
     speaker = None
     if better_answers:
-        log.info(f"{better_answers=}")    
+        log.info(f"{better_answers=}")
         speaker = Counter(better_answers).most_common(1)[0][0]
-    
+
     if not speaker:
         speaker = Counter(answers).most_common(1)[0][0]
 
@@ -642,22 +657,28 @@ The specific utterance is:
     return speaker
 
 
-
-
-def dialog_to_paragraph(chapter, paragraph_text, paragraph, all_paragraphs, paragraph_index, hints, characters_dict):
+def dialog_to_paragraph(
+    chapter,
+    paragraph_text,
+    paragraph,
+    all_paragraphs,
+    paragraph_index,
+    hints,
+    characters_dict,
+):
     # we're split on a quote mark, so all the even indexed segments are outside
     # quote marks.  All the odd segments are _inside_ quote marks. this
     # 'quote_cycle' will alternate the same way.  Which is cool and fancy and
     # shit but isn't it a single bit comparison to get is_odd()?
     log.info(
-        'dialog_to_paragraph()',
-        chapter=chapter, 
-        paragraph_text=paragraph_text, 
-        paragraph=paragraph, 
-        all_paragraphs=all_paragraphs, 
+        "dialog_to_paragraph()",
+        chapter=chapter,
+        paragraph_text=paragraph_text,
+        paragraph=paragraph,
+        all_paragraphs=all_paragraphs,
         paragraph_index=paragraph_index,
         hints=hints,
-        characters_dict=characters_dict
+        characters_dict=characters_dict,
     )
     quote_cycle = itertools.cycle([False, True])
     character_names = characters_dict.keys()
@@ -681,21 +702,22 @@ def dialog_to_paragraph(chapter, paragraph_text, paragraph, all_paragraphs, para
                 # give it the paragraph before and after as additional context
                 speaker = identify_speaker(
                     segment=segment,
-                    paragraph_text="\n\n".join(all_paragraphs[paragraph_index - 1 : paragraph_index + 1]),
-                    hints=hints,                    
-                    characters_dict=characters_dict
+                    paragraph_text="\n\n".join(
+                        all_paragraphs[paragraph_index - 1 : paragraph_index + 1]
+                    ),
+                    hints=hints,
+                    characters_dict=characters_dict,
                 )
                 if speaker and name_to_tag(speaker) not in character_names:
-                    print('WARNING: Identified speaker as "%s" but that character name is not in characters.json' % speaker)
-                    add_character(
-                        chapter,
-                        character_name=speaker,
-                        chardict={}
+                    print(
+                        'WARNING: Identified speaker as "%s" but that character name is not in characters.json'
+                        % speaker
                     )
+                    add_character(chapter, character_name=speaker, chardict={})
                     character_names = get_all_characters(chapter).keys()
 
                 tries -= 1
-        
+
         if speaker is None:
             speaker = "Narrator"
 
@@ -711,7 +733,7 @@ def dialog_to_paragraph(chapter, paragraph_text, paragraph, all_paragraphs, para
                 phrase = chapter.soup.new_tag("phrase")
                 phrase.attrs["speaker"] = speaker
 
-                #character = ET.Element(speaker)
+                # character = ET.Element(speaker)
                 phrase.string = partial_line.replace("\n", " ")
                 paragraph.append(phrase)
                 # phrase.append(character)
@@ -725,11 +747,11 @@ def narrator_to_paragraph(chapter, paragraph_text, paragraph):
     """
     speaker = "Narrator"
     soup = chapter.soup
-    
+
     try:
         tokenized = nltk.sent_tokenize(paragraph_text)
     except LookupError:
-        nltk.download('punkt_tab')
+        nltk.download("punkt_tab")
         tokenized = nltk.sent_tokenize(paragraph_text)
 
     for full_line in tokenized:
@@ -741,33 +763,38 @@ def narrator_to_paragraph(chapter, paragraph_text, paragraph):
             phrase = soup.new_tag("phrase")
             phrase.attrs["speaker"] = speaker
 
-            #character = ET.Element(speaker)
+            # character = ET.Element(speaker)
             phrase.string = partial_line.replace("\n", " ")
-            #phrase.append(character)
+            # phrase.append(character)
 
             paragraph.append(phrase)
-    
+
     return paragraph
 
 
 def poetry_to_paragraph(chapter, paragraph_text, paragraph):
     """
-    Single narrator, but we want to preserve line breaks 
+    Single narrator, but we want to preserve line breaks
     and spacing.
     """
-    log.info('poetry_to_paragraph(%s, %s, %s)', chapter, paragraph_text, paragraph)
+    log.info("poetry_to_paragraph(%s, %s, %s)", chapter, paragraph_text, paragraph)
     speaker = "Narrator"
+    # one image per line is a bit.. aggressive. we want one image per 8 seconds
+    # of audio, but we also want complete sentences, which can be troublesome to
+    # detect with poetry.
+    #
     for full_line in paragraph_text.split("\n"):
-        # create an <image/> inside paragraph
-        image = chapter.soup.new_tag("image")
-        paragraph.append(image)
+        # step one, let the user decide where to put images.
+        # # create an <image/> inside paragraph
+        # image = chapter.soup.new_tag("image")
+        # paragraph.append(image)
 
         phrase = chapter.soup.new_tag("phrase")
         phrase.attrs["speaker"] = speaker
         phrase.string = full_line.strip()
         paragraph.append(phrase)
 
-    log.info('%s', chapter.soup.prettify())
+    log.info("%s", chapter.soup.prettify())
     return paragraph
 
 
@@ -776,7 +803,7 @@ def biblical_to_paragraph(verse_string, chapter_xml):
     Above us, the book has already been split on "blank" newlines.
 
     paragraph_text is something like:
-    
+
     ```
     1:1 In the beginning God created the heaven and the earth.
     1:2 And the earth was without form, and void; and darkness...
@@ -785,7 +812,7 @@ def biblical_to_paragraph(verse_string, chapter_xml):
     paragraph is an ElementTree object that we will populate with the
     appropriate XML elements.
     """
-    log.info(f'biblical_to_paragraph({verse_string=}, {chapter_xml=})')
+    log.info(f"biblical_to_paragraph({verse_string=}, {chapter_xml=})")
     chapter = None
 
     for verse in verse_string.split("\n"):
@@ -793,11 +820,11 @@ def biblical_to_paragraph(verse_string, chapter_xml):
         if not m:
             log.info(f"Unable to parse verse line: {verse}")
             continue
-        
+
         chapter_verse = m.group(1)
         verse_text = m.group(2)
         # chapter_verse, verse_text = verse.split(maxsplit=1)
-        chapter, verse = chapter_verse.split(':')
+        chapter, verse = chapter_verse.split(":")
 
         # initially there are no images, one paragraph per and one phrase per paragraph.
         phrase = chapter_xml.add_element("phrase")

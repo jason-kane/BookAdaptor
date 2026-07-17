@@ -517,12 +517,9 @@ class Chapter:
         """
         Get a specific image by index
         """
-        index = int(index)
         self.load_xml()
-        all_images = self.soup.findAll("image")
-        if index < 0 or index >= len(all_images):
-            return None
-        return all_images[index]
+        image = self.soup.find("image", attrs={"index": str(index)})
+        return image
 
     def get_image_frames(self, image_xml):
         """
