@@ -450,8 +450,12 @@ def repronounce_button(chapter, phrase_xml):
 
 def merge_with_previous_button(chapter, phrase_xml, previous_phrase_xml, page):
     if previous_phrase_xml:
+        merge_with_previous_url = url_for(
+            'library.book.chapter.audio.merge_with_previous',
+            **chapter.kwargs,
+        )
         return f"""<wa-button
-                hx-post="{ url_for('library.book.chapter.audio.merge_with_previous', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }"
+                hx-post="{ merge_with_previous_url }"
                 hx-target="#phrase-{previous_phrase_xml['index']}"
                 hx-vals='{{"page": "{page}"}}'
                 hx-swap="innerHTML"
@@ -643,6 +647,31 @@ def phrase_latex_rainbow(chapter, phrase_xml):
     </wa-textarea>
     """
 
+def get_phrase_latex_image(chapter, phrase_xml):
+    redraw_url = url_for(
+        "library.book.chapter.audio.redraw_text_snippet",
+        **chapter.kwargs,
+        phrase_index=phrase_xml['index'],
+    )
+    return f"""
+        <div class="wa-cluster wa-align-items-start" id="text_snippet_{phrase_xml['index']}" style="position: relative">
+            <img 
+                class="phrase-typography" 
+                src=" {chapter.get_highlighted_text_snippet(phrase_xml, force=False)}"
+            >
+            </img>
+            <wa-button
+                size="xs"
+                hx-get="{redraw_url}"
+                hx-target="#text_snippet_{phrase_xml['index']}"
+                hx-swap="outerHTML"
+                class="refresh-button"
+                pill>
+                <wa-icon name="arrows-rotate"></wa-icon>
+            </wa-button>
+            {phrase_latex(chapter, phrase_xml)}
+        </div>
+"""
 
 def phrase_editor(chapter, phrase_xml, page, split=None):
     """
@@ -658,25 +687,19 @@ def phrase_editor(chapter, phrase_xml, page, split=None):
         text_phrase = split_phrase_text(chapter, phrase_xml, split, page)
     else:
         text_phrase = base_text_phrase(chapter, phrase_xml)
-    
+
     paragraph = phrase_xml.find_parent("paragraph")
     if "has-text=false" in paragraph.attrs.get("tags", "").split(","):
         phrase_latex_image = ""
     else:
         # no visible text == no latex typography
-        phrase_latex_image = f"""
-                <div class="wa-cluster wa-align-items-start">
-                    <img 
-                        class="phrase-typography" 
-                        src=" {chapter.get_highlighted_text_snippet(phrase_xml, force=False)}"></img>
-                    {phrase_latex(chapter, phrase_xml)}
-                </div>
-        """
+        phrase_latex_image = get_phrase_latex_image(chapter, phrase_xml)
 
     return render_template(
         "phrase.html",
         page=page,
         phrase_xml=phrase_xml,
+        previous_phrase=previous_phrase,
         chapter=chapter,
         pretty_duration=pretty_duration,
         speaker_selector=speaker_selector,

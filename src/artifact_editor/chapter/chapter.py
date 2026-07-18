@@ -401,6 +401,7 @@ class Chapter:
                 phrase_index=phrase_xml.attrs["index"],
             )
 
+        log.info('Generating new highlighted text snippet for phrase', phrase_index=phrase_xml.attrs["index"])
         r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
 
         # TODO: the problem is, this isn't going to work if the highlight spans multiple images.  Which it often does.

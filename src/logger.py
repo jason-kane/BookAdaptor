@@ -10,6 +10,9 @@ import sys
 
 logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.DEBUG)
 
+# pillow is noisy as hell.
+logging.getLogger("PIL").setLevel(logging.INFO)
+
 # if const.DEBUG:
 #     level = logging.DEBUG
 # else:

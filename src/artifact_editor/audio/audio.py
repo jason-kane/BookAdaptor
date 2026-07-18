@@ -469,6 +469,36 @@ def wav_append_delay(wavfile, delay_amount, outfile=None):
         out.writeframes(b"\0" * (sampwidth * delay_wav_frames))
 
 
+def clean_latex(instr) -> str:
+    """
+    Remove LaTeX formatting from a string, leaving only the text content.
+    Our goal is a correctly pronounceable string, cosmetics are irrelevant.
+    """
+    outstr = instr
+    if "\\textbf\{" in instr:
+        outstr = re.sub(r"\\textbf\{(.*?)\}", r"\1", outstr)
+    
+    if "\\hspace\{" in instr:
+        outstr = re.sub(r"\\hspace\{.*?\}", "", outstr)
+    
+    if "\\$" in instr:
+        # this is an awkward one, in "The Story of Mel" there is a line that
+        # uses $ as a playfull alternative to "s", so it should be read as s,
+        # leaving the playfullness intact in the visual.  
+        
+        # The other 99% of the time there is a $ dollar sign, the best choice is
+        # situational. "I won $50 in the lottery" should be read as "I won fifty
+        # dollars in the lottery" and not "I won s50 in the lottery" or "I won
+        # dollars fifty in the lottery".  
+        
+        # So we will just leave the $ alone, and let the TTS engine decide how
+        # to pronounce it.  If it is the hyper-rare playfull $ then we will fix
+        # it as a one-off.
+        outstr = outstr.replace("\\$", "$")
+
+    return outstr
+
+
 def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
     """
     wavfile is an absolute path/fn
@@ -485,9 +515,11 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
         log.info("Removing stale pronunciation file: %s", pronunciation_fn)
         os.unlink(pronunciation_fn)
 
+    text_to_speak = clean_latex(phrase_xml.get_text())
+
     llm.text_2_audio(
         chapter,
-        phrase_xml.get_text(),
+        text_to_speak,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
         force=False

@@ -19,7 +19,25 @@
       "insert": "FIXED 7/14: Generate All Missing Audio doesn't work; "
     },
     {
-      "insert": "\n\n"
+      "insert": "\n\nAudio flow doesn't really make sense.  We want a clean text -> IPA, then IPA + voice -> .WAV\nTo do that we will need to hack up the comfy kokoro library a bit to create a new IPA + voice -> WAV capablity\nI think the text->IPA part can be done  in artifactserver without LLM.  That also puts the whole pronunciation library inside instead of the awkward secret handshake pronunciation file I'm using now.\n\n Text -> IPA, with soundslike for unknown words"
+    },
+    {
+      "attributes": {
+        "list": "ordered"
+      },
+      "insert": "\n"
+    },
+    {
+      "insert": "New workflow for IPA + voice -> WAV"
+    },
+    {
+      "attributes": {
+        "list": "ordered"
+      },
+      "insert": "\n"
+    },
+    {
+      "insert": "\n\nThe next core design problem is plain text -> xml -> latex -> image.  The problem comes in when I want to do anything fancy with the typography.  Adding latex to the plain text or the xml just means I have to make the audio path smart enough to strip that latex back out.  Which is really hyper-stupid. \nBefore I jump in with a half-baked notion, I want to think on it a little.  I'm leaning toward adding a \"latex\" attribute to the phrase xml (mirroring the \"pronunciation\" attribute).  When it is missing, we just use the get_text() from the xml for both typograph and audio.  But when we've modified it (via the LaTeX editor on the phrases page) the changed version is saved to \"latex\" and subsequently that editor is populated by that value.  When we are doing typographic things, we prefer the latex attribute.\n\nThe lines in this editor are ridiculously stupid-long. WTF buddy.  \n\nI'm also way too blind for the current base font size.\n\n"
     },
     {
       "attributes": {
@@ -36,27 +54,17 @@
         "background": "#121314",
         "color": "#bbbebf"
       },
-      "insert": "The difference between \"(Re)generate Audio\" and \"Re-pronounce\" is unclear."
-    },
-    {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
       "insert": "The \"split phrase\" system is kind of shit, but with some modest effort it can be fixed."
     },
     {
-      "insert": "\n\n"
+      "insert": "\n\nIf you remove the \"top\" of paragraph image, you can't get it back (without manual .xml edit)\n\n"
     },
     {
       "attributes": {
         "background": "#121314",
         "color": "#bbbebf"
       },
-      "insert": "The \"Animation\" and \"Transition\" checkboxes are pointless."
+      "insert": "The \"Animation\" and \"Transition\" checkboxes are pointless and borderline stupid."
     },
     {
       "insert": "\n\n"

@@ -265,6 +265,18 @@ def text_snippet(author, title, chapter_number, language, phrase_index):
 
     return send_file(fn, mimetype="image/png")
 
+@bp.route("/text_snippet/redraw/<phrase_index>.png", methods=["GET"])
+def redraw_text_snippet(author, title, chapter_number, language, phrase_index):
+    author = Author(author)
+    chapter = Chapter(
+        author=author, title=title, number=chapter_number, language=language
+    )
+    phrase_xml = chapter.get_phrase(phrase_index)
+    # redraw the text snippet
+    # force will take care of the redraw
+    chapter.get_highlighted_text_snippet(phrase_xml, force=True)
+    # send back the updated widget
+    return htmx.get_phrase_latex_image(chapter, phrase_xml), 200
 
 @bp.route("/", methods=["GET"])
 def base(author, title, chapter_number, language):
@@ -583,10 +595,12 @@ def regenerate_phrase(
             log.info(f"Phrase {phrase_index} already has an audio file: {wavfile}")
             return htmx.phrase_editor(chapter, phrase_xml, page), 200
 
+    text_to_speak = audio.clean_latex(phrase_xml.get_text())
+
     # regenerate the wav for this phrase
     llm.text_2_audio(
         chapter,
-        phrase_xml.get_text(),
+        text_to_speak,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
         force=False
@@ -788,14 +802,24 @@ def merge_with_previous(author, title, chapter_number, language):
 
     log.info(f"Previous phrase found: {previous_phrase['index']}")
 
-    # append our text to the previous phrase
-    previous_phrase_text = previous_phrase.get_text().strip()
-    merging_phrase_text = phrase_xml.get_text().strip()
-    new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}"
+    if chapter.config.get("TEXT_STRUCTURE", "") == "verse":
+        # we want to retain line breaks in verse mode
+        previous_phrase_text = previous_phrase.get_text()
+        merging_phrase_text = phrase_xml.get_text()
+        new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}"
 
-    previous_phrase.clear()
-    new_phrase = NavigableString(new_phrase_text)
-    previous_phrase.append(new_phrase)
+        previous_phrase.clear()
+        new_phrase = NavigableString(new_phrase_text)
+        previous_phrase.append(new_phrase)        
+    else:
+        # append our text to the previous phrase
+        previous_phrase_text = previous_phrase.get_text().strip()
+        merging_phrase_text = phrase_xml.get_text().strip()
+        new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}"
+
+        previous_phrase.clear()
+        new_phrase = NavigableString(new_phrase_text)
+        previous_phrase.append(new_phrase)
 
     # remove our src, so the audio will be regenerated
     previous_phrase.attrs.pop("src", None)

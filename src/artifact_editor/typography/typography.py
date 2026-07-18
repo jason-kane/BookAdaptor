@@ -1286,6 +1286,7 @@ class VerseToLatex(XmlToLatex):
                         
             for phrase_xml in paragraph_xml.find_all("phrase", recursive=False):
                 phrase_index = int(phrase_xml.attrs.get("index"))
+                # current design has no children, so this is not doing as much as it looks like.
                 plain_phrase = phrase_xml.get_text(separator=" ", strip=True)
                 phrase = []
 
@@ -1320,6 +1321,15 @@ class VerseToLatex(XmlToLatex):
                         phrase.append((r"\centerline{\textbf{\normalsize %s}}" % segment) + "\n")
                     phrase.append(r"\vspace{0.25cm}" + "\n")
                 else:
+                    if "\n" in plain_phrase:
+                        # this is a multi-line phrase, we need to add a linebreak
+                        # after each line.
+                        lines = plain_phrase.splitlines()
+                        for line in lines[:-1]:
+                            phrase.append(line.strip() + r"\nobreak\\")
+                        # let the last line fall through for the no_linebreak handler.
+                        plain_phrase = lines[-1].strip()
+
                     if phrase_xml.attrs.get("no_linebreak", "false").lower() == "true":
                         phrase.append(plain_phrase)
                     else:
