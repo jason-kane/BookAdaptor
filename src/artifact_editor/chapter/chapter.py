@@ -1286,6 +1286,24 @@ class Chapter:
         with open(txt_fn, "w") as f:
             f.write(raw)
 
+    def get_delta_fn(self):
+        return os.path.join(
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
+            "chapter.delta.json"
+        )
+
+    def load_delta(self) -> dict:
+        delta_fn = self.get_delta_fn()
+        if os.path.exists(delta_fn):
+            with open(delta_fn, "r") as f:
+                return json.load(f)
+        else:
+            log.warning("Delta file not found", delta_fn=delta_fn)
+            return {}
+
+
     def delete(self):
         """
         Delete all files associated with this chapter.

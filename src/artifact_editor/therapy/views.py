@@ -1,7 +1,7 @@
 from email.mime import message
 import glob
 import markdown_it
-from html_to_delta import html_to_delta
+# from html_to_delta import html_to_delta
 
 import redis
 import json

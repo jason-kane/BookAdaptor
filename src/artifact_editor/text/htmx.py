@@ -15,6 +15,23 @@ def save_book_button(chapterurl):
     )
 
 
+def import_button(chapter):
+    import_url = url_for(
+        'library.book.chapter.text.import_chapter',
+        **chapter.kwargs,
+    )
+    return f"""
+    <wa-button 
+        id="import_btn" 
+        hx-post="{ import_url }"
+        hx-on::before-request="beforeRequest(this,event)"
+        hx-on::after-request="afterRequest(this,event)"
+        hx-swap="none" 
+        variant="neutral" 
+        appearance="accent" 
+        size="medium" 
+    >Import Chapter</wa-button>"""
+
 def convert_to_xml_button(chapter):
     return f"""
     <wa-button 

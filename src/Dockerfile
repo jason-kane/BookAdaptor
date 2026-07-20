@@ -13,7 +13,6 @@ RUN apt update && apt install -y \
     && ln -s /usr/bin/python3 /usr/bin/python \
     && apt clean
    
-COPY requirements.txt /app/requirements.txt
 ENV BLIS_ARCH="generic"
 RUN pip install --break-system-packages blis --no-binary blis
 
@@ -23,11 +22,12 @@ RUN apt update && apt install -y \
     python3-wheel \
     && apt clean
 
-#RUN pip install --upgrade --break-system-packages cython thinc[torch]
-
+COPY requirements.txt /app/requirements.txt
 RUN pip install --break-system-packages -r /app/requirements.txt
-COPY . /app/
+# RUN python3.14 -m spacy download en_core_web_sm --break-system-packages
+RUN pip install --break-system-packages https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0.tar.gz
 
+COPY . /app/
 COPY image_magic_policy.xml /etc/ImageMagick-7/policy.xml
 
 WORKDIR /app

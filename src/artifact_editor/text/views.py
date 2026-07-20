@@ -1,7 +1,14 @@
 import html
+import json
 import os
+import re
+import const
+import nltk
+import spacy
 import shutil
+from collections.abc import Iterable
 
+from bs4 import BeautifulSoup
 from flask import (
     Blueprint,
     make_response,
@@ -50,6 +57,463 @@ TOGGLEFIELDS = []
 #     'CALL_THEM_CHAPTERS',
 #     'BREAK_INTO_CHAPTERS',
 # ]
+
+def extract_title(delta, chapter, chapter_xml):
+    """
+    Extract the title from the delta and add it to the chapter_xml.
+    We're stripping the title out of the delta.
+    """
+    ops = []
+    for operation in delta["ops"]:
+        if "insert" in operation:
+            insert_list = []
+            for line in operation["insert"].split("\n"):
+                if line.strip().upper() == chapter.title.upper():
+                    log.info('Found title page: %s', line)
+                    add_title(chapter_xml, chapter)
+                    continue
+            
+                insert_list.append(line)
+            operation["insert"] = "\n".join(insert_list)
+        ops.append(operation)
+
+    return {"ops": ops}
+
+def extract_author(delta, chapter, chapter_xml):
+    """
+    Extract the author from the delta and add it to the chapter_xml.
+    We're stripping the author out of the delta.
+    """
+    ops = []
+    for operation in delta["ops"]:
+        if "insert" in operation:
+            insert_list = []
+            for line in operation["insert"].split("\n"):
+                if line.strip().upper() in [
+                    f"BY {chapter.author.name.upper()}",
+                    f"{chapter.author.name.upper()}"
+                ]:
+                    log.info('Found author page: %s', line)
+                    add_author(chapter_xml, chapter)
+                    continue
+            
+                insert_list.append(line)
+            operation["insert"] = "\n".join(insert_list)
+        ops.append(operation)
+
+    return {"ops": ops}
+
+
+def lists_that_do_not_contain_lists(lists):
+    """
+    Given a list of lists, return a list of lists that do not contain any
+    sublists.  ie: flatten the tree to the leaves.
+    """
+    for item in lists:
+        if isinstance(item, list):
+            if all(not isinstance(subitem, list) for subitem in item):
+                yield item
+            else:
+                yield from lists_that_do_not_contain_lists(item)
+        else:
+            yield item
+
+
+@bp.route("/import_chapter", methods=["POST"])
+def import_chapter(author, title, chapter_number, language):
+    """
+    New algorithm based on scoring every word based on how good of a phrase
+    break it is and how suitable it is as a new image.
+    """
+    author = Author(author)
+
+    chapter = Chapter(
+        author=author,
+        title=title,
+        number=chapter_number,
+        language=language
+    )
+
+    chapter_xml = BeautifulSoup("<chapter></chapter>", "xml")
+
+    delta = chapter.load_delta()
+    
+    # we want to be able to slice-and-dice the plain text and the formatted
+    # text in parallel.  It's stupid, but I think it might actually be
+    # easiest to leave it in Delta format for a little longer than I had
+    # originally intended.
+
+    # if there is a title, add a title page
+    delta = extract_title(delta, chapter, chapter_xml)
+    delta = extract_author(delta, chapter, chapter_xml)
+   
+    #nltk.download('punkt_tab')
+    spacy.prefer_gpu()
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        log.info('Downloading spacy model en_core_web_sm...')
+        import subprocess
+        subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm", "--break-system-packages"])
+        nlp = spacy.load("en_core_web_sm")
+
+    # break all the 'inserts' in delta up into single delta sentences.
+    out_ops = []
+    for ops in delta["ops"]:
+        #for sentence in nltk.sent_tokenize(ops.get("insert", "")):
+        log.info('Processing ops: %s', repr(ops))
+
+        sentence_spans = list(nlp(ops.get("insert", "")).sents)
+        sentence_count = len(sentence_spans)
+        log.info('Operation has %s sentences', sentence_count)
+        for sentence_index, sentence_span in enumerate(sentence_spans):
+            log.info('sentence_span: %s', repr(sentence_span))
+            log.info('sentence_span.text_with_ws: %s', repr(sentence_span.text_with_ws))
+            log.info('sentence_span.text: %s', repr(sentence_span.text))
+            sentence = sentence_span.text_with_ws
+
+            # ARGG!! spacy still fucks up trailing newlines.
+            # we _need_ the trailing whitespace.
+            # is this the last sentence?
+            if sentence_index == sentence_count - 1:
+                log.info('%s == %s', sentence_index, sentence_count - 1)
+                whitespace = ops["insert"][len(ops["insert"].rstrip()):]
+                log.info('whitespace: %s', repr(whitespace))
+                sentence += whitespace
+            else:
+                log.info('%s != %s', sentence_index, sentence_count)
+
+            # the problem with nltk.sent_tokenize is that it destroys whitespace.
+            # some of that whitespace is critical for correct typesetting.
+            # example:
+            #  input: " wrote in machine code.\n\nNot FORTRAN.  \n\tNot RATFOR."
+            #  output: ["wrote in machine code.", "Not FORTRAN.", "Not RATFOR."]
+            
+            # the trailing whatever, don't care, but the leading tabs and extra
+            # newlines must be preserved.  I'll try spacy...
+
+            if sentence[0] in [",", ".", "!", "?", ";", ":"]:
+                # the sentence begins with punctuation.
+                # we can't move it to the end of the previous because it's here because
+                # the formatting has changed.  Not a problem exactly, we just 
+                # have to fix the trailing whitespace on the previous opt_ops.
+                if out_ops[-1]["insert"][-1] == " ":
+                    out_ops[-1]["insert"] = out_ops[-1]["insert"][:-1]
+
+            log.info('sentence: %s', repr(sentence))
+            for word in sentence.split(' '):
+                log.info('word: %s', repr(word))
+                if word.strip():
+                    out_ops.append({
+                        "insert": word + " ",
+                        "attributes": ops.get("attributes", {}),
+                        "type": "word",
+                        # punctuation that isn't at the end of a sentence is a weak
+                        # phrase break, way better than nothing.
+                        "phrase_score": 1 if word[-1] in [".", "!", "?", ";", ":", ","] else 0
+                    })
+                else:
+                    out_ops.append({
+                        "insert": word,
+                        "attributes": ops.get("attributes", {}),
+                        "type": "whitespace",
+                        "phrase_score": 0
+                    })
+            
+            if out_ops[-1]["insert"].strip():
+                try:
+                    out_ops[-1]["phrase_score"] += {
+                        ".": 5,
+                        "!": 5,
+                        "?": 5,
+                        ";": 3,
+                        ":": 3,
+                        ",": 1
+                    }[out_ops[-1]["insert"].strip()[-1]]
+                except KeyError:
+                    pass
+
+    index = 0
+    attributes = {}
+    phrases = []
+    while index < len(out_ops):
+        # for phrases -- the visual highlighted text, we want each section
+        # to be small enough to fit the readers eye.  Less than 10 words,
+        # with a strong preference for ending on a sentence break or strong
+        # punctuation mark.
+
+        # This is also the unit of TTS.  Its much easier for the TTS to
+        # sound good when it gets a complete sentence.
+
+        # we will use a WINDOW_SIZE word evaluation window that resets whenever we
+        # choose a phrase break point.
+        highest = 0
+        WINDOW_SIZE = 25
+        break_index = None
+        for i in range(index, min(index + WINDOW_SIZE, len(out_ops))):
+            if out_ops[i].get("phrase_score", 0) > highest:
+                highest = out_ops[i]["phrase_score"]
+                break_index = i
+
+        if break_index is None:
+            log.info('!FAILURE! No phrase break found!')
+            p = out_ops[index:min(index + WINDOW_SIZE, len(out_ops))]
+            log.info('p: %s', p)
+            log.info('phrase: %s', " ".join([o["insert"] for o in p]))
+
+            raise ValueError("No phrase break found!")
+
+        plain_phrase = "".join([out_ops[i]["insert"] for i in range(index, break_index + 1)])
+        # log.info(' Spoken phrase: %s', plain_phrase)
+
+        typeset_phrase = []
+        log.info('Processing out_ops[%d:%d] for typesetting...', index, break_index + 1)
+        for o in out_ops[index:break_index + 1]:
+            if "\t" in o["insert"]:
+                log.info('Replacing tab with \hspace*{2em} in phrase: %s', o["insert"])
+                o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
+
+            # That I have to treat this as a special edge case means my
+            # algorithm is shit.  Adding more features is going to be a
+            # nightmare until I redesign to handle arbitrary combinations of
+            # attributes.
+            if (
+                o["attributes"].get("italic") and 
+                attributes.get("italic") is None and
+                o["attributes"].get("bold") and
+                attributes.get("bold") is None
+            ):
+                # bold _and_ italics.
+                typeset_phrase.append(r"\textit{\textbf{" + o['insert'])
+                attributes["italic"] = True
+                attributes["bold"] = True
+                continue
+
+            if o["attributes"].get("italic") and attributes.get("italic") is None:
+                # we are starting an italic block
+                typeset_phrase.append(r"\textit{" + o['insert'])
+                attributes["italic"] = True
+                continue
+            
+            if o["attributes"].get("italic") is None and attributes.get("italic"):
+                # we are ending an italic block
+                if typeset_phrase:
+                    # retain the trailing whitespace, _after_ the close tag.
+                    stripped = typeset_phrase[-1].rstrip()
+                    trailing_whitespace = typeset_phrase[-1][len(stripped):]
+                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+                else:
+                    phrases[-1]["latex"] += "}"
+                attributes["italic"] = None
+            
+            if o["attributes"].get("bold") and attributes.get("bold") is None:
+                # we are starting a bold block
+                typeset_phrase.append(r"\textbf{" + o['insert'])
+                attributes["bold"] = True
+                continue
+            
+            if o["attributes"].get("bold") is None and attributes.get("bold"):
+                # how many characters long was the previous line 
+                # prior to the trailing whitespace?
+                if typeset_phrase:
+                    stripped = typeset_phrase[-1].rstrip()
+                    trailing_whitespace = typeset_phrase[-1][len(stripped):]
+                    # tuck the } close brace between the string and its trailing whitespace.
+                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+                    # we aren't bold anymore.
+                else:
+                    #  we went bold in a previous phrase.
+                    stripped = phrases[-1]["latex"].rstrip()
+                    trailing_whitespace = phrases[-1]["latex"][len(stripped):]
+                    phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+
+                attributes["bold"] = None
+
+            typeset_phrase.append(o["insert"])
+
+        phrases.append({
+            "spoken": plain_phrase,
+            "latex": "".join(typeset_phrase)
+        })
+
+        index = break_index + 1
+
+    
+    with open(
+        os.path.join(
+            const.LIBRARY_DIR,
+            chapter.get_chapterdir(),
+            chapter.language,
+            "chapter.latex"
+        ), "w") as f:
+            f.write(r"""\documentclass[parskip=full]{scrartcl}
+\usepackage[paperheight=200in,paperwidth=2.825in,top=0.5in,bottom=4in,left=0.1in,right=0.1in,heightrounded]{geometry}
+\addtokomafont{title}{\centering}
+\addtokomafont{author}{\centering}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{froufrou}
+
+\usepackage{luaquotes}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{titling}
+
+\usepackage[osf]{libertinus-otf}
+
+\pagenumbering{gobble}
+\widowpenalties 1 10000
+\raggedbottom
+\setlength{\leftmargini}{0.125em}
+
+\begin{document}
+\setlength{\droptitle}{-45pt}
+\posttitle{\par\end{center}}
+\title{%s}
+\author{%s}
+\date{}
+\maketitle
+\vspace{-0.5in}
+\tolerance=9999
+\hyphenpenalty=10000
+\exhyphenpenalty=100                    
+""" % (title, author.pretty_name))
+
+            latex_block = ""
+            for p in phrases:
+                log.info('s: %s', p['spoken'])
+                latex_block += p["latex"]
+
+            all_lines = []
+            for line in latex_block.splitlines(keepends=True):
+                if line.strip() and all_lines and all_lines[-1].strip():
+                    # there is a non-blank line after a non-blank line.  We need to add a \\
+                    all_lines[-1] = all_lines[-1].rstrip() + r"\\" + "\n"
+
+                # escapes 
+                if "$" in line:
+                    line = line.replace("$", r"\$")
+
+                all_lines.append(line)
+
+            f.write("".join(all_lines))
+            f.write(r"""\end{document}""")
+            
+    delta["ops"] = out_ops
+
+    return "", 200
+
+
+def shatter_delta(delta, target=25, recurse_depth=0):
+    # delta is a {'ops': [{'insert': ''}, ...]} sort of object. we want to find
+    # the list element in the middle, based on the absolute length of the
+    # 'insert' strings.  So.. first we're going to decorate all those inner
+    # dicts with the lengths of their insert strings.  Easy.  We'll get a total
+    # as long as we're iterating anyway.
+
+    log.info("[%d] Breaking delta (%d ops) into two pieces...", recurse_depth, len(delta["ops"]))
+    if len(delta["ops"]) == 2:
+        log.info('[%d] Quick Shatter: Two ops, returning them as-is', recurse_depth)
+        return [delta["ops"][0], delta["ops"][1]]
+
+    elif len(delta["ops"]) == 1:
+        log.info('[%d] Quick Shatter: One op, returning it as-is', recurse_depth)
+        return [delta["ops"][0], None]
+
+    total = 0
+    if recurse_depth > 0:
+        for operation in delta["ops"]:
+            total += operation["length"]
+    else:
+        for operation in delta["ops"]:
+            if "insert" in operation:
+                operation["length"] = len(operation["insert"].split())
+                total += operation["length"]
+            else:
+                operation["length"] = 0
+
+    middle = total // 2
+    log.info('shatter_delta: total %d, middle %d, target %d', total, middle, target)
+
+    first = []
+    first_length = 0
+    
+    second = []
+    second_length = 0
+
+    first_operation = True
+    for operation in delta["ops"]:
+        log.info('Decreasing middle %d by operation length %d', middle, operation["length"])
+        middle -= operation["length"]
+        if first_operation or middle > 0:
+            log.info('Adding operation to first half')
+            first.append(operation)
+            first_length += operation["length"]
+            first_operation = False
+        else:
+            log.info('Adding operation to second half')
+            second.append(operation)
+            second_length += operation["length"]
+    
+    # if first_length == 0 or second_length == 0:
+    #     # we aren't splitting anymore.
+    #     log.info('fully shattered, returning [%d, %d]', first_length, second_length)
+    #     return [first, second]
+
+    if first_length > target:
+        log.info('RECURSING: first_length %d > target %d, shattering first', first_length, target)
+        first = shatter_delta({"ops": first}, target=target, recurse_depth=recurse_depth+1)
+    
+    if second_length > target:
+        log.info('RECURSING: second_length %d > target %d, shattering second', second_length, target)
+        second = shatter_delta({"ops": second}, target=target, recurse_depth=recurse_depth+1)
+
+    # this will be a binary tree of dicts, with 'ops' lists less than or equal to target in size at the leaves.
+    # we can walk the tree to build our phrases.
+    log.info('Broke %d entries into [%d, %d]', total, first_length, second_length)
+    return [first, second]
+
+
+def add_title(chapter_xml, chapter):
+    title_page = chapter_xml.new_tag("paragraph")
+    title_page.attrs["tags"] = "has-text=false,spoken-only=true"
+    title_page.attrs["fullscreen"] = "true"
+    chapter_xml.append(title_page)
+
+    title_image = chapter_xml.new_tag("image")
+    if "subtitle" in chapter.kwargs:
+        title_prompt = (
+            "The front cover of a detailed carved and "
+            "painted cover of a masterfully crafted "
+            "leather-bound handmade special edition of"
+            f" \"{chapter.title} - {chapter.subtitle}\" by \"{chapter.author.name}\"."
+        )
+    else:
+        title_prompt = (
+            #f"The front of a record albumn called {title} by {author}"
+            "The front cover of a detailed carved and "
+            "painted cover of a masterfully crafted "
+            "leather-bound handmade special edition of"
+            f" \"{chapter.title}\" by \"{chapter.author.name}\"."
+        )
+
+    title_image.attrs["prompt"] = title_prompt
+    title_page.append(title_image)
+
+
+def add_author(chapter_xml, chapter):
+    author_page = chapter_xml.new_tag("paragraph")
+    author_page.attrs["tags"] = "has-text=false,spoken-only=true"
+    author_page.attrs["fullscreen"] = "true"
+    chapter_xml.append(author_page)
+
+    author_image = chapter_xml.new_tag("image")
+    author_prompt = f"Renown author {chapter.author.name} at a desk writing the famous story {chapter.title}"
+    author_image.attrs["prompt"] = author_prompt
+    author_page.append(author_image)
+
+
 @bp.route("/actions/save_chapter_text", methods=["POST"])
 def save_chapter_text(author, title, chapter_number, language):
     """
@@ -583,60 +1047,47 @@ def text_base(author, title, chapter_number, language):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
-    previous_chapter_metadata = ""
-    if chapter.number > 1:
-        log.info('Loading previous chapter %s - %s - %s', author, title, chapter.number - 1)
-        previous = chapter.previous()
-        if previous:
-            previous_chapter_config = chapter.previous().config
-            previous_chapter_metadata = previous_chapter(previous_chapter_config)
-
-    raw_xml = ""
-    try:
-        raw_xml = chapter.get_xml().prettify()
-    except Exception as e:
-        log.error(f"Error loading XML for chapter {chapter.url}: {e}")
-
-    try:
-        raw_text = chapter.load_txt()
-    except FileNotFoundError:
-        raw_text = ""
-
-    log.info('Generating widgets for %s', chapter.config)
-    chapter_metadata = "\n".join([
-        #chapter_metadata_text_input(chapter.config, "title", "Title"),
-        chapter_metadata_text_input(chapter.config, "chapter_title", "Chapter Title"),
-        #chapter_metadata_text_input(chapter.config, "subtitle", "Subtitle"),
-        #chapter_metadata_text_input(chapter.config, "author", "Author"),
-        chapter_metadata_text_input(chapter.config, "translator", "Translator"),
-        chapter_metadata_text_input(chapter.config, "youtube", "YouTube URL"),
-        chapter_metadata_choices(
-            chapter,
-            "paragraph_technique",
-            "Paragraph Technique",
-            ['dialog', 'socratic', 'biblical', 'narrator', 'poetry']),
-    ])
-
     return render_template(
         "text.html",
-        language="english",
-        pretty_language="English",
-        chapter_metadata=chapter_metadata,
-        chapter_config=chapter.config,
-        previous_chapter=previous_chapter_metadata,
-        save_button=htmx.save_book_button(chapter.url),
-        convert_to_xml=htmx.convert_to_xml_button(chapter),
+        language=chapter.language,
+        pretty_language=chapter.pretty_language,
+        import_button=htmx.import_button(chapter),
         chapterurl=chapter.url,
         author=author,       
         pretty_author=chapter.config.get("author", author),
         title=title,
         pretty_title=chapter.config.get("title", title),
         chapter=chapter,
-        book_text=htmx.book_text(raw_text, chapter),
-        xml=raw_xml,
         section="text",
         section_cosmetic="Text"
     )
+
+@bp.route("/delta", methods=["GET"])
+def get_delta(author, title, chapter_number, language):
+    author = Author(author)
+    chapter = Chapter(author, title, chapter_number, language)
+
+    try:
+        raw_text = chapter.load_delta()
+    except FileNotFoundError:
+        log.error('Delta file not found for chapter %s. Returning empty text.', chapter.get_delta_fn())
+        raw_text = ""
+
+    return raw_text, 200
+
+@bp.route("/delta", methods=["POST"])
+def save_delta(author, title, chapter_number, language):
+    author = Author(author)
+    chapter = Chapter(author, title, chapter_number, language)
+
+    new_delta = request.form["delta"]
+
+    with open(chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+        as_json = json.loads(new_delta)
+        # pretty print it.
+        f.write(json.dumps(as_json, indent=2))
+    
+    return "", 200
 
 @bp.route("/get_text", methods=["GET"])
 def get_text(author, title, chapter_number, language):
