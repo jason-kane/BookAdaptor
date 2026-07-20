@@ -4,11 +4,42 @@
       "attributes": {
         "background": "#121314",
         "color": "#bbbebf",
-        "size": "huge"
+        "size": "huge",
+        "underline": true
       },
       "insert": "Text Workshop"
     },
     {
+      "insert": "\n\nI'm replacing the \"plain\" text with a quilljs based rich text editor.  I have the export to LaTeX working, it's not pixel perfect, but its very close.  Only supports bold, italics and indent right now.\n\nSo.. I still need to export to .xml to create the paragraph/phrase/image skeleton the rest of the system expects.  I already have tight segments for phrases (for highlighting) and looser markers for images approximately every N words.  Gonna be awesome.\n\nTODO: remove unsupported quill features from the UI (underline, strikethrough, colors, etc..)\n\n"
+    },
+    {
+      "attributes": {
+        "size": "large",
+        "underline": true
+      },
+      "insert": "Archive"
+    },
+    {
+      "insert": "\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "REMOVED The\u00a0vertical\u00a0stack\u00a0layout\u00a0is\u00a0...\u00a0well,\u00a0it\u00a0is\u00a0lame."
+    },
+    {
+      "insert": "\n\n"
+    },
+    {
+      "attributes": {
+        "color": "#bbbebf",
+        "background": "#121314"
+      },
+      "insert": "DONE\u00a0Make\u00a0the\u00a0plain\u00a0text\u00a0width\u00a0narrower,\u00a0to\u00a0align\u00a0more\u00a0approximately\u00a0with\u00a0the\u00a0width\u00a0of\u00a0the\u00a0rendered\u00a0page."
+    },
+    {
       "insert": "\n\n"
     },
     {
@@ -16,50 +47,20 @@
         "background": "#121314",
         "color": "#bbbebf"
       },
-      "insert": "The vertical stack layout is ... well, it is lame."
+      "insert": "REMOVED Move the XML version so they can sit side-by-side at 1920x"
+    },
+    {
+      "insert": "\nViewing the XML version is pointless and lame.  \n\n"
+    },
+    {
+      "attributes": {
+        "background": "#121314",
+        "color": "#bbbebf"
+      },
+      "insert": "DONE Remove \"extract characters\" button"
     },
     {
       "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "Make the plain text width narrower, to align more approximately with the width of the rendered page."
-    },
-    {
-      "insert": "\n\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "Move the XML version so they can sit side-by-side at 1920x"
-    },
-    {
-      "insert": "\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "The metadata should be above them both"
-    },
-    {
-      "insert": "\n"
-    },
-    {
-      "attributes": {
-        "background": "#121314",
-        "color": "#bbbebf"
-      },
-      "insert": "Remove \"extract characters\" button"
-    },
-    {
-      "insert": "\n"
     },
     {
       "attributes": {
@@ -69,7 +70,7 @@
       "insert": "Move \"YouTube URL\" to the chapter page -- actually, move everything except paragraph technique to the chapter page."
     },
     {
-      "insert": "\n\n"
+      "insert": "\n(removed, but I haven't added it to the chapter page)\n\n"
     }
   ]
 }
