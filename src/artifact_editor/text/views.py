@@ -124,6 +124,8 @@ def import_chapter(author, title, chapter_number, language):
     """
     New algorithm based on scoring every word based on how good of a phrase
     break it is and how suitable it is as a new image.
+
+    TODO: Rainbow support
     """
     author = Author(author)
 
@@ -134,7 +136,7 @@ def import_chapter(author, title, chapter_number, language):
         language=language
     )
 
-    chapter_xml = BeautifulSoup("<chapter></chapter>", "xml")
+    chapter_soup = BeautifulSoup("<chapter></chapter>", "xml")
 
     delta = chapter.load_delta()
     
@@ -144,8 +146,8 @@ def import_chapter(author, title, chapter_number, language):
     # originally intended.
 
     # if there is a title, add a title page
-    delta = extract_title(delta, chapter, chapter_xml)
-    delta = extract_author(delta, chapter, chapter_xml)
+    delta = extract_title(delta, chapter, chapter_soup)
+    delta = extract_author(delta, chapter, chapter_soup)
    
     #nltk.download('punkt_tab')
     spacy.prefer_gpu()
@@ -338,7 +340,8 @@ def import_chapter(author, title, chapter_number, language):
 
         index = break_index + 1
 
-    
+    chapter_xml = chapter_soup.find('chapter')
+
     with open(
         os.path.join(
             const.LIBRARY_DIR,
@@ -381,9 +384,29 @@ def import_chapter(author, title, chapter_number, language):
 """ % (title, author.pretty_name))
 
             latex_block = ""
+            paragraph = chapter_soup.new_tag("paragraph")
             for p in phrases:
-                log.info('s: %s', p['spoken'])
+                phrase = chapter_soup.new_tag("phrase")
+                phrase.string = p["spoken"]
+                phrase.attrs['latex'] = p["latex"].replace("\n", r"\n")
                 latex_block += p["latex"]
+
+                # double newline == paragraph break.
+                if phrase.attrs['latex'].lstrip(" ").startswith(r"\n\n"):
+                    new_paragraph = chapter_soup.new_tag("paragraph")
+                    new_paragraph.append(phrase)                   
+                    chapter_xml.append(new_paragraph)
+                    paragraph = new_paragraph
+                elif phrase.attrs['latex'].rstrip(" ").endswith(r"\n\n"):
+                    paragraph.append(phrase)
+                    new_paragraph = chapter_soup.new_tag("paragraph")
+                    chapter_xml.append(new_paragraph)
+                    paragraph = new_paragraph                    
+                else:
+                    log.info('s: %s', p['spoken'])
+                    paragraph.append(phrase)
+
+            # chapter_xml.append(paragraph)
 
             all_lines = []
             for line in latex_block.splitlines(keepends=True):
@@ -401,6 +424,8 @@ def import_chapter(author, title, chapter_number, language):
             f.write(r"""\end{document}""")
             
     delta["ops"] = out_ops
+    chapter.soup = chapter_xml
+    chapter.save_xml()
 
     return "", 200
 
@@ -479,7 +504,7 @@ def add_title(chapter_xml, chapter):
     title_page = chapter_xml.new_tag("paragraph")
     title_page.attrs["tags"] = "has-text=false,spoken-only=true"
     title_page.attrs["fullscreen"] = "true"
-    chapter_xml.append(title_page)
+    chapter_xml.find('chapter').append(title_page)
 
     title_image = chapter_xml.new_tag("image")
     if "subtitle" in chapter.kwargs:
@@ -501,17 +526,27 @@ def add_title(chapter_xml, chapter):
     title_image.attrs["prompt"] = title_prompt
     title_page.append(title_image)
 
+    phrase = chapter_xml.new_tag("phrase")
+    phrase.string = chapter.title
+    phrase.attrs["speaker"] = "Narrator"
+    title_page.append(phrase)
+
 
 def add_author(chapter_xml, chapter):
     author_page = chapter_xml.new_tag("paragraph")
     author_page.attrs["tags"] = "has-text=false,spoken-only=true"
     author_page.attrs["fullscreen"] = "true"
-    chapter_xml.append(author_page)
+    chapter_xml.find('chapter').append(author_page)
 
     author_image = chapter_xml.new_tag("image")
     author_prompt = f"Renown author {chapter.author.name} at a desk writing the famous story {chapter.title}"
     author_image.attrs["prompt"] = author_prompt
     author_page.append(author_image)
+
+    phrase = chapter_xml.new_tag("phrase")
+    phrase.string = f"By {chapter.author.name}"
+    phrase.attrs["speaker"] = "Narrator"
+    author_page.append(phrase)
 
 
 @bp.route("/actions/save_chapter_text", methods=["POST"])

@@ -136,7 +136,7 @@ def dinkus_editor(fragment):
 
 def pretty_duration(phrase_xml):
     total_prior = 0
-    for phrase in phrase_xml.find_parent("book").findAll("phrase"):
+    for phrase in phrase_xml.find_parent("chapter").findAll("phrase"):
         if phrase is phrase_xml:
             # we are done
             break

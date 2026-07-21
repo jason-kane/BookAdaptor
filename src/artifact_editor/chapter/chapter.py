@@ -1390,19 +1390,22 @@ class Chapter:
             with open(xml_fn, "r") as h:
                 self.soup = BeautifulSoup(h.read(), "xml")
 
-            book = self.soup.find("book")
-            if book is None:
-                raise ValueError("Invalid XML: No <book> tag found in XML file")
+            chapter_xml = self.soup.find("chapter")
+            if chapter_xml is None:
+                chapter_xml = self.soup.new_tag("chapter")
 
-            old_version = float(book.attrs.get("version", "0.0"))
+                if chapter_xml is None:
+                    raise ValueError("Invalid XML: No <chapter> tag found in XML file")
+
+            old_version = float(chapter_xml.attrs.get("version", "0.0"))
             self.soup = xml_upgrade(self, self.soup)
 
-            new_version = float(book.attrs.get("version", "0.0"))
+            new_version = float(chapter_xml.attrs.get("version", "0.0"))
             if f"{old_version}" != f"{new_version}":   
                 self.save_xml()
                 log.info("Upgraded XML from version %s to version %s", old_version, new_version)
         else:
-            self.soup = BeautifulSoup("<book></book>", "xml")
+            self.soup = BeautifulSoup("<chapter></chapter>", "xml")
 
         return self.soup
 
@@ -1686,8 +1689,13 @@ def xml_upgrade(chapter, soup):
     Upgrade the XML to the latest version.
     """
     log.info('xml_upgrade called') 
-    book = soup.find("book")
-    version = float(book.attrs.get("version", "0.0"))
+    chapter_xml = soup.find("chapter")
+    if chapter_xml is None:
+        # upgrade old 'book' to 'chapter'
+        chapter_xml = soup.find("book")
+        chapter_xml.name = "chapter"
+
+    version = float(chapter_xml.attrs.get("version", "0.0"))
 
     if version < 1.0:
         log.warning("Upgrading XML from version %s to 1.0", version)
@@ -1745,7 +1753,7 @@ def xml_upgrade(chapter, soup):
             if "image_index" in image.attrs:
                 del image.attrs["image_index"]
 
-        book.attrs["version"] = "1.0"
+        chapter_xml.attrs["version"] = "1.0"
 
     if version < 1.1:
         log.warning("Upgrading XML from version %s to 1.1", version)
@@ -1871,7 +1879,7 @@ def xml_upgrade(chapter, soup):
                 del image_xml.attrs["clip_prompt"]
 
         
-        for paragraph_xml in book.findAll("paragraph"):
+        for paragraph_xml in chapter_xml.findAll("paragraph"):
             paragraph_dir = chapter.get_paragraph_dir(paragraph_xml.attrs["index"])
             animation_dir = os.path.join(
                 const.LIBRARY_DIR,
@@ -1939,7 +1947,7 @@ def xml_upgrade(chapter, soup):
                             log.info('Renaming animation directory', old_dirpath=old_dirpath, new_dirpath=new_dirpath)
                             os.rename(old_dirpath, new_dirpath)
 
-        book.attrs["version"] = "1.1"
+        chapter_xml.attrs["version"] = "1.1"
     else:
         log.info("XML version is up to date (%s), no upgrade needed", version)
     
