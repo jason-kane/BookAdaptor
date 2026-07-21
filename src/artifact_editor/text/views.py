@@ -1071,7 +1071,31 @@ def get_delta(author, title, chapter_number, language):
         raw_text = chapter.load_delta()
     except FileNotFoundError:
         log.error('Delta file not found for chapter %s. Returning empty text.', chapter.get_delta_fn())
-        raw_text = ""
+        raw_text = {}
+
+    if raw_text in [{}, None]:
+        book_txt = os.path.join(
+            const.LIBRARY_DIR,
+            chapter.get_chapterdir(),
+            "book.txt"
+        )
+
+        # plain text file, not delta.  No problem.
+        if os.path.exists(book_txt):           
+            log.info('Importing plain text %s', book_txt)
+
+            with open(book_txt, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+
+            delta = {"ops": [{"insert": raw_text}]}
+            raw_text = json.dumps(delta, indent=2)
+
+            os.makedirs(os.path.dirname(chapter.get_delta_fn()), exist_ok=True)
+            with open(chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+                f.write(raw_text)
+        else:
+            log.info('No book.txt found for chapter %s. Returning empty delta.', chapter.get_chapterdir())
+            raw_text = json.dumps({"ops": []}, indent=2)
 
     return raw_text, 200
 

@@ -1,0 +1,125 @@
+{% set TEXT = True %}
+{% extends "base.html" %}
+
+{% block title %}
+<title>Artifact Editor: Text</title>
+{% endblock %}
+
+{% block styles %}
+<style>
+    #text_editor {
+        width: 65em;
+    }
+
+    #xml_editor {
+        width: 65em;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/styles/codemirror.css">
+<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/javascript/javascript.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/xml/xml.min.js" integrity="sha512-LarNmzVokUmcA7aUDtqZ6oTS+YXmUKzpGdm8DxC46A6AHu+PQiYCUlwEGWidjVYMo/QXZMFMIadZtrkfApYp/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/fold/xml-fold.min.js" integrity="sha512-3/N6i9E1fOr1I/8Yt3KL9uFeoEcjh3ceFXf83X6vIlElMZEq0LKF1JDYsIJYaZIJeG2YD9TnGCA4KAR2bEbz/w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script> -->
+
+<script type="importmap">
+  {
+    "imports": {
+      "@codemirror/state": "https://esm.sh/@codemirror/state@6.5.0",
+      "style-mod": "https://esm.sh/style-mod",
+      "w3c-keyname": "https://esm.sh/w3c-keyname",
+      "crelt": "https://esm.sh/crelt",
+      "@marijn/find-cluster-break": "https://esm.sh/@marijn/find-cluster-break",
+      "@lezer/": "https://esm.sh/*@lezer/",
+      "@codemirror/": "https://esm.sh/*@codemirror/",
+      "codemirror": "https://esm.sh/*codemirror"
+    }
+  }
+</script>
+
+<script type="module">
+    import { EditorView, basicSetup } from "codemirror";
+    import { xml } from "@codemirror/lang-xml";
+
+    // wait until the DOM is loaded before trying to access the canvas element
+    document.addEventListener("DOMContentLoaded", function () {
+
+        const text_editor = new EditorView({
+            doc: "",
+            extensions: [basicSetup],
+            parent: document.getElementById("text_editor")
+        });
+
+        const xml_editor = new EditorView({
+            doc: "",
+            extensions: [basicSetup, xml()],
+            parent: document.getElementById("xml_editor")
+        });
+
+        htmx.ajax('GET', "{{url_for('library.book.chapter.text.get_text', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}", {
+            handler: function (elt, info) {
+                text_editor.dispatch({
+                    changes: {
+                        from: 0,
+                        to: text_editor.state.doc.length,
+                        insert: info.xhr.responseText
+                    }
+                });
+            },
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        htmx.ajax('GET', "{{url_for('library.book.chapter.text.get_xml', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language)}}", {
+            handler: function (elt, info) {
+                xml_editor.dispatch({
+                    changes: {
+                        from: 0,
+                        to: xml_editor.state.doc.length,
+                        insert: info.xhr.responseText
+                    }
+                });
+                //xml_editor.setValue(info.xhr.responseText);
+            },
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block body %}
+
+{{ book_text|safe }}
+
+<div class="wa-cluster wa-align-items-start" style="gap: 32px;">
+
+    {{ previous_chapter|safe }}
+
+    <div class="wa-stack">
+        {{ chapter_metadata|safe }}
+
+        <div class="wa-cluster">
+            <wa-button type="submit" value="extract_characters" name="button">Extract Characters</wa-button>
+
+            {{ convert_to_xml|safe }}
+        </div>
+    </div>
+
+</div>
+
+<div id="xml_editor">
+    <div id="xml_editor" label="XML Text" name="xml_editor" rows="10" size="medium" appearance="outlined"
+        resize="vertical">
+    </div>
+</div>
+
+<wa-button hx-post="/{{chapter.url}}/{{chapter.language}}/text/actions/xml_text" hx-target="#save_xml_button"
+    hx-include="#xml_editor" hx-swap="outerHTML" id="save_xml_button" value="save" name="save">Save XML</wa-button>
+
+
+{% endblock %}
