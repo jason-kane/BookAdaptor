@@ -210,7 +210,7 @@ class Chapter:
             self.config = self.get_config()
 
             self.chapter_title = self.config.get("chapter_title", f"Chapter {number}")
-            
+
             self.mood = self.config.get("mood", self.mood)
             self.theme = self.config.get("theme", self.theme)
 
@@ -401,13 +401,19 @@ class Chapter:
                 phrase_index=phrase_xml.attrs["index"],
             )
 
-        log.info('Generating new highlighted text snippet for phrase', phrase_index=phrase_xml.attrs["index"])
+        log.info(
+            "Generating new highlighted text snippet for phrase",
+            phrase_index=phrase_xml.attrs["index"],
+        )
         r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
 
         # TODO: the problem is, this isn't going to work if the highlight spans multiple images.  Which it often does.
         # open up text_layer_rainbow.png.
         text_layer_rainbow_fn = os.path.join(
-            const.LIBRARY_DIR, self.chapterdir, "text_layer_rainbow.png"
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
+            "chapter.rainbow-1.png",
         )
         if not os.path.exists(text_layer_rainbow_fn):
             log.error(
@@ -416,6 +422,7 @@ class Chapter:
             )
             return None
 
+        log.info('Opening %s to find highlight region for phrase with color (%s, %s, %s)', text_layer_rainbow_fn, r, g, b)
         with open(text_layer_rainbow_fn, "rb") as h:
             img = Image.open(h)
             img = img.convert("RGBA")
@@ -441,7 +448,12 @@ class Chapter:
         y_max, x_max = coordinates.max(axis=0)
 
         with open(
-            os.path.join(const.LIBRARY_DIR, self.chapterdir, "text_layer_plain.png"),
+            os.path.join(
+                const.LIBRARY_DIR,
+                self.chapterdir,
+                self.language,
+                "chapter-1.png",
+            ),
             "rb",
         ) as h:
             img = Image.open(h)
@@ -574,11 +586,11 @@ class Chapter:
                 if not style:
                     log.warning("No style found for image, chapter, or book.")
                 else:
-                    log.info('Using book style: %s', style)
+                    log.info("Using book style: %s", style)
             else:
-                log.info('Using chapter style: %s', style)
+                log.info("Using chapter style: %s", style)
         else:
-            log.info('Using image style: %s', style)
+            log.info("Using image style: %s", style)
 
         return style
 
@@ -587,7 +599,7 @@ class Chapter:
         Get the prompt for a given image, if it exists.
         """
         return image_xml.attrs.get("prompt")
-        
+
         # styling here is dumb.
         change = False
         prompt = image_xml.attrs.get("prompt")
@@ -595,7 +607,7 @@ class Chapter:
 
         if not style:
             style = self.get_chapter_style()
-            
+
             if not style:
                 # is there a book style?
                 style = self.config.get("default_style")
@@ -614,21 +626,29 @@ class Chapter:
 
         return prompt
 
-    def get_last_frame(self, image_xml, frame_index=None, recursed=False, video_index=None) -> str | None:
+    def get_last_frame(
+        self, image_xml, frame_index=None, recursed=False, video_index=None
+    ) -> str | None:
         """
         If this image is part of a video, get the filename of the last frame.
         """
-        log.info("get_last_frame()", image_xml_index=image_xml.attrs["index"], frame_index=frame_index)
-        
+        log.info(
+            "get_last_frame()",
+            image_xml_index=image_xml.attrs["index"],
+            frame_index=frame_index,
+        )
+
         if video_index is None:
             # all animation dirs for this image, regardless of video_index, we're going to start looking
             # for last frame in the highest sorted dirname.
             all_animation_dirs = glob.glob(
                 os.path.join(
                     const.LIBRARY_DIR,
-                    self.get_paragraphdir(image_xml.find_parent("paragraph").attrs["index"]),
+                    self.get_paragraphdir(
+                        image_xml.find_parent("paragraph").attrs["index"]
+                    ),
                     "animation",
-                    f"image_{int(image_xml.attrs['index']):06d}_*"
+                    f"image_{int(image_xml.attrs['index']):06d}_*",
                 )
             )
         else:
@@ -637,9 +657,11 @@ class Chapter:
             all_animation_dirs = glob.glob(
                 os.path.join(
                     const.LIBRARY_DIR,
-                    self.get_paragraphdir(image_xml.find_parent("paragraph").attrs["index"]),
+                    self.get_paragraphdir(
+                        image_xml.find_parent("paragraph").attrs["index"]
+                    ),
                     "animation",
-                    f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}"
+                    f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}",
                 )
             )
 
@@ -649,13 +671,17 @@ class Chapter:
             for animation_dir in sorted(all_animation_dirs):
                 for frame in sorted(os.listdir(animation_dir)):
                     index_to_fn.append(os.path.join(animation_dir, frame))
-        
+
             frame_index = min(frame_index, len(index_to_fn) - 1)
-            
+
             if frame_index >= 0:
-                log.info('Index of %s frame constructed, selecting frame %s', len(index_to_fn), frame_index)
+                log.info(
+                    "Index of %s frame constructed, selecting frame %s",
+                    len(index_to_fn),
+                    frame_index,
+                )
                 return index_to_fn[frame_index]
-        
+
         # the last frame, start with highest numbered animation dir
         for animation_dir in sorted(all_animation_dirs, reverse=True):
             frame = sorted(os.listdir(animation_dir), reverse=True)
@@ -667,8 +693,10 @@ class Chapter:
         if not recursed:
             # re-generate the frames from the video file(s) (if it/they exist(s))
             self.video_to_frames(image_xml)
-            return self.get_last_frame(image_xml, frame_index=frame_index, recursed=True)
-    
+            return self.get_last_frame(
+                image_xml, frame_index=frame_index, recursed=True
+            )
+
         # fallback to the image.src
         return self.get_image_filename(image_xml)
 
@@ -678,7 +706,7 @@ class Chapter:
         Dupe of tools.extract_frames() (oops)
         """
         video_fn = None
-        for video_index in range(image_xml.attrs.get('animation_count', 1)):
+        for video_index in range(image_xml.attrs.get("animation_count", 1)):
             if video_index == 0:
                 image_fn = self.get_image_filename(image_xml)
                 video_fn = image_fn.replace(".png", ".mp4")
@@ -688,7 +716,9 @@ class Chapter:
 
             output_dir = os.path.join(
                 const.LIBRARY_DIR,
-                self.get_paragraphdir(image_xml.find_parent("paragraph").attrs["index"]),
+                self.get_paragraphdir(
+                    image_xml.find_parent("paragraph").attrs["index"]
+                ),
                 "animation",
                 f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}",
             )
@@ -696,7 +726,9 @@ class Chapter:
             os.makedirs(output_dir, exist_ok=True)
 
             # use ffmpeg to extract frames
-            command = f"ffmpeg -i {video_fn} -vf fps={const.FPS} {output_dir}/frame_%04d.png"
+            command = (
+                f"ffmpeg -i {video_fn} -vf fps={const.FPS} {output_dir}/frame_%04d.png"
+            )
             log.info("Extracting frames from video", command=command)
             os.system(command)
 
@@ -714,7 +746,7 @@ class Chapter:
     ):
         """
         The problem is we don't know if this is an animation or an image gen (or
-        text gen); 
+        text gen);
         """
         if template_environment is None:
             template_environment = {}
@@ -727,7 +759,7 @@ class Chapter:
             video_index,
         )
 
-        if video_index not in [None, '']:
+        if video_index not in [None, ""]:
             video_tag = f"_{video_index:02d}"
 
         # animation = False
@@ -745,8 +777,10 @@ class Chapter:
         if previous_image_xml:
             previous_image_src = os.path.join(
                 const.LIBRARY_DIR,
-                self.get_paragraphdir(previous_image_xml.find_parent("paragraph").attrs["index"]),
-                previous_image_xml.attrs.get("src", "error.png")
+                self.get_paragraphdir(
+                    previous_image_xml.find_parent("paragraph").attrs["index"]
+                ),
+                previous_image_xml.attrs.get("src", "error.png"),
             )
             prior_frame = previous_image_src
 
@@ -754,7 +788,7 @@ class Chapter:
         source_image = self.get_image_filename(image_xml) or "image.png"
 
         if video_index == 0:
-            # we are a "base" video ie: there is an <image> for us    
+            # we are a "base" video ie: there is an <image> for us
             # okay.. so we're not a subsequent video in a stream, but we might be the second
             # animation in a paragraph.  In that case our source image is the last frame of the previous animation.
             if previous_image_xml is not None:
@@ -772,10 +806,12 @@ class Chapter:
                     image_plan = mplan["images"][int(previous_image_xml.attrs["index"])]
 
                 frame_index = image_plan["frames"]
-                prior_frame = self.get_last_frame(previous_image_xml, frame_index=frame_index)
+                prior_frame = self.get_last_frame(
+                    previous_image_xml, frame_index=frame_index
+                )
             else:
                 prior_frame = ""
-        elif video_index not in [None, '']:
+        elif video_index not in [None, ""]:
             # we are one of the subsequent videos in a sequence of videos, our
             # source image is the last frame of the _previous_ video.
             # (the critical -1 is buried in here)
@@ -797,12 +833,16 @@ class Chapter:
 
         next_image_xml = self.get_image(int(image_xml.attrs["index"]) + 1)
         next_image_src = ""
-        
+
         if next_image_xml is not None:
             next_image_src = os.path.join(
                 const.LIBRARY_DIR,
-                self.get_paragraphdir(next_image_xml.find_parent("paragraph").attrs["index"]),
-                next_image_xml.attrs.get("src", "") if next_image_xml is not None else ""
+                self.get_paragraphdir(
+                    next_image_xml.find_parent("paragraph").attrs["index"]
+                ),
+                next_image_xml.attrs.get("src", "")
+                if next_image_xml is not None
+                else "",
             )
 
         if prior_frame is None:
@@ -811,34 +851,37 @@ class Chapter:
 
         files_to_copy = [
             (
-                source_image, 
+                source_image,
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
                     os.path.basename(source_image),
-                )
-            ), (
+                ),
+            ),
+            (
                 prior_frame,
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
                     os.path.basename(prior_frame),
-                )
-            ), (
+                ),
+            ),
+            (
                 next_image_src,
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
                     os.path.basename(next_image_src),
-                )
-            ), (
+                ),
+            ),
+            (
                 previous_image_src,
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
                     os.path.basename(previous_image_src),
-                )                
-            )
+                ),
+            ),
         ]
-        log.info('preparing files_to_copy into comfy', files_to_copy=files_to_copy)
-       
-        for (source, destination) in files_to_copy:
+        log.info("preparing files_to_copy into comfy", files_to_copy=files_to_copy)
+
+        for source, destination in files_to_copy:
             if not source:
                 continue
 
@@ -855,9 +898,7 @@ class Chapter:
 
         log.info("Using workflow template", workflow_template=workflow_template)
 
-        workflow = comfy.load_workflow_template(
-            interface, mode, workflow_template
-        )
+        workflow = comfy.load_workflow_template(interface, mode, workflow_template)
 
         if interface == "ui" and "nodes" not in workflow:
             raise ValueError(
@@ -875,7 +916,7 @@ class Chapter:
         ####
         log.info("Gathering Text and Image metadata for workflow construction...")
 
-        if video_index not in [None, '']:
+        if video_index not in [None, ""]:
             animation_prompt = image_xml.attrs.get(f"animation_prompt{video_tag}", "")
             log.info(
                 "Using animation prompt: %s (from %s)",
@@ -888,11 +929,13 @@ class Chapter:
 
         duration_in_frames = self.get_image_frames(image_xml)
         duration_in_seconds = duration_in_frames / const.FPS
-        
-        # so we can wildcard to pull output images into the right place.
-        filename_prefix = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}"
 
-        if video_index not in [None, '']:
+        # so we can wildcard to pull output images into the right place.
+        filename_prefix = (
+            f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}"
+        )
+
+        if video_index not in [None, ""]:
             filename_prefix += video_tag
 
         # we want two paragraphs before and two after the paragraph containing this image.
@@ -908,19 +951,19 @@ class Chapter:
             first_phrase_index = next_phrase.attrs["index"]
         else:
             first_phrase_index = None
-        
+
         last_phrase_index = None
         if next_image_xml is not None:
             last_phrase = next_image_xml.find_previous("phrase")
             if last_phrase is not None:
-                last_phrase_index = last_phrase.attrs["index"]               
+                last_phrase_index = last_phrase.attrs["index"]
 
         log.info(
             "Collecting snippet focused on phrases %s - %s",
             first_phrase_index,
             last_phrase_index,
         )
-        
+
         our_source = ""
         if first_phrase_index is not None and last_phrase_index is not None:
             our_source = self.get_paragraph_snippet(
@@ -937,7 +980,7 @@ class Chapter:
         prompt_fn = (
             f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}.prompt"
         )
-        #previous_image = image_xml.find_previous_sibling("image")
+        # previous_image = image_xml.find_previous_sibling("image")
         scene_description_fn = (
             f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}.txt"
         )
@@ -947,10 +990,10 @@ class Chapter:
         #     first_frame = os.path.basename(prior_frame)
         # else:
         first_frame = os.path.basename(source_image)
-        
+
         if next_image_src:
             last_frame = os.path.basename(next_image_src)
-        else:            
+        else:
             last_frame = os.path.basename(source_image)
 
         # for animation workflows the input image is the source_image, which is to say the
@@ -961,7 +1004,7 @@ class Chapter:
         input_image = os.path.basename(source_image)
 
         style_name = self.get_image_style(image_xml)
-        style = styles.get_style('Custom', style_name)
+        style = styles.get_style("Custom", style_name)
 
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
@@ -969,7 +1012,7 @@ class Chapter:
         base_template_environment = {
             "WIDTH": str(width),
             "HEIGHT": str(height),
-            "DURATION": str(duration_in_seconds), # float
+            "DURATION": str(duration_in_seconds),  # float
             "FILENAME_PREFIX": filename_prefix,
             "FILE_NAME": filename_prefix,
             "FIRST_FRAME": first_frame,
@@ -980,21 +1023,23 @@ class Chapter:
             "NEGATIVE_PROMPT": negative_prompt,
             "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
             "PREVIOUS_IMAGE": previous_image_src,
-            "PRIOR_FRAME": os.path.basename(prior_frame) if prior_frame is not None else "",
+            "PRIOR_FRAME": os.path.basename(prior_frame)
+            if prior_frame is not None
+            else "",
             "PRIOR_RESULT": "",
             "PROMPT_FN": prompt_fn,
             "PROMPT": self.get_prompt(image_xml),
             "SCENE_DESCRIPTION_FN": scene_description_fn,
             "SCENE": json.dumps(scene, indent=2),
             "SOURCE": our_source,
-            "STYLE": style['name'],
+            "STYLE": style["name"],
             "SYSTEM_PROMPT": "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
         }
 
-        if video_index not in [None, '']:  # we need 0 to be valid.
+        if video_index not in [None, ""]:  # we need 0 to be valid.
             # this is a video.
             base_template_environment["ANIMATION_PROMPT"] = animation_prompt
-            
+
             if video_index > 0:
                 # our first frame is the last frame of the previous video, not
                 # the source image.
@@ -1011,7 +1056,8 @@ class Chapter:
                 base_template_environment["TOTAL_FRAMES"] = str(
                     min(
                         duration_in_frames - prior_video_frames,
-                        4 * const.FPS,  # 4 seconds max, for more you have to chain videos together.
+                        4
+                        * const.FPS,  # 4 seconds max, for more you have to chain videos together.
                     )
                 )
             else:
@@ -1019,17 +1065,16 @@ class Chapter:
                 base_template_environment["TOTAL_FRAMES"] = str(
                     min(
                         self.get_image_frames(image_xml),
-                        4 * const.FPS,  # 4 seconds max, for more you have to chain videos together.
+                        4
+                        * const.FPS,  # 4 seconds max, for more you have to chain videos together.
                     )
                 )
-
 
         # overwrite template environment settings from template_envionment arg
         base_template_environment.update(template_environment)
 
         workflow = comfy.apply_template_environment(
-            workflow=workflow,
-            template_environment=base_template_environment
+            workflow=workflow, template_environment=base_template_environment
         )
         return workflow
 
@@ -1065,7 +1110,9 @@ class Chapter:
         previous_paragraph = parent_paragraph
         for x in range(context_before):
             if previous_paragraph is not None:
-                previous_paragraph = previous_paragraph.find_previous_sibling("paragraph")
+                previous_paragraph = previous_paragraph.find_previous_sibling(
+                    "paragraph"
+                )
 
         for x in range(context_before):
             if previous_paragraph is not None:
@@ -1227,10 +1274,13 @@ class Chapter:
             # one more chance..
             try:
                 aspect = {
-                    'landscape': 'widescreen',
+                    "landscape": "widescreen",
                 }[aspect]
             except KeyError:
-                log.error("Invalid aspect ratio in config, defaulting to widescreen", aspect=aspect)
+                log.error(
+                    "Invalid aspect ratio in config, defaulting to widescreen",
+                    aspect=aspect,
+                )
                 aspect = "widescreen"
 
         return aspect
@@ -1288,10 +1338,7 @@ class Chapter:
 
     def get_delta_fn(self):
         return os.path.join(
-            const.LIBRARY_DIR,
-            self.chapterdir,
-            self.language,
-            "chapter.delta.json"
+            const.LIBRARY_DIR, self.chapterdir, self.language, "chapter.delta.json"
         )
 
     def load_delta(self) -> dict:
@@ -1302,7 +1349,6 @@ class Chapter:
         else:
             log.warning("Delta file not found", delta_fn=delta_fn)
             return {}
-
 
     def delete(self):
         """
@@ -1375,13 +1421,13 @@ class Chapter:
             return self.soup
 
         if self.soup is not None:
-            log.info('Chapter XML already loaded')
+            log.info("Chapter XML already loaded")
             if not force:
-                log.info('Cache hit')
+                log.info("Cache hit")
                 return self.soup
             else:
-                log.info('** Forced reload of chapter XML **')
-        
+                log.info("** Forced reload of chapter XML **")
+
         log.info("Cache not loaded, loading fresh XML for chapter")
 
         xml_fn = self.get_xml_fn()
@@ -1401,9 +1447,13 @@ class Chapter:
             self.soup = xml_upgrade(self, self.soup)
 
             new_version = float(chapter_xml.attrs.get("version", "0.0"))
-            if f"{old_version}" != f"{new_version}":   
+            if f"{old_version}" != f"{new_version}":
                 self.save_xml()
-                log.info("Upgraded XML from version %s to version %s", old_version, new_version)
+                log.info(
+                    "Upgraded XML from version %s to version %s",
+                    old_version,
+                    new_version,
+                )
         else:
             self.soup = BeautifulSoup("<chapter></chapter>", "xml")
 
@@ -1432,7 +1482,7 @@ class Chapter:
         # /home/jkane/books/active/Aesop/Fables/chapter/0025/book.xml
         log.info("Saving book as XML", book_fn=book_fn)
         if self.soup is None:
-            log.error('book not loaded!', book_fn=book_fn)
+            log.error("book not loaded!", book_fn=book_fn)
             self.load_xml()
 
         pretty = self.soup.prettify()
@@ -1488,7 +1538,7 @@ class Chapter:
 
     def save_config(self):
         config.save_config(
-            self.chapterdir, 
+            self.chapterdir,
             self.config,
         )
 
@@ -1688,7 +1738,7 @@ def xml_upgrade(chapter, soup):
     """
     Upgrade the XML to the latest version.
     """
-    log.info('xml_upgrade called') 
+    log.info("xml_upgrade called")
     chapter_xml = soup.find("chapter")
     if chapter_xml is None:
         # upgrade old 'book' to 'chapter'
@@ -1699,7 +1749,7 @@ def xml_upgrade(chapter, soup):
 
     if version < 1.0:
         log.warning("Upgrading XML from version %s to 1.0", version)
-        
+
         # enforce some hard types
         for index, image in enumerate(soup.findAll("image")):
             if "frames" in image.attrs:
@@ -1759,114 +1809,144 @@ def xml_upgrade(chapter, soup):
         log.warning("Upgrading XML from version %s to 1.1", version)
         for image_xml in soup.findAll("image"):
             if "animation_method" in image_xml.attrs:
-                log.info('Fixing up animation_method to be versioned')
+                log.info("Fixing up animation_method to be versioned")
                 # update "bare" animation metadata to be clearly versioned for multiple-video sequences.
                 # these are numbered from 0 and typically are :02d
-                image_xml.attrs["animation_method_00"] = image_xml.attrs["animation_method"]
+                image_xml.attrs["animation_method_00"] = image_xml.attrs[
+                    "animation_method"
+                ]
                 del image_xml.attrs["animation_method"]
-            
+
             if "animation_prompt" in image_xml.attrs:
-                log.info('Fixing up animation_prompt to be versioned')
-                image_xml.attrs["animation_prompt_00"] = image_xml.attrs["animation_prompt"]
+                log.info("Fixing up animation_prompt to be versioned")
+                image_xml.attrs["animation_prompt_00"] = image_xml.attrs[
+                    "animation_prompt"
+                ]
                 del image_xml.attrs["animation_prompt"]
 
             if "workflow_i2v_template" in image_xml.attrs:
-                log.info('Fixing up workflow_i2v_template to be versioned')
-                image_xml.attrs["workflow_animation_template_00"] = image_xml.attrs["workflow_i2v_template"]
+                log.info("Fixing up workflow_i2v_template to be versioned")
+                image_xml.attrs["workflow_animation_template_00"] = image_xml.attrs[
+                    "workflow_i2v_template"
+                ]
                 del image_xml.attrs["workflow_i2v_template"]
 
             # and some obsolete fields
             if "meta_prompt" in image_xml.attrs:
-                log.info('Removing obsolete meta_prompt field')
+                log.info("Removing obsolete meta_prompt field")
                 del image_xml.attrs["meta_prompt"]
 
             if "workflow_name" in image_xml.attrs:
-                log.info('Removing obsolete workflow_name field')
+                log.info("Removing obsolete workflow_name field")
                 del image_xml.attrs["workflow_name"]
 
             if "workflow_template" in image_xml.attrs:
-                log.info('Renaming workflow_template to workflow_image_template')
-                image_xml.attrs["workflow_image_template"] = image_xml.attrs["workflow_template"]
+                log.info("Renaming workflow_template to workflow_image_template")
+                image_xml.attrs["workflow_image_template"] = image_xml.attrs[
+                    "workflow_template"
+                ]
                 del image_xml.attrs["workflow_template"]
 
             if "workflow_t2i_template" in image_xml.attrs:
-                log.info('Renaming workflow_t2i_template to workflow_image_template')
-                image_xml.attrs["workflow_image_template"] = image_xml.attrs["workflow_t2i_template"]
+                log.info("Renaming workflow_t2i_template to workflow_image_template")
+                image_xml.attrs["workflow_image_template"] = image_xml.attrs[
+                    "workflow_t2i_template"
+                ]
                 del image_xml.attrs["workflow_t2i_template"]
 
             if "workflow_animation_template" in image_xml.attrs:
-                log.info('Renaming workflow_animation_template to workflow_animation_template_00')
-                image_xml.attrs["workflow_animation_template_00"] = image_xml.attrs["workflow_animation_template"]
+                log.info(
+                    "Renaming workflow_animation_template to workflow_animation_template_00"
+                )
+                image_xml.attrs["workflow_animation_template_00"] = image_xml.attrs[
+                    "workflow_animation_template"
+                ]
                 del image_xml.attrs["workflow_animation_template"]
 
             # obsolete
             if "styled_prompt" in image_xml.attrs:
-                log.info('Removing obsolete styled_prompt field')
+                log.info("Removing obsolete styled_prompt field")
                 del image_xml.attrs["styled_prompt"]
 
             if "t5_prompt" in image_xml.attrs:
-                log.info('Renaming t5_prompt to prompt')
+                log.info("Renaming t5_prompt to prompt")
                 if "prompt" not in image_xml.attrs:
                     image_xml.attrs["prompt"] = image_xml.attrs["t5_prompt"]
 
                 del image_xml.attrs["t5_prompt"]
 
             if "tab" in image_xml.attrs:
-                log.info('Removing obsolete tab field')
+                log.info("Removing obsolete tab field")
                 del image_xml.attrs["tab"]
 
             if "¬" in image_xml.attrs.get("prompt", ""):
-                log.info('Cleaning up prompt field to remove styled prompt metadata')
+                log.info("Cleaning up prompt field to remove styled prompt metadata")
                 # we have a styled prompt, we do not want that.  These are often nested a few layers, so we'll unwrap it.
                 while "¬" in image_xml.attrs.get("prompt", ""):
                     first_comma = image_xml.attrs["prompt"].find(",")
                     last_weird = image_xml.attrs["prompt"].rfind("¬")
-                    
-                    if first_comma != -1 and last_weird != -1 and last_weird > first_comma:
+
+                    if (
+                        first_comma != -1
+                        and last_weird != -1
+                        and last_weird > first_comma
+                    ):
                         # we have a comma and a weird char, and the weird char
-                        image_xml.attrs["prompt"] = image_xml.attrs["prompt"][first_comma+1:last_weird]
+                        image_xml.attrs["prompt"] = image_xml.attrs["prompt"][
+                            first_comma + 1 : last_weird
+                        ]
                     else:
                         break
-            
+
             if "styled" in image_xml.attrs:
-                log.info('Removing obsolete styled field')
+                log.info("Removing obsolete styled field")
                 del image_xml.attrs["styled"]
 
             if "workflow_animation_template_1" in image_xml.attrs:
-                log.info('Renaming workflow_animation_template_1 to workflow_animation_template_01')
-                image_xml.attrs["workflow_animation_template_01"] = image_xml.attrs["workflow_animation_template_1"]
+                log.info(
+                    "Renaming workflow_animation_template_1 to workflow_animation_template_01"
+                )
+                image_xml.attrs["workflow_animation_template_01"] = image_xml.attrs[
+                    "workflow_animation_template_1"
+                ]
                 del image_xml.attrs["workflow_animation_template_1"]
 
             if "animation_method_1" in image_xml.attrs:
-                log.info('Renaming animation_method_1 to animation_method_01')
-                image_xml.attrs["animation_method_01"] = image_xml.attrs["animation_method_1"]
+                log.info("Renaming animation_method_1 to animation_method_01")
+                image_xml.attrs["animation_method_01"] = image_xml.attrs[
+                    "animation_method_1"
+                ]
                 del image_xml.attrs["animation_method_1"]
 
             if "animation_mode_1" in image_xml.attrs:
-                log.info('Renaming animation_mode_1 to animation_mode_01')
-                image_xml.attrs["animation_mode_01"] = image_xml.attrs["animation_mode_1"]
+                log.info("Renaming animation_mode_1 to animation_mode_01")
+                image_xml.attrs["animation_mode_01"] = image_xml.attrs[
+                    "animation_mode_1"
+                ]
                 del image_xml.attrs["animation_mode_1"]
 
             if "Narrator_action" in image_xml.attrs:
-                log.info('Removing obsolete Narrator_action field')
+                log.info("Removing obsolete Narrator_action field")
                 del image_xml.attrs["Narrator_action"]
 
             if "Narrator_description" in image_xml.attrs:
-                log.info('Removing obsolete Narrator_description field')
+                log.info("Removing obsolete Narrator_description field")
                 del image_xml.attrs["Narrator_description"]
-            
+
             if "Narrator_location" in image_xml.attrs:
-                log.info('Removing obsolete Narrator_location field')
+                log.info("Removing obsolete Narrator_location field")
                 del image_xml.attrs["Narrator_location"]
 
             if "None_location" in image_xml.attrs:
-                log.info('Removing obsolete None_location field')
+                log.info("Removing obsolete None_location field")
                 del image_xml.attrs["None_location"]
 
             for key in ["animation_method_00", "animation_method_01"]:
                 if key in image_xml.attrs:
                     if image_xml.attrs[key] == "comfy_ui":
-                        log.info('Updating animation_method to use a specific comfy_ui workflow')
+                        log.info(
+                            "Updating animation_method to use a specific comfy_ui workflow"
+                        )
                         if image_xml.find_next_sibling("image"):
                             # there is an image after this one, with this paragraph.
                             image_xml.attrs[key] = "comfy_ui_flf2v"
@@ -1875,17 +1955,12 @@ def xml_upgrade(chapter, soup):
                             image_xml.attrs[key] = "comfy_ui_i2v"
 
             if "clip_prompt" in image_xml.attrs:
-                log.info('Removing obsolete clip_prompt field')
+                log.info("Removing obsolete clip_prompt field")
                 del image_xml.attrs["clip_prompt"]
 
-        
         for paragraph_xml in chapter_xml.findAll("paragraph"):
             paragraph_dir = chapter.get_paragraph_dir(paragraph_xml.attrs["index"])
-            animation_dir = os.path.join(
-                const.LIBRARY_DIR,
-                paragraph_dir,
-                "animation"
-            )
+            animation_dir = os.path.join(const.LIBRARY_DIR, paragraph_dir, "animation")
 
             if os.path.exists(animation_dir):
                 for dirname in os.listdir(animation_dir):
@@ -1895,7 +1970,7 @@ def xml_upgrade(chapter, soup):
                         if os.path.isdir(dirpath):
                             shutil.rmtree(dirpath)
 
-                    split_under = dirname.split('_')
+                    split_under = dirname.split("_")
                     image_index = split_under[-1]
                     if image_index[0] != "0":
                         # different bug, the first digit would only legit be
@@ -1908,17 +1983,17 @@ def xml_upgrade(chapter, soup):
                     if len(split_under) == 3:
                         # good... ish.
                         _, image_index, video_index = split_under
-                        
+
                         if len(image_index) != 6:
                             # we have a problem.
                             if len(video_index) == 2:
-                                # image_00_03 sort of directory name (oops), the trouble 
+                                # image_00_03 sort of directory name (oops), the trouble
                                 # is we don't really know which is supposed to be the image_index and which is the video_index.
                                 # so we guess.
                                 if image_index == "00" and video_index != "00":
                                     # odds are the video index is the one that is _supposed_ to be 00
                                     video_index, image_index = image_index, video_index
-                                
+
                             image_index = int(image_index)
                             video_index = int(video_index)
 
@@ -1928,27 +2003,42 @@ def xml_upgrade(chapter, soup):
                             old_dirpath = os.path.join(animation_dir, dirname)
 
                             if os.path.exists(new_dirpath):
-                                log.warning('New animation directory already exists, skipping rename and deleting old directory.', old_dirpath=old_dirpath, new_dirpath=new_dirpath)
+                                log.warning(
+                                    "New animation directory already exists, skipping rename and deleting old directory.",
+                                    old_dirpath=old_dirpath,
+                                    new_dirpath=new_dirpath,
+                                )
                                 shutil.rmtree(old_dirpath)
                             else:
-                                log.info('Renaming animation directory', old_dirpath=old_dirpath, new_dirpath=new_dirpath)
-                                os.rename(old_dirpath, new_dirpath)                                    
+                                log.info(
+                                    "Renaming animation directory",
+                                    old_dirpath=old_dirpath,
+                                    new_dirpath=new_dirpath,
+                                )
+                                os.rename(old_dirpath, new_dirpath)
 
                     elif len(split_under) == 2:
                         video_index = 0
                         image_index = int(split_under[-1])
                         new_dirname = f"image_{image_index:06d}_{video_index:02d}"
-                        
+
                         new_dirpath = os.path.join(animation_dir, new_dirname)
                         old_dirpath = os.path.join(animation_dir, dirname)
                         if os.path.exists(new_dirpath):
-                            log.warning('New animation directory already exists, skipping rename', new_dirpath=new_dirpath)
+                            log.warning(
+                                "New animation directory already exists, skipping rename",
+                                new_dirpath=new_dirpath,
+                            )
                         else:
-                            log.info('Renaming animation directory', old_dirpath=old_dirpath, new_dirpath=new_dirpath)
+                            log.info(
+                                "Renaming animation directory",
+                                old_dirpath=old_dirpath,
+                                new_dirpath=new_dirpath,
+                            )
                             os.rename(old_dirpath, new_dirpath)
 
         chapter_xml.attrs["version"] = "1.1"
     else:
         log.info("XML version is up to date (%s), no upgrade needed", version)
-    
+
     return soup

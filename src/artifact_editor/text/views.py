@@ -124,8 +124,6 @@ def import_chapter(author, title, chapter_number, language):
     """
     New algorithm based on scoring every word based on how good of a phrase
     break it is and how suitable it is as a new image.
-
-    TODO: Rainbow support
     """
     author = Author(author)
 
@@ -249,13 +247,21 @@ def import_chapter(author, title, chapter_number, language):
 
         # we will use a WINDOW_SIZE word evaluation window that resets whenever we
         # choose a phrase break point.
-        highest = 0
-        WINDOW_SIZE = 25
+        
+        WINDOW_SIZE = 20  # 25 is too big
+
         break_index = None
-        for i in range(index, min(index + WINDOW_SIZE, len(out_ops))):
-            if out_ops[i].get("phrase_score", 0) > highest:
-                highest = out_ops[i]["phrase_score"]
-                break_index = i
+        while break_index is None and WINDOW_SIZE < 30:
+            highest = 0
+            
+            for i in range(index, min(index + WINDOW_SIZE, len(out_ops))):
+                if out_ops[i].get("phrase_score", 0) > highest:
+                    highest = out_ops[i]["phrase_score"]
+                    break_index = i
+            
+            if break_index is None:
+                log.info('No phrase break found in window size %d, reducing window size...', WINDOW_SIZE)
+                WINDOW_SIZE += 2
 
         if break_index is None:
             log.info('!FAILURE! No phrase break found!')
@@ -348,8 +354,13 @@ def import_chapter(author, title, chapter_number, language):
             chapter.get_chapterdir(),
             chapter.language,
             "chapter.latex"
-        ), "w") as f:
-            f.write(r"""\documentclass[parskip=full]{scrartcl}
+        ), "w") as h, open(os.path.join(
+            const.LIBRARY_DIR,
+            chapter.get_chapterdir(),
+            chapter.language,
+            "chapter.rainbow.latex"
+        ), "w") as rainbow_h:
+            header = r"""\documentclass[parskip=full]{scrartcl}
 \usepackage[paperheight=200in,paperwidth=2.825in,top=0.5in,bottom=4in,left=0.1in,right=0.1in,heightrounded]{geometry}
 \addtokomafont{title}{\centering}
 \addtokomafont{author}{\centering}
@@ -364,6 +375,8 @@ def import_chapter(author, title, chapter_number, language):
 \usepackage{titling}
 
 \usepackage[osf]{libertinus-otf}
+
+%s
 
 \pagenumbering{gobble}
 \widowpenalties 1 10000
@@ -381,15 +394,35 @@ def import_chapter(author, title, chapter_number, language):
 \tolerance=9999
 \hyphenpenalty=10000
 \exhyphenpenalty=100                    
-""" % (title, author.pretty_name))
+"""
 
             latex_block = ""
+            latex_rainbow_block = ""
             paragraph = chapter_soup.new_tag("paragraph")
-            for p in phrases:
+            
+            rainbow_series = []
+            
+            initial_index = len(chapter_soup.find_all('phrase'))
+
+            for index, p in enumerate(phrases, initial_index):
                 phrase = chapter_soup.new_tag("phrase")
                 phrase.string = p["spoken"]
+                phrase.attrs['index'] = index
+
+                # limit to 24 bits, 10 offset to keep us away from pure black
+                rainbow_int = (index + 10) % 16777216
                 phrase.attrs['latex'] = p["latex"].replace("\n", r"\n")
+                
+                prior_whitespace = p['latex'][:len(p['latex']) - len(p['latex'].lstrip())]
+                post_whitespace = p['latex'][len(p['latex'].rstrip()):]
+                p["latex_rainbow"] = f"{prior_whitespace}\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{p['latex'].strip()}}}{post_whitespace}"
+                phrase.attrs['latex_rainbow'] = p["latex_rainbow"].replace("\n", r"\n")
+
+                r, g, b = rainbow_int.to_bytes(3, 'big')
+                rainbow_series.append(f"\\definecolor{{B{rainbow_int:X}}}{{RGB}}{{{r},{g},{b}}}")
+                
                 latex_block += p["latex"]
+                latex_rainbow_block += p['latex_rainbow']
 
                 # double newline == paragraph break.
                 if phrase.attrs['latex'].lstrip(" ").startswith(r"\n\n"):
@@ -420,8 +453,26 @@ def import_chapter(author, title, chapter_number, language):
 
                 all_lines.append(line)
 
-            f.write("".join(all_lines))
-            f.write(r"""\end{document}""")
+            all_rainbow_lines = []
+            for line in latex_rainbow_block.splitlines(keepends=True):
+                if line.strip() and all_rainbow_lines and all_rainbow_lines[-1].strip():
+                    # there is a non-blank line after a non-blank line.  We need to add a \\
+                    all_rainbow_lines[-1] = all_rainbow_lines[-1].rstrip() + r"\\" + "\n"
+
+                # escapes 
+                if "$" in line:
+                    line = line.replace("$", r"\$")
+
+                all_rainbow_lines.append(line)
+
+            h.write(header % ("", title, author.pretty_name))
+            rainbow_h.write(header % ("\n".join(rainbow_series), title, author.pretty_name))
+
+            h.write("".join(all_lines))
+            rainbow_h.write("".join(all_rainbow_lines))
+
+            h.write(r"""\end{document}""")
+            rainbow_h.write(r"""\end{document}""")
             
     delta["ops"] = out_ops
     chapter.soup = chapter_xml

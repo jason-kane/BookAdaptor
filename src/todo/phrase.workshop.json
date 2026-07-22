@@ -19,7 +19,7 @@
       "insert": "FIXED 7/14: Generate All Missing Audio doesn't work; "
     },
     {
-      "insert": "\n\nAudio flow doesn't really make sense.  We want a clean text -> IPA, then IPA + voice -> .WAV\nTo do that we will need to hack up the comfy kokoro library a bit to create a new IPA + voice -> WAV capablity\nI think the text->IPA part can be done  in artifactserver without LLM.  That also puts the whole pronunciation library inside instead of the awkward secret handshake pronunciation file I'm using now.\n\n Text -> IPA, with soundslike for unknown words"
+      "insert": "\n\nFor beautiful high-resolution text:\nsudo lualatex ./chapter.latex && sudo gs -dNOPAUSE -sDEVICE=pngalpha -r600 -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -sOutputFile=chapter-%d.png chapter.pdf -c quit && sudo lualatex ./chapter.rainbow.latex && sudo gs -dNOPAUSE -sDEVICE=pngalpha -r600 -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -sOutputFile=chapter.rainbow-%d.png chapter.rainbow.pdf -c quit\n\n\nAudio flow doesn't really make sense.  We want a clean text -> IPA, then IPA + voice -> .WAV\nTo do that we will need to hack up the comfy kokoro library a bit to create a new IPA + voice -> WAV capablity\nI think the text->IPA part can be done  in artifactserver without LLM.  That also puts the whole pronunciation library inside instead of the awkward secret handshake pronunciation file I'm using now.\n\n Text -> IPA, with soundslike for unknown words"
     },
     {
       "attributes": {

@@ -242,7 +242,7 @@ def create_app():
         url_prefix="/"
     )
 
-    print(app.url_map)
+    #print(app.url_map)
     print('Finished importing blueprints.')
 
     return app
