@@ -1,16 +1,18 @@
-from flask import Flask, Blueprint
-from artifact_editor.cache import cache
-import text_to_image
-from flask_cors import CORS
-from werkzeug.routing import BaseConverter
-# import logger
-from flask import request_started
-import typing as t
+import datetime
 import sys
+import typing as t
 
-import datetime, sys
 import structlog
+
+# import logger
+from flask import Blueprint, Flask, request_started
+from flask_cors import CORS
+from redis.maint_notifications import MaintNotificationsConfig
+from werkzeug.routing import BaseConverter
+
 import logger
+import text_to_image
+from artifact_editor.cache import cache
 
 #from structlog import wrap_logger
 #from structlog.stdlib import filter_by_level
@@ -115,8 +117,12 @@ def create_app():
     # )
     # logger.log(__name__)
 
+    CACHE_OPTIONS = {
+        "maint_notifications_config": MaintNotificationsConfig(enabled=False)
+    }
+
     app.url_map.converters['regex'] = RegexConverter
-    cache.init_app(app)
+    cache.init_app(app, config=CACHE_OPTIONS)
     # db_path = os.path.join(persistent_path, "sqlite.db")
 
     # app.config["SQLALCHEMY_DATABASE_URI"] = f'sqlite:///{db_path}'
@@ -127,26 +133,25 @@ def create_app():
     print(app.url_map)
     print('Importing blueprints...')
 
-    from artifact_editor.home.views import bp as home
-    from artifact_editor.todo.views import bp as todo
-
-    from artifact_editor.author.views import bp as author
-    from artifact_editor.library.views import bp as library
-    from artifact_editor.text.views import bp as text
-    from artifact_editor.characters.views import bp as characters
     from artifact_editor.audio.views import bp as audio
-    from artifact_editor.images.views import bp as images
-    from artifact_editor.typography.views import bp as typography
-    from artifact_editor.frames.views import bp as frames
-    from artifact_editor.video.views import bp as video
+    from artifact_editor.author.views import bp as author
     from artifact_editor.book.views import bp as book
     from artifact_editor.chapter.views import bp as chapter
+    from artifact_editor.characters.views import bp as characters
+    from artifact_editor.frames.views import bp as frames
+    from artifact_editor.home.views import bp as home
+    from artifact_editor.images.views import bp as images
+    from artifact_editor.library.views import bp as library
     from artifact_editor.masterplan.views import bp as masterplan
-    from artifact_editor.publish.views import bp as publish
-    from artifact_editor.therapy.views import bp as therapy
-    from artifact_editor.styles.views import bp as styles
     from artifact_editor.music.views import bp as music
+    from artifact_editor.publish.views import bp as publish
     from artifact_editor.static import bp as static
+    from artifact_editor.styles.views import bp as styles
+    from artifact_editor.text.views import bp as text
+    from artifact_editor.therapy.views import bp as therapy
+    from artifact_editor.todo.views import bp as todo
+    from artifact_editor.typography.views import bp as typography
+    from artifact_editor.video.views import bp as video
 
     text_to_image.registry.search(gpu=False)
 

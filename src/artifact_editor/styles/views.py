@@ -1,6 +1,8 @@
 from collections import defaultdict
 import math
 import shutil
+import unicodedata
+import redis
 import glob
 import os
 import random
@@ -74,8 +76,10 @@ def get_groupings_count(item_count):
 # so each character, "costs" 0.25 tokens.  roughly.
 # this is so we can show the user how much of the
 # context is being used up by the style.
-@bp.route("/show_sample/<category_name>/<filename>")
+@bp.route("/show_sample/<category_name>/<path:filename>")
 def show_sample(category_name, filename):
+    filename = unicodedata.normalize("NFC", filename)
+    
     sample_pfn = os.path.join(
         os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
     )
@@ -87,12 +91,19 @@ def show_sample(category_name, filename):
     # generate a new sample image.
     style_tag = filename.removesuffix(".png")
 
-    draw_sample(category_name, style_tag)
-    # filename)
+    sample_pfn = draw_sample(category_name, style_tag)
+    sample_pfn = unicodedata.normalize("NFC", sample_pfn)
+
+    log.info('draw_sample() returned %s', sample_pfn)
+    
+    if not os.path.exists(os.path.join(const.LIBRARY_DIR, "style_exploration", os.path.basename(sample_pfn))):
+        raise FileNotFoundError(f"Sample image not found: {sample_pfn}")
 
     return send_from_directory(
-        os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
+        os.path.join(const.LIBRARY_DIR, "style_exploration"),
+        os.path.basename(sample_pfn),
     )
+
 
 # a little degas
 # ballet outfits do not have enough variety for this to be helpful
@@ -102,91 +113,77 @@ def show_sample(category_name, filename):
 # potentially "mature" content.
 base_prompt = "stunning woman in a flimsy, sheer lace dress.  Detailed background with something rare and exciting happening."
 
-def draw_sample_old(filename):
-    sample_pfn = os.path.join(
-        os.path.join(const.LIBRARY_DIR, "style_exploration"),
-        filename,
-    )
-    workflow = comfy.load_workflow_template("api", "t2i", "style_sample")
-    
-    card = Card.from_style_name(os.path.splitext(filename)[0])
-    if card is None:
-        log.warning("No card found for %s, cannot draw sample", filename)
-        return
-    
-    template_environment = {
-        "PROMPT": card.prompt.format(prompt=base_prompt),
-        "FILENAME_PREFIX": os.path.join("samples", filename),
-    }
-
-    comfy.run_workflow(
-        workflow,
-        template_environment=template_environment
-    )
-
-    # make sure the output directory exists
-    os.makedirs(os.path.dirname(sample_pfn), exist_ok=True)
-
-    # move the image into it
-    for fn in glob.glob(
-        os.path.join(
-            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-            "samples", 
-            filename + "*"
-        )
-    ):
-        shutil.move(
-            os.path.join(
-                const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-                "samples",
-                fn
-            ),
-            sample_pfn
-        )
-        break
-
-    return card
-
-
 
 def draw_sample(category_name, style_tag):
-    sample_pfn = os.path.join(
-        os.path.join(const.LIBRARY_DIR, "style_exploration"),
-        f"{style_tag}.png",
-    )
+    log.info("draw_sample()", category_name=category_name, style_tag=style_tag)
     workflow = comfy.load_workflow_template("api", "t2i", "style_sample")
-    
+
     style = styles.get_style(category_name=category_name, style_tag=style_tag)
+    if not style or "prompt" not in style:
+        log.warning(
+            "No prompt found for style %s in category %s, cannot draw sample",
+            style_tag,
+            category_name,
+        )
+        return
+
+    cachebreak = random.randint(0, 999999999)
+
     template_environment = {
         "PROMPT": style["prompt"].format(prompt=base_prompt),
-        "FILENAME_PREFIX": os.path.join("samples", f"{style_tag}.png"),
+        "FILENAME_PREFIX": os.path.join("samples", style["name"] + f"_{cachebreak}"),
+        "STYLE_CATEGORY": category_name,
     }
 
     comfy.run_workflow(
         workflow,
-        template_environment=template_environment
+        template_environment=template_environment,
+    )
+
+    sample_pfn = os.path.join(
+        const.LIBRARY_DIR,
+        "style_exploration",
+        f"{style['name']}.png",
     )
 
     # make sure the output directory exists
     os.makedirs(os.path.dirname(sample_pfn), exist_ok=True)
 
+    # move the image into it, wildcard absorbs the cachebreak
+    for fn in glob.glob(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+            "samples",
+            style["name"] + "*",
+        )
+    ):
+        origin = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+            "samples",
+            os.path.basename(fn),
+        )
+        log.info("Moving %s to %s", origin, sample_pfn)
+        shutil.move(origin, sample_pfn)
+        break
+
     # move the image into it
     for fn in glob.glob(
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-            "samples", 
-            style_tag + "*"
+            "samples",
+            style["tag"] + "*",
         )
     ):
-        shutil.move(
-            os.path.join(
-                const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-                "samples",
-                fn
-            ),
-            sample_pfn
+        origin = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+            "samples",
+            os.path.basename(fn),
         )
+        log.info("Moving %s to %s", origin, sample_pfn)
+        shutil.move(origin, sample_pfn)
         break
+
+    return sample_pfn
 
 
 @bp.route("/regenerate", methods=["PUT"])
@@ -198,11 +195,24 @@ def regenerate_style_image():
     category_name = request.form.get("category")
     style_tag = request.form.get("style_tag")
 
-    delete_sample(f"{style_tag}.png")
-    draw_sample(category_name, style_tag)
+    style = styles.get_style(
+        category_name=category_name,
+        style_tag=style_tag,
+    )
 
-    return style_details()
+    delete_sample(f"{style['name']}.png")
+    delete_sample(f"{style['tag']}.png")
 
+    sample_pfn = draw_sample(category_name, style_tag)
+    log.info("draw_sample() returned %s", sample_pfn)
+
+    # details_html, _ = style_details(oob=True)
+    # oob the image too
+    card = Card(style_name=style["name"], category_name=category_name)
+
+    # details_html += f'<img src="/style_exploration/{style_tag}.png" />'
+
+    return card.as_html(oob=True), 200
 
 
 @bp.route("/draw_sample", methods=["POST"])
@@ -443,6 +453,24 @@ def draw_all_lora():
     return "", 200
 
 
+@bp.route("/add_tag", methods=["POST"])
+def add_tag():
+    style_tag = request.form.get("style_tag")
+    category_name = request.form.get("category")
+    tag = [r for r in request.form.getlist("tag") if r][0]
+    # get("tag")
+
+    log.info(
+        "Adding tag %s to style %s in category %s",
+        tag,
+        style_tag,
+        category_name,
+    )
+
+    styles.add_tag_to_style(category_name, style_tag, tag)
+    return style_details(oob=True)
+
+
 @bp.route("/add_style", methods=["POST"])
 def add_style():
     # copy a style from styles-all.json to styles.json
@@ -496,65 +524,118 @@ def card_detail(image_name):
     return CARD_DETAIL[image_name]
 
 
-@bp.route("/style_details")
-def style_details():
-    log.info("style_details()")
-
-    style_tag = request.form.get("style_tag") or request.args.get("style_tag")
-    category_name = request.form.get("category") or request.args.get("category")
-
-    favorite_styles = styles.all_favorite_styles()
-    style = styles.get_style(
-        category_name=category_name,
-        style_tag=style_tag
+def get_favorite_control_button(style, favorite_styles):
+    """
+    Returns button suitable for toggling the 'favorite' status of a style.
+    """
+    log.info(
+        "get_favorite_control_button(style, favorite_styles)",
+        style_name=style["name"],
+        favorite_styles=favorite_styles,
     )
-
-    if style['name'] in favorite_styles:
-        # "Choosing" is critical.  It is what determines which of the
-        # thousand + styles we want to shortlist.  Everywhere else in
-        # the UI we only show these styles.
-        card_tag = "favorite"
-        favorite_control_button = f"""<wa-button
-            hx-delete="choice"
-            hx-vals="js:{{style: '{style['name']}'}}"
-            variant="warning"
-            pill
-        >Ignore</wa-button>"""
+    # convert favorite_styles, a [] of {} with attributes including
+    # 'name', into a dict indexed by style names
+    # that isn't very efficient.
+    # hwo about this
+    for s in favorite_styles:
+        if style["name"] == s["name"]:
+            return f"""<wa-button
+                hx-delete="choice"
+                hx-vals="js:{{style: '{style['name']}'}}"
+                variant="warning"
+                pill
+            >Ignore</wa-button>"""
     else:
-        favorite_control_button = f"""<wa-button
+        return f"""<wa-button
             hx-post="choice"
             hx-vals="js:{{style: '{style['name']}'}}"
             variant="success"
             pill
         >Favorite</wa-button>"""
-    
+
+
+@bp.route("/style_details")
+def style_details(oob=False):
+    style_tag = request.form.get("style_tag") or request.args.get("style_tag")
+    category_name = request.form.get("category") or request.args.get("category")
+    log.info("style_details()", style_tag=style_tag, category_name=category_name)
+
+    favorite_styles = styles.all_favorite_styles()
+
+    try:
+        style = styles.get_style(category_name=category_name, style_tag=style_tag)
+    except ValueError as e:
+        log.error("Error getting style: %s", e)
+        return "", 404
+
+    log.info("get_style() returned", style=style)
+
+    # r = redis.Redis(host="redis")
+    tag_cloud = """<div id="tag_cloud" class="wa-cluster">"""
+
+    # key = as_id(f"{category_name}/{style_tag}")
+    # members = r.smembers(key + "/tags")
+    # if not members:
+    #    log.info("No tags found for style %s in category %s", style_tag, category_name)
+
+    for tag in style["tags"]:
+        log.info("member %s", tag)
+        tag_cloud += f"""
+        <wa-button-group label="Remove tag {tag}">
+            <wa-button appearance="filled" disabled size="s" pill>{tag}</wa-button>
+            <wa-button appearance="filled" size="s" pill>X</wa-button>
+        </wa-button-group>
+        """
+        # tag_cloud += """<wa-button
+        #     hx-delete="remove_tag"
+        #     variant="secondary"
+        #     size="s"
+        #     pill
+        # >X</wa-button>"""
+        # {tag.decode()}
+        # hx-vals="js:{{tag: '{tag.decode()}'}}"
+
+    tag_cloud += """
+            <wa-input
+                hx-post="add_tag"
+                label="Add Tag"
+                hx-swap="none"  
+                hx-trigger="keyup changed delay:500ms"
+                name="tag"
+            >Add Tag</wa-input>
+            </div>"""
+
+    favorite_control_button = get_favorite_control_button(style, favorite_styles)
+
     tier_buttons = "<wa-button-group label='Tier'>"
     tooltips = []
     for tier, icon, variant, cosmetic in styles.tier_cosmetics:
-            tier_buttons += f"""<wa-button
+        tier_buttons += f"""<wa-button
                 hx-post="{category_name}/{style['tag']}/tier"
                 hx-vals="js:{{tier: {tier}}}"
                 variant="{variant}"
                 size="s"
                 id="tier_button_{tier}"
                 pill"""
-            
-            if int(style.get("tier", "2")) == tier:
-                tier_buttons += f""" class="active_tier" """
-            
-            tier_buttons += f"""
+
+        if int(style.get("tier", "2")) == tier:
+            tier_buttons += f""" class="active_tier" """
+
+        tier_buttons += f"""
             ><wa-icon name="{icon}" label="{cosmetic}"></wa-icon></wa-button>"""
-            tooltips.append(f"<wa-tooltip for='tier_button_{tier}'>{cosmetic} Tier</wa-tooltip>")
+        tooltips.append(
+            f"<wa-tooltip for='tier_button_{tier}'>{cosmetic} Tier</wa-tooltip>"
+        )
 
     tier_buttons += "</wa-button-group>"
     tier_buttons += "".join(tooltips)
-    
+
     out = ""
     prefix = ""
 
-    style_prompt = style['prompt']
-    style_negative_prompt = style['negative_prompt']
-    
+    style_prompt = style["prompt"]
+    style_negative_prompt = style["negative_prompt"]
+
     prompt_prefix, prompt_postfix = style_prompt.split("{prompt}")
 
     clean_prompt = style["prompt"]
@@ -562,19 +643,28 @@ def style_details():
 
     # the tax of using this style prompt.
     token_price = (len(prompt_prefix) + len(prompt_postfix)) * CHARS_TO_TOKENS
-    prompt_price = len(base_prompt) * CHARS_TO_TOKENS
+    prompt_price = len(clean_prompt) * CHARS_TO_TOKENS
+
+    #
+    # {favorite_control_button}
 
     out += f"""
-    <div class="wa-stack wa-align-items-center">
+    <div 
+        id="style_card_{style_tag}"
+        class="wa-stack wa-align-items-left" 
+        {"hx-swap-oob='true'" if oob else ""}>
+
+        {tag_cloud}
         {favorite_control_button}
-        <div class="wa-cluster">
-            {tier_buttons}
-        </div>
+        {tier_buttons}
     </div>
     """
     out += f"""<hr/><h4>Tokens</h4>
         <p>zImage Max: 512, best adherance < 75</p>
-        <div class="label-on-left">
+        <div 
+            id="style_card_tokens" 
+            class="label-on-left"
+            {"hx-swap-oob='true'" if oob else ""}>
             <wa-input label="Style" value="{ token_price }" disabled></wa-input>
             <wa-input label="Prompt" value="{ prompt_price }" disabled></wa-input>
             <wa-input label="TOTAL" value="{ token_price + prompt_price } tokens" disabled></wa-input>
@@ -582,13 +672,22 @@ def style_details():
     """
 
     out += f"""
+    <div 
+        id="style_card_prompt_{style_tag}"
+        class="wa-stack"
+        {"hx-swap-oob='true'" if oob else ""}>
         <p><wa-textarea label="Prefix" value="{prompt_prefix}"></wa-textarea></p>
-        <p><wa-textarea label="Prompt" placeholder="{base_prompt}" disabled></wa-textarea></p>
+        <p><wa-textarea label="Prompt" placeholder="{clean_prompt}" disabled></wa-textarea></p>
         <p><wa-textarea label="Postfix" value="{prompt_postfix}"></wa-textarea></p>
+    </div>
     """
 
     out += f"""                    
-        <wa-button hx-put="regenerate" variant="brand" pill>Regenerate</wa-button>
+        <wa-button 
+            hx-put="regenerate" 
+            variant="brand"
+            hx-swap="none"
+            pill>Regenerate</wa-button>
         <wa-button 
             href="regenerate_ui?category={category_name}&style_tag={style_tag}"
             hx-get="regenerate_ui?category={category_name}&style_tag={style_tag}"
@@ -606,14 +705,7 @@ def style_details():
     # intent and divides the space reasonably well, albiet not always
     # predictably.
     # soup = BeautifulSoup(out, "html.parser")
-    return (
-        f"""
-    <div hx-swap-oob="true" id="style_details_{style_tag}">
-        {out}
-    </div>
-    """,
-        200,
-    )
+    return (out, 200)
 
 
 # http://localhost:8080/styles/regenerate_ui?category=verbing&style_tag=appraising
@@ -625,11 +717,9 @@ def regenerate_ui():
     category_name = request.args.get("category")
     style_tag = request.args.get("style_tag")
 
-    style = styles.get_style(
-        category_name=category_name,
-        style_tag=style_tag
-    )
-    
+    style = styles.get_style(category_name=category_name, style_tag=style_tag)
+    log.info("style retrieved", style=style)
+
     # api.t2i.style_sample.json
     c = chapter.Chapter(
         author=None,
@@ -638,7 +728,9 @@ def regenerate_ui():
         language=None,
     )
 
-    image_xml = BeautifulSoup("<book><paragraph><image></image></paragraph></book>", "xml").find("image")
+    image_xml = BeautifulSoup(
+        "<chapter><paragraph><image></image></paragraph></chapter>", "xml"
+    ).find("image")
     image_xml.attrs = {
         "index": 0,
         "prompt": base_prompt,
@@ -653,18 +745,22 @@ def regenerate_ui():
         workflow_template="style_sample",
         template_environment={
             "PROMPT": style["prompt"].format(prompt=base_prompt),
-            "FILENAME_PREFIX": os.path.join("samples", f"{style_tag}.png"),
-        }
+            "FILENAME_PREFIX": os.path.join("samples", style["name"]),
+            "STYLE_CATEGORY": category_name,
+        },
     )
 
     # this is the pisser that will show up in your workflow list.
     workflow_name = f"style_{style_tag}_sample"
-    workflow_fn = os.path.join(const.COMFY_DIRS["comfyui"]["WORKFLOWS_DIR"], workflow_name + ".json")
+    workflow_fn = os.path.join(
+        const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+        workflow_name + ".json",
+    )
     with open(workflow_fn, "w") as h:
         json.dump(workflow, h)
 
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFY_DIRS["comfyui"]["UI_URL"] + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
 
     return flask.redirect(workflow_url, code=302)
 
@@ -674,26 +770,24 @@ def regenerate_ui():
 def set_style_tier(category_name, style_tag):
     tier = int(request.form.get("tier", 2))
 
-    log.info("Setting style %s in category %s to tier %s", style_tag, category_name, tier)
+    log.info(
+        "Setting style %s in category %s to tier %s", style_tag, category_name, tier
+    )
 
     style_file, _ = styles._get_style(category_name, style_tag)
-    style_pfn = os.path.join(
-        const.STYLES_DIR,
-        category_name,
-        style_file
-    )
+    style_pfn = os.path.join(const.STYLES_DIR, category_name, style_file)
 
     with open(style_pfn, "r") as f:
         json_styles = json.loads(f.read())
-    
+
     for s in json_styles:
-        if s['tag'] == style_tag:
-            s['tier'] = tier
+        if s["tag"] == style_tag:
+            s["tier"] = tier
             break
-    
+
     with open(style_pfn, "w") as f:
         json.dump(json_styles, f, indent=4)
-        
+
     return "", 200
 
 
@@ -713,7 +807,7 @@ def set_style_tier(category_name, style_tag):
 #     for fn in sorted(
 #         os.listdir(
 #             os.path.join(
-#                 const.LIBRARY_DIR, 
+#                 const.LIBRARY_DIR,
 #                 "style_exploration"
 #             )
 #         )
@@ -777,7 +871,7 @@ def set_style_tier(category_name, style_tag):
 class Card:
     def __init__(self, style_name, category_name, **meta):
         self.style_name = style_name
-    
+
         if category_name is None:
             self.category_name = self.find_category(style_name)
         else:
@@ -787,21 +881,23 @@ class Card:
         if "tier" in meta:
             self.tier = int(meta["tier"])
         else:
-            log.warning('No tier found for style %s, defaulting to %s', style_name, default_tier)
+            log.warning(
+                "No tier found for style %s, defaulting to %s", style_name, default_tier
+            )
             self.tier = default_tier
 
         self.meta = meta
 
-    @staticmethod
-    def find_group(style_name):
-        """
-        Given a style name, find the first group containing that style.
-        """
-        for category in styles.all_categories():
-            for group in styles.style_groups_in_category(category["category"]):
-                for style in styles.styles_in_group(category["category"], group):
-                    if style["name"] == style_name:
-                        return group
+    # @staticmethod
+    # def find_group(style_name):
+    #     """
+    #     Given a style name, find the first group containing that style.
+    #     """
+    #     for category in styles.all_categories():
+    #         for group in styles.style_groups_in_category(category["category"]):
+    #             for style in styles.styles_in_group(category["category"], group):
+    #                 if style["name"] == style_name:
+    #                     return group
 
     @staticmethod
     def find_category(style_name):
@@ -833,13 +929,14 @@ class Card:
             # which category it belongs to.
             category_name = cls.find_category(style_name)
             if category_name:
-                log.info(f"Found category {category_name} for style {style_name} in styles.json")
+                log.info(
+                    f"Found category {category_name} for style {style_name} in styles.json"
+                )
                 return cls(style_name=style_name, category_name=category_name)
-                    
+
         log.error(f"No Style Found for {style_name}.")
         return None
 
-        
     @property
     def image_filename(self):
         full_image_name = os.path.join(
@@ -864,7 +961,7 @@ class Card:
 
     @property
     def prompt(self):
-        return self.meta.get("prompt", "")
+        return self.meta.get("prompt", "{prompt}")
 
     def set_meta(self, key, value):
         self.meta[key] = value
@@ -872,7 +969,7 @@ class Card:
         with open(self.image_metadata_filename, "w") as f:
             json.dump(self.meta, f, indent=2)
 
-    def as_html(self):
+    def as_html(self, oob=False):
         # rank_str = f"<em>{self.tier} Tier</em>"
         style_info = f"<p><b>Style:</b> {self.style}</p>"
         loras_info = ""
@@ -893,16 +990,23 @@ class Card:
         </wa-badge>
         """
 
+        image_url = url_for(
+            "styles.show_sample",
+            category_name=self.category_name,
+            filename=self.style_name + ".png",
+        )
+
         return f"""
         <wa-card 
             id="card_{self.tag}"
+            {"hx-swap-oob='true'" if oob else ""}
             class="card-overview history-item-{self.tag}"
         >
             <img
                 loading="lazy"
                 class="image_sample"
                 slot="media"
-                src="{url_for('styles.show_sample', category_name=self.category_name, filename=self.style_name + '.png')}"
+                src="{image_url}"
                 alt="Sample Image"
             >
                 {badge}
@@ -921,6 +1025,7 @@ class Card:
             </wa-details>
         </wa-card>
         """
+
     # #hx-trigger="wa-show from:#card_{self.tag}"]"
 
     def details(self):
@@ -1124,45 +1229,41 @@ def choose_category():
         "min_tier": min_rating,
         "max_tier": max_rating,
     }
+    # category_tag =
+    # category_dirname = styles.category_tag_to_dirname(category_tag)
+    category_key = request.form.get("group", None)
 
-    # category is actually the directory name containing json files
-    # which in turn are lists of dictionaries, each of which is a style
-    # definition.
-    category = id_to_category(request.form.get("group", None).removeprefix("category_"))
-    if category is None:
-        log.error("Invalid category provided: %s", request.form.get("group", None))
-        return "Invalid category", 400
-    
-    log.info("Delivering category %s with filters %s", category, filters)
+    log.info("Delivering category_key %s with filters %s", category_key, filters)
 
     response = (
-        f"""<div class="wa-stack" hx-swap-oob="true" id="group_{ as_id(category) }">"""
+        f"""<div class="wa-stack" hx-swap-oob="true" id="group_{category_key}">"""
     )
     # TODO: apply filters
-    for group in styles.style_groups_in_category(category):
-        response += f"""<h3>{ group }</h3>"""
-        all_styles = styles.styles_in_group(category, group, **filters)
+    for group in styles.style_groups_in_category(category_key):
+        log.info("Delivering group %s in category %s", group, category_key)
 
-        #response += "<div class='wa-grid' style='grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));'>"
+        response += f"""<h3>{ group }</h3>"""
+        # category key won't work here, we need the raw category name (directory name)
+        all_styles = styles.styles_in_group(category_key, group, **filters)
+
+        # response += "<div class='wa-grid' style='grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));'>"
         response += "<div class='wa-cluster wa-align-items-start wa-gap-3xs'>"
         for style_index, style in enumerate(all_styles):
             log.info("style: %s", style)
 
             response += Card(
                 style_name=style.get("cosmetic", style.get("name")),
-                category_name=category,
+                category_name=category_key,
                 prompt=style.get("prompt", ""),
                 name=style.get("name", ""),
                 negative_prompt=style.get("negative_prompt", ""),
-                category=category,
-                tier=style.get("tier", default_tier)
+                category=category_key,
+                tier=style.get("tier", default_tier),
             ).as_html()
         response += "</div>"
 
     response += """</div>"""
     return response, 200
-
-
 
 
 # @bp.route("/grouping", methods=["PUT"])
@@ -1254,7 +1355,7 @@ def choose_category():
 
 #     for group_dict in groupings:
 #         grouping_html.append(f"""
-#             <wa-tab 
+#             <wa-tab
 #                 hx-put="grouping"
 #                 hx-trigger="click"
 #                 hx-vals='{{"group": "group_{group_dict["tag"]}"}}'
@@ -1299,8 +1400,14 @@ def get_categories_and_counts(style_dir, default_tier):
     count = defaultdict(int)
 
     for category in styles.all_categories():
+        log.info('Iterating category "%s"', category["category"])
         all_categories.append(category["category"])
         for group in styles.style_groups_in_category(category["category"]):
+            log.info(
+                'Iterating styles in group "%s" of category "%s"',
+                group,
+                category["category"],
+            )
             for style in styles.styles_in_group(category["category"], group):
                 tier = style.get("tier", default_tier)
                 count[tier] += 1
@@ -1326,23 +1433,49 @@ def styles_base():
 
     all_categories = []
     style_dir = const.STYLES_DIR
-    all_categories, count = get_categories_and_counts(style_dir, default_tier)                          
+    # all_categories, count = get_categories_and_counts(style_dir, default_tier)
+    count = defaultdict(int)
 
-    # why isn't the value from get_categories_and_counts() being used?  
+    # why isn't the value from get_categories_and_counts() being used?
     # Because it is wrong.
     all_categories = styles.all_categories()
-    category = None
+
+    # category = styles.get_category(all_categories, group)
+    if group:
+        category = styles.get_category(all_categories, group)
+    else:
+        category = all_categories[0]
 
     fcount = {}
+
+    # move the image into it
+    for fn in glob.glob(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "samples", "*.png"
+        )
+    ):
+        origin = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+            "samples",
+            os.path.basename(fn),
+        )
+        target = os.path.join(
+            const.LIBRARY_DIR,
+            "style_exploration",
+            os.path.basename(fn.replace("_00001_", "")),
+        )
+        log.info("Moving sample image to library", origin=origin, target=target)
+        shutil.move(origin, target)
+        break
 
     # log.info("groupings=%s", groupings)
     response = flask.make_response(
         render_template(
             "styles-tabgroups.html",
             active_grouping=group,
-            active_category=category,
+            active_category=f"category_{category['tag']}",
             all_categories=all_categories,
-            #groupings=groupings,
+            # groupings=groupings,
             base_prompt=base_prompt,
             count=count,
             fcount=fcount,
@@ -1547,8 +1680,7 @@ def export_styles():
     per_page = 100
     # by key, much easier.
     all_styles = {
-        styles.as_id(d["name"]): d
-        for d in styles.all_styles(all_means_all=True)
+        styles.as_id(d["name"]): d for d in styles.all_styles(all_means_all=True)
     }
 
     for image in os.listdir(os.path.join(const.LIBRARY_DIR, "style_exploration")):
@@ -1628,5 +1760,5 @@ def choose_this_style():
     # Mark the style as chosen
     styles.mark_style_as_chosen(category, style_tag, True)
 
-    #return redirect(url_for("styles.styles_base"), code=302)
-    return "", 200
+    favorite_styles = styles.get_favorite_styles()
+    return get_favorite_control_button(style_tag, favorite_styles), 200

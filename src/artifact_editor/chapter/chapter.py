@@ -1004,7 +1004,8 @@ class Chapter:
         input_image = os.path.basename(source_image)
 
         style_name = self.get_image_style(image_xml)
-        style = styles.get_style("Custom", style_name)
+        style_category = template_environment.get('STYLE_CATEGORY', 'Custom')
+        style = styles.get_style(style_category, style_name)
 
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
