@@ -15,7 +15,15 @@ services:
   #     - "6400:80"
   #   networks:
   #     - home-network
-
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redis_dashboard
+    ports:
+      - "5540:5540"
+    depends_on:
+      - redis
+    networks:
+      - home-network
   nginx:
     image: nginx:latest
     ports:

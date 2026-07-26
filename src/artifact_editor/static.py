@@ -74,6 +74,9 @@ def static_dir(pathname, filename):
             etag=True,
             max_age=3600  # one hour
         )
+    else:
+        log.error(f"File {pathname}/{filename} not found in static directory")
+        return "File not found", 404
 
     # else:
     #     print(f"File {filename} not found in static directory")
