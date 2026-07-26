@@ -2,6 +2,9 @@
     <form>
         <input type="hidden" name="phrase_index" value="{{phrase_xml['index']}}">
         <input type="hidden" name="page" value="{{page}}">
+        <div class="wa-cluster">
+            {{add_image_slot_button(chapter, phrase_xml, page, after=False)|safe}}
+        </div>
         <div class="wa-stack">
             {{text_phrase|safe}}
             {{phrase_latex_image|safe}}

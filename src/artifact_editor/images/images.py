@@ -608,24 +608,7 @@ def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=Fals
 
         prompt = prompt.replace("[CHARACTERS]", ", ".join(character_list))
 
-    # prompt_filter = ""
-    # negative_prompt = ""
-    # if "style" in image_xml.attrs:
-    #     style = image_xml.attrs["style"]
-    #     prompt_filter, negative_prompt = styles.get_style(style)
-    # else:
-    #     book_style = config.get_config(chapterdir=bookdir)
-    #     if "default_style" in book_style:
-    #         style = book_style["default_style"]
-    #         prompt_filter, negative_prompt = styles.get_style(style)
-
-    # if prompt_filter:
-    #     prompt = prompt_filter.format(prompt=prompt)
-
-    # image_xml.attrs["t5_prompt"] = prompt
     image_xml.attrs["prompt"] = prompt
-    # if negative_prompt.strip():
-    #     image_xml.attrs["negative_prompt"] = negative_prompt.strip()
 
     if build_clip:
         # build the clip prompt based on the t5 prompt and the surrounding text

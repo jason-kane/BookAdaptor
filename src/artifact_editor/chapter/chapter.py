@@ -565,14 +565,14 @@ class Chapter:
         Get the style for this chapter, if it exists.
         """
         self.load_xml()
-        return self.soup.find("book").attrs.get("style", None)
+        return self.soup.find("chapter").attrs.get("style", None)
 
     def set_chapter_style(self, style):
         """
         Set the style for this chapter.
         """
         self.load_xml()
-        self.soup.find("book").attrs["style"] = style
+        self.soup.find("chapter").attrs["style"] = style
         self.save_xml()
 
     def get_image_style(self, image_xml):
@@ -1005,7 +1005,10 @@ class Chapter:
 
         style_name = self.get_image_style(image_xml)
         style_category = template_environment.get('STYLE_CATEGORY', 'Custom')
-        style = styles.get_style(style_category, style_name)
+        style = styles.Style(
+            category_name=style_category,
+            style_tag=style_name
+        )
 
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
@@ -1033,7 +1036,7 @@ class Chapter:
             "SCENE_DESCRIPTION_FN": scene_description_fn,
             "SCENE": json.dumps(scene, indent=2),
             "SOURCE": our_source,
-            "STYLE": style["name"],
+            "STYLE": style.name,
             "SYSTEM_PROMPT": "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
         }
 

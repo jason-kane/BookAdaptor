@@ -101,8 +101,7 @@ def style_selector(selected_style:str="", url=None, target="#style-selector") ->
         out += f'            value="{selected_style}"\n'
     if url:
         out += f'''            hx-put="{url}"
-            hx-swap="outerHTML transition:true"
-            hx-target="{target}"
+            hx-swap="none"
             hx-trigger="change"'''
 
     out += f"""        

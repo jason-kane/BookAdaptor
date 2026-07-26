@@ -622,7 +622,7 @@ def animation_workshop(image_xml, chapter):
             # this is animation 0, so if it's longer than the audio, we need to provide
             # a "Trim to Audio" button.  Trimming for videos after 0 is more
             # complicated.  Solve it when we need it.
-            audio_frames = int(float(image_xml.attrs.get("frames")))
+            audio_frames = int(float(image_xml.attrs.get("frames", "0")))
             os.makedirs(frame_dir, exist_ok=True)
             video_frames = len(os.listdir(frame_dir))
                 
@@ -1545,21 +1545,21 @@ def scene_tab_panel(chapter, image_index, image_xml):
         ),
     ]
 
-    style = image_xml.attrs.get("style", "")
-    if style == "":
-        style = chapter.config.get("default_style", "")
+    # style = image_xml.attrs.get("style", "")
+    # if style == "":
+    #     style = chapter.config.get("default_style", "")
 
-    apply_style_url = url_for(
-        "library.book.chapter.images.apply_style",
-        **chapter.kwargs,
-        image_index=image_xml.attrs["index"],
-    )
+    # apply_style_url = url_for(
+    #     "library.book.chapter.images.apply_style",
+    #     **chapter.kwargs,
+    #     image_index=image_xml.attrs["index"],
+    # )
 
-    add_style_widget = styles_htmx.add_style_widget(
-        selected_style=style,
-        url=apply_style_url,
-        target="#prompt-textareas",
-    )
+    # add_style_widget = styles_htmx.add_style_widget(
+    #     selected_style=style,
+    #     url=apply_style_url,
+    #     target="#prompt-textareas",
+    # )
 
     # setting_ui = setting(
     #     chapterurl,
@@ -1630,9 +1630,8 @@ def style_selector(chapterurl, image_index, value):
         <div>
         <wa-select
             value="{value}"
-            hx-put="/{chapterurl}/images/{image_index}/actions/save_style"
-            hx-target="#style-textarea"
-            hx-swap="outerHTML transition:true"
+            hx-put="save_style"
+            hx-swap="none"
             hx-trigger="change"
             name="style"
             id="style-textarea"

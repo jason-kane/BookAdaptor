@@ -416,7 +416,7 @@ def add_edit_delay(chapter, phrase_xml, page):
                 hx-trigger="click">Remove Delay</wa-button>
         </div>""")
 
-def add_image_slot_button(chapter, phrase_xml, page):
+def add_image_slot_button(chapter, phrase_xml, page, after=True):
     next_sibling = phrase_xml.find_next_sibling()
 
     if next_sibling and next_sibling.name == "image":
@@ -430,14 +430,31 @@ def add_image_slot_button(chapter, phrase_xml, page):
         chapter_number=chapter.number,
         language=chapter.language,
         phrase_index=phrase_xml["index"],
+        after=after
     )
-    return f"""<wa-button
-            hx-post="{add_image_slot_url}"
-            hx-vals='{{"page": "{page}"}}'
-            hx-target="#phrases"
-            hx-swap="afterend"
-            variant="brand"
-            hx-trigger="click">&#x2193; Add Image Slot &#x2193;</wa-button>"""
+
+    if after:
+        return f"""<wa-button
+                hx-post="{add_image_slot_url}"
+                hx-vals='{{"page": "{page}"}}'
+                hx-target="#phrases"
+                hx-swap="afterend"
+                variant="brand"
+                hx-trigger="click">&#x2193; Add Image Slot &#x2193;</wa-button>"""
+    else:
+        # is phrase_xml the first child of this paragraph?
+        if phrase_xml.find_previous_sibling() is None:        
+            # we _can_ add an image slot before this phrase.
+            return f"""<wa-button
+                hx-post="{add_image_slot_url}"
+                hx-vals='{{"page": "{page}"}}'
+                hx-target="#phrases"
+                hx-swap="beforebegin"
+                variant="brand"
+                hx-trigger="click">&#x2191; Add Image Slot &#x2191;</wa-button>"""
+
+        # otherwise this isn't a valid place to put an image
+        return ""
 
 def repronounce_button(chapter, phrase_xml):
     return f"""<wa-button

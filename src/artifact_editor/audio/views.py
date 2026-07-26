@@ -61,8 +61,8 @@ def audio_try_cmu_dict(author, title, chapter):
 
 
 # /Bible/Old%20Testament/0001/audio/actions/add_image_slot/4_0
-@bp.route("/actions/add_image_slot/<phrase_index>", methods=["POST"])
-def add_image_slot(author, title, chapter_number, language, phrase_index):
+@bp.route("/actions/add_image_slot/<phrase_index>/<after>/", methods=["POST"])
+def add_image_slot(author, title, chapter_number, language, phrase_index, after=True):
     log.info(f"Adding image slot to phrase {phrase_index}")
     # add an image slot prior to the specified phrase
     author = Author(author)
@@ -75,7 +75,10 @@ def add_image_slot(author, title, chapter_number, language, phrase_index):
 
     # create a new image slot
     new_image_xml = soup.new_tag("image")
-    phrase_xml.insert_after(new_image_xml)
+    if after in ["true", True, "1", 1]:
+        phrase_xml.insert_after(new_image_xml)
+    else:
+        phrase_xml.insert_before(new_image_xml)
 
     # re-index _all_ images
     image_index = 0

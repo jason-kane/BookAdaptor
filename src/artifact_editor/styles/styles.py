@@ -154,7 +154,7 @@ def get_style_old(style_name, from_all=False):
     return prompt_filter, negative_prompt
 
 
-VERSION = 1.19
+VERSION = 1.20
 
 
 def check_upgrade():
@@ -255,132 +255,213 @@ def check_upgrade():
 
     r.delete("upgrading")  # clear the flag after upgrade is done
 
+class Style:
+    def __init__(self, category_name, style_tag):
+        self.category_name = category_name
+        self.style_tag = style_tag
+        self.key = as_id(f"{category_name}/{style_tag}")
 
-def get_style(category_name, style_tag):
-    """
-    Get the style dict for the given category and style tag.
-    """
-    check_upgrade()
+        self.style = {
+            "name": style_tag,
+            "tag": style_tag,
+            "category_name": category_name,
+            "group": "",
+            "prompt": "{prompt}",
+            "negative_prompt": "",
+            "tier": "2",
+            "chosen": "False",
+            "cosmetic": style_tag,
+        }
+        self.vcard = None
 
-    key = as_id(f"{category_name}/{style_tag}")
+        self.load_from_redis()        
+        self.load_tags()
 
-    style = {
-        "name": style_tag,
-        "tag": style_tag,
-        "category_name": category_name,
-        "group": "",
-        "prompt": "{prompt}",
-        "negative_prompt": "",
-        "tier": "2",
-        "chosen": "False",
-        "cosmetic": style_tag,
-    }
-    redis_data = r.hgetall(key)
-    if redis_data:
-        log.info("Found style %s in redis", key, redis_data=redis_data)
-    else:
-        log.warning("Style %s not found in redis, checking for upgrade", key)
-        check_upgrade()
-        redis_data = r.hgetall(key)
-        if not redis_data:
-            log.error("Style %s still not found in redis after upgrade", key)
-            raise ValueError(f"Style {style_tag} not found in category {category_name}")
+    def load_from_redis(self):
+        redis_data = r.hgetall(self.key)
+        for k in list(redis_data.keys()):
+            v = redis_data.pop(k)
+            if isinstance(k, bytes):
+                k = k.decode("utf-8")
+            if isinstance(v, bytes):
+                v = v.decode("utf-8")
+            redis_data[k] = v
+        log.info('Merging in redis data', redis_data=redis_data)
+        self.style.update(redis_data)
+
+    def load_tags(self):
+        try:
+            self.vcard = r.scard(self.key + "/tags")
+        except redis.exceptions.ResponseError:
+            self.vcard = 0
+
+        tags = []
+        if self.vcard:
+            vrange = r.smembers(self.key + "/tags")
+            for tag_element in vrange:
+                tag = (
+                    tag_element.decode("utf-8")
+                    if isinstance(tag_element, bytes)
+                    else tag_element
+                )
+                tags.append(tag)
+            self.style["tags"] = tags
+
+    @property
+    def name(self):
+        return self.style.get("name", self.style_tag)
+
+    @property
+    def prompt(self):
+        return self.style.get("prompt", "{prompt}")
+
+    @property
+    def negative_prompt(self):
+        return self.style.get("negative_prompt", "")
+
+    @classmethod
+    def from_image(cls, chapter, image_xml):
+        """
+        Construct a Style object from an image XML element, using the chapter's
+        style settings.
+        """
+        style_tag = chapter.get_image_style(image_xml)
+        style_category = image_xml.get("style_category", "Custom")
+
+        return cls(
+            category_name=style_category,
+            style_tag=style_tag
+        )
+
+
+# def get_style(category_name, style_tag):
+#     """
+#     Get the style dict for the given category and style tag.
+#     """
+#     log.info("Looking for style '%s' in category '%s'", style_tag, category_name)
+#     check_upgrade()
+
+#     key = as_id(f"{category_name}/{style_tag}")
+#     log.info('Looking for style in redis with key "%s"', key)
+
+#     style = {
+#         "name": style_tag,
+#         "tag": style_tag,
+#         "category_name": category_name,
+#         "group": "",
+#         "prompt": "{prompt}",
+#         "negative_prompt": "",
+#         "tier": "2",
+#         "chosen": "False",
+#         "cosmetic": style_tag,
+#     }
+#     redis_data = r.hgetall(key)
+#     if redis_data:
+#         log.info("Found style %s in redis", key, redis_data=redis_data)
+#     else:
+#         log.warning("Style %s not found in redis, checking for upgrade", key)
+#         check_upgrade()
+#         redis_data = r.hgetall(key)
+        
+#         if not redis_data:
+#             log.error("Style %s still not found in redis after upgrade", key)
+#             raise ValueError(f"Style {style_tag} not found in category {category_name}")
     
-    for k in list(redis_data.keys()):
-        v = redis_data.pop(k)
-        if isinstance(k, bytes):
-            k = k.decode("utf-8")
-        if isinstance(v, bytes):
-            v = v.decode("utf-8")
-        redis_data[k] = v
+#     for k in list(redis_data.keys()):
+#         v = redis_data.pop(k)
+#         if isinstance(k, bytes):
+#             k = k.decode("utf-8")
+#         if isinstance(v, bytes):
+#             v = v.decode("utf-8")
+#         redis_data[k] = v
 
-    style.update(redis_data)
+#     style.update(redis_data)
 
-    try:
-        vcard = r.scard(key + "/tags")
-    except redis.exceptions.ResponseError:
-        vcard = 0
+#     try:
+#         vcard = r.scard(key + "/tags")
+#     except redis.exceptions.ResponseError:
+#         vcard = 0
 
-    tags = []
-    if vcard:
-        vrange = r.smembers(key + "/tags")
-        for tag_element in vrange:
-            tag = (
-                tag_element.decode("utf-8")
-                if isinstance(tag_element, bytes)
-                else tag_element
-            )
-            tags.append(tag)
-        style["tags"] = tags
+#     tags = []
+#     if vcard:
+#         vrange = r.smembers(key + "/tags")
+#         for tag_element in vrange:
+#             tag = (
+#                 tag_element.decode("utf-8")
+#                 if isinstance(tag_element, bytes)
+#                 else tag_element
+#             )
+#             tags.append(tag)
+#         style["tags"] = tags
 
-    if "prompt" not in style:
-        raise ValueError(f"Style {style_tag} import error: missing 'prompt'!")
+#     if "prompt" not in style:
+#         raise ValueError(f"Style {style_tag} import error: missing 'prompt'!")
 
-    return style
+#     return style
 
-    # # rpush("gpu_tasks", json.dumps(["llm_str_prompt", prompt, system_prompt, outputfile]))
+#     # # rpush("gpu_tasks", json.dumps(["llm_str_prompt", prompt, system_prompt, outputfile]))
 
-    #     if "tags" not in style:
-    #     style["tags"] = []
+#     #     if "tags" not in style:
+#     #     style["tags"] = []
 
-    # log.info("Looking for style '%s' in category '%s'", style_tag, category_name)
-    # if style_tag in ["none", ]:
-    #     return (None, {
-    #         "name": "None",
-    #         "prompt": "{prompt}",
-    #         "negative_prompt": "",
-    #         "tag": "none"
-    #     })
+#     # log.info("Looking for style '%s' in category '%s'", style_tag, category_name)
+#     # if style_tag in ["none", ]:
+#     #     return (None, {
+#     #         "name": "None",
+#     #         "prompt": "{prompt}",
+#     #         "negative_prompt": "",
+#     #         "tag": "none"
+#     #     })
 
-    # category_name = category_name.removeprefix("category_")
-    # for dirname in os.listdir(const.STYLES_DIR):
-    #     if dirname.lower() == category_name.lower():
-    #         category_name = dirname
-    #         break
+#     # category_name = category_name.removeprefix("category_")
+#     # for dirname in os.listdir(const.STYLES_DIR):
+#     #     if dirname.lower() == category_name.lower():
+#     #         category_name = dirname
+#     #         break
 
-    # for style_file in glob.glob(os.path.join(
-    #     const.STYLES_DIR,
-    #     category_name,
-    #     "*.json"
-    # )):
+#     # for style_file in glob.glob(os.path.join(
+#     #     const.STYLES_DIR,
+#     #     category_name,
+#     #     "*.json"
+#     # )):
 
-    #     pfn = os.path.join(
-    #         const.STYLES_DIR,
-    #         category_name,
-    #         style_file
-    #     )
+#     #     pfn = os.path.join(
+#     #         const.STYLES_DIR,
+#     #         category_name,
+#     #         style_file
+#     #     )
 
-    #     log.info('Loading styles from %s', pfn)
+#     #     log.info('Loading styles from %s', pfn)
 
-    #     lock = FileLock(pfn + ".lock")
-    #     with lock:
-    #         with open(pfn, "r") as f:
-    #             try:
-    #                 styles = json.loads(f.read())
-    #             except json.JSONDecodeError as e:
-    #                 log.error("Error decoding JSON from %s: %s", pfn, e)
-    #                 raise
+#     #     lock = FileLock(pfn + ".lock")
+#     #     with lock:
+#     #         with open(pfn, "r") as f:
+#     #             try:
+#     #                 styles = json.loads(f.read())
+#     #             except json.JSONDecodeError as e:
+#     #                 log.error("Error decoding JSON from %s: %s", pfn, e)
+#     #                 raise
 
-    #     change = False
-    #     for style in styles:
-    #         if 'tag' not in style:
-    #             # give tags to any styles that need them.
-    #             style['tag'] = as_id(
-    #                 style.get('cosmetic', style.get('name'))
-    #             )
-    #             change = True
+#     #     change = False
+#     #     for style in styles:
+#     #         if 'tag' not in style:
+#     #             # give tags to any styles that need them.
+#     #             style['tag'] = as_id(
+#     #                 style.get('cosmetic', style.get('name'))
+#     #             )
+#     #             change = True
 
-    #         if style['tag'] == style_tag:
-    #             if change:
-    #                 log.info('Saving updated styles to %s', pfn)
-    #                 lock = FileLock(pfn + ".lock")
-    #                 with lock:
-    #                     with open(pfn, "w") as f:
-    #                         json.dump(styles, f, indent=4)
+#     #         if style['tag'] == style_tag:
+#     #             if change:
+#     #                 log.info('Saving updated styles to %s', pfn)
+#     #                 lock = FileLock(pfn + ".lock")
+#     #                 with lock:
+#     #                     with open(pfn, "w") as f:
+#     #                         json.dump(styles, f, indent=4)
 
-    #             return (style_file, style)
+#     #             return (style_file, style)
 
-    # return (None, None)
+#     # return (None, None)
 
 
 def style_groups_in_category(category_key, force=True):
@@ -447,8 +528,6 @@ def styles_in_group(category_key: str, group: str, **filters):
     all_styles = []
     category_dir = None
     
-
-
     for dir in os.listdir(const.STYLES_DIR):
         dir_id = as_id(dir)
         if dir_id == category_key or dir == category_key:
