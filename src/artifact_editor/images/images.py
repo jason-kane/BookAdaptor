@@ -117,7 +117,7 @@ def imageForex(chapter, image_xml, image_index):
                     else:
                         image = None
 
-                    if count == total_images:
+                    if count >= total_images:
                         done = True
                         absolute[sixtyfour_c, sixtyfour_r] = (
                             f'<div count="{count}" class="imgheight img-{height}"></div>'
@@ -158,13 +158,23 @@ def imageForex(chapter, image_xml, image_index):
         return left
 
     count = image_index - (4 + 16 + 64)
-    left = gridtable(8, count)
+    if count:
+        # the entire first grid is empty, no need to draw a bunch of empty boxes.
+        left = '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+    else:
+        left = gridtable(8, count)
 
     count = image_index - (4 + 16)
-    left += gridtable(4, count)
+    if count:
+        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+    else:
+        left += gridtable(4, count)
     
     count = image_index - 4
-    left += gridtable(2, count)
+    if count:
+        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+    else:
+        left += gridtable(2, count)
 
     if "src" in image_xml.attrs:
         image_src = url_for(
@@ -182,18 +192,29 @@ def imageForex(chapter, image_xml, image_index):
     </div>"""
 
     count = image_index + 1
-    right = gridtable(2, count)
+    if total_images > count:
+        right = gridtable(2, count)
+    else:
+        right = '<div class="grid" style="height:200px; width:200px; float:left"></div>'
 
     log.warning('A')
 
     count = image_index + 5
-    right += gridtable(4, count)
+    if total_images > count:
+        right += gridtable(4, count)
+    else:
+        right += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
 
     log.warning('B')
 
     try:
         count = image_index + 17
-        right += gridtable(8, count)
+        log.info("count: %s, total_images: %s", count, total_images)
+        if total_images > count:
+            right += gridtable(8, count)
+        else:
+            right += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+
     except Exception as e:
         log.error(f"Error in gridtable: {e}")
         raise

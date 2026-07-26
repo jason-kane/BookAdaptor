@@ -5,3 +5,4 @@ dot-local/*
 src/.github_token
 **/__pycache__/*
 src/pages/**/*
+src/artifact_editor/text_old/*
