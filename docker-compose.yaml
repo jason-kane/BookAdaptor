@@ -101,7 +101,7 @@ services:
       - "./comfy/ComfyUI/user-profile:/root/ComfyUI/user-profile"
       - "./comfy/ComfyUI_frontend/dist:/usr/local/lib/python3.13/site-packages/comfyui_frontend_package/static"
     environment:
-      - CLI_ARGS=
+      - CLI_ARGS=--enable-cors-header "*"
     security_opt:
       # - "label=type:nvidia_container_t"
       - "label=disable"

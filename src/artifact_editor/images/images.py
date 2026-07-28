@@ -158,23 +158,22 @@ def imageForex(chapter, image_xml, image_index):
         return left
 
     count = image_index - (4 + 16 + 64)
-    if count:
-        # the entire first grid is empty, no need to draw a bunch of empty boxes.
+    if (image_index > 16):
+        left = gridtable(8, count)       
+    else:
         left = '<div class="grid" style="height:200px; width:200px; float:left"></div>'
-    else:
-        left = gridtable(8, count)
-
+        
     count = image_index - (4 + 16)
-    if count:
-        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
-    else:
+    if (image_index > 4):
         left += gridtable(4, count)
-    
-    count = image_index - 4
-    if count:
-        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
     else:
+        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+            
+    count = image_index - 4
+    if (image_index > 0):
         left += gridtable(2, count)
+    else:
+        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
 
     if "src" in image_xml.attrs:
         image_src = url_for(
@@ -187,7 +186,7 @@ def imageForex(chapter, image_xml, image_index):
     else:
         image_src = "/static/images/x.png"
         
-    center = f"""<div class="imgheight" style="height: 200px; float:left">
+    center = f"""<div class="grid" style="height: 200px; width:200px; float:left">
         <img class="image_{image_xml.attrs.get("index")}" style="background-color:#777; height:200px;" src="{image_src}"/></img>
     </div>"""
 

@@ -124,6 +124,7 @@ def image_metadata(chapter, image_xml, src):
     
     image_index = image_xml.attrs["index"]
     paragraph_xml = image_xml.find_parent("paragraph")
+
     image_src = image_xml.attrs.get("src")
 
     if image_src and (os.path.basename(src) == os.path.basename(image_src)):
@@ -188,7 +189,7 @@ def image_metadata(chapter, image_xml, src):
             base_fn
         )
 
-        if os.path.exists(image_pfn):
+        if os.path.exists(image_pfn) and os.path.isfile(image_pfn):
             out = """
             <div id="image_metadata" style="max-width: 50em;">
             """

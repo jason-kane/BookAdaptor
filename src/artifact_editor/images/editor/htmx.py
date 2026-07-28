@@ -42,7 +42,7 @@ def image_editor_workshop(
         basesrc,
     )
 
-    if os.path.exists(image_pfn):
+    if os.path.exists(image_pfn) and os.path.isfile(image_pfn):
         log.info("Loading image for viewer tab.")
         image = Image.open(image_pfn)
 

@@ -179,6 +179,7 @@ def comfyui_workflow_run(author, title, chapter_number, language, image_index=0)
     image_index = int(image_index)
 
     workflow_template = image_xml.attrs.get("workflow_image_template", "")
+    # mode.workflow_template
     if "." in workflow_template:
         mode = workflow_template.split(".")[0]
         workflow_template = workflow_template.split(".")[-1]
@@ -277,6 +278,7 @@ def comfyui_workflow_run(author, title, chapter_number, language, image_index=0)
 
     return "", 200
 
+
 # /6/workflow_link/*/1/animation
 @bp.route("/<int:image_index>/workflow_link/<mode>/<int:video_index>/", methods=["GET"])
 @bp.route("/<int:image_index>/workflow_link/<mode>/<int:video_index>/<animation>", methods=["GET"])
@@ -317,7 +319,10 @@ def comfyui_workflow_open(
         animation = bool(animation)
     log.info(f"animation is {animation}")
 
-    if animation:
+    if not animation and request.args.get("workflow_image_template"):
+        workflow_template = request.args.get("workflow_image_template")
+
+    elif animation:
         # the kind of template used to animate this image over time
         # ie:  the "LTX23" part ^^^^^
         workflow_template = image_xml.attrs.get(
@@ -684,25 +689,26 @@ def _apply_zmi(chapter, image_xml):
     # update with all chapter-specific characters
     all_characters.update(characters.get_all_characters(chapter, is_global=False))
 
-    images.build_replacement_prompt(all_characters, chapter.bookdir, image_xml)
+    images.build_replacement_prompt(
+        all_characters, chapter.bookdir, image_xml
+    )
 
     prompt = image_xml.attrs["prompt"]
     image_xml.attrs["raw_prompt"] = prompt
 
     # then apply the chapter style
-    style = chapter.config.get("style", "wizardofoz")
-    image_xml.attrs["style"] = style
+    #style = chapter.config.get("style", "wizardofoz")
+    #image_xml.attrs["style"] = style
 
-    prompt_filter, negative_prompt = styles.get_style(style)
+    # style = styles.Style.from_image(chapter, image_xml)
 
-    if prompt_filter:
-        prompt = prompt_filter.format(prompt=image_xml.attrs.get("raw_prompt", ""))
-        image_xml.attrs["t5_prompt"] = prompt
-        image_xml.attrs["prompt"] = prompt
+    # if style.prompt:
+    #     prompt = style.prompt.format(prompt=image_xml.attrs.get("raw_prompt", ""))
+    #     image_xml.attrs["prompt"] = prompt
 
-        if negative_prompt:
-            image_xml.attrs["negative_prompt"] = negative_prompt
-        log.info(f"Updated prompt to {prompt}")
+    #     if style.negative_prompt:
+    #         image_xml.attrs["negative_prompt"] = style.negative_prompt
+    #     log.info(f"Updated prompt to {prompt}")
 
 
 # /{{chapterurl}}/images/action/apply_zmi_here_to_end
@@ -870,48 +876,6 @@ def set_meta_prompt(author, title, chapter_number, language, image_index=0):
     chapter.save_xml()
 
     return htmx.meta_prompt(chapter, image_xml, image_index), 200
-
-
-# # /W.%20W.%20Jacobs/The%20Monkeys%20Paw/0001/images/4/scene_characters
-# @bp.route("/<int:image_index>/scene_characters", methods=["PUT"])
-# def scene_characters(author, title, chapter_number, language, image_index=0):
-#     log.info(f"{request.form}")
-#     author = Author(author)
-#     chapter = Chapter(author, title, chapter_number, language)
-
-#     image_xml = chapter.get_image(image_index)
-
-#     image_xml.attrs["scene_characters"] = ",".join(
-#         request.form.getlist("scene_characters", str)
-#     )
-
-#     # image.attrs["scene_characters"] = request.form.get("scene_characters", "")
-#     chapter.save_xml()
-
-#     return htmx.characters_section(
-#         chapter=chapter,
-#         image_index=image_index,
-#         image_xml=image_xml,
-#     ), 200
-
-
-# @bp.route("/<int:image_index>/actions/generate_scene_characters", methods=["POST"])
-# def generate_scene_characters(author, title, chapter_number, language, image_index=0):
-#     log.info(f"{request.form}")
-#     author = Author(author)
-#     chapter = Chapter(author, title, chapter_number, language)
-
-#     image_xml = chapter.get_image(image_index)
-
-#     images.generate_metadata_scene_characters(chapter, image_xml, force=True)
-
-#     chapter.save_xml()
-
-#     return htmx.characters_section(
-#         chapter=chapter,
-#         image_index=image_index,
-#         image_xml=image_xml,
-#     ), 200
 
 
 @bp.route("/<int:image_index>/save_meta_prompt", methods=["POST"])
@@ -1096,11 +1060,30 @@ def set_image_source(author, title, chapter_number, language, image_index=0):
     return response
 
 
+# tag chosen image to "float" and use the previous image where relevant. but
+# actually _copying_ the previous image only on-demand. This lets us chain
+# images for bulk operations when the previous image does not yet exist.
+@bp.route("/<int:image_index>/actions/set_previous/<state>", methods=["POST"])
+def set_image_lock(author, title, chapter_number, language, image_index=0, state="on"):
+    author = Author(author)
+    chapter = Chapter(author, title, chapter_number, language)
+    image_index = int(image_index)
+
+    image_xml = chapter.get_image(image_index)
+    if state == "on":
+        image_xml.attrs["src"] = None
+        image_xml.attrs["image_lock"] = "on"
+    else:
+        image_xml.attrs["image_lock"] = "off"
+    chapter.save_xml()
+
+    cache.delete("image_index")
+
+    return "", 200
+
+
 @bp.route("/<int:image_index>/actions/copy_previous", methods=["POST"])
 def copy_previous(author, title, chapter_number, language, image_index=0):
-    log.info(
-        f"Copying previous prompts for {author}/{title}/{chapter}/images/{image_index}"
-    )
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
@@ -1870,6 +1853,44 @@ def update(author, title, chapter_number, language, image_index=0):
         return htmx.image_strip_centerpiece(chapter, image_xml)
 
 
+# def create_paragraph_image(chapter, image_index):
+#     """
+#     Generate a new selectable image for this image based
+#     on the 'whole paragraph' workflow.
+
+#     # image, prompt, workflows, Z-Image Turbo Paragraph Image.
+#     # 
+#     """
+#     image_xml = chapter.get_image(image_index)
+
+
+#     comfyui_workflow_run
+
+#     # api.t2i.zit-paragraph_Z-Image Turbo Paragraph Image
+#     workflow = chapter.get_comfy_workflow(
+#         image_xml,
+#         interface="api",
+#         mode="t2i",
+#         workflow_template="zit-paragraph",
+#         video_index=None,
+#         template_environment=None
+#     )
+
+#     json_workflow = {"prompt": workflow}
+    
+
+#     chapter.soup.new_tag("image")
+#     image_xml.attrs["index"] = str(image_index)
+#     image_xml.attrs["src"] = ""
+#     image_xml.attrs["prompt"] = ""
+#     image_xml.attrs["clip_prompt"] = ""
+#     image_xml.attrs["t5_prompt"] = ""
+#     image_xml.attrs["t2i"] = "flux.schnell"
+#     image_xml.attrs["loras"] = "[]"
+#     paragraph.append(image_xml)
+#     chapter.save_xml()
+#     return image_xml
+
 # POST /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/images/3/action/fancy
 @bp.route("/<int:image_index>/action/fancy", methods=["POST"])
 def fancy_image(author, title, chapter_number, language, image_index):
@@ -2169,7 +2190,7 @@ def choose_video(author, title, chapter_number, language, image_index=0):
 
 
 @bp.route("/<int:height>/<int:image_index>.png", methods=["GET"])
-@cache.cached(timeout=600, query_string=True)
+@cache.cached(timeout=600, query_string=True, key_prefix="image_index")
 def show_image_by_index(
     author, title, chapter_number, language, height=0, image_index=0
 ):
@@ -2189,30 +2210,41 @@ def show_image_by_index(
     log.info("Found image for image_index=%s", image_index)
     paragraph = image_xml.parent
 
-    img_src = image_xml.attrs.get("src", "")
-    if not img_src:
-        log.warning(f"Image {image_xml} has no 'src'")
-        img_src = "/static/images/x.png"
-        image_fn = os.path.join(
-            const.STATIC_DIR,
-            "images",
-            "x.png",
-        )
-    else:
-        image_fn = os.path.join(
-            const.LIBRARY_DIR,
-            chapter.get_paragraph_dir(paragraph.attrs["index"]),
-            os.path.basename(img_src),
-        )
+    image_fn = None
+    if image_xml.attrs.get("image_lock", "off") == "on":
+        log.info('Applying image lock...')
+        # when preivous image is enabled, we _silently_ serve the final frame of
+        # the previous image without touching the xml.
+        previous_image = chapter.get_image(image_index - 1)
+        if previous_image:
+            # absolute path
+            image_fn = chapter.get_last_frame(previous_image)
 
-    log.info("Serving image %s", img_src)
+    if image_fn is None:
+        img_src = image_xml.attrs.get("src", "")
+        if not img_src:
+            log.warning(f"Image {image_xml} has no 'src'")
+            img_src = "/static/images/x.png"
+            image_fn = os.path.join(
+                const.STATIC_DIR,
+                "images",
+                "x.png",
+            )
+        else:
+            image_fn = os.path.join(
+                const.LIBRARY_DIR,
+                chapter.get_paragraph_dir(paragraph.attrs["index"]),
+                os.path.basename(img_src),
+            )
 
-    if img_src.endswith(".png"):
+        log.info("Serving image %s", img_src)
+
+    if image_fn.endswith(".png"):
         mimetype = "image/png"
-    elif img_src.endswith(".jpg") or img_src.endswith(".jpeg"):
+    elif image_fn.endswith(".jpg") or image_fn.endswith(".jpeg"):
         mimetype = "image/jpeg"
     else:
-        log.error("Unknown image type for src: %s", img_src)
+        log.error("Unknown image type for src: %s", os.path.basename(image_fn))
         mimetype = "application/octet-stream"
 
     # obsolete, may 17 2026
@@ -2952,29 +2984,29 @@ def reindex_images(author, title, chapter_number, language):
     return redirect("", code=302)
 
 
-# http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/images/5/actions/apply_style
-@bp.route("/<int:image_index>/actions/apply_style", methods=["POST", "PUT"])
-def apply_style(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    image_index = int(image_index)
+# # http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/images/5/actions/apply_style
+# @bp.route("/<int:image_index>/actions/apply_style", methods=["POST", "PUT"])
+# def apply_style(author, title, chapter_number, language, image_index):
+#     author = Author(author)
+#     chapter = Chapter(author, title, chapter_number, language)
+#     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+#     image_xml = chapter.get_image(image_index)
 
-    new_style = request.form.get("style", "")
-    log.info(f"New style: {new_style}")
+#     new_style = request.form.get("style", "")
+#     log.info(f"New style: {new_style}")
 
-    if new_style:
-        prompt_filter, negative_prompt = styles.get_style(new_style)
+#     if new_style:
+#         prompt_filter, negative_prompt = styles.get_style(new_style)
 
-        if prompt_filter:
-            image_xml.attrs["style"] = new_style
-            if negative_prompt:
-                image_xml.attrs["negative_prompt"] = negative_prompt
+#         if prompt_filter:
+#             image_xml.attrs["style"] = new_style
+#             if negative_prompt:
+#                 image_xml.attrs["negative_prompt"] = negative_prompt
 
-        chapter.save_xml()
+#         chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+#     return htmx.prompt_panel(chapter, image_xml), 200
 
 
 # hx-post="/{chapterurl}/images/{image_xml.attrs['index']}/actions/apply_prompt_template"

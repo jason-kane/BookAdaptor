@@ -707,11 +707,18 @@ class Chapter:
         """
         video_fn = None
         for video_index in range(image_xml.attrs.get("animation_count", 1)):
-            if video_index == 0:
-                image_fn = self.get_image_filename(image_xml)
+            image_fn = self.get_image_filename(image_xml)
+
+            if image_fn is None:
+                log.error(
+                    "Image filename is None, cannot extract frames from video.",
+                    image_xml_index=image_xml.attrs["index"],
+                )
+                return
+
+            if video_index == 0:   
                 video_fn = image_fn.replace(".png", ".mp4")
             else:
-                image_fn = self.get_image_filename(image_xml)
                 video_fn = image_fn.replace(".png", f"_{video_index:02d}.mp4")
 
             output_dir = os.path.join(
@@ -1750,6 +1757,7 @@ def xml_upgrade(chapter, soup):
         chapter_xml.name = "chapter"
 
     version = float(chapter_xml.attrs.get("version", "0.0"))
+    #version = 0
 
     if version < 1.0:
         log.warning("Upgrading XML from version %s to 1.0", version)

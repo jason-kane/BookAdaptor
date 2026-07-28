@@ -63,6 +63,13 @@ def audio_try_cmu_dict(author, title, chapter):
 # /Bible/Old%20Testament/0001/audio/actions/add_image_slot/4_0
 @bp.route("/actions/add_image_slot/<phrase_index>/<after>/", methods=["POST"])
 def add_image_slot(author, title, chapter_number, language, phrase_index, after=True):
+    # more or less assume true
+    after = after or after.lower() in ["true", "1", "yes"]
+
+    # with clear paths to find false.
+    if after.lower() in ["false", "0", "no"]:
+        after = False
+
     log.info(f"Adding image slot to phrase {phrase_index}")
     # add an image slot prior to the specified phrase
     author = Author(author)
@@ -71,11 +78,11 @@ def add_image_slot(author, title, chapter_number, language, phrase_index, after=
     soup = chapter.get_xml()
 
     phrase_xml = soup.find("phrase", index=phrase_index)
-    paragraph_xml = phrase_xml.find_parent("paragraph")
+    #paragraph_xml = phrase_xml.find_parent("paragraph")
 
     # create a new image slot
     new_image_xml = soup.new_tag("image")
-    if after in ["true", True, "1", 1]:
+    if after:
         phrase_xml.insert_after(new_image_xml)
     else:
         phrase_xml.insert_before(new_image_xml)
@@ -88,7 +95,10 @@ def add_image_slot(author, title, chapter_number, language, phrase_index, after=
 
     chapter.save_xml()
 
-    return audio.phrase_sequence(chapter, page=None)
+    #return audio.phrase_sequence(chapter, page=None)
+    # return htmx.image_slot(chapter, new_image_xml), 200
+    return htmx.image_placeholder(chapter, new_image_xml), 200
+
 
 
 # /Grimm/Fairy%20Tales/1/english/audio/actions/add_delay/3
@@ -935,3 +945,32 @@ def set_dinkus_duration(author, title, chapter_number, language, phrase_id):
     phrase_out += htmx.dinkus_editor(phrase_xml)
     phrase_out += "</div>"
     return phrase_out, 200
+
+
+
+# goal: level of assistance needed to generate 15 minutes of content per week.
+# That is one typical book chapter.
+ 
+# daily effort required is 
+# two minutes of good quality content.
+
+# the automation need to be strong enough
+# to create two minutes in one sitting.
+
+# about 10 paragraphs.
+
+# how long does it take to generate 2 minutes right now?
+# TODO:
+#   need to be able to defer generation to on overnight build.
+
+# one chapter per week == about 15 minutes of content.
+# I want two minutes of output in a one hour session.
+
+# 30 minutes to generate 1 minute
+# 10 minutes to make 20 seconds
+# 5 minutes per 10 second clip
+
+# I'm not even close to that, more like 
+# 30 minutes per 5 second clip
+# 90 hours for 15 minutes
+# call it two months per chapter.

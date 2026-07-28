@@ -125,10 +125,11 @@ def prompt_panel(chapter, image_xml, with_class=""):
     function; it may include a default value.
     """
     # which LLM are we prompting for?
-    t2i = image_xml.attrs.get("t2i", "")
-    if t2i == "":
-        t2i = chapter.config.get("default_t2i", "flux.schnell")
-        image_xml.attrs["t2i"] = t2i
+    #t2i = image_xml.attrs.get("t2i", "")
+    #if t2i == "":
+    #    t2i = chapter.config.get("default_t2i", "comfyui.workflow")
+    t2i = "comfyui.workflow"
+    image_xml.attrs["t2i"] = t2i 
 
     # text_to_image.registry.search(gpu=False)
     selector = text_to_image.registry.selector(
@@ -479,12 +480,15 @@ def get_animation_url(chapter, image_index: int):
     # so.. you want to "play" the frames of this chapter that include the given
     # image.  This is just vanity buddy, you know that, right?
     image_xml = chapter.get_image(image_index)
+    has_src = "src" in image_xml.attrs
 
     # if there is an animation, that is what we want.
-    if image_xml.attrs.get("animation_method", "disabled") != "disabled":
+    if has_src and image_xml.attrs.get("animation_method", "disabled") != "disabled":
         # looks like the .attrs will fail first..
         # like a stairway with no bannister.
-        video_filename = os.path.splitext(os.path.basename(image_xml.attrs["src"]))[0]
+        video_filename = os.path.splitext(
+            os.path.basename(image_xml.attrs["src"])
+        )[0]
 
         return url_for(
             "library.book.chapter.images.deliver_animation_video",
@@ -540,7 +544,7 @@ def skeleton():
     """
 
 
-def animation_workshop(image_xml, chapter):
+def animation_workshop(image_xml, chapter, small_preview=False):
     llog = log.bind(
         prefix="[animation_workshop]",
         chapter=chapter.url,
@@ -721,11 +725,18 @@ def animation_workshop(image_xml, chapter):
                 os.makedirs(frame_dir, exist_ok=True)
                 tools.extract_frames(full_filename, frame_dir)
 
+            source_url = url_for(
+                "library.book.chapter.images.deliver_animation_video",
+                **chapter.kwargs,
+                image_index=image_index,
+                filename=video_filename.removesuffix(".mp4"),
+            )
+            # animation/{video_filename}
             video_player = f"""<wa-video
                     controls="standard"
                     title="",
                     poster="">
-                <source src="animation/{video_filename}" type="video/mp4" />
+                <source src="{source_url}" type="video/mp4" />
                 </wa-video>"""
 
             # hurl the widgets in because they are likely to be a
@@ -837,6 +848,7 @@ def animation_workshop(image_xml, chapter):
             **chapter.kwargs,
             image_index=image_index,
         )
+
 
         build_animation_button = f"""<wa-button hx-post="{build_animation_url}"
             hx-swap="none"
@@ -1545,57 +1557,10 @@ def scene_tab_panel(chapter, image_index, image_xml):
         ),
     ]
 
-    # style = image_xml.attrs.get("style", "")
-    # if style == "":
-    #     style = chapter.config.get("default_style", "")
-
-    # apply_style_url = url_for(
-    #     "library.book.chapter.images.apply_style",
-    #     **chapter.kwargs,
-    #     image_index=image_xml.attrs["index"],
-    # )
-
-    # add_style_widget = styles_htmx.add_style_widget(
-    #     selected_style=style,
-    #     url=apply_style_url,
-    #     target="#prompt-textareas",
-    # )
-
-    # setting_ui = setting(
-    #     chapterurl,
-    #     image_xml
-    # )
-
-    # tod_ui = tod(
-    #     author,
-    #     title,
-    #     chapter,
-    #     image_index=image_index
-    # )
-
-    # camera_ui = camera_direction(
-    #     author,
-    #     title,
-    #     chapter,
-    #     image_index=image_index
-    # )
-
     meta_prompt_ui = meta_prompt(chapter, image_xml, image_index)
-
-    # characters_section_ui = characters_section(
-    #     mybook,
-    #     author, title, chapter,
-    #     image_index, chapterurl,
-    #     chapterdir, image_xml
-    # )
 
     buttons = [copy_from_previous_button(chapter, image_index=image_index)]
 
-    # {setting_ui}
-    # {tod_ui}
-    # {camera_ui}
-    # {characters_section_ui}
-    # {prompt_template_ui}
     return f"""        
         <div style="width: 100%" class="wa-cluster">
             {"\n".join(prompt_buttons)}

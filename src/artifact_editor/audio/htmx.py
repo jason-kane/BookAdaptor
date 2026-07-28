@@ -437,7 +437,7 @@ def add_image_slot_button(chapter, phrase_xml, page, after=True):
         return f"""<wa-button
                 hx-post="{add_image_slot_url}"
                 hx-vals='{{"page": "{page}"}}'
-                hx-target="#phrases"
+                hx-target="#phrase-{phrase_xml['index']}"
                 hx-swap="afterend"
                 variant="brand"
                 hx-trigger="click">&#x2193; Add Image Slot &#x2193;</wa-button>"""
@@ -448,7 +448,7 @@ def add_image_slot_button(chapter, phrase_xml, page, after=True):
             return f"""<wa-button
                 hx-post="{add_image_slot_url}"
                 hx-vals='{{"page": "{page}"}}'
-                hx-target="#phrases"
+                hx-target="#phrase-{phrase_xml['index']}"
                 hx-swap="beforebegin"
                 variant="brand"
                 hx-trigger="click">&#x2191; Add Image Slot &#x2191;</wa-button>"""
@@ -696,7 +696,18 @@ def phrase_editor(chapter, phrase_xml, page, split=None):
     for a specific phrase.
     """
     previous_phrase = phrase_xml.find_previous_sibling("phrase")
-    phrase_speaker_value = phrase_xml.attrs.get("speaker", "Narrator")
+    phrase_speaker_value = phrase_xml.attrs.get("speaker")
+    if phrase_speaker_value is None:
+        # if the phrase doesn't have a speaker, we try to find one from the
+        # previous phrase.
+        if previous_phrase is not None:
+            phrase_speaker_value = previous_phrase.attrs.get("speaker")
+        else:
+            # fallback to Narrator
+            phrase_speaker_value = "Narrator"
+
+        # update the record
+        phrase_xml.attrs["speaker"] = phrase_speaker_value
 
     if split:
         # if we are engaged in a split operation, we want the split editor to
@@ -711,6 +722,8 @@ def phrase_editor(chapter, phrase_xml, page, split=None):
     else:
         # no visible text == no latex typography
         phrase_latex_image = get_phrase_latex_image(chapter, phrase_xml)
+
+    chapter.save_xml()
 
     return render_template(
         "phrase.html",

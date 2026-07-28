@@ -66,7 +66,7 @@
   },
   "63": {
     "inputs": {
-      "filename_prefix": "%%FILENAME_PREFIX%%",
+      "filename_prefix": "{{FILENAME_PREFIX}}",
       "images": [
         "90:8",
         0
@@ -125,7 +125,7 @@
   },
   "70": {
     "inputs": {
-      "string": "%%META%%\n",
+      "string": "{{META}}\n",
       "chain": [
         "69",
         0
@@ -138,7 +138,7 @@
   },
   "71": {
     "inputs": {
-      "string": "%%PRIOR_RESULT%%\n",
+      "string": "{{PRIOR_RESULT}}\n",
       "chain": [
         "91",
         0
@@ -151,7 +151,7 @@
   },
   "72": {
     "inputs": {
-      "string": "%%SOURCE%%\n",
+      "string": "{{SOURCE}}\n",
       "chain": [
         "71",
         0
@@ -164,8 +164,8 @@
   },
   "74": {
     "inputs": {
-      "output_file_path": "%%OUTPUT_DIR%%",
-      "file_name": "%%SCENE_DESCRIPTION_FN%%",
+      "output_file_path": "{{OUTPUT_DIR}}",
+      "file_name": "{{SCENE_DESCRIPTION_FN}}",
       "file_extension": "txt",
       "overwrite": true,
       "text": [
@@ -185,7 +185,7 @@
         0
       ],
       "text_negative": "",
-      "Custom": "wizardofoz",
+      "Custom": "{{STYLE}}",
       "style_weight_Custom": 1,
       "offset_Custom": 0,
       "log_prompt": true
@@ -197,8 +197,8 @@
   },
   "88": {
     "inputs": {
-      "output_file_path": "%%OUTPUT_DIR%%",
-      "file_name": "%%PROMPT_FN%%",
+      "output_file_path": "{{OUTPUT_DIR}}",
+      "file_name": "{{PROMPT_FN}}",
       "file_extension": "txt",
       "overwrite": true,
       "text": [
@@ -213,7 +213,7 @@
   },
   "91": {
     "inputs": {
-      "string": "%%SCENE%%\n",
+      "string": "{{SCENE}}\n",
       "chain": [
         "70",
         0

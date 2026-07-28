@@ -1,4 +1,4 @@
-import logging
+import logger
 import os
 
 from colour import Color
@@ -11,7 +11,8 @@ from artifact_editor.chapter.chapter import Chapter
 
 from artifact_editor.images import htmx as images_htmx
 
-log = logging.getLogger(__name__)
+log = logger.log(__name__)
+
 
 bp = Blueprint(
     'timeline',
@@ -50,33 +51,56 @@ def timeline(author, title, chapter_number, language):
     total_frames = 0
     paragraphs = []
     #  get_xml().find_all('paragraph'):
+    previous = None
     for paragraph_xml in chapter.paragraphs():
         paragraph = {
-            'index': paragraph_xml['index'], 
-            'images': [],
-            'frames': 0,
+            "index": int(paragraph_xml['index']),
+            "frames": 0,
+            "images": []
         }
 
         for segment in paragraph_xml.children:
             if segment.name == 'image':
                 # we are displaying a new image
-                paragraph['images'].append({
+                image = {
                     'image': segment,  # attaching the whole image_xml tag right here
                     'frames': 0,
                     'duration': 0,
                     'phrases': [],
                     'paragraph_index': int(paragraph_xml['index'])
-                })
+                }
+                paragraph['images'].append(image)
+                previous = [image]
             elif segment.name == 'phrase':
-                if paragraph['images']:
+                images = paragraph.get('images', [])
+
+                if not images and previous:
+                    # we have a phrase with no image, but we have a previous image
+                    images = previous
+                    paragraph['images'] = [{
+                        'image': previous[-1]['image'],
+                        'frames': 0,
+                        'duration': 0,
+                        'phrases': [],
+                        'paragraph_index': int(paragraph_xml['index'])
+                    }]
+
+                if images:
                     phrase_frames = int(segment.get('frames', '0'))
-                    paragraph['images'][-1]['frames'] += phrase_frames
-                    paragraph['images'][-1]['duration'] += phrase_frames / const.FPS
+                    images[-1]['frames'] += phrase_frames
+                    images[-1]['duration'] += phrase_frames / const.FPS
                     paragraph['frames'] += phrase_frames
-                    paragraph['images'][-1]['phrases'].append(segment)
+                    images[-1]['phrases'].append(segment)
+                    previous = [images[-1]]
+
                 else:
                     # we got a phrase with no image
-                    log.error('Invalid paragraph: %s', paragraph_xml)
+                    log.error(
+                        'Invalid paragraph', 
+                        paragraph_xml=paragraph_xml,
+                        images=images,
+                        previous=previous,
+                    )
         
         paragraphs.append(paragraph)
     
@@ -183,9 +207,24 @@ def timeline(author, title, chapter_number, language):
 
 # http://localhost:5000/Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/images/0.png
 
+    # add_image_slot_url = url_for(
+    #     "library.book.chapter.audio.add_image_slot",
+    #     author=chapter.author.name,
+    #     title=chapter.title,
+    #     chapter_number=chapter.number,
+    #     language=chapter.language,
+    #     phrase_index=phrase_xml["index"],
+    #     after=True
+    # )
+
     return render_template(
         'timeline.html',
-        animation_configuration=images_htmx.get_animation_configuration_widgets,
+        # draw_image_url = url_for(
+        #     'library.book.chapter.images.comfyui_workflow_run',
+        #     **chapter.kwargs, 
+        # ),
+        #animation_configuration=images_htmx.get_animation_configuration_widgets,
+        animation_workshop=images_htmx.animation_workshop,
         get_animation_url=images_htmx.get_animation_url,
         section="phrase.timeline",
         section_cosmetic="Phrase › Timeline",
