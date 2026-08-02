@@ -936,7 +936,7 @@ def htmx_forex(author, title, chapter_number, language, image_index=0):
     all_images = chapter.get_xml().findAll("image")
     image_xml = all_images[image_index]
 
-    image_forex = images.imageForex(chapter, image_xml, image_index)
+    image_forex = images.image_forex(chapter, image_xml, image_index)
 
     response = make_response(
         f"""<div id="forex" style="width:100%">
@@ -1744,7 +1744,7 @@ def base(author, title, chapter_number, language, image_index=0, override=None):
     if image_index > max_index:
         return redirect(f"/{max_index}", code=302)
 
-    image_forex = images.imageForex(
+    image_forex = images.image_forex(
         chapter,
         image_xml,
         image_index,

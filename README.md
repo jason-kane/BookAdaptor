@@ -1,17 +1,17 @@
+# Example
+
 [![Link to Youtube Example](assets/example_result.png)](https://youtu.be/UguuQuCYBh0?si=xLMxq_jzNHJccfpF)
 
-Requirements
-------------
-* Linux 
+## Requirements
+
+* Linux
 * Docker
 * Docker Compose
 * NVidia 3060 12GB or better.
 
 Windows or OSX might work.  I have not tried.
 
-Purpose
--------
-
+## Purpose
 
 As you can see from the sample linked a the top... it is quite rough.  I'm tying together a sort of dashboard for building these long-form text to video.
 
@@ -21,11 +21,9 @@ Good quality read-along, spoken out-loud video with contextually relevant images
 
 The text of the book is rendered as crisp, precisely typeset L<span style="text-transform: uppercase; font-size: 0.85em; margin-left: -0.3em; vertical-align: 0.5ex; margin-right: -0.15em;">a</span>T<span style="text-transform: uppercase; font-size: 0.85em; margin-left: -0.1667em; vertical-align: -0.5ex; margin-right: -0.125em;">e</span>X.
 
-
 The process of getting from the text of a story to a full video is an interactive, human driven process.  This is not a one shot upload text and out pops a movie.  It is intended to support iterative improvement.  The longer term plan is to enable collaboration and community driven improvements.
 
-Preface
--------
+## Preface
 
 I know the installation process is miserable.  My plan is to not tell anyone about this project until I've made the install significantly nicer, bare minimum.  It is quite likely this repo does not in fact contain everything that is actually neccessary to install without addition undocumented addendums.  I don't know.  The program itself is also riddled with bugs, misfeatures and very questionably choices.
 
@@ -35,9 +33,7 @@ The clever duckling among you may wonder where the git history is.  I'm cutting 
 
 There aren't any tests.  Which explains some of the massive swarm of bugs.
 
-
-Initialization
---------------
+## Initialization
 
 pull this repo, cd into it, then:
 
@@ -61,18 +57,17 @@ from the repo directory:
     git clone https://github.com/Comfy-Org/ComfyUI_frontend
     git clone https://github.com/YanWenKun/ComfyUI-Docker
 
-
 ## Models
 
 * TODO: Helper to get all the models ComfyUI needs
 * TODO: Helper to get all the custom nodes we actually use
 
-# Building/Updating ComfyUI Frontend
+## Building/Updating ComfyUI Frontend
 
 This kind of sucks.  Sorry.  The ComfyUI Frontend needs patching to behave nicely as a UI for modifying/running ComfyUI workflows.
 
-
 ## The first time
+
 Install nvm and pnpm if you don't already have them.
 
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
@@ -83,7 +78,7 @@ Install nvm and pnpm if you don't already have them.
 
     npm install -g pnpm@10
 
-## To update the frontend:
+## Update the frontend
 
     git checkout main
     git pull
@@ -95,7 +90,6 @@ Install nvm and pnpm if you don't already have them.
 open up src/platform/workflow/persistence/composables/useWorkflowPersistenceV2.ts and add this right after
   const loadPreviousWorkflowFromStorage = async () => {
     const sessionPath = tabState.getActivePath()
-
 
     // If we got a ?workflow= parameter we want to load that.
     if (route.query.workflow && typeof route.query.workflow === 'string') {
@@ -122,7 +116,7 @@ Before you can build, you'll need to:
 
 Apologies, I'm sure there is a better way to do this.
 
-## Then build the frontend:
+## Then build the frontend
 
     pnpm build
 
@@ -132,14 +126,13 @@ If you want to modify the typescript for the frontend, this is the command to re
 
 You will also want to `docker compose stop` and `docker compose up` again so you get the new code.
 
-## Next stop:
+## Next stop
 
     docker compose up
 
 Then:
 
-http://localhost:8080/
-
+Open this link: [http://localhost:8080/](http://localhost:8080/)
 
 [UI Walkthrough](walkthrough.md)
 

@@ -63,7 +63,10 @@ def text_to_clip_prompt(image, paragraph, text_to_next, t5_prompt=""):
 
     # strip and dedupe
     clip_prompt = ",".join(
-        list(set([keyword.strip() for keyword in clip_prompt.split(",")]))
+        list(
+            # set comprehension to remove duplicates
+            {keyword.strip() for keyword in clip_prompt.split(",")}
+        )
     )
 
     image.attrs["clip_prompt"] = clip_prompt
@@ -87,11 +90,19 @@ def assign_paragraph_dir_and_index(soup, chapterdir):
             log.info(f"Assigning index {index} for paragraph {paragraph['dir']}")
 
 
-# def imageForex(chapter, image_xml, image_index):
+def image_forex(chapter, image_xml, image_index) -> str:
+    """
+    Returns HTML blob for a screen-width wide display of all the images in the
+    chapter. The image at image_index is displayed in the center at full height
+    To the right and left are 2x2, 4x4 and 8x8 grids of images for a grand
+    total of (4 + 16 + 64) * 2 + 1 = 169 images displayed at once.
 
+    For a typical chapter that is plenty, but it will overflow nicely on both
+    sides as needed. The goal is to provide a quick way to navigate to any image
+    in the chapter, with the most detail on the current image and nearby context.
 
-
-def imageForex(chapter, image_xml, image_index):
+    TODO:  We do not need both image_xml and image_index.
+    """
     absolute = {}
 
     all_images = chapter.get_xml().findAll("image")
