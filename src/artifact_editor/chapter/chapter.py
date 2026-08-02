@@ -1,19 +1,22 @@
+import base64
+import glob
+import json
 import os
 import random
 import re
 import shutil
-import base64
-import comfy
 from hashlib import md5
-import glob
-import json
+from typing import Iterable
+
+import numpy as np
+from bs4 import BeautifulSoup
+from bs4.element import Tag
 
 # from artifact_editor.images import animation
 from flask import url_for
-import numpy as np
-from bs4 import BeautifulSoup
 from PIL import Image
 
+import comfy
 import const
 import logger
 from artifact_editor import (
@@ -22,12 +25,12 @@ from artifact_editor import (
     tools,
     typography,
 )
+from artifact_editor.audio.pronunciation.pronunciation import get_global_pronunciations
 from artifact_editor.author.author import Author
 from artifact_editor.masterplan import masterplan
+from artifact_editor.styles import styles
 from artifact_editor.tools import tags_to_dict
 from artifact_editor.typography import page_segment
-from artifact_editor.audio.pronunciation.pronunciation import get_global_pronunciations
-from artifact_editor.styles import styles
 
 log = logger.log(__name__)
 
@@ -302,21 +305,24 @@ class Chapter:
         self.load_xml()
         return self.soup.find_all("phrase")
 
-    def paragraphs(self):
+    def paragraphs(self) -> Iterable[Tag]:
         self.load_xml()
         return self.soup.find_all("paragraph")
 
-    def get_paragraph(self, paragraph_index: int):
+    def get_paragraph(self, paragraph_index: int) -> Tag | None:
         self.load_xml()
-        return self.soup.find("paragraph", attrs={"index": str(paragraph_index)})
+        return self.soup.find(
+            "paragraph",
+            attrs={"index": str(paragraph_index)}
+        )
 
-    def get_bottom_height(self, force=False):
+    def get_bottom_height(self, force=False) -> int:
         all_phrases = self.phrases()
         last_phrase = Phrase(self, all_phrases[-1], self.aspect)
         last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
         return last_phrase_dimensions["bottom"]
 
-    def get_text_height(self, force=False):
+    def get_text_height(self, force: bool=False) -> int:
         all_phrases = self.phrases()
 
         # first_phrase = Phrase(all_phrases[0])
@@ -353,7 +359,7 @@ class Chapter:
         self.save_xml()  # save any cached dimensions
         return total_height
 
-    def get_highlighted_text_snippet_fn(self, phrase_xml):
+    def get_highlighted_text_snippet_fn(self, phrase_xml: Tag) -> str:
         paragraph_xml = phrase_xml.find_parent("paragraph")
         paragraph_index = paragraph_xml["index"]
         return os.path.join(
@@ -1414,7 +1420,7 @@ class Chapter:
     def get_chapterdir(self):
         return self.chapterdir
 
-    def get_paragraph_dir(self, paragraph_index):
+    def get_paragraph_dir(self, paragraph_index:int) -> str:
         return os.path.join(self.chapterdir, "paragraphs", f"{paragraph_index:0>6}")
 
     def get_xml(self):

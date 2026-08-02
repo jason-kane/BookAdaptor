@@ -2,15 +2,15 @@ import const
 import os
 
 class Book:
-    def __init__(self, title):
+    def __init__(self, title: str):
         self.title = title
 
 class Author:
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
         self.authordir = os.path.join(const.LIBRARY_DIR, name)
         self.pretty_name = name.replace("_", " ").title()
-        self.books = []
+        self.books: list[Book] = []
 
     def inventory_books(self):
         for title in sorted(os.listdir(self.authordir)):
@@ -24,5 +24,5 @@ class Author:
             self.add_book(Book(title))
         return self.books
     
-    def add_book(self, book: Book):
+    def add_book(self, book: Book) -> None:
         self.books.append(book)

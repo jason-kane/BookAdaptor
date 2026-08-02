@@ -1,24 +1,27 @@
+from __future__ import annotations
+
 import contextlib
-import eng_to_ipa
 import copy
+import decimal
 import json
 import math
 import os
 import re
 import wave
-import decimal
-from bs4 import BeautifulSoup
+from typing import TYPE_CHECKING
 
+import eng_to_ipa
 import fnv_hash_fast
-from flask import request
 import redis
+from bs4 import BeautifulSoup
+from flask import request
 
-from artifact_editor import llm
 import const
 import logger
-from artifact_editor.characters.characters import name_to_tag
+from artifact_editor import llm
 from artifact_editor.audio.pronunciation import pronunciation
 from artifact_editor.audio.sound import htmx as sound_htmx
+from artifact_editor.characters.characters import name_to_tag
 from artifact_editor.tools import (
     get_chapterdir,
     get_paragraph_dir,
@@ -31,42 +34,13 @@ from . import (
     htmx,
 )
 
-log = logger.log(__name__)
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
+log = logger.log(name=__name__)
 
 
-# def correct_fragdex_and_phrase_indexs(mybook):
-#     paragraph_index = 0
-#     for paragraph in mybook.soup.findAll("paragraph"):
-
-#         if not str(paragraph).strip():
-#             continue
-
-#         paragraph.attrs['index'] = paragraph_index
-
-#         fragdex = 0
-#         for fragment in paragraph.contents:
-#             if not str(fragment).strip():
-#                 continue
-
-#             if 'fragdex' in fragment.attrs:
-#                 fragdex = int(fragment.attrs['fragdex'])
-#             else:
-#                 fragment.attrs['fragdex'] = fragdex
-
-#             if fragment.name == "phrase":
-#                 phrase_index = fragment.attrs.get('id')
-#                 if phrase_index is None:
-#                     phrase_index = f"{paragraph_index}_{fragdex}"
-#                     fragment.attrs['id'] = phrase_index
-
-#             fragdex += 1
-
-#         paragraph_index += 1
-
-#     return mybook
-
-
-def phrase_sequence(chapter, page=1):
+def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
     """
     Get the phrase sequence for the given chapter directory.
     """
@@ -432,7 +406,9 @@ def get_wav_duration(wavfile):
     return duration
 
 
-def wav_append_delay(wavfile, delay_amount, outfile=None):
+def wav_append_delay(
+    wavfile: str | os.PathLike, delay_amount: float, outfile: str | None = None
+):
     # params = (1, 2, 16000, 0, 'NONE', 'not compressed')
 
     if os.path.exists(wavfile):
@@ -469,33 +445,36 @@ def wav_append_delay(wavfile, delay_amount, outfile=None):
         out.writeframes(b"\0" * (sampwidth * delay_wav_frames))
 
 
-def clean_latex(instr) -> str:
+def clean_latex(instr: str) -> str:
     """
-    Remove LaTeX formatting from a string, leaving only the text content.
-    Our goal is a correctly pronounceable string, cosmetics are irrelevant.
+    Remove LaTeX formatting from a string, leaving only the text content. Our
+    goal is a correctly pronounceable string, cosmetics are irrelevant.
+
+    Now that we are storing the latex in its own attribute, this should be
+    obsolete.
     """
     outstr = instr
-    if "\\textbf\{" in instr:
+    if r"\\textbf\{" in instr:
         outstr = re.sub(r"\\textbf\{(.*?)\}", r"\1", outstr)
-    
-    if "\\hspace\{" in instr:
-        outstr = re.sub(r"\\hspace\{.*?\}", "", outstr)
-    
+
+    if r"\\hspace\{" in instr:
+        outstr = re.sub(r"\\hspace\{[^\}]*\}", "", outstr)
+
     if "\\$" in instr:
         # this is an awkward one, in "The Story of Mel" there is a line that
         # uses $ as a playfull alternative to "s", so it should be read as s,
-        # leaving the playfullness intact in the visual.  
-        
+        # leaving the playfullness intact in the visual.
+
         # The other 99% of the time there is a $ dollar sign, the best choice is
         # situational. "I won $50 in the lottery" should be read as "I won fifty
         # dollars in the lottery" and not "I won s50 in the lottery" or "I won
-        # dollars fifty in the lottery".  
-        
+        # dollars fifty in the lottery".
+
         # So we will just leave the $ alone, and let the TTS engine decide how
         # to pronounce it.  If it is the hyper-rare playfull $ then we will fix
         # it as a one-off.
         outstr = outstr.replace("\\$", "$")
-    
+
     outstr = outstr.replace("\n", " ")
 
     while "  " in outstr:
@@ -551,7 +530,7 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
         text_to_speak,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
-        force=False
+        force=False,
     )
 
     if not os.path.exists(wavfile):
@@ -584,7 +563,7 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
     pronunciation_ipa = None
     # did speak() leave behind a pronunciation treat?
     if os.path.exists(wavfile + ".pronunciation"):
-        log.info('Found pronunciation file: %s', wavfile + ".pronunciation")
+        log.info("Found pronunciation file: %s", wavfile + ".pronunciation")
         # were there any problems?
         with open(wavfile + ".pronunciation", "r") as h:
             pronunciation_ipa = h.read().strip()
@@ -626,7 +605,9 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
                     word = word.strip("_,;.!?:()\"’“”'").lower()
 
                     if "❓" in pron:
-                        log.info(f'Attempting to pronounce {word} using eng_to_ipa.jonvert()')
+                        log.info(
+                            f"Attempting to pronounce {word} using eng_to_ipa.jonvert()"
+                        )
                         word = word.replace("\n", " ")
                         p = fix_jonvert_accents(eng_to_ipa.jonvert(word))
                         # if "ˈ" in p:
@@ -1130,7 +1111,7 @@ def generate_all_audio(chapter, force=True):
                 phrase_xml.get_text(),
                 phrase_xml.attrs.get("speaker", "Narrator"),
                 wavfile,
-                force=False
+                force=False,
             )
 
             # do we already have a pronunciation file for this phrase?
@@ -1143,12 +1124,12 @@ def generate_all_audio(chapter, force=True):
                 try:
                     # /root/ComfyUI/output/audio/ph_0_Fables_6020c8ae_0a40.pronunciation.txt
                     pronunciation_filename = os.path.join(
-                        const.COMFY_DIRS["artifactserver"]['OUTPUT_DIR'],
+                        const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
                         "audio",
                         os.path.basename(wavfile).replace(".wav", ".pronunciation.txt"),
                     )
 
-                    with open(pronunciation_filename, 'r') as f:
+                    with open(pronunciation_filename, "r") as f:
                         # wavfile.replace(".wav", ".pronunciation") + ".txt", "r") as f:
                         new_pronunciation = f.read().strip()
                         log.info(f"Found pronunciation file: {pronunciation_filename}")

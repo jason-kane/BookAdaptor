@@ -16,10 +16,10 @@ with open(
 NARRATOR = configuration.get("NARRATOR", {})
 
 # library, source, and assets directories
-LIBRARY_DIR = configuration.get("LIBRARY_DIR", "/active")
-SRC_DIR = configuration.get("SRC_DIR", "/app")
-ASSETS_DIR = configuration.get("ASSETS_DIR", "/assets")
-STYLES_DIR = configuration.get("STYLES_DIR", "/styles")
+LIBRARY_DIR: str = configuration.get("LIBRARY_DIR", "/active")
+SRC_DIR: str = configuration.get("SRC_DIR", "/app")
+ASSETS_DIR: str = configuration.get("ASSETS_DIR", "/assets")
+STYLES_DIR: str = configuration.get("STYLES_DIR", "/styles")
 
 LORA_DIR = os.path.join(
     LIBRARY_DIR,
