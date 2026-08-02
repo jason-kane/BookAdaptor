@@ -495,8 +495,37 @@ def clean_latex(instr) -> str:
         # to pronounce it.  If it is the hyper-rare playfull $ then we will fix
         # it as a one-off.
         outstr = outstr.replace("\\$", "$")
+    
+    outstr = outstr.replace("\n", " ")
+
+    while "  " in outstr:
+        outstr = outstr.replace("  ", " ")
 
     return outstr
+
+
+def fix_jonvert_accents(pronunciation_ipa: str) -> str:
+    """
+    Fix the accent marks in the pronunciation IPA string returned by eng_to_ipa.jonvert().
+    """
+    # fix common whitespace problems
+    pronunciation_ipa = pronunciation_ipa.replace(" , ", ", ")
+
+    out = ""
+    swap = None
+    for p in pronunciation_ipa:
+        if p in ["ˈ", "ˌ"]:
+            swap = p
+        elif swap:
+            out += p + swap
+            swap = None
+        else:
+            out += p
+
+    if swap:
+        out += swap
+
+    return out
 
 
 def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
@@ -598,7 +627,15 @@ def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
 
                     if "❓" in pron:
                         log.info(f'Attempting to pronounce {word} using eng_to_ipa.jonvert()')
-                        p = eng_to_ipa.jonvert(word)
+                        word = word.replace("\n", " ")
+                        p = fix_jonvert_accents(eng_to_ipa.jonvert(word))
+                        # if "ˈ" in p:
+                        #     ph = p.index("ˈ")
+                        #     p = p[:ph] + p[ph+1] + p[ph] + p[ph+2:]
+                        # if "ˌ" in p:
+                        #     ph = p.index("ˌ")
+                        #     p = p[:ph] + p[ph+1] + p[ph] + p[ph+2:]
+
                         if "*" in p:
                             log.error(f"Eng-to-IPA also failed for word: {word}")
                             pronunciation.add_word_pronunciation(
@@ -636,7 +673,8 @@ def try_cmu_dict(chapter):
         if p["pronunciation"] == "":
             log.info(f'Found missing pronunciation for word: {p["word"]}')
             # Try to get pronunciation from CMU dict
-            cmu_pron = eng_to_ipa.jonvert(p["word"])
+            p["word"] = p["word"].replace("\n", " ")
+            cmu_pron = fix_jonvert_accents(eng_to_ipa.jonvert(p["word"]))
 
             if "*" not in cmu_pron:
                 log.info(f'Found CMU pronunciation for {p["word"]}: {cmu_pron}')

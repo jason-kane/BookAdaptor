@@ -304,4 +304,4 @@ def render_masterplan_portrait(chapter):
     log.info('Triggering book_to_video()...')
     book_to_video(chapter, "portrait", force=False)
 
-assemble_mp5 = tools.assemble_mp4
+assemble_mp4 = tools.assemble_mp4

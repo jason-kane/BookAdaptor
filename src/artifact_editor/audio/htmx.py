@@ -619,8 +619,8 @@ def phrase_latex(chapter, phrase_xml):
     phrase = hyphen_fixer(phrase)
     # TODO: poetry lines end in \nobreak\\
 
-    if "latex" not in phrase_xml.attrs:
-        phrase_xml.attrs["latex"] = f"{phrase}\n"
+    phrase_xml.attrs["latex"] = f"{phrase}\n"
+    value = html.escape(phrase)
 
     return f"""
     <wa-textarea
@@ -629,7 +629,7 @@ def phrase_latex(chapter, phrase_xml):
         resize="auto"
         rainbow="false"
         index="{phrase_xml['index']}"
-        value="{phrase_xml.attrs.get('latex', '')}">
+        value="{value}">
     </wa-textarea>
     """
 

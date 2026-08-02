@@ -91,6 +91,7 @@ services:
       - "./dot-config:/root/.config"
       - "./dot-local:/root/.local"
       - "./user-scripts:/root/user-scripts"
+      - "./comfy/ComfyUI:/root/ComfyUI"
       - "./comfy/ComfyUI/custom_nodes:/root/ComfyUI/custom_nodes"
       - "./comfy/ComfyUI/models:/root/ComfyUI/models"
       - "./comfy/ComfyUI/hf-hub:/root/.cache/huggingface/hub"

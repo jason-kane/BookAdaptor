@@ -326,9 +326,13 @@ def soundslike(author, title, chapter_number, language):
     # chapter = Chapter(author, title, chapter_number, language)
 
     soundslike = request.form.get("soundslike", "").strip()
+    soundslike = soundslike.replace("\n", " ")
     key = request.form.get("key", "").strip()
 
-    p = eng_to_ipa.jonvert(soundslike)
+    p = audio.fix_jonvert_accents(
+        eng_to_ipa.jonvert(soundslike)
+    )
+
     if not "*" in p:
         log.info(f"Eng-to-IPA suggests {p} for word: {soundslike}")
 

@@ -609,6 +609,7 @@ def regenerate_phrase(
             return htmx.phrase_editor(chapter, phrase_xml, page), 200
 
     text_to_speak = audio.clean_latex(phrase_xml.get_text())
+    log.info(f"Submitting {text_to_speak} to TTS for phrase {phrase_index}")
 
     # regenerate the wav for this phrase
     llm.text_2_audio(

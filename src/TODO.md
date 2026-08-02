@@ -7,7 +7,7 @@ Prompt->Comfy does not include the style
 default t2i should be workflow
 
 
- FIXED: animate first/last frame is using the previous image as the first frame, not the current image
+FIXED: animate first/last frame is using the previous image as the first frame, not the current image
 
 
 DONE: Image -> Selector

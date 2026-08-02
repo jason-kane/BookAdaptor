@@ -12,21 +12,24 @@ Windows or OSX might work.  I have not tried.
 Purpose
 -------
 
-This is a local browser based UI environment for turning an plain text book into a read-along, spoken out-loud video with contextually relevant images and video.
+
+As you can see from the sample linked a the top... it is quite rough.  I'm tying together a sort of dashboard for building these long-form text to video.
+
+That, would be this.
+
+Good quality read-along, spoken out-loud video with contextually relevant images and video.
 
 The text of the book is rendered as crisp, precisely typeset L<span style="text-transform: uppercase; font-size: 0.85em; margin-left: -0.3em; vertical-align: 0.5ex; margin-right: -0.15em;">a</span>T<span style="text-transform: uppercase; font-size: 0.85em; margin-left: -0.1667em; vertical-align: -0.5ex; margin-right: -0.125em;">e</span>X.
 
 
-The process of getting from the text of a story to a full video is interactive.  This isn't a one shot upload text and watch a movie.  It is intended to support iterative improvement.  The longer term plan is to enable collaboration and community driven improvements.
-
-The end goal is to produce high quality videos that are absolutely faithful to the source material.
+The process of getting from the text of a story to a full video is an interactive, human driven process.  This is not a one shot upload text and out pops a movie.  It is intended to support iterative improvement.  The longer term plan is to enable collaboration and community driven improvements.
 
 Preface
 -------
 
-I know the installation process is miserable.  My plan is to not tell anyone about this project until I've made the install significantly nicer, bare minimum.  The program itself is also riddled with bugs, misfeatures and very questionably choices.
+I know the installation process is miserable.  My plan is to not tell anyone about this project until I've made the install significantly nicer, bare minimum.  It is quite likely this repo does not in fact contain everything that is actually neccessary to install without addition undocumented addendums.  I don't know.  The program itself is also riddled with bugs, misfeatures and very questionably choices.
 
-Despite the heavy AI angle, I'm not into vibe coding.  It gets rid of what I consider to be the fun part.  I am not a purist, I still use command completion level AI assists when it suggests what I'm about to do anyway.
+Despite the heavy AI angle, I'm not into vibe coding.  It gets rid of what I consider to be the fun part.  I am not a purist, I still use command completion level AI assists and such.
 
 The clever duckling among you may wonder where the git history is.  I'm cutting a clean slate because the history includes API keys and a lot of churn.  I've been building this for years, off and on.
 
@@ -50,11 +53,14 @@ This will also consume a rather significant amount of disk wherever you store do
 
 ## ComfyUI
 
-Install git clone of:
+from the repo directory:
 
-    ComfyUI to ./comfy/ComfyUI
-    ComfyUI_frontend to ./comfy/ConfyUI_frontend
-    ComfyUI-Docker to ./comfy/ComfyUI-Docker
+    mkdir comfy
+    cd comfy
+    git clone https://github.com/comfy-org/ComfyUI
+    git clone https://github.com/Comfy-Org/ComfyUI_frontend
+    git clone https://github.com/YanWenKun/ComfyUI-Docker
+
 
 ## Models
 
@@ -63,19 +69,19 @@ Install git clone of:
 
 # Building/Updating ComfyUI Frontend
 
-This kind of sucks.  Sorry.
+This kind of sucks.  Sorry.  The ComfyUI Frontend needs patching to behave nicely as a UI for modifying/running ComfyUI workflows.
 
 
 ## The first time
 Install nvm and pnpm if you don't already have them.
 
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-source ~/.bashrc
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+    source ~/.bashrc
 
-nvm install 25
-nvm use
+    nvm install
+    nvm use
 
-npm install -g pnpm@10
+    npm install -g pnpm@10
 
 ## To update the frontend:
 
@@ -85,6 +91,7 @@ npm install -g pnpm@10
     # selected version, good enough for our purposes.
     git checkout v1.47.7
 
+(obsolete, sry)
 open up src/platform/workflow/persistence/composables/useWorkflowPersistenceV2.ts and add this right after
   const loadPreviousWorkflowFromStorage = async () => {
     const sessionPath = tabState.getActivePath()
@@ -121,7 +128,9 @@ Apologies, I'm sure there is a better way to do this.
 
 That will give you a fresh build of the UI in ComfyUI_frontend/dist/
 
-If you want to modify the typescript for the frontend, this is the command to rebuild it.  You will want to stop the docker compose and `docker compose up` again so you get your new code.
+If you want to modify the typescript for the frontend, this is the command to rebuild it.  
+
+You will also want to `docker compose stop` and `docker compose up` again so you get the new code.
 
 ## Next stop:
 
@@ -130,3 +139,8 @@ If you want to modify the typescript for the frontend, this is the command to re
 Then:
 
 http://localhost:8080/
+
+
+[UI Walkthrough][walkthrough.md]
+
+[Release Notes](release_notes.md)
