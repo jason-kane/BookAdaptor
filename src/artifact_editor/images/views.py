@@ -1,33 +1,15 @@
+import copy
 import glob
 import io
-import copy
-from tempfile import TemporaryDirectory
-import textwrap
 import json
-import html
-from pygments.filters import Filter
-import random
-from pygments import highlight, format, lex
-from pygments.formatters import HtmlFormatter
-from pygments.lexers import HtmlLexer
-import httpx
 import os
 import shutil
+import textwrap
 import time
-
+from tempfile import TemporaryDirectory
 from typing import TypedDict
-from animations.registry import registry as animation_registry
 
-
-# from ComfyUI.app.node_replace_manager import NodeStruct
-class NodeStruct(TypedDict):
-    inputs: dict[str, str | int | float | bool | tuple[str, int]]
-    class_type: str
-    _meta: dict[str, str]
-
-
-from pyparsing import with_class
-
+import httpx
 from flask import (
     Blueprint,
     make_response,
@@ -39,11 +21,15 @@ from flask import (
     url_for,
 )
 from PIL import Image
+from pygments import format, lex
+from pygments.filters import Filter
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import HtmlLexer
 from transformers import T5Tokenizer
 
-import camera
 import const
 import logger
+from animations.registry import registry as animation_registry
 from artifact_editor import (
     chapter,
     config,
@@ -55,15 +41,14 @@ from artifact_editor.cache import cache
 from artifact_editor.chapter.chapter import Chapter
 from artifact_editor.characters import characters
 from artifact_editor.images import (
+    editor,
     htmx,
     images,
     scene,
-    editor,
 )
 from artifact_editor.styles import styles
 from artifact_editor.tools import (
     get_bookdir,
-    get_bookurl,
     get_chapterdir,
     get_chapterurl,
     get_surrounding_paragraphs,
@@ -72,18 +57,23 @@ from artifact_editor.tools import (
 from artifact_editor.video import video
 from text_to_image.registry import registry as t2i_registry
 
-from .selector import htmx as selector_htmx
-from .selector.views import bp as images_selector
-from .selector import selector as selector
-from .scene.views import bp as images_scene
-from .editor.views import bp as images_editor
-from .camera.views import bp as images_camera
 from .camera import htmx as camera_htmx
-
+from .camera.views import bp as images_camera
+from .editor.views import bp as images_editor
+from .scene.views import bp as images_scene
+from .selector import htmx as selector_htmx
+from .selector import selector as selector
+from .selector.views import bp as images_selector
 
 FIFO_FN = os.path.join(os.path.dirname(__file__), "..", "..", "drawing.fifo")
 
-log = logger.log(__name__)
+# from ComfyUI.app.node_replace_manager import NodeStruct
+class NodeStruct(TypedDict):
+    inputs: dict[str, str | int | float | bool | tuple[str, int]]
+    class_type: str
+    _meta: dict[str, str]
+
+log = logger.log(name=__name__)
 
 bp = Blueprint(
     "images",
@@ -101,15 +91,16 @@ MAX_TOKENS = 256
 
 # library.book.chapter.image.comfyui_workflow_choose
 
+
 # trim_animation_to_audio
 @bp.route("/<int:image_index>/trim_animation_to_audio", methods=["POST"])
-def trim_animation_to_audio(author, title, chapter_number, language, image_index=0):
+def trim_animation_to_audio(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
     """
     We have more frames of video than we need to cover
     the audio track.  The problem comes in when we want
     the next audio to visually match.
     """
-    author = Author(author)
+    author = Author(name=author)
     chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
@@ -150,7 +141,7 @@ def trim_animation_to_audio(author, title, chapter_number, language, image_index
 
 
 @bp.route("/<int:image_index>/workflow_choose", methods=["PUT"])
-def comfyui_workflow_choose(author, title, chapter_number, language, image_index=0):
+def comfyui_workflow_choose(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
@@ -170,7 +161,7 @@ def comfyui_workflow_choose(author, title, chapter_number, language, image_index
 
 
 @bp.route("/<int:image_index>/workflow_run", methods=["POST"])
-def comfyui_workflow_run(author, title, chapter_number, language, image_index=0):
+def comfyui_workflow_run(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -281,16 +272,19 @@ def comfyui_workflow_run(author, title, chapter_number, language, image_index=0)
 
 # /6/workflow_link/*/1/animation
 @bp.route("/<int:image_index>/workflow_link/<mode>/<int:video_index>/", methods=["GET"])
-@bp.route("/<int:image_index>/workflow_link/<mode>/<int:video_index>/<animation>", methods=["GET"])
+@bp.route(
+    "/<int:image_index>/workflow_link/<mode>/<int:video_index>/<animation>",
+    methods=["GET"],
+)
 def comfyui_workflow_open(
-    author,
-    title,
-    chapter_number,
-    language,
-    image_index=0,
-    mode="t2i",
-    video_index=0,
-    animation=False,
+    author: str,
+    title: str,
+    chapter_number: int,
+    language: str,
+    image_index: int=0,
+    mode:str="t2i",
+    video_index:int=0,
+    animation: str="false",
 ):
     """
     We're already in a new tab
@@ -308,15 +302,15 @@ def comfyui_workflow_open(
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
     image_xml = chapter.get_image(image_index)
+    if image_xml is None:
+        return f"Image index {image_index} not found in chapter.", 404
+
     image_index = int(image_index)
     video_index = int(video_index)
 
     video_tag = f"_{video_index:02d}"
-
-    if isinstance(animation, str):
-        animation = animation.lower() in ["true", "animation"]
-    else:
-        animation = bool(animation)
+    
+    animation = animation.lower() in ["1", "true", "animation"]
     log.info(f"animation is {animation}")
 
     if not animation and request.args.get("workflow_image_template"):
@@ -385,7 +379,9 @@ def comfyui_workflow_open(
 
     # this is the pisser that will show up in your workflow list.
     workflow_name = f"{workflow_template}_{chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
-    workflow_fn = os.path.join(const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_name + ".json")
+    workflow_fn = os.path.join(
+        const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_name + ".json"
+    )
     with open(workflow_fn, "w") as h:
         json.dump(workflow, h)
 
@@ -689,16 +685,14 @@ def _apply_zmi(chapter, image_xml):
     # update with all chapter-specific characters
     all_characters.update(characters.get_all_characters(chapter, is_global=False))
 
-    images.build_replacement_prompt(
-        all_characters, chapter.bookdir, image_xml
-    )
+    images.build_replacement_prompt(all_characters, chapter.bookdir, image_xml)
 
     prompt = image_xml.attrs["prompt"]
     image_xml.attrs["raw_prompt"] = prompt
 
     # then apply the chapter style
-    #style = chapter.config.get("style", "wizardofoz")
-    #image_xml.attrs["style"] = style
+    # style = chapter.config.get("style", "wizardofoz")
+    # image_xml.attrs["style"] = style
 
     # style = styles.Style.from_image(chapter, image_xml)
 
@@ -945,7 +939,7 @@ def htmx_forex(author, title, chapter_number, language, image_index=0):
     image_forex = images.imageForex(chapter, image_xml, image_index)
 
     response = make_response(
-        f"""<div id="forex">
+        f"""<div id="forex" style="width:100%">
         {image_forex}
     </div>""",
         200,
@@ -1859,7 +1853,7 @@ def update(author, title, chapter_number, language, image_index=0):
 #     on the 'whole paragraph' workflow.
 
 #     # image, prompt, workflows, Z-Image Turbo Paragraph Image.
-#     # 
+#     #
 #     """
 #     image_xml = chapter.get_image(image_index)
 
@@ -1877,7 +1871,7 @@ def update(author, title, chapter_number, language, image_index=0):
 #     )
 
 #     json_workflow = {"prompt": workflow}
-    
+
 
 #     chapter.soup.new_tag("image")
 #     image_xml.attrs["index"] = str(image_index)
@@ -1890,6 +1884,7 @@ def update(author, title, chapter_number, language, image_index=0):
 #     paragraph.append(image_xml)
 #     chapter.save_xml()
 #     return image_xml
+
 
 # POST /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/images/3/action/fancy
 @bp.route("/<int:image_index>/action/fancy", methods=["POST"])
@@ -2076,9 +2071,9 @@ def choose_video(author, title, chapter_number, language, image_index=0):
     comfyui_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
     selected_video = json.loads(request.form.get("selected_video", "{}"))
     # selected_video: {
-    #     'title': '<basename of filename in /output>', 
-    #     'poster': '<filename with relative path in comfy/output/>', 
-    #     'sources': [], 
+    #     'title': '<basename of filename in /output>',
+    #     'poster': '<filename with relative path in comfy/output/>',
+    #     'sources': [],
     #     'tracks': []
     # }
     video_index = int(request.form.get("video_index", "0"))
@@ -2106,11 +2101,15 @@ def choose_video(author, title, chapter_number, language, image_index=0):
         video_destination_fn = os.path.join(
             const.LIBRARY_DIR,
             paragraph_dir,
-            os.path.basename(image_xml.attrs["src"].replace(".png", f"{video_tag}.mp4")),
+            os.path.basename(
+                image_xml.attrs["src"].replace(".png", f"{video_tag}.mp4")
+            ),
         )
 
     if os.path.exists(video_destination_fn):
-        log.info(f"Video destination file {video_destination_fn} already exists, renaming it.")
+        log.info(
+            f"Video destination file {video_destination_fn} already exists, renaming it."
+        )
         # rename the existing video file to a backup name
         count = -1
         backup_fn = "does not exist"
@@ -2119,7 +2118,11 @@ def choose_video(author, title, chapter_number, language, image_index=0):
             backup_fn = os.path.join(
                 const.LIBRARY_DIR,
                 paragraph_dir,
-                os.path.basename(image_xml.attrs["src"].replace(".png", f"{video_index:02d}_{count:02d}.mp4")),
+                os.path.basename(
+                    image_xml.attrs["src"].replace(
+                        ".png", f"{video_index:02d}_{count:02d}.mp4"
+                    )
+                ),
             )
 
         shutil.move(video_destination_fn, backup_fn)
@@ -2157,7 +2160,7 @@ def choose_video(author, title, chapter_number, language, image_index=0):
     if os.path.exists(frame_dir):
         log.info(f"Removing existing animation frame directory {frame_dir}")
         shutil.rmtree(frame_dir)
-    
+
     # expand the new video into frames
     tools.extract_frames(video_destination_fn, frame_dir)
 
@@ -2212,7 +2215,7 @@ def show_image_by_index(
 
     image_fn = None
     if image_xml.attrs.get("image_lock", "off") == "on":
-        log.info('Applying image lock...')
+        log.info("Applying image lock...")
         # when preivous image is enabled, we _silently_ serve the final frame of
         # the previous image without touching the xml.
         previous_image = chapter.get_image(image_index - 1)

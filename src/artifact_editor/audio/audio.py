@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import copy
 import decimal
-import json
 import math
 import os
 import re
@@ -12,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import eng_to_ipa
 import fnv_hash_fast
-import redis
 from bs4 import BeautifulSoup
 from flask import request
 
@@ -23,10 +21,7 @@ from artifact_editor.audio.pronunciation import pronunciation
 from artifact_editor.audio.sound import htmx as sound_htmx
 from artifact_editor.characters.characters import name_to_tag
 from artifact_editor.tools import (
-    get_chapterdir,
-    get_paragraph_dir,
     get_tag,
-    wait_for,
 )
 
 from . import (

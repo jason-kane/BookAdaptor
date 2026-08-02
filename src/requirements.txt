@@ -47,3 +47,4 @@ GitPython
 PyGithub
 #html-to-quill-delta
 flask-sock
+pygments

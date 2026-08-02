@@ -11,8 +11,6 @@ from typing import Iterable
 import numpy as np
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-
-# from artifact_editor.images import animation
 from flask import url_for
 from PIL import Image
 
@@ -23,7 +21,6 @@ from artifact_editor import (
     camera,
     config,
     tools,
-    typography,
 )
 from artifact_editor.audio.pronunciation.pronunciation import get_global_pronunciations
 from artifact_editor.author.author import Author
@@ -532,7 +529,7 @@ class Chapter:
                 f"image_{int(image_xml.attrs['index']):06d}.prompt",
             )
 
-    def get_image(self, index):
+    def get_image(self, index: int) -> Tag | None:
         """
         Get a specific image by index
         """
@@ -581,7 +578,7 @@ class Chapter:
         self.soup.find("chapter").attrs["style"] = style
         self.save_xml()
 
-    def get_image_style(self, image_xml):
+    def get_image_style(self, image_xml) -> str:
         style = image_xml.attrs.get("style")
         if not style:
             # otherwise, use the chapter style if there is one.

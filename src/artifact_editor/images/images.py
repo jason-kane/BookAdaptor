@@ -2,46 +2,38 @@ import glob
 import json
 import os
 import random
-import subprocess
-import redis
-import textwrap
 import shutil
+import subprocess
+import textwrap
 import time
 from functools import lru_cache
 
-from text_to_image.registry import registry as t2i_registry
-
+import redis
 from ascii_magic import AsciiArt
-from PIL import Image, ImageFilter, UnidentifiedImageError
+from flask import url_for
+from PIL import Image, UnidentifiedImageError
 
+import animations
 import const
 import image_to_video
 import logger
-
 import transitions
-import animations
-
 from artifact_editor import (
-    config,
     llm,
     video,
 )
 from artifact_editor.characters import characters
-from artifact_editor.styles import styles
 from artifact_editor.tools import (
     friendly_location,
-    get_chapterdir,
     get_surrounding_paragraphs,
     get_tag,
     get_text_to_next,
     wait_for,
 )
+from text_to_image.registry import registry as t2i_registry
 
 from .scene import const as scene_const
-from flask import url_for
 
-# /src/drawing.fifo
-FIFO_FN = os.path.join(os.path.dirname(__file__), "..", "..", "drawing.fifo")
 log = logger.log(__name__)
 
 # how many characters are allowed in each meta setting
@@ -95,21 +87,28 @@ def assign_paragraph_dir_and_index(soup, chapterdir):
             log.info(f"Assigning index {index} for paragraph {paragraph['dir']}")
 
 
+# def imageForex(chapter, image_xml, image_index):
+
+
+
 def imageForex(chapter, image_xml, image_index):
     absolute = {}
 
     all_images = chapter.get_xml().findAll("image")
     total_images = len(all_images)
 
+    total_height = 200
+    box_width = "14.2%"  # 7 blocks of 14.2% = 99.4% + 0.6% for padding
+
     def gridtable(dim=8, count=0):
-        height = 200 // dim
+        image_height = total_height // dim
         done = False
         log.info("There are %s images in this book. dim: %s", total_images, dim)
         for sixtyfour_c in range(0, dim):
             for sixtyfour_r in range(0, dim):
                 if done or count < 0:
                     absolute[sixtyfour_c, sixtyfour_r] = (
-                        f'<div count="{count}" class="imgheight img-{height}"></div>'
+                        f'<div count="{count}" class="imgheight img-{image_height}"></div>'
                     )
                 else:
                     if count < total_images:
@@ -120,34 +119,30 @@ def imageForex(chapter, image_xml, image_index):
                     if count >= total_images:
                         done = True
                         absolute[sixtyfour_c, sixtyfour_r] = (
-                            f'<div count="{count}" class="imgheight img-{height}"></div>'
+                            # class="imgheight img-{image_height}"
+                            f'<div count="{count}"></div>'
                         )
                     elif image:
                         #"src" in image_xml.attrs and image_xml.attrs["src"]:
                         imageurl = url_for(
                             "library.book.chapter.images.show_image_by_index",
                             **chapter.kwargs,
-                            height=height,
+                            height=image_height,
                             image_index=image.attrs.get("index", '0'),
                         )
 
                         absolute[sixtyfour_c, sixtyfour_r] = f"""<a 
                             hx-on::click="chooseImage('{chapter.url}', '{chapter.language}', {count}, 'forex')"
                             href="{url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=count)}">
-                            <div class="imgheight img-{height}" style="background-color:#777">
+                            <div class="imgheight img-{image_height}" style="background-color:#777">
                                 <img class="image_{image.attrs.get("index")}" src="{imageurl}"/></img>
                             </div>
                         </a>"""
-                    # else:
-                    #     absolute[sixtyfour_c, sixtyfour_r] = f"""<a 
-                    #         hx-on::click="chooseImage('{chapter.url}', '{chapter.language}', {count}, 'forex')"
-                    #         href="{url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=count)}">
-                    #         <img class="imgheight img-{height} image_{image.attrs.get("index")}" style="background-color:#777;" src="/static/images/x.png"/></img>
-                    #     </a>"""
 
                 count += 1
 
-        left = '<div class="grid" style="height:200px; width:200px; float:left">'
+        # height:{total_height}px; 
+        left = f'<div class="grid" style="width:{box_width}; float:left">'
         for sixtyfour_c in range(0, dim):
             left += "<div>"
             for sixtyfour_r in range(0, dim):
@@ -158,22 +153,25 @@ def imageForex(chapter, image_xml, image_index):
         return left
 
     count = image_index - (4 + 16 + 64)
-    if (image_index > 16):
-        left = gridtable(8, count)       
+    if (image_index > 20):
+        left = gridtable(8, count)
     else:
-        left = '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+        # height:{total_height}px; 
+        left = f'<div class="grid" style="min-height: 1px; width:{box_width}; float:left"></div>'
         
     count = image_index - (4 + 16)
     if (image_index > 4):
         left += gridtable(4, count)
     else:
-        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+        # height:{total_height}px; 
+        left += f'<div class="grid" style="min-height: 1px; width:{box_width}; float:left"></div>'
             
     count = image_index - 4
     if (image_index > 0):
         left += gridtable(2, count)
     else:
-        left += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+        # height:{total_height}px; 
+        left += f'<div class="grid" style="min-height: 1px; width:{box_width}; float:left"></div>'
 
     if "src" in image_xml.attrs:
         image_src = url_for(
@@ -182,19 +180,24 @@ def imageForex(chapter, image_xml, image_index):
             height=200,
             image_index=image_xml.attrs["index"],
         ) + "?t=%s" % int(time.time())
-        
     else:
         image_src = "/static/images/x.png"
-        
-    center = f"""<div class="grid" style="height: 200px; width:200px; float:left">
-        <img class="image_{image_xml.attrs.get("index")}" style="background-color:#777; height:200px;" src="{image_src}"/></img>
+
+    # height: 200px; 
+    # height:200px;
+    center = f"""<div class="grid" style="width:14.2%; float:left">
+        <img class="image_{image_xml.attrs.get("index")}" 
+            style="background-color:#777; width: 100%;"
+            src="{image_src}"/>
+        </img>
     </div>"""
 
     count = image_index + 1
     if total_images > count:
         right = gridtable(2, count)
     else:
-        right = '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+        # height:{total_height}px; 
+        right = f'<div class="grid" style="width:{box_width}; float:left"></div>'
 
     log.warning('A')
 
@@ -202,7 +205,8 @@ def imageForex(chapter, image_xml, image_index):
     if total_images > count:
         right += gridtable(4, count)
     else:
-        right += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+        # height:{total_height}px; 
+        right += f'<div class="grid" style="width:{box_width}; float:left"></div>'
 
     log.warning('B')
 
@@ -212,7 +216,8 @@ def imageForex(chapter, image_xml, image_index):
         if total_images > count:
             right += gridtable(8, count)
         else:
-            right += '<div class="grid" style="height:200px; width:200px; float:left"></div>'
+            # height:{total_height}px; 
+            right += f'<div class="grid" style="width:{box_width}; float:left"></div>'
 
     except Exception as e:
         log.error(f"Error in gridtable: {e}")

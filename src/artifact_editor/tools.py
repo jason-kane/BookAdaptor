@@ -377,7 +377,7 @@ def requestToChapterURL(request_url):
     return chapterurl
 
 
-def get_chapterurl(author, title=None, chapter_number: int | None = None) -> str:
+def get_chapterurl(author: str, title: str | None = None, chapter_number: int | None = None) -> str:
     """
     Do not use this hacky bullshit
     """

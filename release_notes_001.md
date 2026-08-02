@@ -24,7 +24,7 @@ There are character set problems between the IPA that comes out of (?) and what 
 
 That said, it seems to work best if I use characters from:
 
-https://westonruter.github.io/ipa-chart/keyboard/
+[https://westonruter.github.io/ipa-chart/keyboard/](https://westonruter.github.io/ipa-chart/keyboard/)
 
 as the authoritative versions, with string substituitions as I have found issues.
 
@@ -35,7 +35,7 @@ Okay, so misaki.en.G2P(trf=False,British=False)('machine')
 
 Now this is interesting.  Threw together a harness and ran it.
 
-```
+```python
 from misaki.en import G2P
 
 print(G2P(trf=False)('machine'))
@@ -43,41 +43,49 @@ print(G2P(trf=False)('machine'))
 
 Do I get the `məˈʃin` I expect?  No.  I get:
 
-```
+```python
 ('məʃˈin', [MToken(text='machine', tag='NN', whitespace='', phonemes='məʃˈin', start_ts=None, end_ts=None, _={'is_head': True, 'num_flags': '', 'stress': None, 'prespace': False})])
 ```
 
-`məʃˈin` sounds much better.  different Misaki versions? 
+`məʃˈin` sounds much better.  different Misaki versions?
 
-* the "good" one is 0.9.4, 
+* the "good" one is 0.9.4
 * the 'bad' one baked into the comfyui image is 0.7.4
 
 Well shit.  misaki 0.9.4 Requires-Python >=3.8,<3.13
 
 but!!  from inside the comfy container:
 
-    bash-5.2# python3 --version
-    Python 3.12.13
+```bash
+bash-5.2# python3 --version
+Python 3.12.13
+```
 
 you fucking kidding me right now pip?  3.12.13 _is_ less than 3.13.  I'm going to give you one chance you stupid little bastard.
 
-    # python3 -m pip install --upgrade pip
-    /usr/bin/python3: No module named pip
+```bash
+# python3 -m pip install --upgrade pip
+/usr/bin/python3: No module named pip
+```
 
 Now I'm cooked.  System pip inside the container sucks?
 
-    pip --version
-    pip 26.0.1 
+```bash
+$ pip --version
+pip 26.0.1 
+```
 
 I've been here before.  I've fixed this before.
 
-    $ docker compose exec -ti comfyui /bin/bash
-    bash-5.2# pip show misaki
-    Name: misaki
-    Version: 0.7.4
-
+```bash
+$ docker compose exec -ti comfyui /bin/bash
+bash-5.2# pip show misaki
+Name: misaki
+Version: 0.7.4
 ```
-$ pip install git+https://github.com/hexgrad/misaki
+
+```bash
+pip install git+https://github.com/hexgrad/misaki
 ```
 
 The python install is all busted.  rebuild..
@@ -89,12 +97,14 @@ Updating /user-scripts/pre-start.sh
 
 we want `məʃˈin`
 
-ahh.. SoundsLike *doesn't use misaki*.  It uses Eng-to-IPA, which is the fallback pronunciation when misaki gives us the dreaded `?` or I just don't like the way it pronounced something.  But apparantly I didn't leave a way to go back
+ahh.. SoundsLike _doesn't use misaki_.  It uses Eng-to-IPA, which is the fallback pronunciation when misaki gives us the dreaded `?` or I just don't like the way it pronounced something.  But apparantly I didn't leave a way to go back
 
+```python
     p = eng_to_ipa.jonvert(soundslike)
     if "ˈ" in p:
         ph = p.index("ˈ")
         p = p[:ph] + p[ph+1] + p[ph] + p[ph+2:]
+```
 
 `məʃˈin`
 
@@ -105,30 +115,35 @@ ahh.. SoundsLike *doesn't use misaki*.  It uses Eng-to-IPA, which is the fallbac
 but `ɹˈOtˌin` should be `ɹˈOtiˌn` (ie: same swap for weak stress)
 
 wth buddy?  is that misaki?
-  ɹˈiᵊl pɹˈOɡɹˌæməɹz ɹˈOtˌɛɹin məʃˈin kˈOd.
-  ɹˈiᵊl pɹˈOɡɹˌæməɹz ɹˈOt ɪn məʃˈin kˈOd
+
+```ipa
+ɹˈiᵊl pɹˈOɡɹˌæməɹz ɹˈOtˌɛɹin məʃˈin kˈOd.
+ɹˈiᵊl pɹˈOɡɹˌæməɹz ɹˈOt ɪn məʃˈin kˈOd
+```
 
 it's the damn linefeeds.
 
-  ɪn ðɪs dˈɛkədᵊnt ˈɛɹə ʌv ˈilˌIt bˈɪɹ,
+`ɪn ðɪs dˈɛkədᵊnt ˈɛɹə ʌv ˈilˌIt bˈɪɹ,`
 
-"""
+```ascii
    in this decadent era of
 
 Lite beer,
-"""
+```
 
 Ahh, because I'm a moron.
 
+```python
     if "ˈ" in p:
         ph = p.index("ˈ")
         p = p[:ph] + p[ph+1] + p[ph] + p[ph+2:]
+```
 
 This will only "fix" the first stress.
 
 Fixed.  Stripping out linefeeds and handling as many stress symbols as there are in the input.
 
-  `ɪn ðɪs dˈɛkədᵊnt ˈɛɹə ʌv lˈIt bˈɪɹ,`
+`ɪn ðɪs dˈɛkədᵊnt ˈɛɹə ʌv lˈIt bˈɪɹ,`
 
 How did I fix it?
 
