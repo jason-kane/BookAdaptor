@@ -141,6 +141,6 @@ Then:
 http://localhost:8080/
 
 
-[UI Walkthrough][walkthrough.md]
+[UI Walkthrough](walkthrough.md)
 
-[Release Notes](release_notes.md)
+[Release Notes](release_notes_001.md)
