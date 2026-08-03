@@ -157,7 +157,7 @@ def get_style_old(style_name, from_all=False):
 VERSION = 1.20
 
 
-def check_upgrade():
+def check_upgrade(category_name: str | None=None):
     version = r.get("styles_version")
     if version is None:
         log.info("No styles_version found in redis, importing all styles")
@@ -170,8 +170,8 @@ def check_upgrade():
     r.set("upgrading", "1")
     # set the flag to indicate upgrade in progress
 
-    if version is None or float(version) < VERSION:
-        log.info("Upgrading styles in redis from version %s to 1.1", version)
+    if version is None or float(version) < VERSION or category_name is not None:
+        log.info("Upgrading styles in redis from version %s to %s", version, VERSION)
 
         # initial import into redis, or loaded whenever
         # redis is cleared.
@@ -182,7 +182,12 @@ def check_upgrade():
 
         log.info("Importing styles into redis")
         # each data/ directory is a category
-        categories = all_categories()
+        if category_name is None:
+            categories = all_categories()
+
+        if category_name is not None:
+            categories = [c for c in all_categories() if c["category"] == category_name]
+
         log.info("Found %s categories", len(categories))
         for category in categories:
             if category["tag"] in ['nouns',]:
@@ -287,6 +292,16 @@ class Style:
                 v = v.decode("utf-8")
             redis_data[k] = v
         log.info('Merging in redis data', redis_data=redis_data)
+
+        if not redis_data:
+            log.warning("Style %s not found in redis, checking for upgrade", self.key)
+            check_upgrade(category_name=self.category_name)
+            redis_data = r.hgetall(self.key)
+
+            if not redis_data:
+                log.error("Style %s still not found in redis after upgrade", self.key)
+                raise ValueError(f"Style {self.style_tag} not found in category {self.category_name}")
+
         self.style.update(redis_data)
 
     def load_tags(self):
@@ -333,6 +348,9 @@ class Style:
             style_tag=style_tag
         )
 
+
+    def __repr__(self):
+        return f"<Style {self.category_name}/{self.style_tag}>"
 
 # def get_style(category_name, style_tag):
 #     """
@@ -464,18 +482,20 @@ class Style:
 #     # return (None, None)
 
 
-def style_groups_in_category(category_key, force=True):
+def style_groups_in_category(category_key, force=False):
+    log.info('Looking for style groups in category "%s"', category_key)
     r = redis.Redis(host="redis")
 
     # which groups are in this category?
     # ie: which json style files were in this directory?
-    key = category_key + "/groups"
+    key = as_id(category_key) + "/groups"
     groups = None
     if not force:
+        log.info('Gathering members of set "%s" from redis', key)
         groups = r.smembers(key)
-        log.info("Found %s groups in category %s", len(groups), category_key)
+        log.info("Found %s groups in category %s", len(groups), key)
 
-    if groups is None:
+    if groups is None or len(groups) == 0:
         log.info("[Cache Miss] Rebuilding whole directory tree to catch %s...", key)
         for category_name in os.listdir(const.STYLES_DIR):
             log.info('Scanning category "%s"', category_name)
@@ -490,6 +510,7 @@ def style_groups_in_category(category_key, force=True):
                     group_name = os.path.splitext(fn)[0]
                     scanned_category_key = as_id(category_name)
                     try:
+                        log.info('Adding group "%s" to set "%s/groups" in redis', group_name, scanned_category_key)
                         r.sadd(scanned_category_key + "/groups", group_name)
                     except redis.exceptions.ResponseError as e:
                         log.warning(
