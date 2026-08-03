@@ -1240,49 +1240,27 @@ class Chapter:
             "theme": self.theme,
         }
 
-    def get_phrase(self, phrase_index: int):
+    def get_phrase(self, phrase_index: int) -> Tag | None:
         """
         Get a specific phrase by index
         """
         self.load_xml()  # cached load
-        phrase_xml = self.soup.find("phrase", index=str(phrase_index))
+        return self.soup.find("phrase", index=str(phrase_index))
 
-        if phrase_xml is None:
-            log.error("Phrase with index %s not found", phrase_index)
-            return None
-
-        return phrase_xml
-
-        if isinstance(phrase_index, str):
-            if phrase_index.isdigit():
-                phrase_index = int(phrase_index)
-            else:
-                log.error("Invalid phrase index", phrase_index=phrase_index)
-                return None
-
-        if phrase_index < 0 or phrase_index >= len(all_phrases):
-            return None
-        return all_phrases[phrase_index]
-
-    def get_sound(self, sound_index: int):
+    def get_sound(self, sound_index: int) -> Tag | None:
         """
         Get a specific sound by index
         """
         self.load_xml()  # cached load
-        all_sounds = self.soup.findAll("sound")
+        return self.soup.find("sound", index=str(sound_index))
 
-        if isinstance(sound_index, str):
-            if sound_index.isdigit():
-                sound_index = int(sound_index)
-            else:
-                log.error("Invalid sound index", sound_index=sound_index)
-                return None
+    def get_aspect(self) -> str:
+        """
+        What is the aspect ratio for this chapter?
+        valid outputs are "widescreen" and "portrait"
 
-        if sound_index < 0 or sound_index >= len(all_sounds):
-            return None
-        return all_sounds[sound_index]
-
-    def get_aspect(self):
+        If the config is invalid, we default to "widescreen".
+        """
         aspect = self.config.get("aspect_ratio", "widescreen")
         if aspect not in ["widescreen", "portrait"]:
             # one more chance..

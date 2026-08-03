@@ -65,14 +65,6 @@ from .selector import htmx as selector_htmx
 from .selector import selector as selector
 from .selector.views import bp as images_selector
 
-FIFO_FN = os.path.join(os.path.dirname(__file__), "..", "..", "drawing.fifo")
-
-# from ComfyUI.app.node_replace_manager import NodeStruct
-class NodeStruct(TypedDict):
-    inputs: dict[str, str | int | float | bool | tuple[str, int]]
-    class_type: str
-    _meta: dict[str, str]
-
 log = logger.log(name=__name__)
 
 bp = Blueprint(
@@ -1150,33 +1142,6 @@ def htmx_rightsize_t5_prompt(author, title, chapter_number, language, image_inde
     return htmx.prompt_panel(chapter, image_xml), 200
 
 
-@bp.route("/<int:image_index>/actions/set_t5_prompt", methods=["POST"])
-def htmx_set_t5_prompt(author, title, chapter_number, language, image_index):
-    """
-    This is called by the prompt textarea to set the prompt for an image.
-    """
-    chapterurl = get_chapterurl(author, title, chapter)
-
-    log.info(f"Setting prompt for {chapterurl}/images/{image_index}")
-    new_prompt = request.form.get("t5_prompt", "")
-    log.info(f"New prompt: {new_prompt}")
-
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-
-    all_images = mybook.soup.findAll("image")
-    image_xml = all_images[image_index]
-
-    image_xml.attrs["t5_prompt"] = new_prompt
-
-    if "index" not in image_xml.attrs:
-        images.assign_fragdex_and_index(mybook.soup)
-
-    mybook.save_xml()
-    return htmx.prompt_panel(chapterdir, chapterurl, image_xml), 200
-
-
 @bp.route("/<int:image_index>/animation/<int:video_index>/set_method", methods=["GET"])
 def set_animation_method(
     author, title, chapter_number, language, image_index, video_index
@@ -1276,25 +1241,6 @@ def build_animation(author, title, chapter_number, language, image_index=0):
     # add the tabpanel wrapper and activate the animation tab
     value = htmx.image_strip_centerpiece(chapter, image_xml, default="animation")
     chapter.save_xml()
-    return value
-
-
-@bp.route("/<int:image_index>/actions/animation", methods=["POST"])
-def enable_animation(author, title, chapter_number, language, image_index=0):
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-
-    mybook = booklib.get_book(chapterdir)
-    image_xml = mybook.soup.findAll("image")[image_index]
-
-    if "animation" not in image_xml.attrs:
-        image_xml.attrs["animation"] = "true"
-        mybook.save_xml()
-        log.info(f"Enabled animation for image {image_index} in {chapterdir}")
-
-    # add the tabpanel wrapper and activate the animation tab
-    value = htmx.image_strip_centerpiece(chapter, image_xml, default="animation")
-    mybook.save_xml()
     return value
 
 
@@ -1685,11 +1631,6 @@ def swap_with_previous_image(author, title, chapter_number, language, image_inde
     return "", 200
 
 
-@bp.route("/<int:image_index>/viewer", methods=["GET"])
-def tab_pre_viewer(author, title, chapter_number, language, image_index):
-    return base(author, title, chapter_number, language, image_index, override="viewer")
-
-
 @bp.route("/<int:image_index>/selector", methods=["GET"])
 def tab_pre_selector(author, title, chapter_number, language, image_index):
     return base(
@@ -1727,6 +1668,9 @@ def tab_pre_citation(author, title, chapter_number, language, image_index):
 @bp.route("/<int:image_index>/", methods=["GET"])
 def base(author, title, chapter_number, language, image_index=0, override=None):
     image_index = int(image_index)
+
+    if override is None:
+        override = "selector"
 
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
@@ -3112,81 +3056,9 @@ def image_tab_selector(author, title, chapter_number, language, image_index):
     image_index = int(image_index)
 
     image_xml = chapter.get_image(image_index)
-    paragraph = image_xml.find_parent("paragraph")
-
     tab = request.form.get("group", "")
 
-    if tab == "viewer":
-        log.info("Viewer Image Display")
-
-        if "src" not in image_xml.attrs:
-            # gonna have to pull that ripcord jeff, we're not going make it back
-            # to the carrier.
-            wrap = """
-            <div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
-                <h3>No Image</h3>
-            </div>"""
-
-            # maybe.. image dimensions?
-            wrap += standard_side_panels(image_xml, chapter)
-            response = make_response(wrap, 200)
-            response.headers["HX-Push-Url"] = (
-                f"/{chapter.url}/{chapter.language}/images/{image_index}/"
-            )
-
-            return response
-
-        basesrc = os.path.basename(image_xml.attrs["src"])
-
-        image_pfn = os.path.join(
-            const.LIBRARY_DIR,
-            chapter.get_paragraph_dir(paragraph.attrs["index"]),
-            basesrc,
-        )
-
-        if os.path.exists(image_pfn):
-            log.info("Loading image for viewer tab.")
-            image = Image.open(image_pfn)
-
-            imageurl = (
-                url_for(
-                    "library.book.chapter.images.show_image_by_index",
-                    author=author.name,
-                    title=chapter.title,
-                    chapter_number=chapter.number,
-                    language=chapter.language,
-                    height=0,  # full size
-                    image_index=image_index,
-                )
-                + f"?t={os.path.getmtime(image_pfn)}"
-            )  # cache buster
-
-            wrap = f"""
-            <div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
-                <h3>{image.size} {image.mode}:  {basesrc}</h3>
-                <img src="{imageurl}"></img>            
-            </div>"""
-
-        else:
-            wrap = """<div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
-                <h3>No Image File</h3>
-            </div>"""
-
-        wrap += standard_side_panels(image_xml, chapter)
-
-        response = make_response(wrap, 200)
-        response.headers["HX-Push-Url"] = (
-            url_for(
-                "library.book.chapter.images.base",
-                **chapter.kwargs,
-                image_index=image_index,
-            )
-            + "viewer"
-        )
-
-        return response
-
-    elif tab == "selector":
+    if tab == "selector":
         log.info("Image tab selector requested.")
 
         image_fragdex_chooser = selector_htmx.image_selector(

@@ -1014,23 +1014,7 @@ def image_workshop(image_xml, chapter):
         image_index=image_index,
     )
 
-    show_viewer = image_xml.attrs.get("src", "") != ""
-    if show_viewer:
-        tabs.append(f"""
-        <wa-tab
-            hx-post="{image_tab_selector_url}"
-            hx-vals='js:{{"group": "viewer"}}'
-            hx-swap="none"
-            panel="viewer">Viewer</wa-tab>""")
-
-        panels.append("""<wa-tab-panel name="viewer">
-            <div id="viewer" class="skeleton-paragraphs">
-                <wa-skeleton class="square"></wa-skeleton>
-            </div>
-        </wa-tab-panel>""")
-
-        # make viewer the default when it exists.
-        active = "viewer"
+    active = "selector"
 
     if True:
         # selector

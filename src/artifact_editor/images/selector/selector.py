@@ -27,7 +27,7 @@ def apply_image_adjustments(
     The general theme is ways to take a source image of arbitrary size and
     aspect ratio and make it fit into the target image size and aspect ratio.
 
-    The output is a new image that can be chosen as the 'viewer' image.
+    The output is a new image that can be chosen as the image.
     """
     log.debug(f"{transformation_type=}, {source_image_fn=}")
     paragraph = image_xml.find_parent("paragraph")

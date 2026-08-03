@@ -30,7 +30,7 @@ def image_editor_workshop(
         # gonna have to pull that ripcord jeff, we're not going make it back
         # to the carrier.
         return """
-        <div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
+        <div id="editor" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
             <h3>No Image</h3>
         </div>"""
         
@@ -43,7 +43,7 @@ def image_editor_workshop(
     )
 
     if os.path.exists(image_pfn) and os.path.isfile(image_pfn):
-        log.info("Loading image for viewer tab.")
+        log.info("Loading image...")
         image = Image.open(image_pfn)
 
         imageurl = (
@@ -120,7 +120,7 @@ def image_editor_workshop(
                     class="">Crop to {const.GEOMETRY[aspect]["HSIZE"]}x{const.GEOMETRY[aspect]["VSIZE"]}</wa-button>"""
 
         wrap = f"""
-        <div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
+        <div id="editor" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
             <div class="wa-cluster wa-gap-sm wa-align-items-start">
                 <img style="max-width: 50%" src="{imageurl}"></img>
                 <div>
@@ -133,7 +133,7 @@ def image_editor_workshop(
         </div>"""
 
     else:
-        wrap = """<div id="viewer" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
+        wrap = """<div id="editor" hx-swap-oob="true" hx-swap="innerHTML" class="wa-stack">
             <h3>No Image File</h3>
         </div>"""
 
