@@ -1715,9 +1715,16 @@ def base(author, title, chapter_number, language, image_index=0, override=None):
     )
     css_styles = muted_formatter.get_style_defs() + highlight_formatter.get_style_defs()
 
+    phrase_workshop_url = url_for(
+        "library.book.chapter.audio.base",
+        **chapter.kwargs,
+        page=image_xml.find_parent("paragraph").attrs.get("index", 0)
+    )
+
     log.info("Rendering images.html template...")
     return render_template(
         "images.html",
+        phrase_workshop_url=phrase_workshop_url,
         override=override,
         css_styles=css_styles,
         language=language,
