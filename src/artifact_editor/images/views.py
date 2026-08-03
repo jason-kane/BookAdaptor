@@ -1359,7 +1359,7 @@ class SafeAttrsOnly(Filter):
 def surrounding_text(author, title, chapter_number, language, image_index):
     """
     Get the text surrounding the image at image_index, with a highlight on the image's
-    paragraph.  Called by chooseImage()
+    paragraph.
     """
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)

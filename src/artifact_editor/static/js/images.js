@@ -24,46 +24,24 @@ function get_selected_video(event, video_index) {
 
 function getSelectedImageSrc() {
     return document.querySelector('.carousel-big-picture').src;
-
-    // return document.querySelector(
-    //     "#image-selector > wa-carousel-item.--in-view"
-    // ).children[0].getAttribute("src");
 }
 
 let cropper;
 
 function chooseRegion() {
-    //const image = document.querySelector(".carousel-big-picture");
-    //image.onload = () => {
-        cropper = new Cropper.default(".carousel-big-picture", {
-            viewMode: 1
-        });
-        // image, {
-        //     viewMode: 1,
-        //     autoCrop: false,
-        //     responsive: true,
-        //     background: false,
-        //     zoomable: false,
-        //     movable: false,
-        //     rotatable: false,
-        //     scalable: false,
-        // });
-        // const matrix = cropperImage.$getTransform();
+    cropper = new Cropper.default(".carousel-big-picture", {
+        viewMode: 1
+    });
 
-        // // Try to calculate the following values with the `matrix` by yourself.
-        // const visualX = ?;
-        // const visualY = ?;
-        // const visualWidth = ?;
-        // const visualHeight = ?;
-        const cropperImage = cropper.getCropperImage();
-        cropperImage.$setTransform(cropperImage, [1, 0, 0, 1, 0, 0]);
+    const cropperImage = cropper.getCropperImage();
+    cropperImage.$setTransform(cropperImage, [1, 0, 0, 1, 0, 0]);
 
-        const cropperSelection = cropper.getCropperSelection();
-        cropperSelection.$toCanvas({
-            width: 400,
-            height: 400
-        });
-    //};
+    const cropperSelection = cropper.getCropperSelection();
+    cropperSelection.$toCanvas({
+        width: 400,
+        height: 400
+    });
+
     console.log("Button clicked!");
 }
 
@@ -100,73 +78,10 @@ function getRegionDimensions() {
 // //Wait for the DOM to be fully loaded before attaching the event listener
 var selected_video = null;
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('video_playlist').addEventListener('wa-video-change', event => {
-        selected_video = event.detail.video;
-    });
-});
-
-//     const btn = document.getElementById('choose_region_button');
-//     if (btn) {
-//         btn.addEventListener('click', chooseRegion);
-//     }
-// });
-
-function chooseImage(chapter, language, index, all_but) {
-    // const btn = document.getElementById('choose_region_button');
-    // if (btn) {
-    //     btn.addEventListener('click', chooseRegion);
-    // }
-    
-    htmx.ajax(
-        'GET',
-        url_for("images.surrounding_text", author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=language, image_index=index,),
-        "#surrounding_text"
-    ).then(() => {
-        htmx.ajax(
-            'GET',
-            "/" + chapterurl + "/images/forex/" + index,
-            {
-                target: "#forex",
-                swap: "outerHTML transition:true"
-            }
-        ).then(() => {
-            //const tg=document.querySelector("#image-tab-group")
-            //tg.setAttribute('hx-post', '/' + chapter.url + '/' + chapter.language + '/images/' + index + '/#image_tab_selector')
-            htmx.process(tg);
-
-            // if (
-            //     tg.children.hasOwnProperty('viewer')
-            // ) {
-            //     //tg.active = "";
-            //     tg.active = "viewer";
-            // } else {
-            //     //tg.active = "";
-            //     tg.active = "prompt";
-            // }                
-
-            // htmx.process(tg);
-            
-            // as-if the user re-clicked the currently selected tab
-            const event = new Event('wa-tab-show', {
-                name: tg.activeTab.panel,
-                bubbles: true,
-                cancelable: false,
-                composed: true
-            });
-            tg.dispatchEvent(event);
-
-            // if this page has a choose_region_button, enable it.
-
-           
-            //     htmx.ajax(
-            //         'GET',
-            //         "/" + chapterurl + "/images/metadata/" + index,
-            //         {
-            //             target: "#metadata",
-            //             swap: "outerHTML transition:true"
-            //         }
-            //     );
-            // });
+    const playlist = document.getElementById('video_playlist');
+    if (playlist) {
+        playlist.addEventListener('wa-video-change', event => {
+            selected_video = event.detail.video;
         });
-    });
-}
+    }
+});

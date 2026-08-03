@@ -65,11 +65,6 @@ bp = Blueprint(
         "templates"
     )
 )
-# children
-# bp.register_blueprint(
-#     images_selector,
-#     url_prefix="/<int:image_index>/selector"
-# )
 
 MIN_TOKENS = 128
 MAX_TOKENS = 256 

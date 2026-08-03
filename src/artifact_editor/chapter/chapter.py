@@ -2,7 +2,6 @@ import base64
 import glob
 import json
 import os
-import random
 import re
 import shutil
 from hashlib import md5
@@ -203,8 +202,8 @@ class Chapter:
         if self.author:
             ## backwards compatability
             self.bookdir = os.path.join(self.author.name, self.title)
-            self.chapterdir = tools.get_chapterdir(author.name, title, number)
-            self.url = tools.get_chapterurl(author.name, title, number)
+            # self.chapterdir = tools.get_chapterdir(author.name, title, number)
+            # self.url = tools.get_chapterurl(author.name, title, number)
             self.languagedir = os.path.join(self.chapterdir, self.language)
 
             self.config = self.get_config()
@@ -747,12 +746,12 @@ class Chapter:
 
     def get_comfy_workflow(
         self,
-        image_xml,
-        interface="ui",
-        mode="*",
-        workflow_template=None,
-        video_index=None,
-        template_environment=None,
+        image_xml: Tag,
+        interface: str="ui",
+        mode: str="*",
+        workflow_template: str | None=None,
+        video_index: int|None=None,
+        template_environment: dict|None=None,
     ):
         """
         The problem is we don't know if this is an animation or an image gen (or
@@ -772,15 +771,12 @@ class Chapter:
         if video_index not in [None, ""]:
             video_tag = f"_{video_index:02d}"
 
-        # animation = False
-        # if mode.endswith("2v"):
-        #     animation = True
-
         height = 1024
         width = 1024
 
         # is an image an input to this workflow?  If so we need to copy it to the comfyUI input directory.
         previous_image_xml = self.get_image(int(image_xml.attrs["index"]) - 1)
+
         # reasonable default
         prior_frame = ""
         previous_image_src = ""
@@ -1019,6 +1015,9 @@ class Chapter:
             category_name=style_category,
             style_tag=style_name
         )
+        log.info('style: %s', style)
+        #  Using image style: gothic_manuscript_illumination name=artifact_editor.chapter.chapter
+
 
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
@@ -1391,6 +1390,19 @@ class Chapter:
             if c.has_text():
                 return c
         return None
+
+    @property
+    def url(self):
+        log.warning('Obsolete chapter.url reference')
+        if not hasattr(self, "_url"):
+            self._url = tools.get_chapterurl(self.author.name, self.title, self.number)
+        return self._url
+
+    @property
+    def chapterdir(self):
+        if not hasattr(self, "_chapterdir"):
+            self._chapterdir = tools.get_chapterdir(self.author.name, self.title, self.number)
+        return self._chapterdir
 
     def get_chapterdir(self):
         return self.chapterdir

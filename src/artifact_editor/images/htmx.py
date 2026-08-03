@@ -5,7 +5,7 @@ import os
 import shutil
 import time
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from flask import request, url_for
 from PIL import Image
 
@@ -221,7 +221,7 @@ def generate_missing_image_metadata_button(chapterurl):
     )
 
 
-def image_side_panel(image_xml, chapter, datastack=None, label="Previous"):
+def image_side_panel(image_xml: Tag, chapter, datastack=None, label="Previous"):
     tag = label.lower()
     out = f"""
     <div id="{tag}_panel" hx-swap-oob="true" style="width: 24%;">
@@ -229,11 +229,7 @@ def image_side_panel(image_xml, chapter, datastack=None, label="Previous"):
     """
 
     if image_xml:
-        idx = image_xml.attrs["index"]
-        out += f"""<a 
-    hx-on::click="chooseImage('{chapter.url}', '{chapter.language}', {idx}, 'image_strip')"
-    href="{image_page_url(chapter, image_xml)}"><h4>{label}</h4></a>"""
-
+        out += f"""<a href="{image_page_url(chapter, image_xml)}"><h4>{label}</h4></a>"""
         out += image_widget(
             chapter=chapter,
             image_xml=image_xml,
@@ -1416,7 +1412,7 @@ def image_page_url(chapter, image_xml):
     )
 
 
-def image_widget(chapter, image_xml):
+def image_widget(chapter, image_xml: Tag):
     """
     returns an html string for a clickable image that will nav to the
     selected image efficiently.
@@ -1427,14 +1423,12 @@ def image_widget(chapter, image_xml):
 
     if image_xml.attrs.get("src"):
         # the image might exists
-        out = f"""<a onclick="chooseImage('{chapter.url}', '{chapter.language}', {image_index}, 'image_strip'); return false;" href="{image_page_href}">
+        out = f"""<a href="{image_page_href}">
     <img style="max-width: 200px" src="{href}"></img>
 </a>"""
     else:
         # the image definitely does _not_ exist, so we give them a clickable placeholder
-        image_strip_url = image_page_url(chapter, image_xml)
-
-        out = f"""<a onclick="chooseImage('{chapter.url}', '{chapter.language}', {image_index}, 'image_strip'); return false;" href="{image_page_href}">
+        out = f"""<a href="{image_page_href}">
     <img style="height: 300px;background-color: #777" src="/static/images/x.png"></img>
 </a>"""
 

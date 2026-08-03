@@ -143,7 +143,6 @@ def image_forex(chapter, image_xml, image_index) -> str:
                         )
 
                         absolute[sixtyfour_c, sixtyfour_r] = f"""<a 
-                            hx-on::click="chooseImage('{chapter.url}', '{chapter.language}', {count}, 'forex')"
                             href="{url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=count)}">
                             <div class="imgheight img-{image_height}" style="background-color:#777">
                                 <img class="image_{image.attrs.get("index")}" src="{imageurl}"/></img>

@@ -16,10 +16,10 @@ from artifact_editor.chapter.chapter import Chapter
 import const
 import logger
 from artifact_editor import (
-    images,
+    #images,
     tools,
-    typography,
-    video,
+    #typography,
+    #video,
 )
 from text_to_image.registry import registry as t2i_registry
 

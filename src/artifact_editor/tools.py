@@ -383,8 +383,10 @@ def get_chapterurl(author: str, title: str | None = None, chapter_number: int | 
     """
     log.warning('Obsolete call to get_chapterurl with %s, %s, %s', author, title, chapter_number)
 
-    # stack = inspect.stack()
-    # caller = stack[1]
+    stack = inspect.stack()
+    caller = stack[:4]
+    for frame in caller:
+        log.info(f"Caller: {frame.function} in {frame.filename}:{frame.lineno}")
     # log.info(f"{caller.function} -> get_chapterurl({author}, {title}, {chapter_number})")
 
     if "/chapter/" in author and title is None and chapter_number is None:

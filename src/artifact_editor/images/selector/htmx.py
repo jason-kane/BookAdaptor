@@ -1,8 +1,11 @@
-import os
-
-from PIL import Image
 import glob
+import os
 import shutil
+
+from bs4 import Tag
+from flask import url_for
+from PIL import Image
+
 import const
 import logger
 from artifact_editor.images import (
@@ -12,9 +15,8 @@ from artifact_editor.images import (
 from artifact_editor.tools import (
     generic_button,
 )
-from .selector import registry as selector_registry
 
-from flask import url_for
+from .selector import registry as selector_registry
 
 log = logger.log(__name__)
 
@@ -241,7 +243,7 @@ def image_metadata(chapter, image_xml, src):
 
 def image_selector(
     chapter,
-    image_xml,
+    image_xml: Tag,
     verify_variant="neutral",
 ):
     """
@@ -292,7 +294,7 @@ def image_selector(
     camera_action = ""
 
     image_index = image_xml.attrs["index"]
-    imageurl = f"{chapter.url}/images/{image_index}/selector"
+    
     paragraph = image_xml.find_parent("paragraph")
     fullscreen = paragraph.attrs.get("fullscreen", "false").lower() == "true"
 
