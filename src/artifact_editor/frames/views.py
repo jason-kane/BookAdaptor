@@ -7,6 +7,7 @@ import webbrowser
 import PIL
 from flask import (
     Blueprint,
+    g,
     make_response,
     redirect,
     render_template,
@@ -23,7 +24,11 @@ from artifact_editor import (
 )
 from artifact_editor.audio.audio import recalculate_image_frames
 from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.images import images
 from artifact_editor.masterplan import masterplan
 from artifact_editor.tools import (
@@ -50,34 +55,38 @@ bp = Blueprint(
     ),
 )
 
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
+
 
 @bp.route(
     "/actions/image_durations", methods=["POST"]
 )
-def image_durations(author, title, chapter_number, language):
+def image_durations():
     """
     Go through the book.xml, sum the durations of phrases and assign that as the duration for the image.
     We must already have phrase durations.
     """
-    chapterdir = get_chapterdir(author, title, chapter_number)
-    bookurl = get_bookurl(author, title)
-
-    recalculate_image_frames(chapterdir)
-    return htmx.image_durations_button(bookurl)
+    recalculate_image_frames(g.chapter)
+    return htmx.image_durations_button(g.chapter)
 
 
 @bp.route(
     "/actions/set_fragment_id",
     methods=["POST"],
 )
-def set_fragment_id(author, title, chapter_number, language):
+def set_fragment_id():
     """
     Go through the book.xml, sum the durations of phrases and assign that as the duration for the image.
     """
-    chapter = Chapter(author, title, chapter_number, language)
-
     paragraph_index = 0
-    for paragraph in chapter.get_xml().find("book").children:
+    for paragraph in g.chapter.get_xml().find("book").children:
         if not str(paragraph).strip():
             continue
 
@@ -92,9 +101,9 @@ def set_fragment_id(author, title, chapter_number, language):
                     fragdex = int(fragdex) + 1
         paragraph_index += 1
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.set_fragment_id_button(chapter)
+    return htmx.set_fragment_id_button(g.chapter)
 
 
 # POST /Aesop/Fables/frames/actions/clear_broken_frames
@@ -102,11 +111,8 @@ def set_fragment_id(author, title, chapter_number, language):
     "/actions/clear_broken_frames",
     methods=["POST"],
 )
-def clear_broken_frames(author, title, chapter_number, language):
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-
-    framedir = os.path.join(const.LIBRARY_DIR, chapterdir, "frames")
+def clear_broken_frames():
+    framedir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "frames",)
     for framefn in glob.glob(os.path.join(framedir, "frame_*.png")):
         try:
             img = PIL.Image.open(framefn)
@@ -123,14 +129,14 @@ def clear_broken_frames(author, title, chapter_number, language):
             log.info(f"Removing broken image {framefn}")
             os.remove(framefn)
 
-    return htmx.clear_broken_frames(chapterurl)
+    return htmx.clear_broken_frames(g.chapter)
 
 
 # POST /Anton%20Chekhov/The%20Lady%20with%20the%20Dog/chapter/0001/frames/regenerate_w_tmi
 @bp.route(
     "/regenerate_w_tmi", methods=["POST"]
 )
-def regenerate_w_tmi(author, title, chapter_number, language):
+def regenerate_w_tmi():
     """
     Regenerate the imaginative image used in this frame using TMI (Text->Metadata->Image).
     """
@@ -138,9 +144,9 @@ def regenerate_w_tmi(author, title, chapter_number, language):
     frame_index = int(request.form.get("frame_index", 0))
     log.info(f"Regenerating frame {frame_index} with TMI")
 
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    bookdir = get_bookdir(author, title)
+    chapterdir = g.chapter.chapterdir
+    chapterurl = get_chapterurl(g.chapter.author, g.chapter.title, g.chapter)
+    bookdir = get_bookdir(g.chapter.author, g.chapter.title)
 
     mybook = booklib.get_book(chapterdir)
 
@@ -170,9 +176,9 @@ def regenerate_w_tmi(author, title, chapter_number, language):
     # zimage
     images.zmi_regenerate_image(
         mybook,
-        author,
-        title,
-        chapter,
+        g.chapter.author,
+        g.chapter.title,
+        g.chapter,
         image_xml,
         chapterdir,
         bookdir,
@@ -209,21 +215,19 @@ def regenerate_w_tmi(author, title, chapter_number, language):
 @bp.route("/")
 @bp.route("/<int:frame_index>")
 @bp.route("/<aspect>/<int:frame_index>")
-def base(
-    author, title, chapter_number, language, aspect="widescreen", frame_index=0
-):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def base(aspect="widescreen", frame_index=0):
     frame_index = int(frame_index)
-    phrase_xml = htmx.frame_to_phrase(chapter, frame_index)
+    phrase_xml = htmx.frame_to_phrase(
+        g.chapter,
+        frame_index
+    )
 
     if phrase_xml is None:
         if frame_index == 0:
             # trixy, perhaps we don't have a masterplan?  Generate one.
             log.info("No frame_index provided, generating masterplan")
-            masterplan.generate_masterplan(chapter)
-            phrase_xml = htmx.frame_to_phrase(chapter, frame_index)
+            masterplan.generate_masterplan(g.chapter)
+            phrase_xml = htmx.frame_to_phrase(g.chapter, frame_index)
 
         if phrase_xml is None:
             if frame_index == 0:
@@ -237,16 +241,16 @@ def base(
             )
             # just go to the last frame
             return redirect(
-                f"/{author.name}/{title}/{chapter_number}/frames/{max(0, frame_index - 1)}"
+                f"/{g.author.name}/{g.title}/{g.chapter_number}/frames/{max(0, frame_index - 1)}"
             )
 
-    book = phrase_xml.find_parent("book")
+    book = g.chapter.get_xml().find("chapter")
 
-    aspect = chapter.get_aspect()
+    aspect = g.chapter.get_aspect()
 
-    framedir = os.path.join(chapter.chapterdir, "frames", aspect)
-    pretty_author = chapter.config.get("author", author)
-    pretty_title = chapter.config.get("title", title)
+    framedir = os.path.join(g.chapter.chapterdir, "frames", aspect)
+    pretty_author = g.chapter.config.get("author", g.author)
+    pretty_title = g.chapter.config.get("title", g.title)
 
     frames_dir = os.path.join(const.LIBRARY_DIR, framedir)
     os.makedirs(frames_dir, exist_ok=True)
@@ -256,42 +260,42 @@ def base(
     # total_frames = int(book.attrs.get("total_frames", 0))
     total_frames = 0
     if total_frames == 0:
-        for phrase in chapter.get_xml().find_all("phrase"):
+        for phrase in g.chapter.get_xml().find_all("phrase"):
             total_frames += int(phrase.attrs.get("frames", "0"))
 
         book.attrs["total_frames"] = total_frames
-        chapter.save_xml()
+        g.chapter.save_xml()
 
     buttons = "\n".join(
         [
-            htmx.image_durations_button(chapter),
-            htmx.set_fragment_id_button(chapter),
-            htmx.clear_broken_frames(chapter),
-            htmx.clear_cache(chapter),
-            video_htmx.clear_all_frames_button(chapter),
+            htmx.image_durations_button(g.chapter),
+            htmx.set_fragment_id_button(g.chapter),
+            htmx.clear_broken_frames(g.chapter),
+            htmx.clear_cache(g.chapter),
+            video_htmx.clear_all_frames_button(g.chapter),
         ]
     )
 
     # frame_pfn = os.path.join(
     #     framedir, f"frame_{frame_index:06}.png"
     # )
-    frame_pfn = htmx.frame_pfn(chapter, aspect, frame_index)
+    frame_pfn = htmx.frame_pfn(g.chapter, aspect, frame_index)
 
     return render_template(
         "frames.html",
         frame_pfn=frame_pfn,
-        language=language,
-        pretty_language=language.capitalize(),
+        language=g.language,
+        pretty_language=g.language.capitalize(),
         aspect=aspect,
         frame_navigator=htmx.frame_navigator,
         frame_display=htmx.frame_display,
         frame_index=frame_index,
-        author=author,
+        author=g.author,
         pretty_author=pretty_author,
-        title=title,
+        title=g.title,
         pretty_title=pretty_title,
-        chapter=chapter,
-        chapterurl=chapter.url,
+        chapter=g.chapter,
+        chapterurl=g.chapter.url,
         buttons=buttons,
         section="frames",
         section_cosmetic="Frames",
@@ -315,14 +319,11 @@ def open_directory(author, title, chapter_number, language):
 # http://localhost:5000/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/1/frames/1220.hx
 @bp.route("/<aspect>/<int:frame_index>.hx")
 @bp.route("/<int:frame_index>.hx")
-def htmx_frame(author, title, chapter_number, language, aspect=None, frame_index=None):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def htmx_frame(aspect=None, frame_index=None):
     # use an oob-swap to set the src of the central image
-    frame_display = htmx.frame_display(chapter, frame_index)
+    frame_display = htmx.frame_display(g.chapter, frame_index)
 
-    frame_pfn = htmx.frame_pfn(chapter, aspect, frame_index)
+    frame_pfn = htmx.frame_pfn(g.chapter, aspect, frame_index)
     
     return f"""
 <div id="frame-display" hx-swap-oob="true" class="wa-stack">
@@ -363,15 +364,15 @@ def camera_frame_override(image_dict, frame_index):
     "/redraw<aspect>",
     methods=["POST"],
 )
-def redraw_frame(author, title, chapter_number, language, aspect="_widescreen"):
+def redraw_frame(aspect="_widescreen"):
     """
     TODO: the handling of 'aspect' here is sloppy.
     """
     force = True
 
     log.info("============= redraw_frame()")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    author = g.author
+    chapter = g.chapter
 
     start_frame = int(request.form.get("start_frame", 0))
     end_frame = int(request.form.get("end_frame", 0))
@@ -502,15 +503,11 @@ def redraw_frame(author, title, chapter_number, language, aspect="_widescreen"):
 @bp.route(
     "/<aspect>/<int:frame_index>.png"
 )
-def frame_image(author, title, chapter_number, language, aspect, frame_index=0):
-    log.info("frame_image()")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def frame_image(aspect:str, frame_index:int=0):
     return send_from_directory(
         os.path.join(
             const.LIBRARY_DIR,
-            chapter.chapterdir,
+            g.chapter.chapterdir,
             "frames",
             aspect,
         ),
@@ -522,16 +519,13 @@ def frame_image(author, title, chapter_number, language, aspect, frame_index=0):
 @bp.route(
     "/actions/clear_cache", methods=["POST"]
 )
-def clear_cache(author, title, chapter_name, language):
+def clear_cache():
     """
     Clear the page_segment cache for this chapter.
     """
     log.info("clear_cache()")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_name, language)
-
-    frames.clear_cache(chapter)
-    return htmx.clear_cache(chapter)
+    frames.clear_cache(g.chapter)
+    return htmx.clear_cache(g.chapter)
 
 
 # @bp.route("/<author>/<path:title>/<chapter>/frames/actions/redraw", methods=["POST"])

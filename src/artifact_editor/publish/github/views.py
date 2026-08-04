@@ -1,19 +1,21 @@
 import os
 import shutil
-import const
-from git import Repo
-from github import Github
 import tempfile
 
 from flask import (
     Blueprint,
     render_template,
     request,
+    g,
 )
+from git import Repo
+from github import Github
 
-from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
-
+import const
+from artifact_editor.chapter.chapter import (
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 
 bp = Blueprint(
     "github",
@@ -21,22 +23,27 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
-def as_branch_name(name):
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
+
+def as_branch_name(name) -> str:
     return name.lower().replace(' ', '_').replace('-', '_')
 
 
 @bp.route("/save", methods=["POST"])
-def save(author, title, chapter_number, language):
-    chapter_number = int(chapter_number)
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
+def save():
+    chapter_number = int(g.chapter.number)
 
     git_url = request.form.get("git_url")
-    if chapter.config.get('git_url') != git_url:
-        chapter.config['git_url'] = git_url
-        chapter.save_config()
+    if g.chapter.config.get('git_url') != git_url:
+        g.chapter.config['git_url'] = git_url
+        g.chapter.save_config()
 
     github_token = request.form.get("github_token")
 
@@ -49,7 +56,7 @@ def save(author, title, chapter_number, language):
     with tempfile.TemporaryDirectory() as tmpdir:
         repo = Repo.clone_from(git_url, tmpdir)
     
-        new_branch = as_branch_name(f"{author.name}_{title}_chapter_{chapter_number}")
+        new_branch = as_branch_name(f"{g.chapter.author.name}_{g.chapter.title}_chapter_{chapter_number}")
         repo.git.checkout('HEAD', b=new_branch)
 
         # copy the chapter's files into the repo
@@ -57,14 +64,14 @@ def save(author, title, chapter_number, language):
         repo_chapter_dir = os.path.join(
             tmpdir, 
             "library", 
-            author.name, 
-            title, 
+            g.chapter.author.name, 
+            g.chapter.title, 
             "chapter", 
             f"{chapter_number:04}"
         )
 
         os.makedirs(
-            os.path.join(repo_chapter_dir, language),
+            os.path.join(repo_chapter_dir, g.chapter.language),
             exist_ok=True
         )
         
@@ -78,8 +85,8 @@ def save(author, title, chapter_number, language):
             'masterplan.json',
             'text_layer_plain.png',
             'text_layer_rainbow.png',
-            os.path.join(language, "chapter.txt"),
-            os.path.join(language, "chapter.xml"),
+            os.path.join(g.chapter.language, "chapter.txt"),
+            os.path.join(g.chapter.language, "chapter.xml"),
         ]:
             if os.path.exists(os.path.join(const.LIBRARY_DIR, chapter.chapterdir, fn)):
                 shutil.copy(
@@ -165,12 +172,7 @@ def save(author, title, chapter_number, language):
 
 
 @bp.route("/")
-def base(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
-    
+def base():   
     github_token = ""
     if os.path.exists(".github_token"):
         with open(".github_token", "r") as h:
@@ -179,12 +181,12 @@ def base(author, title, chapter_number, language):
     return render_template(
         "github.html",
         section="publish.github",
-        author=author,
-        title=title,
-        chapter_number=chapter_number,
-        chapter=chapter,
-        language=language,
-        pretty_language=chapter.pretty_language,
-        git_url=chapter.config.get('git_url', 'git@github.com:jason-kane/library.git'),
+        author=g.author,
+        title=g.chapter.title,
+        chapter_number=g.chapter.number,
+        chapter=g.chapter,
+        language=g.chapter.language,
+        pretty_language=g.chapter.pretty_language,
+        git_url=g.chapter.config.get('git_url', 'git@github.com:jason-kane/library.git'),
         github_token=github_token
     )

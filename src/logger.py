@@ -98,7 +98,7 @@ except OSError:
 fig = Figlet(font='slant', width=columns)
 
 logger = structlog.get_logger()
-def log(name: None):
+def log(name: str) -> structlog.BoundLogger:
     return logger.bind(name=name)
 
     # # logger = logging.getLogger(name)

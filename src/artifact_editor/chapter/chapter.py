@@ -10,7 +10,7 @@ from typing import Iterable
 import numpy as np
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from flask import url_for
+from flask import url_for, g
 from PIL import Image
 
 import comfy
@@ -29,6 +29,48 @@ from artifact_editor.tools import tags_to_dict
 from artifact_editor.typography import page_segment
 
 log = logger.log(__name__)
+
+
+def chapter_url_defaults_helper(endpoint, values):
+    """
+    Automatically add author, title, chapter_number, and language to the URL
+    if they are not already present.
+    """
+    log.info("bp.url_defaults() called", endpoint=endpoint, values=values)
+    
+    if 'author' not in values and hasattr(g, "author"):
+        values["author"] = g.author.name
+    if 'title' not in values and hasattr(g, "title"):
+        values["title"] = g.title
+    if 'chapter_number' not in values and hasattr(g, "chapter_number"):
+        values["chapter_number"] = int(g.chapter_number)
+    if 'language' not in values and hasattr(g, "language"):
+        values["language"] = g.language
+    return endpoint, values
+
+
+def chapter_url_value_preprocessor(endpoint, values: dict):
+    """
+    Extract author, title, chapter_number, and language from the URL and store
+    them in the Flask global context (g).
+    """
+    log.info("Pulling higher nesting values", endpoint=endpoint, values=values)
+    if 'author' in values:
+        g.author = Author(values.pop("author"))
+    if 'title' in values:
+        g.title = str(values.pop("title"))
+    if 'chapter_number' in values:
+        g.chapter_number = int(values.pop("chapter_number"))
+    if 'language' in values:
+        g.language = str(values.pop("language"))
+    g.chapter = Chapter(
+        author=g.author,
+        title=g.title,
+        number=g.chapter_number,
+        language=g.language,
+    )
+    return endpoint, values
+
 
 
 def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:

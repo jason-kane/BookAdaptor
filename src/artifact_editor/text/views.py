@@ -15,6 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    g
 )
 from titlecase import titlecase
 
@@ -22,7 +23,11 @@ import logger
 import roman
 from artifact_editor import config
 from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.characters import characters
 from artifact_editor.tools import (
     get_chapterdir,
@@ -45,6 +50,14 @@ bp = Blueprint(
     )
 )
 
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values)
+    
 
 # Boolean toggles available for all books.
 TOGGLEFIELDS = []
@@ -1128,41 +1141,36 @@ def delete_chapter(author, title, chapter_number, language):
 
 
 @bp.route("/", methods=["GET"])
-def text_base(author, title, chapter_number, language):
-    log.info(f"Text view called for {author} - {title} - {chapter_number} - {language}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def text_base():
 
     return render_template(
         "text.html",
-        language=chapter.language,
-        pretty_language=chapter.pretty_language,
-        import_button=htmx.import_button(chapter),
-        chapterurl=chapter.url,
-        author=author,       
-        pretty_author=chapter.config.get("author", author),
-        title=title,
-        pretty_title=chapter.config.get("title", title),
-        chapter=chapter,
+        language=g.chapter.language,
+        pretty_language=g.chapter.pretty_language,
+        import_button=htmx.import_button(g.chapter),
+        chapterurl=g.chapter.url,
+        author=g.author,       
+        pretty_author=g.chapter.config.get("author", g.author),
+        title=g.title,
+        pretty_title=g.chapter.config.get("title", g.title),
+        chapter=g.chapter,
         section="text",
         section_cosmetic="Text"
     )
 
 @bp.route("/delta", methods=["GET"])
-def get_delta(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def get_delta():
 
     try:
-        raw_text = chapter.load_delta()
+        raw_text = g.chapter.load_delta()
     except FileNotFoundError:
-        log.error('Delta file not found for chapter %s. Returning empty text.', chapter.get_delta_fn())
+        log.error('Delta file not found for chapter %s. Returning empty text.', g.chapter.get_delta_fn())
         raw_text = {}
 
     if raw_text in [{}, None]:
         book_txt = os.path.join(
             const.LIBRARY_DIR,
-            chapter.get_chapterdir(),
+            g.chapter.get_chapterdir(),
             "book.txt"
         )
 
@@ -1176,23 +1184,20 @@ def get_delta(author, title, chapter_number, language):
             delta = {"ops": [{"insert": raw_text}]}
             raw_text = json.dumps(delta, indent=2)
 
-            os.makedirs(os.path.dirname(chapter.get_delta_fn()), exist_ok=True)
-            with open(chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(g.chapter.get_delta_fn()), exist_ok=True)
+            with open(g.chapter.get_delta_fn(), "w", encoding="utf-8") as f:
                 f.write(raw_text)
         else:
-            log.info('No book.txt found for chapter %s. Returning empty delta.', chapter.get_chapterdir())
+            log.info('No book.txt found for chapter %s. Returning empty delta.', g.chapter.get_chapterdir())
             raw_text = json.dumps({"ops": []}, indent=2)
 
     return raw_text, 200
 
 @bp.route("/delta", methods=["POST"])
-def save_delta(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def save_delta():
     new_delta = request.form["delta"]
 
-    with open(chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+    with open(g.chapter.get_delta_fn(), "w", encoding="utf-8") as f:
         as_json = json.loads(new_delta)
         # pretty print it.
         f.write(json.dumps(as_json, indent=2))
@@ -1213,14 +1218,11 @@ def get_text(author, title, chapter_number, language):
     return raw_text, 200
 
 @bp.route("/get_xml", methods=["GET"])
-def get_xml(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def get_xml():
     try:
-        raw_xml = chapter.get_xml().prettify()
+        raw_xml = g.chapter.get_xml().prettify()
     except Exception as e:
-        log.error(f"Error loading XML for chapter {chapter.url}: {e}")
+        log.error(f"Error loading XML for chapter {g.chapter.url}: {e}")
         raw_xml = ""
 
     return raw_xml, 200 

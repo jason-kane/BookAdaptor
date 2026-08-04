@@ -135,25 +135,15 @@ def frame_navigator(chapter, frame_index: int):
 
 
 def frame_display(chapter, frame_index: int):
-    book = chapter.get_xml().find("book")
-
+    book = chapter.get_xml().find("chapter")
     aspect = chapter.get_aspect()
 
-    # frameurl = os.path.join(
-    #     chapter.url,
-    #     chapter.language,
-    #     "frames",
-    #     aspect,
-    # )
-
+    # recalculated total_frames and store to xml.
     total_frames = 0
-    # int(book.attrs.get("total_frames", 0))
-    if total_frames == 0:
-        for phrase in book.find_all("phrase"):
-            total_frames += int(phrase.attrs.get("frames", "0"))
-
-        book.attrs["total_frames"] = total_frames
-        chapter.save_xml()
+    for phrase in book.find_all("phrase"):
+        total_frames += int(phrase.attrs.get("frames", "0"))
+    book.attrs["total_frames"] = total_frames
+    chapter.save_xml()
 
     # the currently selected phrase
     phrase_xml = frame_to_phrase(chapter, frame_index)

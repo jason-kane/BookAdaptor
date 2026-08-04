@@ -665,13 +665,13 @@ def extract_frames(videofile, frame_dir):
 
 
 def assemble_mp4(
-    fps,
-    framedir,
-    wavfile,
-    videofile,
-    image_match="image_%06d.png",
-    start_number=None,
-    max_frames=None,
+    fps: int,
+    framedir: str,
+    wavfile: str|None,
+    videofile: str,
+    image_match: str="image_%06d.png",
+    start_number: int|None=None,
+    max_frames: int|None=None,
 ):
     """
     Assemble all the images in framedir with the audio in wavfile at FPS.

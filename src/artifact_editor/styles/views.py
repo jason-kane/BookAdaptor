@@ -27,7 +27,6 @@ from flask import (
     url_for,
 )
 
-# , Book
 import artifact_editor.styles.htmx as htmx
 import const
 import logger

@@ -1,14 +1,14 @@
-from cmd import PROMPT
 import glob
 import os
 import random
 import shutil
 import subprocess
+from cmd import PROMPT
 
-from artifact_editor.author.author import Author
 import numpy as np
 from flask import (
     Blueprint,
+    g,
     render_template,
     request,
     send_file,
@@ -27,7 +27,12 @@ from artifact_editor import (
     config,
 )
 from artifact_editor.audio import audio
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.author.author import Author
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.characters import characters
 from artifact_editor.frames import frames
 from artifact_editor.masterplan.masterplan import (
@@ -57,11 +62,20 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
+
 
 @bp.route("/actions/clear_all_text", methods=["POST"])
-def clear_all_text(author, title, chapter_number, language):
+def clear_all_text():
     author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = Chapter()
 
     aspect = chapter.get_aspect()
 
@@ -359,267 +373,59 @@ def redraw_all_text(author, title, chapter, aspect="_widescreen"):
 
 # /Aesop/Fables/0025/typography/actions/hyper_redraw_all_text_portrait
 @bp.route("/actions/hyper_redraw_all_text_<aspect>", methods=["POST"])
-def hyper_redraw_all_text(author, title, chapter_number, language, aspect):
+def hyper_redraw_all_text(aspect):
     """
     Hyper Redraw all the latex highlights
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     aspect = aspect.lstrip("_")
 
     G = const.GEOMETRY[aspect]
 
-    masterplan = chapter.get_masterplan()
+    masterplan = g.chapter.get_masterplan()
     if masterplan is None:
-        masterplan = generate_masterplan(chapter)
-        save_masterplan(chapter, masterplan)
+        masterplan = generate_masterplan(g.chapter)
+        save_masterplan(g.chapter, masterplan)
 
     # draw the entire text with rainbow highlighting
     # prime the hyper redraw process..
-    page_segment.draw_text_layers(chapter, phrase_xml=None, force=True, rainbow=True)
+    page_segment.draw_text_layers(g.chapter, phrase_xml=None, force=True, rainbow=True)
 
     # expire cached snippets
-    for phrase_xml in chapter.phrases():
-        fn = chapter.get_highlighted_text_snippet_fn(phrase_xml)
+    for phrase_xml in g.chapter.phrases():
+        fn = g.chapter.get_highlighted_text_snippet_fn(phrase_xml)
         if os.path.exists(fn):
             os.unlink(fn)
 
-    return htmx.hyper_redraw_all_text_button(chapter, aspect)
-
-    # okay, now instead of regenerating the latex for each phrase, we can
-    # filter the rainbow image, determine the bounding box for each
-    # highlighted phrase, and draw our own highlight box.  Even with all
-    # that, it should be massively faster than regenerating the entire book
-    # latex for each phrase.
-    rainbow_fn = os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, "text_layer_rainbow.png"
-    )
-
-    plain_fn = os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, "text_layer_plain.png"
-    )
-
-    rainbow_image = Image.open(rainbow_fn).convert("RGBA")
-    plain_image = Image.open(plain_fn)
-    # go through each phrase, find its bounding box in the rainbow
-    # image, and save that as its own text_layer image.
-
-    total_phrases = len(list(chapter.phrases()))
-
-    for phrase in chapter.phrases():
-        paragraph = phrase.find_parent("paragraph")
-        paragraph_tags = tags_to_dict(paragraph.attrs.get("tags", ""))
-
-        if paragraph_tags.get("has-text", True) is False:
-            # this paragraph has no text, skip it.
-            log.info("Paragraph %s has has_text=False tag, skipping...", paragraph)
-            continue
-
-        log.info(
-            "Drawing text for phrase %s/%s",
-            phrase.attrs.get("index", "unknown"),
-            total_phrases,
-        )
-        index = 10 + int(phrase.attrs.get("index", "0"))
-        rainbow_int = index % 16777216  # limit to 24 bits, (R,G,B) w/8 bits each
-
-        rainbow_bytes = rainbow_int.to_bytes(3, "big")
-        r, g, b = rainbow_bytes
-
-        # get the bounding box of the highlight color
-        pixel_array = np.array(rainbow_image)
-        highlight_mask = (
-            (pixel_array[:, :, 0] != r)
-            | (pixel_array[:, :, 1] != g)
-            | (pixel_array[:, :, 2] != b)
-            | (pixel_array[:, :, 3] != 255)
-        )  # alpha channel must be 255 to harden the highlight edges so we don't get messed up by anti-aliasing noise.
-
-        log.info(
-            f"Filtering with mask for color R:{r:X} G:{g:X} B:{b:X} for phrase %s",
-            phrase.attrs.get("index", "unknown"),
-        )
-
-        pixel_array[highlight_mask] = (0, 0, 0, 0)  # .astype(np.uint8) * 255
-        try:
-            highlight_only_text_image = Image.fromarray(pixel_array, mode="RGBA")
-            highlight_only_text_image.save(f"/tmp/{index}_hot.png")
-        except ValueError:
-            log.error("Invalid image: %s", pixel_array)
-            raise
-
-        try:
-            # only tells part of the story
-            hleft, htop, hright, hbottom = highlight_only_text_image.getbbox()
-            # ImageDraw.Draw(highlight_only_text_image).rectangle(
-            #     (hleft, htop, hright, hbottom), outline="green", width=2
-            # )
-        except TypeError as err:
-            log.error(err)
-            log.error(
-                "No highlighted region found in phrase %s",
-                phrase.attrs.get("index", "unknown"),
-            )
-            continue
-
-        log.info(
-            "Highlight bounding box for phrase %s: %d, %d, %d, %d",
-            phrase.attrs.get("index", "unknown"),
-            hleft,
-            htop,
-            hright,
-            hbottom,
-        )
-        if hbottom - htop > 1000:
-            highlight_only_text_image.save(f"/tmp/{index}_huge.png")
-            raise ValueError("Unreasonably large highlight box detected!")
-
-        highlight_layer = Image.new(
-            "RGBA", highlight_only_text_image.size, (0, 0, 0, 0)
-        )
-
-        # draw the highlight box for this phrase on the
-        # plain-text-only rendered text.
-        # my_plain_image = plain_image.copy()
-
-        # one pixel offset to accommodate anti-aliasing
-        top_pixel_strip = highlight_only_text_image.crop(
-            (0, htop + 1, highlight_only_text_image.width, htop + 2)
-        )
-
-        try:
-            tleft, ttop, tright, tbottom = top_pixel_strip.getbbox()
-        except TypeError as err:
-            log.error(err)
-            log.error(
-                "[%s] No top pixel strip found in phrase %s",
-                index,
-                phrase.attrs.get("index", "unknown"),
-            )
-            highlight_only_text_image.save(f"/tmp/{index}_hot_error.png")
-            top_pixel_strip.save(f"/tmp/{index}_no_top_error.png")
-            log.error(
-                f"top_pixel_strip cropped at (0, {htop + 1=}, {highlight_only_text_image.width=}, {htop + 2=})"
-            )
-            raise
-
-        bottom_pixel_strip = highlight_only_text_image.crop(
-            (0, hbottom - 3, highlight_only_text_image.width, hbottom - 2)
-        )
-
-        try:
-            bleft, btop, bright, bbottom = bottom_pixel_strip.getbbox()
-        except TypeError as err:
-            log.error(err)
-            log.error(
-                "No bottom pixel strip found in phrase %s",
-                phrase.attrs.get("index", "unknown"),
-            )
-
-        lineheight = 51
-
-        # middle line(s)
-        gutter = 4
-
-        first_edge = htop + lineheight + gutter
-        last_edge = hbottom - lineheight - 1
-
-        log.info("range(%d, %d, %d)", first_edge, last_edge, lineheight + gutter)
-
-        # first line
-        ImageDraw.Draw(highlight_layer).rectangle(
-            [tleft, htop, hright, htop + lineheight], fill="yellow"
-        )
-
-        if abs(last_edge - first_edge) > lineheight:
-            for i in range(first_edge, last_edge, lineheight + gutter + 1):
-                # giving all the 'middle' lines uniform pixel perfect width
-                # looks very organized on the page.
-                ImageDraw.Draw(highlight_layer).rectangle(
-                    [hleft, i, hright, i + lineheight + 1], fill="yellow"
-                )
-
-        # last line
-        ImageDraw.Draw(highlight_layer).rectangle(
-            [bleft, hbottom - lineheight, bright, hbottom], fill="yellow"
-        )
-
-        # (debug) draw a rectangle around the highlight
-        # ImageDraw.Draw(highlight_layer).rectangle(
-        #     [hleft, htop, hright, hbottom],
-        #     outline="red",
-        #     width=2
-        # )
-
-        # paste the plain layer on top of the highlight layer
-        highlight_layer.paste(plain_image, (0, 0), plain_image)
-
-        # not kidding
-        # phrase_id = phrase.attrs.get("id", "").split("_")[-1]
-        phrase_index = phrase.attrs["index"]
-        _, _, _, bottom = highlight_layer.getbbox()
-
-        if bottom + G["VSIZE"] < highlight_layer.height:
-            # trim off everything more than a full screen height below
-            # the last pixel of text.
-            highlight_layer = highlight_layer.crop(
-                (0, 0, highlight_layer.width, bottom + G["VSIZE"])
-            )
-        else:
-            log.info(
-                f'{bottom=} + {G["VSIZE"]=} <= {highlight_layer.height=} : Not cropping',
-            )
-
-        aspect_dir = os.path.join(
-            const.LIBRARY_DIR,
-            chapter.get_paragraph_dir(paragraph.attrs["index"]),
-            aspect,
-        )
-        os.makedirs(aspect_dir, exist_ok=True)
-
-        highlight_layer.save(os.path.join(aspect_dir, f"text_layer_{phrase_index}.png"))
-
-        # Finally, call draw_text_layers, it should be all cache.
-        log.info(
-            "Finalizing text layer for phrase %s", phrase.attrs.get("index", "unknown")
-        )
-        page_segment.draw_text_layers(chapter, phrase, force=False, rainbow=False)
-
-    return htmx.hyper_redraw_all_text_button(chapter, aspect)
+    return htmx.hyper_redraw_all_text_button(g.chapter, aspect)
 
 
 @bp.route("/actions/refresh_examples", methods=["POST"])
-def refresh_examples(author, title, chapter_number, language):
+def refresh_examples():
     """
     Remove the xml and pdf examples so they are regenerated
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     # where it should be
-    latex_path = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "chapter.tex")
+    latex_path = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "chapter.tex")
     if os.path.exists(latex_path):
         os.remove(latex_path)
 
-    pdf_path = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "chapter.pdf")
+    pdf_path = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "chapter.pdf")
     if os.path.exists(pdf_path):
         os.remove(pdf_path)
 
-    return htmx.refresh_examples(chapter)
+    return htmx.refresh_examples(g.chapter)
 
 
 @bp.route("/actions/clear_highlight_dimensions", methods=["POST"])
-def clear_highlight_dimensions(author, title, chapter_number, language):
+def clear_highlight_dimensions():
     """
     Clear all highlight dimensions
 
     These are set in neobreaker.text.XmlToLatex.combine_text_layers() so
     anything that calls that needs to update top/bottom.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
-    for paragraph in chapter.get_xml().find_all("paragraph"):
+    for paragraph in g.chapter.get_xml().find_all("paragraph"):
         if "top" in paragraph.attrs:
             del paragraph["top"]
         if "bottom" in paragraph.attrs:
@@ -640,32 +446,29 @@ def clear_highlight_dimensions(author, title, chapter_number, language):
             if "bottom" in phrase.attrs:
                 del phrase["bottom"]
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.clear_highlight_dimensions_button(chapter)
+    return htmx.clear_highlight_dimensions_button(g.chapter)
 
 
 @bp.route("/actions/reset_camera", methods=["POST"])
-def reset_camera(author, title, chapter_number, language):
+def reset_camera():
     """
     Rebuild the camera file
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    aspect = g.chapter.get_aspect()
 
-    aspect = chapter.get_aspect()
+    delete_masterplan(g.chapter)
+    log.info("Regenerate master plan for %s", g.chapter)
+    masterplan = generate_masterplan(g.chapter)
+    save_masterplan(g.chapter, masterplan)
 
-    delete_masterplan(chapter)
-    log.info("Regenerate master plan for %s", chapter)
-    masterplan = generate_masterplan(chapter)
-    save_masterplan(chapter, masterplan)
+    audio.recalculate_paragraph_durations(g.chapter)
 
-    audio.recalculate_paragraph_durations(chapter)
+    camera.delete_camera(g.chapter)
+    g.chapter.build_frame_to_camera(aspect, force=True)
 
-    camera.delete_camera(chapter)
-    chapter.build_frame_to_camera(aspect, force=True)
-
-    return htmx.reset_camera_button(chapter)
+    return htmx.reset_camera_button(g.chapter)
 
 
 paragraph_confidence = {}
@@ -695,8 +498,6 @@ def scroll_rate_adjust(chapter, interval, aspect="widescreen") -> bool:
 
     # we adjust the scroll rate by `adjustment` percentage pixels per second
     # retroactively, starting `distance` frames before the evaluated frame.
-
-    # chapter = page_segment.Chapter(chapterdir, aspect=aspect)
 
     current_frame = 0
     evaluation_phrase = interval
@@ -926,14 +727,11 @@ def scroll_rate_adjust(chapter, interval, aspect="widescreen") -> bool:
 
 # evaluate_camera_rate
 @bp.route("/actions/evaluate_camera_rate_<aspect>", methods=["POST"])
-def evaluate_camera_rate(author, title, chapter_number, language, aspect):
+def evaluate_camera_rate(aspect: str):
     """
     Evaluate the camera rate
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    # max_phrase = len(mybook.soup.find_all("phrase"))
+        # max_phrase = len(mybook.soup.find_all("phrase"))
     # interval: how often we align the camera, in number of phrases.
 
     # I don't know what the best settings really are.
@@ -954,62 +752,56 @@ def evaluate_camera_rate(author, title, chapter_number, language, aspect):
     #     interval = random.randrange(10, max_phrase // 10)
 
     while True:
-        r = scroll_rate_adjust(chapter, interval, aspect)
+        r = scroll_rate_adjust(g.chapter, interval, aspect)
         log.info("Scroll rate adjustment result: %s", r)
 
         if not r:
             break
 
     if aspect == "widescreen":
-        return htmx.evaluate_camera_rate_widescreen_button(chapter)
+        return htmx.evaluate_camera_rate_widescreen_button(g.chapter)
     else:
-        return htmx.evaluate_camera_rate_portrait_button(chapter)
+        return htmx.evaluate_camera_rate_portrait_button(g.chapter)
 
 
 @bp.route("/typography/actions/verify_text_images", methods=["POST"])
-def verify_text_images(author, title, chapter_number, language):
+def verify_text_images():
     """
     Verify all text images exist
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     xml_to_latex = typography.XmlConverter(
-        chapter=chapter,
-        xml=chapter.get_xml().find("book"),
+        chapter=g.chapter,
+        xml=g.chapter.get_xml().find("book"),
         aspect="widescreen",
     )
     xml_to_latex.verify_text_images()
 
     xml_to_latex = typography.XmlConverter(
-        chapter=chapter,
-        xml=chapter.get_xml().find("book"),
+        chapter=g.chapter,
+        xml=g.chapter.get_xml().find("book"),
         aspect="portrait",
     )
     xml_to_latex.verify_text_images()
 
-    return htmx.verify_text_images_button(chapter)
+    return htmx.verify_text_images_button(g.chapter)
 
 
 @bp.route("/actions/build_missing_highlight_geometry", methods=["POST"])
-def build_missing_highlight_geometry(author, title, chapter_number, language):
+def build_missing_highlight_geometry():
     """
     Rebuild the highlight geometry
 
     I haven't needed this in a long while.
     No support for portrait mode.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     # Rebuild the geometry
     xml_to_latex = typography.XmlConverter(
-        chapter=chapter,
-        xml=chapter.get_xml().find("book"),
+        chapter=g.chapter,
+        xml=g.chapter.get_xml().find("book"),
         aspect="widescreen",
     )
 
-    for paragraph in chapter.get_xml().find_all("paragraph"):
+    for paragraph in g.chapter.get_xml().find_all("paragraph"):
         has_text = "has-text=false" not in paragraph.attrs.get("tags", "")
         paragraph_dir = paragraph.attrs.get("dir", "")
 
@@ -1041,7 +833,7 @@ def build_missing_highlight_geometry(author, title, chapter_number, language):
                         paragraph_dir, phrase["fragdex"]
                     )
 
-    for paragraph in chapter.get_xml().find_all("paragraph"):
+    for paragraph in g.chapter.get_xml().find_all("paragraph"):
         has_text = "has-text=false" not in paragraph.attrs.get("tags", "")
         paragraph_dir = paragraph.attrs.get("dir", "")
 
@@ -1051,10 +843,10 @@ def build_missing_highlight_geometry(author, title, chapter_number, language):
                 or "page_offset" not in paragraph.attrs
             ):
                 # how tall are the pages before this one?
-                chapter.save_xml()
+                g.chapter.save_xml()
                 log.info("Calculating page offsets for %s", paragraph_dir)
-                pageimage.calculate_page_offsets(chapter)
-                chapter.load_xml()
+                pageimage.calculate_page_offsets(g.chapter)
+                g.chapter.load_xml()
 
             for phrase in paragraph.find_all("phrase"):
                 _, ct_layers = xml_to_latex.combine_text_layers(
@@ -1093,35 +885,32 @@ def build_missing_highlight_geometry(author, title, chapter_number, language):
                     )
                     paragraph.attrs["bottom"] = bottom_should_be
                     # but only calling save_xml() when there _is_ a change is golden.
-                    chapter.save_xml()
+                    g.chapter.save_xml()
 
-    camera.delete_camera(chapter.chapterdir)
-    return htmx.build_missing_highlight_geometry_button(chapter)
+    camera.delete_camera(g.chapter.chapterdir)
+    return htmx.build_missing_highlight_geometry_button(g.chapter)
 
 
 @bp.route("/chapter.pdf")
-def serve_chapter_pdf(author, title, chapter_number, language):
+def serve_chapter_pdf():
     """
     Serve the chapter PDF file
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     pdf_path = os.path.join(
         const.LIBRARY_DIR,
-        chapter.chapterdir,
+        g.chapter.chapterdir,
         'regenerated',
         "chapter_override.pdf"
     )
 
     if not os.path.exists(pdf_path):
-        log.info("%s not found for %s", pdf_path, chapter)
+        log.info("%s not found for %s", pdf_path, g.chapter)
         pdf_path = os.path.join(
-            const.LIBRARY_DIR, chapter.chapterdir, "text_highlighted_plain.pdf"
+            const.LIBRARY_DIR, g.chapter.chapterdir, "text_highlighted_plain.pdf"
         )
 
     if not os.path.exists(pdf_path):
-        chapters_dir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "paragraphs")
+        chapters_dir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "paragraphs")
         for aspect in ["widescreen", "portrait"]:
             for paragraph_name in sorted(os.listdir(chapters_dir)):
                 # look for any highlighted pdf to copy
@@ -1133,7 +922,7 @@ def serve_chapter_pdf(author, title, chapter_number, language):
                     # use the first one as the chapter sample
                     shutil.copy(
                         os.path.join(
-                            chapters_dir, paragraph_name, "widescreen", sample
+                            chapters_dir, paragraph_name, aspect, sample
                         ),
                         pdf_path,
                     )
@@ -1148,15 +937,13 @@ def serve_chapter_pdf(author, title, chapter_number, language):
 
 
 @bp.route("/chapter.tex")
-def serve_chapter_latex(author, title, chapter_number, language):
+def serve_chapter_latex():
     """
     Serve the chapter LaTeX file
     """
     aspect = "widescreen"
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
-    latex_path = typography.get_chapter_tex(chapter, aspect)
+    latex_path = typography.get_chapter_tex(g.chapter, aspect)
     if os.path.exists(latex_path):
         return send_file(latex_path, as_attachment=False, mimetype="application/x-tex")
     else:
@@ -1165,37 +952,31 @@ def serve_chapter_latex(author, title, chapter_number, language):
 
 
 @bp.route("/set_text_structure", methods=["PUT"])
-def set_text_structure(author, title, chapter_number, language):
+def set_text_structure():
     """
     Set the text structure for the chapter
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     text_structure = request.form.get("TEXT_STRUCTURE")
 
-    chapter.config["TEXT_STRUCTURE"] = text_structure
-    chapter.save_config()
+    g.chapter.config["TEXT_STRUCTURE"] = text_structure
+    g.chapter.save_config()
 
     return "Text structure updated successfully", 200
 
 
 @bp.route("/")
-def base_typography(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def base_typography():
+    pretty_author = g.chapter.config.get("author", g.author)
+    pretty_title = g.chapter.config.get("title", g.title)
 
-    pretty_author = chapter.config.get("author", author)
-    pretty_title = chapter.config.get("title", title)
+    aspect = g.chapter.get_aspect()
+    #latex_path = typography.get_chapter_tex(g.chapter, aspect)
 
-    aspect = chapter.get_aspect()
-    latex_path = typography.get_chapter_tex(chapter, aspect)
-
-    highlighted_latex = ""
+    #highlighted_latex = ""
     pygments_css = ""
-    if os.path.exists(latex_path):
-        with open(latex_path, "r") as f:
-            chapter_latex = f.read()
+    # if os.path.exists(latex_path):
+    #     with open(latex_path, "r") as f:
+    #         chapter_latex = f.read()
 
             # Highlight the LaTeX code
             # lexer = get_lexer_by_name("latex")
@@ -1204,39 +985,37 @@ def base_typography(author, title, chapter_number, language):
         # pygments_css = formatter.get_style_defs()
 
     if aspect == "portrait":
-        redraw_all_text_button = htmx.redraw_all_text_button_portrait(chapter)
-        draw_missing_text_button = htmx.draw_missing_text_button_portrait(chapter)
-        evaluate_camera_rate_button = htmx.evaluate_camera_rate_portrait_button(chapter)
+        redraw_all_text_button = htmx.redraw_all_text_button_portrait(g.chapter)
+        draw_missing_text_button = htmx.draw_missing_text_button_portrait(g.chapter)
+        evaluate_camera_rate_button = htmx.evaluate_camera_rate_portrait_button(g.chapter)
     else:
-        redraw_all_text_button = htmx.redraw_all_text_button_widescreen(chapter)
-        draw_missing_text_button = htmx.draw_missing_text_button_widescreen(chapter)
-        evaluate_camera_rate_button = htmx.evaluate_camera_rate_widescreen_button(
-            chapter
-        )
+        redraw_all_text_button = htmx.redraw_all_text_button_widescreen(g.chapter)
+        draw_missing_text_button = htmx.draw_missing_text_button_widescreen(g.chapter)
+        evaluate_camera_rate_button = htmx.evaluate_camera_rate_widescreen_button(g.chapter)
 
     return render_template(
         "typography.html",
-        author=author,
+        author=g.author,
         pretty_author=pretty_author,
-        title=title,
+        title=g.title,
         pretty_title=pretty_title,
-        chapter=chapter,
-        language=language,
-        pretty_language=language.capitalize(),
-        hyper_redraw_all_text_button=htmx.hyper_redraw_all_text_button(chapter, aspect),
+        chapter=g.chapter,
+        language=g.language,
+        pretty_language=g.language.capitalize(),
+        hyper_redraw_all_text_button=htmx.hyper_redraw_all_text_button(g.chapter, aspect),
         redraw_all_text_button=redraw_all_text_button,
         draw_missing_text_button=draw_missing_text_button,
-        clear_all_text_button=htmx.clear_all_text_button(chapter),
-        reset_camera_button=htmx.reset_camera_button(chapter),
+        clear_all_text_button=htmx.clear_all_text_button(g.chapter),
+        reset_camera_button=htmx.reset_camera_button(g.chapter),
         evaluate_camera_rate_button=evaluate_camera_rate_button,
-        verify_text_images_button=htmx.verify_text_images_button(chapter),
+        verify_text_images_button=htmx.verify_text_images_button(g.chapter),
         build_missing_highlight_geometry_button=htmx.build_missing_highlight_geometry_button(
-            chapter
+            g.chapter
         ),
         clear_highlight_dimensions_button=htmx.clear_highlight_dimensions_button(
-            chapter
+            g.chapter
         ),
-        refresh_examples=htmx.refresh_examples(chapter),
+        refresh_examples=htmx.refresh_examples(g.chapter),
         pygments_css=pygments_css,
         #chapter_latex=chapter_latex,  # highlighted_latex,
         section="Typography",
@@ -1245,25 +1024,23 @@ def base_typography(author, title, chapter_number, language):
 
 
 @bp.route("/regenerate", methods=["POST"])
-def regenerate(author, title, chapter_number, language):
+def regenerate():
     """
     Regenerate the PDF render for this chapter
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
     latex = request.form.get("latex", "")
 
     # render the latex str to a pdf
     chapter_latex_override_fn = os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, "chapter_override.tex"
+        const.LIBRARY_DIR, g.chapter.chapterdir, "chapter_override.tex",
     )
     with open(chapter_latex_override_fn, "w") as f:
         f.write(latex)
 
     out_dir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.chapterdir,
+        g.chapter.chapterdir,
         "regenerated",
     )
     os.makedirs(out_dir, exist_ok=True)
@@ -1274,22 +1051,18 @@ def regenerate(author, title, chapter_number, language):
 
 
 @bp.route("/save", methods=["POST"])
-def save(author, title, chapter_number, language):
+def save():
     """
     Save the modified latex as the new "real" version.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
     return "", 200
 
 
 @bp.route("/discard", methods=["POST"])
-def discard(author, title, chapter_number, language):
+def discard():
     """
     Discard the modified latex and revert to the generated text.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
     return "", 200

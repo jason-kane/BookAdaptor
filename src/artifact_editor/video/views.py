@@ -1,11 +1,16 @@
 import os
 
 from artifact_editor.author.author import Author
-from artifact_editor.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from flask import (
     Blueprint,
     render_template,
     send_file,
+    g,
 )
 
 import const
@@ -34,6 +39,14 @@ bp = Blueprint(
         "templates"
     )
 )
+
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
 
 
 @bp.route("/actions/clear_adjusted_images", methods=["POST"])
@@ -114,41 +127,38 @@ def deliver_video(author, title, chapter_number, language, filename=""):
 
 
 @bp.route("/")
-def base_video(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    
-    filename = chapter.get_video_filename()    
+def base_video():    
+    filename = g.chapter.get_video_filename()    
     if os.path.exists(filename):
         log.info("Video file exists: %s", filename)
         filename = os.path.basename(filename)
     else:
         filename = None
 
-    pretty_author = chapter.config.get("author", author)
-    pretty_title = chapter.config.get("title", title)
+    pretty_author = g.chapter.config.get("author", g.author)
+    pretty_title = g.chapter.config.get("title", g.title)
 
-    if chapter.get_aspect() == 'portrait':
-        render_masterplan_button=htmx.render_masterplan_portrait_button(chapter)
+    if g.chapter.get_aspect() == 'portrait':
+        render_masterplan_button=htmx.render_masterplan_portrait_button(g.chapter)
     else:
-        render_masterplan_button=htmx.render_masterplan_widescreen_button(chapter)
+        render_masterplan_button=htmx.render_masterplan_widescreen_button(g.chapter)
 
     return render_template(
         "video.html",
-        language=language,
-        pretty_language=language.capitalize(),
-        author=author,
+        language=g.language,
+        pretty_language=g.language.capitalize(),
+        author=g.author,
         pretty_author=pretty_author,
-        title=title,
+        title=g.title,
         pretty_title=pretty_title,
-        chapter=chapter,
+        chapter=g.chapter,
         filename=filename,
-        replace_masterplan_button=masterplan_htmx.regenerate_masterplan_button(chapter),
+        replace_masterplan_button=masterplan_htmx.regenerate_masterplan_button(g.chapter),
         render_masterplan_button=render_masterplan_button,
-        calculate_paragraph_durations_button=htmx.calculate_paragraph_durations_button(chapter),
-        clear_adjusted_images_button=htmx.clear_adjusted_images_button(chapter),
-        clear_all_frames_button=htmx.clear_all_frames_button(chapter),
-        clear_all_transitions_button=htmx.clear_all_transitions_button(chapter),
+        calculate_paragraph_durations_button=htmx.calculate_paragraph_durations_button(g.chapter),
+        clear_adjusted_images_button=htmx.clear_adjusted_images_button(g.chapter),
+        clear_all_frames_button=htmx.clear_all_frames_button(g.chapter),
+        clear_all_transitions_button=htmx.clear_all_transitions_button(g.chapter),
         section="video",
         section_cosmetic="Video"
     )

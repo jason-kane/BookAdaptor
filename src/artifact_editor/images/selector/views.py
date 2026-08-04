@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 
 from flask import (
@@ -6,6 +7,7 @@ from flask import (
     make_response,
     request,
     send_file,
+    g,
 )
 from PIL import Image
 
@@ -13,7 +15,11 @@ import const
 import logger
 from artifact_editor.author.author import Author
 from artifact_editor.cache import cache
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.images import htmx as images_htmx
 from artifact_editor.images import (
     images,
@@ -26,7 +32,6 @@ from text_to_image.registry import registry as t2i_registry
 
 from . import htmx, selector
 from .selector import registry as selector_registry
-import json
 
 FIFO_FN = os.path.join(os.path.dirname(__file__), "..", "..", "drawing.fifo")
 
@@ -39,6 +44,15 @@ bp = Blueprint(
     __name__,
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
+
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values)    
 
 
 # POST /Aesop/Fables/0020/images/0/set_mode
@@ -60,50 +74,6 @@ def set_image_mode(author, title, chapter, image_index=0):
     mybook.save_xml()
 
     return images_htmx.image_strip_centerpiece(chapter, image_xml, default="image")
-
-
-# POST /Aesop/Fables/0020/images/0/actions/apply_transformation
-# @bp.route("/apply_transformation", methods=["POST"])
-# def apply_transformation(author, title, chapter_number, language, image_index):
-#     log.info("apply_transformation()")
-#     author = Author(author)
-#     chapter = Chapter(
-#         author=author, title=title, number=chapter_number, language=language
-#     )
-
-#     transformation_type = request.form.get("mode")
-#     src = request.form.get("src")
-
-#     image_xml = chapter.get_image(image_index)
-
-#     # image_dict = {
-#     #     "mode": transformation_type,
-#     #     "fullscreen": paragraph.attrs.get("fullscreen", "false") == "true",
-#     #     "paragraph_dir": chapter.get_paragraph_dir(paragraph.attrs["index"]),
-#     #     "image": image_xml.attrs.get("src", ""),
-#     # }
-
-#     # image_pfn = os.path.join(
-#     #     const.LIBRARY_DIR,
-#     #     image_dict["paragraph_dir"],
-#     #     os.path.basename(image_dict["image"]),
-#     # )
-
-#     # log.info(f'calling apply_image_adjustments({image_pfn=}, {image_dict=})')
-#     pil_image, transformed_image_pfn = selector.apply_image_adjustments(
-#         chapter=chapter,
-#         image_xml=image_xml,
-#         transformation_type=transformation_type,
-#         source_image_fn=src,
-#         force=True,
-#     )
-
-#     # No, this isn't the new image.  It should show up as an option.
-#     # if transformed_image_pfn:
-#     #    image_xml.attrs["src"] = os.path.basename(transformed_image_pfn)
-#     #    chapter.save_xml()
-
-#     return images_htmx.prompt_panel(chapter, image_xml), 200
 
 
 # /<author>/<path:title>/<chapter>/images/selector/<int:image_index>/actions/use_image
@@ -265,24 +235,20 @@ def get_image_metadata(author, title, chapter_number, language, image_index=0):
 # <img src="/Grimm/Fairy%20Tales/1/english/images/82/selector/alternate/img_82_Fairy_Tale_Art_mode__A_me_6f09a61f_1ab0.png">
 # /alternate/img_1_court_of_king_arthur_tran_9965e754_43f8.png.adj.png.mask.png
 @bp.route("/alternate/<path:filename>", methods=["GET"])
-def get_alternate_image(author, title, chapter_number, language, image_index, filename):
+def get_alternate_image(image_index, filename):
     """
     Serve an alternate version of an image.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     paragraph = image_xml.find_parent("paragraph")
     paragraph_index = int(paragraph.attrs.get("index", 0))
 
     image_path = os.path.join(
         const.LIBRARY_DIR,
-        chapter.chapterdir,
+        g.chapter.chapterdir,
         "paragraphs",
         f"{paragraph_index:06}",
         filename,

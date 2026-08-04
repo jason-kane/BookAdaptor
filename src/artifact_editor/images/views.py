@@ -19,6 +19,7 @@ from flask import (
     send_file,
     send_from_directory,
     url_for,
+    g
 )
 from PIL import Image
 from pygments import format, lex
@@ -38,7 +39,11 @@ from artifact_editor import (
 )
 from artifact_editor.author.author import Author
 from artifact_editor.cache import cache
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.characters import characters
 from artifact_editor.images import (
     editor,
@@ -73,6 +78,14 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
 bp.register_blueprint(images_selector, url_prefix="/<int:image_index>/selector")
 bp.register_blueprint(images_editor, url_prefix="/<int:image_index>/editor")
 bp.register_blueprint(images_scene, url_prefix="/<int:image_index>/scene")
@@ -86,23 +99,21 @@ MAX_TOKENS = 256
 
 # trim_animation_to_audio
 @bp.route("/<int:image_index>/trim_animation_to_audio", methods=["POST"])
-def trim_animation_to_audio(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
+def trim_animation_to_audio(image_index: int = 0):
     """
     We have more frames of video than we need to cover
     the audio track.  The problem comes in when we want
     the next audio to visually match.
     """
-    author = Author(name=author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     video_index = int(request.form.get("video_index", 0))
 
     audio_frames = int(float(image_xml.attrs.get("frames")))
     frame_dir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(image_xml.find_parent("paragraph").attrs["index"]),
+        g.chapter.get_paragraph_dir(image_xml.find_parent("paragraph").attrs["index"]),
         "animation",
         f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}",
     )
@@ -115,7 +126,7 @@ def trim_animation_to_audio(author: str, title: str, chapter_number: int, langua
         video_frames -= 1
 
     # re-generate the video from the remaining frames
-    image_filename = chapter.get_image_filename(image_xml)
+    image_filename = g.chapter.get_image_filename(image_xml)
     if video_index == 0:
         video_filename = image_filename.replace(".png", ".mp4")
     else:
@@ -133,12 +144,10 @@ def trim_animation_to_audio(author: str, title: str, chapter_number: int, langua
 
 
 @bp.route("/<int:image_index>/workflow_choose", methods=["PUT"])
-def comfyui_workflow_choose(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def comfyui_workflow_choose(image_index: int = 0):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     workflow_image_template = request.form.get("workflow_image_template", "")
     log.info("Selected workflow image template: %s", workflow_image_template)
 
@@ -148,17 +157,14 @@ def comfyui_workflow_choose(author: str, title: str, chapter_number: int, langua
     image_xml.attrs["workflow_image_template"] = workflow_image_template
     # image_xml.attrs["image_mode"] = image_mode
 
-    chapter.save_xml()
+    g.chapter.save_xml()
     return "", 200
 
 
 @bp.route("/<int:image_index>/workflow_run", methods=["POST"])
-def comfyui_workflow_run(author: str, title: str, chapter_number: int, language: str, image_index: int = 0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def comfyui_workflow_run(image_index: int = 0):
     client = httpx.Client()
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     image_index = int(image_index)
 
     workflow_template = image_xml.attrs.get("workflow_image_template", "")
@@ -175,7 +181,7 @@ def comfyui_workflow_run(author: str, title: str, chapter_number: int, language:
     # else:
     #     mode = "ti2i"
 
-    workflow = chapter.get_comfy_workflow(
+    workflow = g.chapter.get_comfy_workflow(
         image_xml,
         interface="api",
         mode=mode,
@@ -217,7 +223,7 @@ def comfyui_workflow_run(author: str, title: str, chapter_number: int, language:
     workflow_template = image_xml.attrs.get("workflow_template", "")
     prompt_fn = os.path.join(
         const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-        f"{chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}.prompt.txt",
+        f"{g.chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}.prompt.txt",
     )
 
     prompt = ""
@@ -228,7 +234,7 @@ def comfyui_workflow_run(author: str, title: str, chapter_number: int, language:
     else:
         log.error(f"Prompt file {prompt_fn} not found after workflow completion.")
         image_xml.attrs["prompt"] = ""
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # the workflow has finished, the "final" job_dict should reflect the
     # finished state.  Gather the output image and copy it to the expected
@@ -242,7 +248,7 @@ def comfyui_workflow_run(author: str, title: str, chapter_number: int, language:
                 pfn = images.get_image_fn(
                     prompt=prompt + "_comfyui",
                     loras=[],
-                    paragraph_dir=chapter.get_paragraph_dir(
+                    paragraph_dir=g.chapter.get_paragraph_dir(
                         image_xml.find_parent("paragraph").attrs["index"]
                     ),
                     image_index=image_xml.attrs["index"],
@@ -257,7 +263,7 @@ def comfyui_workflow_run(author: str, title: str, chapter_number: int, language:
                 )
 
                 image_xml.attrs["src"] = os.path.basename(pfn)
-                chapter.save_xml()
+                g.chapter.save_xml()
 
     return "", 200
 
@@ -291,9 +297,7 @@ def comfyui_workflow_open(
 
     Fortunately these are all easy.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     if image_xml is None:
         return f"Image index {image_index} not found in chapter.", 404
 
@@ -1632,10 +1636,8 @@ def swap_with_previous_image(author, title, chapter_number, language, image_inde
 
 
 @bp.route("/<int:image_index>/selector", methods=["GET"])
-def tab_pre_selector(author, title, chapter_number, language, image_index):
-    return base(
-        author, title, chapter_number, language, image_index, override="selector"
-    )
+def tab_pre_selector(image_index):
+    return base(image_index=image_index, override="selector")
 
 
 @bp.route("/<int:image_index>/editor", methods=["GET"])
@@ -1666,44 +1668,42 @@ def tab_pre_citation(author, title, chapter_number, language, image_index):
 
 
 @bp.route("/<int:image_index>/", methods=["GET"])
-def base(author, title, chapter_number, language, image_index=0, override=None):
+def base(image_index=0, override=None):
     image_index = int(image_index)
 
     if override is None:
         override = "selector"
 
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     if "/" in image_xml.attrs.get("src", ""):
         log.warning(f"Image src contains a path: {image_xml.attrs['src']}")
         image_xml.attrs["src"] = os.path.basename(image_xml.attrs["src"])
-        chapter.save_xml()
+        g.chapter.save_xml()
 
-    max_index = int(chapter.max_image_index())
+    max_index = int(g.chapter.max_image_index())
 
     if image_index > max_index:
         return redirect(f"/{max_index}", code=302)
 
     image_forex = images.image_forex(
-        chapter,
+        g.chapter,
         image_xml,
         image_index,
     )
 
     # log.debug(f"{image_forex=}")
 
-    pretty_author = chapter.config.get("author", chapter.author.pretty_name)
-    pretty_title = chapter.config.get("title", title)
+    pretty_author = g.chapter.config.get("author", g.chapter.author.pretty_name)
+    pretty_title = g.chapter.config.get("title", g.title)
 
     text_with_highlight = surrounding_text(
-        author.name,
-        chapter.title,
-        chapter.number,
-        chapter.language,
+        g.author.name,
+        g.title,
+        g.chapter_number,
+        g.language,
         image_index,
     )[0]
 
@@ -1717,7 +1717,7 @@ def base(author, title, chapter_number, language, image_index=0, override=None):
 
     phrase_workshop_url = url_for(
         "library.book.chapter.audio.base",
-        **chapter.kwargs,
+        **g.chapter.kwargs,
         page=image_xml.find_parent("paragraph").attrs.get("index", 0)
     )
 
@@ -1727,32 +1727,32 @@ def base(author, title, chapter_number, language, image_index=0, override=None):
         phrase_workshop_url=phrase_workshop_url,
         override=override,
         css_styles=css_styles,
-        language=language,
-        pretty_language=language.capitalize(),
-        author=author,
+        language=g.language,
+        pretty_language=g.language.capitalize(),
+        author=g.author,
         pretty_author=pretty_author,
-        title=title,
+        title=g.title,
         pretty_title=pretty_title,
-        chapter=chapter,
-        chapterurl=chapter.url,
+        chapter=g.chapter,
+        chapterurl=g.chapter.url,
         image_index=image_index,
         section="images",
         section_cosmetic="Images",
         image_forex=image_forex,
-        draw_all_missing_images_button=htmx.draw_all_missing_images_button(chapter),
+        draw_all_missing_images_button=htmx.draw_all_missing_images_button(g.chapter),
         draw_all_missing_tmi_images_button=htmx.draw_all_missing_tmi_images_button(
-            chapter.url
+            g.chapter.url
         ),
         generate_missing_image_metadata_button=htmx.generate_missing_image_metadata_button(
-            chapter.url
+            g.chapter.url
         ),
         text_with_highlight=text_with_highlight,
         image_strip=htmx.image_strip(
-            chapter=chapter,
+            chapter=g.chapter,
             image_xml=image_xml,
         ),
         image_metadata=selector_htmx.image_metadata(
-            chapter=chapter,
+            chapter=g.chapter,
             image_xml=image_xml,
             src=image_xml.attrs.get("src", ""),
         ),
@@ -2145,19 +2145,10 @@ def choose_video(author, title, chapter_number, language, image_index=0):
 
 @bp.route("/<int:height>/<int:image_index>.png", methods=["GET"])
 @cache.cached(timeout=600, query_string=True, key_prefix="image_index")
-def show_image_by_index(
-    author, title, chapter_number, language, height=0, image_index=0
-):
-    author = Author(author)
-    chapter = Chapter(
-        author=author,
-        title=title,
-        number=chapter_number,
-        language=language,
-    )
+def show_image_by_index(height=0, image_index=0):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     if not image_xml:
         return f"Image index {image_index} not found", 404
 
@@ -2169,10 +2160,10 @@ def show_image_by_index(
         log.info("Applying image lock...")
         # when preivous image is enabled, we _silently_ serve the final frame of
         # the previous image without touching the xml.
-        previous_image = chapter.get_image(image_index - 1)
+        previous_image = g.chapter.get_image(image_index - 1)
         if previous_image:
             # absolute path
-            image_fn = chapter.get_last_frame(previous_image)
+            image_fn = g.chapter.get_last_frame(previous_image)
 
     if image_fn is None:
         img_src = image_xml.attrs.get("src", "")
@@ -2187,7 +2178,7 @@ def show_image_by_index(
         else:
             image_fn = os.path.join(
                 const.LIBRARY_DIR,
-                chapter.get_paragraph_dir(paragraph.attrs["index"]),
+                g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
                 os.path.basename(img_src),
             )
 
@@ -2204,14 +2195,14 @@ def show_image_by_index(
     # obsolete, may 17 2026
     # backward compatibility for the "phrase" layout
     if not os.path.exists(image_fn) and os.path.exists(
-        os.path.join(const.LIBRARY_DIR, chapter.bookdir, "phrase")
+        os.path.join(const.LIBRARY_DIR, g.chapter.bookdir, "phrase")
     ):
         for phrase_dir in os.listdir(
-            os.path.join(const.LIBRARY_DIR, chapter.bookdir, "phrase")
+            os.path.join(const.LIBRARY_DIR, g.chapter.bookdir, "phrase")
         ):
             potential_fn = os.path.join(
                 const.LIBRARY_DIR,
-                chapter.bookdir,
+                g.chapter.bookdir,
                 "phrase",
                 phrase_dir,
                 os.path.basename(img_src),
@@ -2790,19 +2781,15 @@ def deliver_comfy_video(
 
 
 @bp.route("/<int:image_index>/animation/<filename>.mp4")
-def deliver_animation_video(
-    author, title, chapter_number, language, image_index, filename=""
-):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def deliver_animation_video(image_index, filename=""):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     full_filename = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
         filename + ".mp4",
     )
 
@@ -2810,7 +2797,7 @@ def deliver_animation_video(
         # the animation doesn't exist.. maybe it's really just a camera motion?
         camera_filename = os.path.join(
             const.LIBRARY_DIR,
-            chapter.get_paragraph_dir(paragraph.attrs["index"]),
+            g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
             "camera.mp4",
         )
         if os.path.exists(camera_filename):
@@ -3057,9 +3044,9 @@ def standard_side_panels(image_xml, chapter, datastack=None):
 
 # GET /Bible/Old%20Testament/0001/images/1/image_tab_selector
 @bp.route("/<int:image_index>/image_tab_selector", methods=["POST"])
-def image_tab_selector(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def image_tab_selector(image_index):
+    author = g.author
+    chapter = g.chapter
     image_index = int(image_index)
 
     image_xml = chapter.get_image(image_index)

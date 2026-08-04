@@ -6,6 +6,7 @@ import textwrap
 
 from flask import (
     Blueprint,
+    g,
     redirect,
     render_template,
     request,
@@ -22,7 +23,11 @@ from artifact_editor import (
     tools,
 )
 from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.tools import (
     get_chapterdir,
     get_chapterurl,
@@ -42,10 +47,18 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
 
 # POST /L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0002/characters/import
 @bp.route("import", methods=["POST"])
-def import_character(author, title, chapter, language):
+def import_character():
     chapterdir = get_chapterdir(author, title, chapter)
     mybook = get_book(chapterdir)
     previous_chapter = mybook.get_previous_chapter()
@@ -79,15 +92,12 @@ def import_character(author, title, chapter, language):
 
 
 @bp.route("/", methods=["GET"])
-def characters_base(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number)
+def characters_base():
+    log.info(f'author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"')
 
-    log.info(f'author: "{author}", title: "{title}", chapter: "{chapter.number}"')
-
-    all_characters = characters.get_all_characters(chapter)
+    all_characters = characters.get_all_characters(g.chapter)
     unattached_speakers = set()
-    for phrase in chapter.get_xml().find_all("phrase"):
+    for phrase in g.chapter.get_xml().find_all("phrase"):
         character_name = phrase.get("speaker")
         if character_name and character_name not in all_characters:
             unattached_speakers.add(character_name)
@@ -98,7 +108,7 @@ def characters_base(author, title, chapter_number, language):
     all_characters = tools.cast_bestsort(all_characters)
 
     # we want the characters from the previous chapter.
-    previous_chapter = chapter.previous()
+    previous_chapter = g.chapter.previous()
     previous_characters = {}
     if previous_chapter:
         previous_characters = characters.get_all_characters(
@@ -132,7 +142,7 @@ def characters_base(author, title, chapter_number, language):
 
             <wa-button 
                 class="import-character-button"
-                hx-post="{url_for('library.book.chapter.characters.import_character', author=author, title=title, chapter_number=chapter_number, language=language)}"
+                hx-post="{url_for('library.book.chapter.characters.import_character', author=g.author, title=g.title, chapter_number=g.chapter_number, language=g.language)}"
                 hx-target="#import_character"
                 hx-include="#character"
                 hx-on::before-request="beforeRequest(this,event)"
@@ -167,33 +177,28 @@ def characters_base(author, title, chapter_number, language):
         language="english",
         rename_select=rename_select,
         pretty_language="English",
-        author=author,
-        pretty_author=chapter.config["author"],
-        title=title,
-        pretty_title=chapter.config["title"],
-        chapter=chapter,
+        author=g.author,
+        pretty_author=g.chapter.config["author"],
+        title=g.title,
+        pretty_title=g.chapter.config["title"],
+        chapter=g.chapter,
         characters=all_characters,
         import_character_form=import_character_form,
         section="characters",
         section_cosmetic="Characters",
-        all_character_cards=htmx.all_character_cards(chapter, all_characters),
+        all_character_cards=htmx.all_character_cards(g.chapter, all_characters),
         unattached_speakers=unattached_speakers,
-        drift_resolution_widget=htmx.drift_resolution_widget(chapter),
+        drift_resolution_widget=htmx.drift_resolution_widget(g.chapter),
     )
 
 
 # PUT /Malory/LeMorteDArthur_V01_B01/0001/characters/Ulfius/pronunciation_filter
 @bp.route("<character_name>/pronunciation_filter", methods=["PUT"])
-def htmx_pronunciation_filter(author, title, chapter_number, language, character_name):
+def htmx_pronunciation_filter(character_name):
     """
     Update the character's pronunciation filter.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
-
-    character_dict = characters.get_character(chapter, character_name)
+    character_dict = characters.get_character(g.chapter, character_name)
 
     pronunciation_filter = request.form.get("pronunciation_filter", 2000)
 
@@ -204,90 +209,74 @@ def htmx_pronunciation_filter(author, title, chapter_number, language, character
     )
     character_dict["pronunciation_filter"] = pronunciation_filter
 
-    characters.save_character(chapter, character_name, character_dict)
+    characters.save_character(g.chapter, character_name, character_dict)
 
     return htmx.character_pronunciation_widget(
-        chapter, character_dict["tag"], pronunciation_filter
+        g.chapter, character_dict["tag"], pronunciation_filter
     )
 
 
 @bp.route("<character_name>/actions/condense_description", methods=["POST"])
-def condense_description(author, title, chapter_number, language, character_name):
+def condense_description(character_name):
     """
     Condense the character's description.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.get_character(chapter, character_name)
+    character_dict = characters.get_character(g.chapter, character_name)
     existing_description = character_dict.get("description", "")
 
     if existing_description:
         description = characters.condense_description(existing_description)
         character_dict["description"] = description
-        characters.save_character(chapter, character_name, character_dict)
+        characters.save_character(g.chapter, character_name, character_dict)
     else:
         description = ""
 
-    return htmx.character_description_response(chapter, character_name, description)
+    return htmx.character_description_response(g.chapter, character_name, description)
 
 
 # /L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0001/characters/Narrator/actions/generate_description
 @bp.route("<character_tag>/actions/generate_description", methods=["POST"])
-def generate_description(author, title, chapter_number, language, character_tag):
+def generate_description(character_tag):
     """
     Generate a description for the character based on the entire chapter.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    description = characters.generate_description(chapter, character_tag)
+    description = characters.generate_description(g.chapter, character_tag)
 
     return htmx.character_description_response(
-        chapter,
+        g.chapter,
         character_tag,
         description,
     )
 
 
 @bp.route("<character_tag>/actions/fanciful_description", methods=["POST"])
-def fanciful_description(author, title, chapter_number, language, character_tag):
+def fanciful_description(character_tag):
     """
     Generate a fanciful description for the character loosely based on the entire chapter.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    description = characters.fanciful_description(chapter, character_tag)
+    description = characters.fanciful_description(g.chapter, character_tag)
 
     return htmx.character_description_response(
-        chapter,
+        g.chapter,
         character_tag,
         description,
     )
 
 
-
-
 # remove_voice_weights
 @bp.route("<character_name>/actions/remove_voice_weights", methods=["POST"])
-def remove_voice_weights(author, title, chapter_number, language, character_name):
+def remove_voice_weights(character_name):
     """
     Remove all voice weights for this character.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    chapterdir = get_chapterdir(author, title, chapter_number)
-    chapterurl = get_chapterurl(author, title, chapter_number)
-
-    character_dict = characters.get_character(chapter, character_name)
+    character_dict = characters.get_character(g.chapter, character_name)
     character_dict["voices"] = []
-    characters.save_character(chapter, character_name, character_dict)
+    characters.save_character(g.chapter, character_name, character_dict)
 
     return htmx.voice_blender(
         character_dict,
         character_name,
-        chapterurl,
+        get_chapterurl(g.chapter.config["author"], g.chapter.config["title"], g.chapter.config["number"]),
         gender=character_dict.get("voice_gender", "all"),
         language=character_dict.get("voice_language", "all"),
         accent=character_dict.get("voice_accent", "all"),
@@ -296,20 +285,17 @@ def remove_voice_weights(author, title, chapter_number, language, character_name
 
 # /L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0001/characters/Narrator/actions/random_voice_weights
 @bp.route("<character_name>/actions/random_voice_weights", methods=["POST"])
-def randomize_voice_weights(author, title, chapter_number, language, character_name):
+def randomize_voice_weights(character_name):
     """
     Randomize the voice weights for this character.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.get_character(chapter, character_name)
+    character_dict = characters.get_character(g.chapter, character_name)
     for voice in character_dict.get("voices", []):
         voice["strength"] = int(random.uniform(0, 100))
-    characters.save_character(chapter, character_name, character_dict)
+    characters.save_character(g.chapter, character_name, character_dict)
 
     return htmx.voice_blender(
-        chapter,
+        g.chapter,
         character_dict,
         character_name,
     )
@@ -317,15 +303,12 @@ def randomize_voice_weights(author, title, chapter_number, language, character_n
 
 # http://localhost:5000/Aesop/Fables/0020/characters/The_Mouse/actions/update_name
 @bp.route("<character_tag>/actions/update_name", methods=["POST"])
-def set_name(author, title, chapter_number, language, character_tag):
+def set_name(character_tag):
     """
     Update the character's name.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    all_characters = characters.get_all_characters(chapter)
-    character_dict = characters.tag_to_character(chapter, character_tag)
+    all_characters = characters.get_all_characters(g.chapter)
+    character_dict = characters.tag_to_character(g.chapter, character_tag)
 
     name = request.form.get("name", "").strip()
     # don't allow a blank name
@@ -347,21 +330,16 @@ def set_name(author, title, chapter_number, language, character_tag):
             all_characters[tag] = character_dict
             characters.save_characters(chapter, all_characters)
 
-    return htmx.character_data(chapter, character_dict)
+    return htmx.character_data(g.chapter, character_dict)
 
 
 # http://localhost:5000/Aesop/Fables/0020/characters/The_Frog/actions/update_description
 @bp.route("<character_tag>/actions/update_description", methods=["POST"])
-def update_character_description(
-    author, title, chapter_number, language, character_tag
-):
+def update_character_description(character_tag):
     """
     Update the character's description.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.tag_to_character(chapter, character_tag)
+    character_dict = characters.tag_to_character(g.chapter, character_tag)
 
     description = request.form.get("description", "").strip()
 
@@ -372,19 +350,16 @@ def update_character_description(
         character_dict,
     )
 
-    return htmx.character_data(chapter, character_dict)
+    return htmx.character_data(q.chapter, character_dict)
 
 
 # /H.%20P.%20Lovecraft/Cool%20Air/0001/characters/Mechanic/actions/update_gender
 @bp.route("<character_tag>/actions/update_gender", methods=["POST"])
-def set_gender(author, title, chapter_number, language, character_tag):
+def set_gender(character_tag: str):
     """
     Update the character's gender.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.tag_to_character(chapter, character_tag)
+    character_dict = characters.tag_to_character(g.chapter, character_tag)
 
     gender = request.form.get("gender", "").strip()
 
@@ -396,40 +371,34 @@ def set_gender(author, title, chapter_number, language, character_tag):
             character_dict,
         )
 
-    return htmx.character_data(chapter, character_dict)
+    return htmx.character_data(g.chapter, character_dict)
 
 
 # http://localhost:5000/Aesop/Fables/0020/characters/The_Frog/actions/update_tts_engine
 @bp.route("<character_tag>/actions/update_tts_engine", methods=["POST"])
-def update_tts_engine(author, title, chapter_number, language, character_tag):
+def update_tts_engine(character_tag: str):
     """
     Update the character's TTS engine.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.tag_to_character(chapter, character_tag)
+    character_dict = characters.tag_to_character(g.chapter, character_tag)
 
     tts_engine = request.form.get("tts_engine", "").strip()
 
     # TODO: make sure it's a real engine.
     if tts_engine:
         character_dict["tts_engine"] = tts_engine
-        characters.save_character(chapter, character_tag, character_dict)
+        characters.save_character(g.chapter, character_tag, character_dict)
 
-    return htmx.character_data(chapter, character_dict)
+    return htmx.character_data(g.chapter, character_dict)
 
 
 # http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/characters/Esteban_Herrero/actions/update_age
 @bp.route("<character_tag>/actions/update_age", methods=["POST"])
-def set_age(author, title, chapter_number, language, character_tag):
+def set_age(character_tag):
     """
     Update the character's age.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    character_dict = characters.tag_to_character(chapter, character_tag)
+    character_dict = characters.tag_to_character(g.chapter, character_tag)
 
     age = request.form.get("age", "").strip()
 
@@ -437,17 +406,12 @@ def set_age(author, title, chapter_number, language, character_tag):
         character_dict["age"] = age
         characters.save_character(chapter, character_tag, character_dict)
 
-    return htmx.character_data(chapter, character_dict)
+    return htmx.character_data(g.chapter, character_dict)
 
 
 @bp.route("<character_tag>", methods=["DELETE"])
-def delete_character(author, title, chapter_number, language, character_tag):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    log.info(f"{author=}, {title=}, {chapter_number=}, {character_tag=}")
-
-    all_characters = characters.get_all_characters(chapter)
+def delete_character(character_tag):
+    all_characters = characters.get_all_characters(g.chapter)
 
     if character_tag in all_characters:
         del all_characters[character_tag]
@@ -460,12 +424,12 @@ def delete_character(author, title, chapter_number, language, character_tag):
             "Character %s not found in chapter %s", character_tag, chapter.chapterdir
         )
 
-    return htmx.all_character_cards(chapter, all_characters)
+    return htmx.all_character_cards(g.chapter, all_characters)
 
 
 # POST /Aesop/Fables/0023/characters/Narrator/actions/toggle_global
 @bp.route("<character_name>/actions/toggle_global", methods=["POST"])
-def toggle_global_character(author, title, chapter_number, language, character_name):
+def toggle_global_character(character_name):
     """
     Toggle the global character setting.
     """
@@ -490,7 +454,7 @@ def toggle_global_character(author, title, chapter_number, language, character_n
 
 
 @bp.route("", methods=["POST"])
-def add_character(author, title, chapter_number, language):
+def add_character():
     """
     Add a new character to the chapter.
     """
@@ -536,7 +500,7 @@ def add_character(author, title, chapter_number, language):
 
 
 @bp.route("<character_tag>/voice", methods=["POST"])
-def add_voice_to_blend(author, title, chapter_number, language, character_tag):
+def add_voice_to_blend(character_tag):
     """
     Add a new voice to the character voice blender.
     """
@@ -580,9 +544,7 @@ def add_voice_to_blend(author, title, chapter_number, language, character_tag):
 
 # /Aesop/Fables/0018/characters/The_Woman/add_effect
 @bp.route("<character_tag>/add_effect", methods=["POST"])
-def htmx_add_effect_to_character(
-    author, title, chapter_number, language, character_tag
-):
+def htmx_add_effect_to_character(character_tag):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -617,9 +579,7 @@ def htmx_add_effect_to_character(
 
 # /Aesop/Fables/0018/characters/The_Woman/effect/pitch_shift
 @bp.route("<character_name>/effect/<effect_key>", methods=["PUT"])
-def htmx_update_effect_config(
-    author, title, chapter_number, language, character_name, effect_key
-):
+def htmx_update_effect_config(character_name, effect_key):
     """
     Generic handler for updating effect configurations.
     """
@@ -646,7 +606,7 @@ def htmx_update_effect_config(
 
 
 @bp.route("<character_tag>/audio", methods=["POST"])
-def create_audio_sample(author, title, chapter_number, language, character_tag):
+def create_audio_sample(character_tag):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -685,7 +645,7 @@ def create_audio_sample(author, title, chapter_number, language, character_tag):
 
 # /W.%20W.%20Jacobs/The%20Monkeys%20Paw/0001/characters/Narrator/sample/tmp9we8f2ek.wav
 @bp.route("<character_tag>/sample/<filename>")
-def sample_audio(author, title, chapter_number, language, character_tag, filename):
+def sample_audio(character_tag, filename):
     """
     Serve the sample audio file for the character.
     """
@@ -708,17 +668,12 @@ def sample_audio(author, title, chapter_number, language, character_tag, filenam
 
 # /W.%20W.%20Jacobs/The%20Monkeys%20Paw/0001/characters/Narrator/af_sarah/set_voice_strength
 @bp.route("<character_tag>/<voice_id>/set_voice_strength", methods=["PUT"])
-def voice_set_strength(
-    author, title, chapter_number, language, character_tag, voice_id
-):
+def voice_set_strength(character_tag, voice_id):
     """
     Set the strength of a voice in the character's voice blender.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    log.info("Looking for character %s in chapter %s", character_tag, chapter)
-    char = characters.get_character(chapter, character_tag)
+    log.info("Looking for character %s in chapter %s", character_tag, g.chapter)
+    char = characters.get_character(g.chapter, character_tag)
 
     log.info("Character is %s", char)
 
@@ -740,7 +695,7 @@ def voice_set_strength(
     char["voices"] = list(voices_by_id.values())
 
     # save the updated character
-    characters.save_character(chapter, character_tag, char)
+    characters.save_character(g.chapter, character_tag, char)
 
     # carry through the filters so the UX is not annoying.
     return htmx.single_voice_mixer(
@@ -748,12 +703,12 @@ def voice_set_strength(
         voice_id,
         voices.KOKORO_VOICES[voice_id]["name"],
         strength,
-        chapter,
+        g.chapter,
     ), 200
 
 
 @bp.route("<character_name>/drift_resolution", methods=["POST"])
-def drift_resolution(author, title, chapter_number, language, character_name=""):
+def drift_resolution(character_name=""):
     """
     A change was made to the value of this field.  As a result, we need to
     rebuild the language, accent and voices selection fields to take
@@ -792,7 +747,7 @@ def drift_resolution(author, title, chapter_number, language, character_name="")
 
 
 @bp.route("<character_tag>/voice/set_gender", methods=["POST"])
-def voice_set_gender(author, title, chapter_number, language, character_tag=""):
+def voice_set_gender(character_tag=""):
     """
     A change was made to the value of this field.  As a result, we need to
     rebuild the language, accent and voices selection fields to take
@@ -813,7 +768,7 @@ def voice_set_gender(author, title, chapter_number, language, character_tag=""):
 
 
 @bp.route("<character_tag>/actions/language_filter", methods=["POST"])
-def voice_set_language(author, title, chapter_number, language, character_tag=""):
+def voice_set_language(character_tag=""):
     """
     A change was made to the value of this field.  As a result, we need to
     rebuild the language, accent and voices selection fields to take
@@ -835,7 +790,7 @@ def voice_set_language(author, title, chapter_number, language, character_tag=""
 
 
 @bp.route("<character_tag>/actions/accent_filter", methods=["POST"])
-def voice_set_accent(author, title, chapter_number, language, character_tag=""):
+def voice_set_accent(character_tag=""):
     """
     A change was made to the value of this field.  As a result, we need to
     rebuild the language, accent and voices selection fields to take
@@ -857,7 +812,7 @@ def voice_set_accent(author, title, chapter_number, language, character_tag=""):
 
 
 @bp.route("<character_tag>/regenerate")
-def regenerate_headshot(author, title, chapter_number, language, character_tag):
+def regenerate_headshot(character_tag):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -877,11 +832,12 @@ def regenerate_headshot(author, title, chapter_number, language, character_tag):
 
 # R.%20M.%20Kane/Nessie%20vs%20Navy/characters/Nessie vs Navy/characters/Jim.png
 @bp.route("<character_tag>/headshot.png")
-def headshot(author, title, chapter_number, language, character_tag):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def headshot(character_tag):
     return send_from_directory(
-        os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "characters"),
+        os.path.join(
+            const.LIBRARY_DIR, 
+            q.chapter.chapterdir,
+            "characters"
+        ),
         f"{character_tag}.png",
     )

@@ -1,14 +1,22 @@
-import logger
 import os
 
 from colour import Color
-from flask import Blueprint, render_template, url_for
+from flask import (
+    Blueprint,
+    g,
+    render_template,
+    url_for,
+)
 
 import const
+import logger
 from artifact_editor import tools
 from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
-
+from artifact_editor.chapter.chapter import (
+    Chapter,
+    chapter_url_defaults_helper,
+    chapter_url_value_preprocessor,
+)
 from artifact_editor.images import htmx as images_htmx
 
 log = logger.log(__name__)
@@ -23,8 +31,17 @@ bp = Blueprint(
     ),
 )
 
+
+@bp.url_defaults
+def my_url_defaults(endpoint, values):
+    chapter_url_defaults_helper(endpoint, values)
+
+@bp.url_value_preprocessor
+def my_url_value_preprocessor(endpoint, values):
+    chapter_url_value_preprocessor(endpoint, values) 
+
 @bp.route('/')
-def timeline(author, title, chapter_number, language):
+def timeline():
     """
     Generates and renders a timeline view for a chapter's audio and image segments.
     Args:
@@ -38,11 +55,6 @@ def timeline(author, title, chapter_number, language):
     calculates frame and duration statistics, assigns color coding based on frame variation,
     and prepares data for rendering the timeline template.
     """
-    author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
-    #chapterurl = tools.get_chapterurl(author, title, chapter)
-    #chapterdir = tools.get_chapterdir(author, title, chapter)
-
     # only phrases consume time.
     # so we're going to present based on phrase
     # then decorate that timeline with our images,
@@ -52,7 +64,7 @@ def timeline(author, title, chapter_number, language):
     paragraphs = []
     #  get_xml().find_all('paragraph'):
     previous = None
-    for paragraph_xml in chapter.paragraphs():
+    for paragraph_xml in g.chapter.paragraphs():
         paragraph = {
             "index": int(paragraph_xml['index']),
             "frames": 0,
@@ -188,7 +200,7 @@ def timeline(author, title, chapter_number, language):
                 ii['variation_message'] += " (Animated)"
                 ii['animation'] = True
                 ii['animation_url'] = images_htmx.get_animation_url(
-                    chapter, int(ii['image']['index'])
+                    g.chapter, int(ii['image']['index'])
                 )
             else:
                 ii['animation'] = False  # explicite is better.
@@ -228,14 +240,14 @@ def timeline(author, title, chapter_number, language):
         get_animation_url=images_htmx.get_animation_url,
         section="phrase.timeline",
         section_cosmetic="Phrase › Timeline",
-        language=language,
-        pretty_language=language.title(),
-        author=author,
-        pretty_author=author,
-        title=title,
-        pretty_title=title,
-        chapter=chapter,
-        chapterurl=chapter.url,
+        language=g.language,
+        pretty_language=g.language.title(),
+        author=g.author,
+        pretty_author=g.chapter.config.get("author", g.author.pretty_name),
+        title=g.title,
+        pretty_title=g.chapter.config.get("title", g.title),
+        chapter=g.chapter,
+        chapterurl=g.chapter.url,
         paragraphs=paragraphs,
         avg_image_frames=avg_image_frames,
         avg_image_duration=avg_image_frames / const.FPS
