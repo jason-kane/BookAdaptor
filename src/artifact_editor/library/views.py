@@ -136,15 +136,20 @@ def book_cover(author, title):
 @bp.route("/<author>/<title>/<chapter_number>/cover.png")
 def chapter_cover(author, title, chapter_number):
     """if we have a cover image, use it."""
+    log.info(f"Request for chapter cover: {author}/{title}/{chapter_number}")
     chapter = int(chapter_number.lstrip("0"))
     chapterdir = tools.get_chapterdir(author, title, chapter)
     
     if not chapterdir:
+        log.info(f"Chapter directory not found for {author}/{title}/{chapter_number}")
         return render_template("404.html"), 404
 
-    cover_path = os.path.join(const.LIBRARY_DIR, chapterdir, "cover.png")
+    cover_path = os.path.join(
+        const.LIBRARY_DIR, chapterdir, "cover.png"
+    )
     
     if not os.path.exists(cover_path):
+        log.info(f"Cover image not found for {chapterdir}, generating from first paragraph.")
         first_paragraph_dir = os.path.join(
             const.LIBRARY_DIR,
             chapterdir,
@@ -180,24 +185,6 @@ def chapter_cover(author, title, chapter_number):
         "cover.png"
     )
 
-
-# http://localhost:5000/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/actions/save_book_style
-@bp.route("/<author>/<title>/actions/save_book_style", methods=["PUT"])
-def save_book_style(author, title):
-    """
-    Save the selected style to the book config.
-    """
-    bookdir = tools.get_bookdir(author, title)
-    bookurl = tools.get_bookurl(author, title)
-    book_config = config.get_config(bookdir)
-
-    style = request.form.get("style", "").strip()
-    
-    if style:
-        book_config['default_style'] = style
-        config.save_config(bookdir, book_config)
-
-    return "", 200
 
 
 @bp.route("/sounds/<src>")

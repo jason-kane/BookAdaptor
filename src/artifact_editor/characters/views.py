@@ -458,10 +458,8 @@ def add_character():
     """
     Add a new character to the chapter.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
-    all_characters = characters.get_all_characters(chapter)
+    all_characters = characters.get_all_characters(g.chapter)
 
     # get the name of the new character
     character_name = request.form.get("name", "").strip()
@@ -484,17 +482,17 @@ def add_character():
     }
 
     log.info("Saving updated characters for chapter %s", chapter)
-    characters.save_characters(chapter, all_characters)
+    characters.save_characters(g.chapter, all_characters)
 
     log.info("Added new character %s to chapter %s", character_name, chapter)
 
     return redirect(
         url_for(
             "library.book.chapter.characters.characters_base",
-            author=chapter.author.name,
-            title=chapter.title,
-            chapter_number=chapter.number,
-            language=chapter.language,
+            author=g.chapter.author.name,
+            title=g.chapter.title,
+            chapter_number=g.chapter.number,
+            language=g.language,
         )
     )
 

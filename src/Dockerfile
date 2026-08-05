@@ -6,6 +6,8 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt update && apt install -y \
     build-essential \
+    docker.io \
+    docker-compose-v2 \
     ffmpeg \
     git \
     gunicorn \

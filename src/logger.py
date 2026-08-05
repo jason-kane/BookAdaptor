@@ -86,7 +86,9 @@ structlog.configure(
             exception_formatter=structlog.dev.rich_traceback
         ),
     ],
-    logger_factory=structlog.PrintLoggerFactory(),
+    #logger_factory=structlog.PrintLoggerFactory(),
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=False
 )
 
 try:

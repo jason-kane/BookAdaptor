@@ -337,6 +337,19 @@
           </wa-card>
       </a>
 
+      <div class="wa-stack">
+        <a href="http://localhost/htmlcov/" target="_blank">
+            <wa-card class="module-container">
+                <img slot="media" src="/static/images/pytest.png" alt="Test Coverage Image"/>
+                <h2>Test Coverage</h2>
+            </wa-card>
+        </a>
+        <wa-button
+          hx-post="{{ url_for('home.rerun_tests') }}"
+          hx-trigger="click"
+          hx-swap="none"
+        >Rerun Tests</wa-button>
+      </div>
     </div>
 
   </body>

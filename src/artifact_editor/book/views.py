@@ -1,18 +1,13 @@
-import glob
 import os
-import shutil
 import re
 
 from flask import (
     Blueprint,
+    redirect,
     render_template,
     request,
-    send_from_directory,
-    redirect,
     url_for,
 )
-
-from .book import Book
 
 import artifact_editor.styles.htmx as styles_htmx
 import const
@@ -23,13 +18,11 @@ from artifact_editor import (
     tools,
 )
 from artifact_editor.author.author import Author
-
-# from artifact_editor.chapter.chapter import Chapter
 from artifact_editor.chapter import htmx as chapter_htmx
 from artifact_editor.chapter.chapter import Chapter
 
 from . import htmx
-
+from .book import Book
 
 log = logger.log(__name__)
 
@@ -101,11 +94,6 @@ def table_of_contents(author, title):
         return render_template("404.html"), 404
 
     style = book.config.get("default_style", "")
-
-    # book_style_widget = styles_htmx.add_style_widget(
-    #     selected_style=style,
-    #     url=f"/{bookurl}/actions/save_book_style"
-    # )
 
     book_metadata = get_book_metadata(book)
 

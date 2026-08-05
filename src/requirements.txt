@@ -48,3 +48,7 @@ PyGithub
 #html-to-quill-delta
 flask-sock
 pygments
+
+pytest
+pytest-cov 
+coverage
