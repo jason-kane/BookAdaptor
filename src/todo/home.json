@@ -8,7 +8,7 @@
       "insert": "These aren't as modular as they seem to be."
     },
     {
-      "insert": "\n\n"
+      "insert": "\n\npytest is a cute addition, but it is not very practical in its current form.\n\nsince we have docker.socket... we could reasonably easily defer actually starting redis insights, glances, etc.. until _after_ the user chooses them.\n\n"
     }
   ]
 }

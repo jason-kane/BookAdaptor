@@ -424,20 +424,8 @@
             type="submit" 
             variant="danger"
             name="reindex_images">Reindex Images</wa-button>
-
-        <wa-button 
-            hx-post="action/reprompt_redraw_all"
-            type="submit" 
-            variant="danger"
-            name="reprompt_redraw_all">Re-Prompt and Redraw All Images</wa-button>
-
-        <wa-button 
-            hx-post="action/clear_zero_duration_images" 
-            hx-target="#image-strip" 
-            hx-swap="outerHTML transition:true"
-            name="clear_zero_duration_images">Remove Null Duration Images</wa-button>
         
-            <wa-button
+        <wa-button
             hx-post="action/swap_with_previous_image" 
             hx-target="#image-strip" 
             hx-swap="outerHTML transition:true"

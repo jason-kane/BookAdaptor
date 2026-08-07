@@ -32,11 +32,50 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./src/artifact_editor/static/:/var/www/static/:ro
+      - ./htmlcov:/var/www/htmlcov
     depends_on:
       - artifactserver
       - comfyui
       - websocket
       - glances
+    networks:
+      - home-network
+
+  test:
+    # This runs _from_ the artifactserver container
+    # (not kidding)
+    profiles: ["test"]
+    build:
+      context: ./src/
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    ports:
+      - "8081:8080"
+    entrypoint: [ "pytest", "--cov=artifact_editor", "--cov-report=html", "--maxfail=1", "-q" ]
+    volumes:
+      - /home/jkane/BookAdaptor/src/:/app/
+      - /home/jkane/BookAdaptor/configuration.toml:/app/configuration.toml
+      - /home/jkane/BookAdaptor/htmlcov:/app/htmlcov
+      - /home/jkane/BookAdaptor/active-test:/active
+      - /home/jkane/BookAdaptor/assets:/assets
+      - /home/jkane/BookAdaptor/comfy/ComfyUI/input:/input
+      - /home/jkane/BookAdaptor/comfy/ComfyUI/output:/output
+      - /home/jkane/BookAdaptor/comfy/ComfyUI/user/default/workflows:/workflows
+      - /home/jkane/BookAdaptor/templates:/templates
+      - /home/jkane/BookAdaptor/comfy/ComfyUI/custom_nodes:/custom_nodes
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - FORCE_COLOR=1
+      - COLUMNS=160
+      - CONTAINER_MODE=1
+      - COMFYUI_WORKFLOWS_DIR=/workflows
+      - COMFYUI_WORKFLOW_TEMPLATES_DIR=/templates
+      - COMFYUI_INPUT_DIR=/root/ComfyUI/input
+      - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
+      - COMFYUI_API_URL=http://comfyui:8188/
+      - COMFYUI_UI_URL=http://localhost:8188/
     networks:
       - home-network
 
@@ -54,6 +93,7 @@ services:
     volumes:
       - ./src:/app
       - ./active:/active
+      - ./active-test:/active-test
       - ./assets:/assets
       - ./comfy/ComfyUI/input:/input
       - ./comfy/ComfyUI/output:/output
@@ -61,6 +101,8 @@ services:
       - ./templates:/templates
       - ./comfy/ComfyUI/custom_nodes:/custom_nodes
       - ./configuration.toml:/app/configuration.toml
+      - ./docker-compose.yaml:/docker-compose.yaml
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=1

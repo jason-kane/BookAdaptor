@@ -691,7 +691,7 @@ def character_location_response(chapter, character, image_xml):
     return buildup
 
 
-def character_pose_selector(chapter, character, image_xml):
+def character_pose_selector(chapter, character, image_xml) -> str:
     set_pose_url = url_for(
         'library.book.chapter.images.scene.set_character_pose',
         **chapter.kwargs,

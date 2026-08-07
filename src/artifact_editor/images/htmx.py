@@ -117,7 +117,7 @@ def prompt_template(chapterurl, image_xml):
     return out
 
 
-def prompt_panel(chapter, image_xml, with_class=""):
+def prompt_panel(chapter, image_xml: Tag, with_class=""):
     """
     Returns html for an editor to modify the prompt.
 
@@ -212,16 +212,16 @@ def draw_all_missing_tmi_images_button(chapterurl):
     )
 
 
-def generate_missing_image_metadata_button(chapterurl):
+def generate_missing_image_metadata_button():
     return tools.generic_button(
-        chapterurl,
+        url_for("library.book.chapter.images.generate_missing_image_metadata"),
         category="images",
         tag="generate_missing_image_metadata",
         cosmetic="Generate Missing Image Metadata",
     )
 
 
-def image_side_panel(image_xml: Tag, chapter, datastack=None, label="Previous"):
+def image_side_panel(image_xml: Tag | None, chapter, datastack=None, label="Previous"):
     tag = label.lower()
     out = f"""
     <div id="{tag}_panel" hx-swap-oob="true" style="width: 24%;">
@@ -265,24 +265,22 @@ def image_strip(chapter, image_xml):
 
 
 def image_transition_form(
-    soup, filename, chapterurl, chapterdir, image_index, tag="solo"
+    chapter, filename: str, image_index: int, tag="solo"
 ):
     out = f'<div class="wa-stack" id="{tag}_image_transition_form_{image_index}">'
     # "transition_000004.mp4" on load
     log.info("filename:     %s", filename)
 
-    all_images = soup.findAll("image")
-    image = None
-    try:
-        image = all_images[image_index]
-    except IndexError:
-        # this happens with the last image.  if we want to transition out, we have to add
-        # blank/black image to the end first.
-        pass
+    image_xml = chapter.get_image(image_index)
 
     # /home/jkane/books/active/Aesop/Fables/chapter/0016/transitions/transition_000004.mp4
     #                          Aesop/Fables/chapter/0016/transitions/transition_000004.mp4
-    full_filename = os.path.join(const.LIBRARY_DIR, chapterdir, "transitions", filename)
+    full_filename = os.path.join(
+        const.LIBRARY_DIR,
+        chapter.get_chapterdir(),
+        "transitions",
+        filename,
+    )
 
     if filename and os.path.exists(full_filename):
         out += f"""
@@ -313,26 +311,40 @@ def image_transition_form(
 
     # if we don't have an image, we don't have a place to put the transtion.
     # TODO figure out how to allow transitions at the end.
-    if image:
+    if image_xml:
         out += transitions.registry.selector(
-            get_url=f"/{chapterurl}/images/{image_index}/transition/configuration",
-            selected_key=image.attrs.get("transition_type", ""),
+            get_url=url_for(
+                'library.book.chapter.images.get_transition_configuration_widgets',
+                **chapter.kwargs,
+                image_index=image_index,
+            ),
+            selected_key=image_xml.attrs.get("transition_type", ""),
         )
 
         out += '<div id="transition_configuration">'
-        out += get_transition_configuration_widgets(soup=soup, image_index=image_index)
+        out += get_transition_configuration_widgets(chapter=chapter, image_index=image_index)
         out += "</div>"
 
+        build_transition_url = url_for(
+            "library.book.chapter.images.build_transition",
+            image_index=image_index,
+            tag=tag,
+        )
+        delete_transition_url = url_for(
+            "library.book.chapter.images.delete_transition",
+            image_index=image_index,
+            tag=tag,
+        )
         # buttons
         out += f"""<div class="wa-cluster">
                     <wa-button 
-                        hx-post="/{chapterurl}/images/{image_index}/transition/{tag}"
+                        hx-post="{build_transition_url}"
                         hx-target="#{tag}_image_transition_form_{image_index}"
                         hx-on::before-request="beforeRequest(this,event)"
                         hx-on::after-request="afterRequest(this,event)"
                         name="button">Build Transition</wa-button>
                     <wa-button 
-                        hx-delete="/{chapterurl}/images/{image_index}/transition/{tag}"
+                        hx-delete="{delete_transition_url}"
                         hx-target="#{tag}_image_transition_form_{image_index}"
                         hx-on::before-request="beforeRequest(this,event)"
                         hx-on::after-request="afterRequest(this,event)"
@@ -344,20 +356,19 @@ def image_transition_form(
     return out
 
 
-def get_transition_configuration_widgets(soup, image_index):
-    all_images = soup.findAll("image")
-    image = all_images[image_index]
+def get_transition_configuration_widgets(chapter, image_index: int) -> str:
+    image_xml = chapter.get_image(image_index)
 
     new_transition_type = request.args.get("transition_type", None)
 
-    transition_type = image.attrs.get("transition_type", "")
+    transition_type = image_xml.attrs.get("transition_type", "")
     log.info(
         f"Got new_transition_type={new_transition_type} current_transition_type={transition_type}"
     )
 
     if new_transition_type is not None and transition_type != new_transition_type:
         log.info(f"saving new transition type = {new_transition_type}")
-        image.attrs["transition_type"] = new_transition_type
+        image_xml.attrs["transition_type"] = new_transition_type
 
     out = ""
     if transition_type:
@@ -540,7 +551,7 @@ def skeleton():
     """
 
 
-def animation_workshop(image_xml, chapter, small_preview=False):
+def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
     llog = log.bind(
         prefix="[animation_workshop]",
         chapter=chapter.url,
@@ -937,7 +948,7 @@ def animation_workshop(image_xml, chapter, small_preview=False):
     return out
 
 
-def upload_image_workshop(chapter, image_xml):
+def upload_image_workshop(chapter, image_xml: Tag) -> str:
     """
     Image upload tab content for the image workshop.
     """
@@ -996,7 +1007,7 @@ def upload_image_workshop(chapter, image_xml):
     return out
 
 
-def image_workshop(image_xml, chapter):
+def image_workshop(image_xml: Tag, chapter) -> str:
     image_index = int(image_xml.attrs["index"])
 
     upload_workshop_ui = upload_image_workshop(chapter, image_xml)
@@ -1157,10 +1168,8 @@ def image_strip_centerpiece(
         log.debug("camera workshop ready")
 
         transition_workshop_ui = image_transition_form(
-            soup=chapter.get_xml(),
+            chapter=chapter,
             filename=f"transition_{image_index:06}.mp4",
-            chapterurl=chapter.url,
-            chapterdir=chapter.chapterdir,
             image_index=image_index,
             tag="previous",
         )
@@ -1686,11 +1695,11 @@ def uploaded_tab_panel(bookurl, chapterurl, chapterdir, image_index, image_xml):
 # </wa-tab-group>"""
 
 
-def prompt_datastack(chapter, image_xml):
+def prompt_datastack(chapter, image_xml: Tag) -> str:
     return ""
 
 
-def citation_panel(chapter, image_xml, force=False):
+def citation_panel(chapter, image_xml: Tag, force=False):
     image_index = image_xml.attrs.get("index", 0)
 
     imageurl = url_for(

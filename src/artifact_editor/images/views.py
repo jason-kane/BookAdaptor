@@ -9,6 +9,7 @@ import time
 from tempfile import TemporaryDirectory
 from typing import TypedDict
 
+from bs4 import Tag
 import httpx
 from flask import (
     Blueprint,
@@ -19,7 +20,7 @@ from flask import (
     send_file,
     send_from_directory,
     url_for,
-    g
+    g,
 )
 from PIL import Image
 from pygments import format, lex
@@ -78,13 +79,16 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values) 
+    chapter_url_value_preprocessor(endpoint, values)
+
 
 bp.register_blueprint(images_selector, url_prefix="/<int:image_index>/selector")
 bp.register_blueprint(images_editor, url_prefix="/<int:image_index>/editor")
@@ -279,10 +283,10 @@ def comfyui_workflow_open(
     title: str,
     chapter_number: int,
     language: str,
-    image_index: int=0,
-    mode:str="t2i",
-    video_index:int=0,
-    animation: str="false",
+    image_index: int = 0,
+    mode: str = "t2i",
+    video_index: int = 0,
+    animation: str = "false",
 ):
     """
     We're already in a new tab
@@ -305,7 +309,7 @@ def comfyui_workflow_open(
     video_index = int(video_index)
 
     video_tag = f"_{video_index:02d}"
-    
+
     animation = animation.lower() in ["1", "true", "animation"]
     log.info(f"animation is {animation}")
 
@@ -395,25 +399,23 @@ def comfyui_workflow_open(
 
 
 @bp.route("/<int:image_index>/actions/generate_meta", methods=["POST"])
-def generate_meta(author, title, chapter_number, language, image_index=0):
+def generate_meta(image_index=0):
     """
     Generate metadata for the image based on the source material
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    image_xml = chapter.get_xml().findAll("image")[image_index]
-    images.generate_metadata_from_text(chapter, image_xml, force_all=True)
-    chapter.save_xml()
+    image_xml = g.chapter.get_xml().findAll("image")[image_index]
+    images.generate_metadata_from_text(g.chapter, image_xml, force_all=True)
+    g.chapter.save_xml()
 
     return htmx.image_strip_centerpiece(
-        chapter,
+        g.chapter,
         image_xml,
         default="image",
     ), 200
 
 
 @bp.route("/<int:image_index>/actions/rebuild_prompt", methods=["POST"])
-def rebuild_prompt(author, title, chapter_number, language, image_index=0):
+def rebuild_prompt(image_index=0):
     """
     Action behind the "Rebuild prompt from Meta" button.  This will take the
     meta_prompt and substitute in the various metadata fields to create a new
@@ -422,12 +424,9 @@ def rebuild_prompt(author, title, chapter_number, language, image_index=0):
     These values are stored on the <image> tag in the chapter XML file.
     """
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     image_index = int(image_index)
 
-    image_xml = chapter.get_xml().findAll("image")[image_index]
+    image_xml = g.chapter.get_xml().findAll("image")[image_index]
     log.info("Rebuilding prompts for image:")
     log.info(f"""
     <{image_xml.name}
@@ -441,45 +440,39 @@ def rebuild_prompt(author, title, chapter_number, language, image_index=0):
     )
 
     # start with all global characters
-    all_characters = characters.get_all_characters(chapter, is_global=True)
+    all_characters = characters.get_all_characters(g.chapter, is_global=True)
 
     # update with all chapter-specific characters
-    all_characters.update(characters.get_all_characters(chapter, is_global=False))
+    all_characters.update(characters.get_all_characters(g.chapter, is_global=False))
 
-    images.build_replacement_prompt(all_characters, chapter.bookdir, image_xml)
+    images.build_replacement_prompt(all_characters, g.chapter.bookdir, image_xml)
 
-    value = htmx.prompt_panel(chapter, image_xml)
-    chapter.save_xml()
+    value = htmx.prompt_panel(g.chapter, image_xml)
+    g.chapter.save_xml()
     return value, 201
 
 
 @bp.route("/<int:image_index>/actions/save_style", methods=["PUT"])
-def save_style(author, title, chapter_number, language, image_index=0):
+def save_style(image_index=0):
     log.info("Saving style for image %s", image_index)
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    image = chapter.get_xml().findAll("image")[image_index]
+    image = g.chapter.get_xml().findAll("image")[image_index]
 
     image.attrs["style"] = request.form["style"]
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     return "", 200
 
 
 @bp.route("/<int:image_index>/actions/create_clip_prompt", methods=["POST"])
-def create_prompt(author, title, chapter_number, language, image_index=0):
+def create_clip_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    image_xml = chapter.get_xml().findAll("image")[image_index]
+    image_xml = g.chapter.get_xml().findAll("image")[image_index]
     paragraph = image_xml.find_parent("paragraph")
 
     prompt_fn = os.path.abspath(
         os.path.join(
             const.LIBRARY_DIR,
-            chapter.get_paragraph_dir(paragraph.attrs["index"]),
+            g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
             f"img_{image_xml.attrs['fragdex']}.prompt",
         )
     )
@@ -535,22 +528,19 @@ def create_prompt(author, title, chapter_number, language, image_index=0):
     if "prompt" in image_xml.attrs:
         del image_xml.attrs["prompt"]
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 @bp.route("/<int:image_index>/actions/condense_prompt", methods=["POST"])
-def condense_prompt(author, title, chapter_number, language, image_index=0):
+def condense_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    image_xml = chapter.get_xml().findAll("image")[image_index]
+    image_xml = g.chapter.get_xml().findAll("image")[image_index]
     paragraph = image_xml.find_parent("paragraph")
 
     prompt_data = None
-    prompt_fn = chapter.get_image_prompt_filename(image_xml)
+    prompt_fn = g.chapter.get_image_prompt_filename(image_xml)
     if os.path.exists(prompt_fn):
         with open(prompt_fn, "r") as h:
             try:
@@ -605,12 +595,12 @@ def condense_prompt(author, title, chapter_number, language, image_index=0):
     #     }))
 
     image_xml.attrs["prompt"] = prompt
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
-def set_fancyprompt(chapter, image_xml):
+def set_fancyprompt(chapter, image_xml: Tag) -> Tag:
     """
     Replace the prompt in an image with a fanciful style still based, at least
     somewhat, on the text of the story.
@@ -659,7 +649,7 @@ def set_fancyprompt(chapter, image_xml):
     return image_xml
 
 
-def _apply_zmi(chapter, image_xml):
+def _apply_zmi(chapter, image_xml: Tag) -> None:
     # first we do a scene generate meta from text
     # /images/<int:image_index>/actions/generate_meta
     # looks like a neighbor...
@@ -703,76 +693,66 @@ def _apply_zmi(chapter, image_xml):
 
 # /{{chapterurl}}/images/action/apply_zmi_here_to_end
 @bp.route("/<int:image_index>/actions/apply_zmi_here_to_end", methods=["POST"])
-def apply_zmi_here_to_end(author, title, chapter_number, language, image_index=0):
+def apply_zmi_here_to_end(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
-    all_images = chapter.get_xml().findAll("image")
+    all_images = g.chapter.get_xml().findAll("image")
     image_xml = all_images[image_index]
     for image_index, image_xml in enumerate(all_images[image_index:]):
         if (image_xml.attrs.get("t2i") != "tsqn.zimageturbo") and (
             image_xml.attrs.get("src") in [None, ""]
         ):
-            _apply_zmi(chapter, image_xml)
-            chapter.save_xml()
+            _apply_zmi(g.chapter, image_xml)
+            g.chapter.save_xml()
 
             image_model = "tsqn.zimageturbo"
             # finally generate the new image.
             image_module = t2i_registry.get(image_model)
             image_module().generate_image(image_xml)
-            chapter.save_xml()
+            g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 # /{{chapterurl}}/images/action/apply_zmi
 @bp.route("/<int:image_index>/actions/apply_zmi", methods=["POST"])
-def apply_zmi(author, title, chapter_number, language, image_index=0):
+def apply_zmi(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
-    _apply_zmi(chapter, image_xml)
-    chapter.save_xml()
+    image_xml = g.chapter.get_image(image_index)
+    _apply_zmi(g.chapter, image_xml)
+    g.chapter.save_xml()
 
     image_model = "tsqn.zimageturbo"
 
     # finally generate the new image.
     image_module = t2i_registry.get(image_model)
     image_module().generate_image(image_xml)
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 @bp.route("/<int:image_index>/actions/create_fanciful_prompt", methods=["POST"])
-def create_fanciful_prompt(author, title, chapter_number, language, image_index=0):
+def create_fanciful_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
-    set_fancyprompt(chapter, image_xml)
+    image_xml = g.chapter.get_image(image_index)
+    set_fancyprompt(g.chapter, image_xml)
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # return "", 200
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 @bp.route("/<int:image_index>/actions/create_t5_prompt", methods=["POST"])
-def create_t5_prompt(author, title, chapter_number, language, image_index=0):
+def create_t5_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     prompt_fn = os.path.abspath(
@@ -815,21 +795,18 @@ def create_t5_prompt(author, title, chapter_number, language, image_index=0):
     image_xml.attrs["t5_prompt"] = t5_prompt
     image_xml.attrs["clip_prompt"] = clip_prompt
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # return "", 200
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 @bp.route("/<int:image_index>/actions/enhance_prompt", methods=["POST"])
-def enhance_prompt(author, title, chapter_number, language, image_index=0):
+def enhance_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     # image.attrs["t5_prompt"] = request.form["prompt"]
@@ -849,33 +826,28 @@ def enhance_prompt(author, title, chapter_number, language, image_index=0):
     )
     image_xml.attrs["t5_prompt"] = prompt
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.image_strip_centerpiece(chapter, image_xml, default="image")
+    return htmx.image_strip_centerpiece(g.chapter, image_xml, default="image")
 
 
 @bp.route("/<int:image_index>/actions/set_meta_prompt", methods=["POST"])
-def set_meta_prompt(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def set_meta_prompt(image_index=0):
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     image_xml.attrs["meta_prompt"] = request.form.get("meta_prompt", "")
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.meta_prompt(chapter, image_xml, image_index), 200
+    return htmx.meta_prompt(g.chapter, image_xml, image_index), 200
 
 
 @bp.route("/<int:image_index>/save_meta_prompt", methods=["POST"])
-def save_meta_prompt(author, title, chapter_number, language, image_index=0):
+def save_meta_prompt(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     if request.form["button"] in ["Save"]:
         for key in request.form.keys():
@@ -891,11 +863,11 @@ def save_meta_prompt(author, title, chapter_number, language, image_index=0):
             elif key not in ["button"]:
                 image_xml.attrs[key] = values[0]
 
-        chapter.save_xml()
+        g.chapter.save_xml()
 
     elif request.form["button"] == "Copy Previous":
         # copy the previous image's meta fields, so we can adjust to fit the 'new' shot insead of statrting from scratch.
-        prev_image = chapter.get_image(image_index - 1) if image_index > 0 else None
+        prev_image = g.chapter.get_image(image_index - 1) if image_index > 0 else None
 
         log.info(f"Copying from {prev_image.attrs} to {image_xml.attrs}")
         for tag in [
@@ -917,22 +889,25 @@ def save_meta_prompt(author, title, chapter_number, language, image_index=0):
                         character_attribute
                     ]
 
-        chapter.save_xml()
+        g.chapter.save_xml()
 
     # TODO: this redirect is wrong
-    return redirect(f"/image/{image_index}", code=302)
+    return redirect(
+        url_for(
+            "library.book.chapter.images.base",
+            image_index=image_index,
+        ),
+        code=302,
+    )
 
 
 # http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/images/forex/5
 @bp.route("/forex/<int:image_index>")
-def htmx_forex(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    all_images = chapter.get_xml().findAll("image")
+def htmx_forex(image_index=0):
+    all_images = g.chapter.get_xml().findAll("image")
     image_xml = all_images[image_index]
 
-    image_forex = images.image_forex(chapter, image_xml, image_index)
+    image_forex = images.image_forex(g.chapter, image_xml, image_index)
 
     response = make_response(
         f"""<div id="forex" style="width:100%">
@@ -941,27 +916,26 @@ def htmx_forex(author, title, chapter_number, language, image_index=0):
         200,
     )
 
-    response.headers["HX-Push-Url"] = (
-        f"/{chapter.url}/{chapter.language}/images/{image_index}/"
+    response.headers["HX-Push-Url"] = url_for(
+        "library.book.chapter.images.base",
+        image_index=image_index,
     )
     return response
 
 
 # http://localhost:5000/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/images/0/actions/use_uploaded_image
 @bp.route("/<int:image_index>/actions/use_uploaded_image", methods=["POST"])
-def use_uploaded_image(author, title, chapter_number, language, image_index=0):
+def use_uploaded_image(image_index=0):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
-    image = chapter.get_xml().findAll("image")[image_index]
+    image = g.chapter.get_xml().findAll("image")[image_index]
 
     filename = request.form.get("filename", "")
     if not filename:
         return "No filename provided.", 400
 
     asset_path = os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, "..", "..", "assets", filename
+        const.LIBRARY_DIR, g.chapter.chapterdir, "..", "..", "assets", filename
     )
 
     if not os.path.exists(asset_path):
@@ -980,10 +954,10 @@ def use_uploaded_image(author, title, chapter_number, language, image_index=0):
 
     # update the image src to point to the new file
     image.attrs["src"] = new_filename
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     response = make_response(
-        htmx.image_strip_centerpiece(chapter, image, default="image")
+        htmx.image_strip_centerpiece(g.chapter, image, default="image")
     )
     response.headers["HX-Refresh"] = "true"
 
@@ -1004,13 +978,10 @@ def use_uploaded_image(author, title, chapter_number, language, image_index=0):
 
 
 @bp.route("/sources/<image_file>")
-def serve_source_image(author, title, chapter_number, language, image_file):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def serve_source_image(image_file: str):
     source_dir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.chapterdir,
+        g.chapter.chapterdir,
         "sources",
     )
     log.info(f"Serving source image from {source_dir}")
@@ -1022,19 +993,17 @@ def serve_source_image(author, title, chapter_number, language, image_file):
 
 # POST /Bible/Old%20Testament/0001/images/1/actions/set_image_source
 @bp.route("/<int:image_index>/actions/set_image_source", methods=["POST"])
-def set_image_source(author, title, chapter_number, language, image_index=0):
+def set_image_source(image_index=0):
     """
     For choosing an image from /sources and bringing a copy of it in as the
     current image.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-    source_dir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "sources")
+    source_dir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "sources")
 
     image_source = request.form.get("image_source", "")
     image_filename = f"img_{image_index}_{os.path.basename(image_source)}"
 
-    image_xml = chapter.get_xml().find("image", {"index": str(image_index)})
+    image_xml = g.chapter.get_xml().find("image", {"index": str(image_index)})
     paragraph = image_xml.parent
 
     s = os.path.join(source_dir, os.path.basename(image_source))
@@ -1043,7 +1012,7 @@ def set_image_source(author, title, chapter_number, language, image_index=0):
     log.info(f"Copied source image from {s} to {d}")
 
     image_xml.attrs["src"] = image_filename
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     response = make_response("<div></div>", 200)
     response.headers["HX-Refresh"] = "true"
@@ -1054,18 +1023,16 @@ def set_image_source(author, title, chapter_number, language, image_index=0):
 # actually _copying_ the previous image only on-demand. This lets us chain
 # images for bulk operations when the previous image does not yet exist.
 @bp.route("/<int:image_index>/actions/set_previous/<state>", methods=["POST"])
-def set_image_lock(author, title, chapter_number, language, image_index=0, state="on"):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def set_image_lock(image_index=0, state: str = "on"):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     if state == "on":
         image_xml.attrs["src"] = None
         image_xml.attrs["image_lock"] = "on"
     else:
         image_xml.attrs["image_lock"] = "off"
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     cache.delete("image_index")
 
@@ -1073,34 +1040,30 @@ def set_image_lock(author, title, chapter_number, language, image_index=0, state
 
 
 @bp.route("/<int:image_index>/actions/copy_previous", methods=["POST"])
-def copy_previous(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def copy_previous(image_index=0):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
-    previous_image = chapter.get_image(image_index - 1) if image_index > 0 else None
+    image_xml = g.chapter.get_image(image_index)
+    previous_image = g.chapter.get_image(image_index - 1) if image_index > 0 else None
 
     if previous_image:
         image_xml.attrs["clip_prompt"] = previous_image.attrs.get("clip_prompt", "")
         image_xml.attrs["t5_prompt"] = previous_image.attrs.get("t5_prompt", "")
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 # rightsize_t5_prompt
 @bp.route("/<int:image_index>/actions/rightsize_t5_prompt", methods=["POST"])
-def htmx_rightsize_t5_prompt(author, title, chapter_number, language, image_index):
+def htmx_rightsize_t5_prompt(image_index):
     """
     This is called by the prompt textarea to set the prompt for an image.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    log.info(f"Rightsizing T5 prompt for {chapter.chapterurl}/images/{image_index}")
-    image_xml = chapter.get_image(image_index)
+    log.info(f"Rightsizing T5 prompt for {g.chapter.chapterurl}/images/{image_index}")
+    image_xml = g.chapter.get_image(image_index)
 
     t5_prompt = image_xml.attrs.get("t5_prompt", "")
     if not t5_prompt:
@@ -1141,31 +1104,23 @@ def htmx_rightsize_t5_prompt(author, title, chapter_number, language, image_inde
         return "Failed to rightsize T5 prompt.", 500
 
     image_xml.attrs["t5_prompt"] = new_t5_prompt
-    chapter.save_xml()
+    g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
 @bp.route("/<int:image_index>/animation/<int:video_index>/set_method", methods=["GET"])
-def set_animation_method(
-    author, title, chapter_number, language, image_index, video_index
-):
+def set_animation_method(image_index: int, video_index: int):
     """
     This is called by the animation selector to set the animation method for an image.
     """
-    log.info(
-        f"Setting animation method for {author}/{title}/{chapter_number}/images/{image_index}"
-    )
-
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
     video_index = int(video_index)
 
     new_animation_method = request.args.get("animation_method", "")
     log.info(f"New animation method: {new_animation_method}")
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     video_tag = f"_{video_index:02d}"
 
@@ -1186,82 +1141,70 @@ def set_animation_method(
         #     "comfy_ui_flf2v": ("LTX23_flf-LTX 2.3 First and Last Frame", "flf2v"),
         #     "comfy_ui_i2v": ("LTX23-LTX 2.3", "i2v")
         # }[new_animation_method]
-        chapter.save_xml()
+        g.chapter.save_xml()
 
     return htmx.get_animation_configuration_widgets(
-        chapter=chapter,
+        chapter=g.chapter,
         image_index=image_index,
         video_index=video_index,
     )
 
 
 @bp.route("/strip/<int:image_index>", methods=["GET"])
-def image_strip(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
-
-    log.info(
-        f"Generating image strip for {author}/{title}/{chapter}/images/{image_index}"
-    )
-
+def image_strip(image_index=0):
     try:
-        image_xml = chapter.findAll("image")[image_index]
+        image_xml = g.chapter.findAll("image")[image_index]
     except IndexError:
         log.error(
-            f"Image index {image_index} out of range for chapter {chapter.chapterdir}"
+            f"Image index {image_index} out of range for chapter {g.chapter.chapterdir}"
         )
         return "Image not found", 404
 
-    response = make_response(htmx.image_strip(chapter, image_xml))
+    response = make_response(htmx.image_strip(g.chapter, image_xml))
 
     # so a browser refresh will work correctly
-    response.headers["HX-Push-Url"] = (
-        f"/{chapter.url}/{chapter.language}/images/{image_index}/"
+    response.headers["HX-Push-Url"] = url_for(
+        "library.book.chapter.images.base",
+        image_index=image_index,
     )
     return response
 
 
 @bp.route("/<int:image_index>/actions/build_animation", methods=["POST"])
-def build_animation(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def build_animation(image_index: int):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     image_xml.attrs["animation_method"] = request.form.get(
         "animation_method", "wan_2_2_5b"
     )
     image_xml.attrs["animation"] = "true"
     image_xml.attrs["animation_prompt"] = request.form.get("prompt", "")
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     log.info(f"Invoking images.create_animation({image_xml=})")
-    filename = images.create_animation(chapter, image_xml, force=True)
+    filename = images.create_animation(g.chapter, image_xml, force=True)
 
     log.info(f"Created animation {filename} for image {image_index} in {chapter}")
 
     # add the tabpanel wrapper and activate the animation tab
-    value = htmx.image_strip_centerpiece(chapter, image_xml, default="animation")
-    chapter.save_xml()
+    value = htmx.image_strip_centerpiece(g.chapter, image_xml, default="animation")
+    g.chapter.save_xml()
     return value
 
 
 # POST /Aesop/Fables/0024/images/4/actions/extend_animation
 @bp.route("/<int:image_index>/actions/extend_animation", methods=["POST"])
-def extend_animation(author, title, chapter_number, language, image_index=0):
+def extend_animation(image_index: int):
     """
     Extend existing animation by adding more frames
 
     We're taking the last frame and adding more frames based on that and the prompt/neg prompt.
     """
-    log.info("Extending animation for image %s in chapter %s", image_index, chapter)
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    log.info(f"Extending animation for image {image_index} in chapter {g.chapter}")
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     log.info(f"Invoking images.extend_animation({image_index=}, {chapter=})")
     filename = images.create_animation(chapter, image_xml, extend=True)
@@ -1279,23 +1222,19 @@ def extend_animation(author, title, chapter_number, language, image_index=0):
 @bp.route(
     "/<int:image_index>/actions/<video_index>/delete_animation", methods=["DELETE"]
 )
-def delete_animation(
-    author, title, chapter_number, language, image_index=0, video_index=0
-):
+def delete_animation(image_index: int, video_index: int):
     """
     Delete all animation frames for this image
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
     video_index = int(video_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     animation_dir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
         "animation",
         f"image_{image_index:06d}_{video_index:02d}",
     )
@@ -1307,7 +1246,7 @@ def delete_animation(
     # and the video file (if there is one)
     video_pfn = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
         image_xml.attrs["src"].replace(".png", ".mp4"),
     )
     if os.path.exists(video_pfn):
@@ -1328,7 +1267,7 @@ def delete_animation(
         all_mp4_filenames = glob.glob(
             os.path.join(
                 const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-                f"{chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}*_00001_.mp4",
+                f"{g.chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}*_00001_.mp4",
             )
         )
 
@@ -1337,8 +1276,8 @@ def delete_animation(
                 log.info(f"Deleting comfyui output video file {mp4_filename}")
                 os.unlink(mp4_filename)
 
-    value = htmx.image_strip_centerpiece(chapter, image_xml)
-    chapter.save_xml()
+    value = htmx.image_strip_centerpiece(g.chapter, image_xml)
+    g.chapter.save_xml()
     return value
 
 
@@ -1360,16 +1299,13 @@ class SafeAttrsOnly(Filter):
 
 
 @bp.route("/surrounding_text/<int:image_index>", methods=["GET"])
-def surrounding_text(author, title, chapter_number, language, image_index):
+def surrounding_text(image_index: int):
     """
     Get the text surrounding the image at image_index, with a highlight on the image's
     paragraph.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     paragraph = image_xml.find_parent("paragraph")
 
@@ -1452,43 +1388,17 @@ def surrounding_text(author, title, chapter_number, language, image_index):
     )
 
     text_with_highlight = format(lex("".join(pre_highlight), lexer), muted_formatter)
-
     text_with_highlight += format(lex("".join(highlight), lexer), highlight_formatter)
-
     text_with_highlight += format(lex("".join(post_highlight), lexer), muted_formatter)
-    # next_image = chapter.get_image(image_index + 1)
-
-    # text_to_next = get_text_to_next(image_xml=image_xml, next_image_xml=next_image)
-
-    # # standardize whitespace, this isn't viewer facing.
-    # text_to_next = tools.tightstring(text_to_next)
-
-    # if text_to_next in text_with_highlight:
-    #     # I know, this won't catch the second occurance of a repeated word.
-    #     # TODO: fix this.  one day.
-
-    #     text_with_highlight = text_with_highlight.replace(
-    #         text_to_next, '<p class="highlight">' + text_to_next + "</p>", 1
-    #     )
-    #     # text_with_highlight = "<div class='#editor'></div>"
-    # else:
-    #     log.error(f"Could not find '{text_to_next}' in '{text_with_highlight}'")
-
-    # can you inject css?
-    # formatter = HtmlFormatter(full=True, style="colorful")
 
     return text_with_highlight, 200
 
 
 @bp.route("/<int:image_index>", methods=["POST"])
-def create_new_image(
-    author, title, chapter_number, language, image_index=0, styled=False, force=True
-):
+def create_new_image(image_index=0, styled=False, force=True):
     """
     Generate a NEW Image, and make it the new selected image.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
     styled = styled or request.args.get("styled", "false").lower() == "true"
@@ -1504,7 +1414,7 @@ def create_new_image(
     prompt = ""
     clip_prompt = ""
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     image_xml.attrs["loras"] = json.dumps(loras)
 
     image_model = image_xml.attrs.get("t2i", "flux.schnell")
@@ -1518,11 +1428,11 @@ def create_new_image(
 
         if style in ["", None]:
             # no?  okay, does the chapter have a style?
-            style = chapter.config.get("default_style", "")
+            style = g.chapter.config.get("default_style", "")
 
         if style in ["", None]:
             # still no style?  okay, does the book have a style?
-            book_config = config.get_config(chapter.bookdir)
+            book_config = config.get_config(g.chapter.bookdir)
             style = book_config.get("default_style", "")
 
         if style in ["", None]:
@@ -1543,13 +1453,13 @@ def create_new_image(
     image_module = t2i_registry.get(image_model)
     # this will be the UI side of the t2i module, 'generate_image' will place an entry
     # in a redis queue.  It will also block, until the image is generated.
-    image_module(chapter).generate_image(chapter.key, image_xml)
-    chapter.save_xml()
+    image_module(g.chapter).generate_image(g.chapter.key, image_xml)
+    g.chapter.save_xml()
 
     # record the prompt that we used for this image, next to the image.
     prompt_src = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraphdir(paragraph.attrs["index"]),
+        g.chapter.get_paragraphdir(paragraph.attrs["index"]),
         os.path.splitext(os.path.basename(image_xml.attrs["src"]))[0] + ".prompt",
     )
 
@@ -1557,19 +1467,17 @@ def create_new_image(
         f.write(json.dumps({"prompt": prompt, "clip_prompt": clip_prompt}))
 
     if request.form.get("tab", "") == "prompt":
-        return htmx.prompt_panel(chapter, image_xml, with_class="pulse-green"), 201
+        return htmx.prompt_panel(g.chapter, image_xml, with_class="pulse-green"), 201
     else:
         return "", 201
 
 
 @bp.route("/<int:image_index>/action/swap_with_previous_image", methods=["POST"])
-def swap_with_previous_image(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def swap_with_previous_image(image_index: int):
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
-    previous_image_xml = chapter.get_image(image_index - 1)
+    image_xml = g.chapter.get_image(image_index)
+    previous_image_xml = g.chapter.get_image(image_index - 1)
 
     # swap the src attributes of the two images
     current_src = image_xml.attrs["src"]
@@ -1603,8 +1511,8 @@ def swap_with_previous_image(author, title, chapter_number, language, image_inde
     current_paragraph = image_xml.find_parent("paragraph")
     previous_paragraph = previous_image_xml.find_parent("paragraph")
 
-    current_paragraph_dir = chapter.get_paragraph_dir(current_paragraph.attrs["index"])
-    previous_paragraph_dir = chapter.get_paragraph_dir(
+    current_paragraph_dir = g.chapter.get_paragraphdir(current_paragraph.attrs["index"])
+    previous_paragraph_dir = g.chapter.get_paragraphdir(
         previous_paragraph.attrs["index"]
     )
 
@@ -1631,7 +1539,7 @@ def swap_with_previous_image(author, title, chapter_number, language, image_inde
     shutil.copy2(p_to_c_source, p_to_c_destination)
     log.info(f"Cross Copied {current_image_path} and {previous_image_path}")
 
-    chapter.save_xml()
+    g.chapter.save_xml()
     return "", 200
 
 
@@ -1641,34 +1549,32 @@ def tab_pre_selector(image_index):
 
 
 @bp.route("/<int:image_index>/editor", methods=["GET"])
-def tab_pre_editor(author, title, chapter_number, language, image_index):
-    return base(author, title, chapter_number, language, image_index, override="editor")
+def tab_pre_editor(image_index: int):
+    return base(image_index=image_index, override="editor")
 
 
 @bp.route("/<int:image_index>/scene", methods=["GET"])
-def tab_pre_scene(author, title, chapter_number, language, image_index):
-    return base(author, title, chapter_number, language, image_index, override="scene")
+def tab_pre_scene(image_index: int):
+    return base(image_index=image_index, override="scene")
 
 
 @bp.route("/<int:image_index>/prompt", methods=["GET"])
-def tab_pre_prompt(author, title, chapter_number, language, image_index):
-    return base(author, title, chapter_number, language, image_index, override="prompt")
+def tab_pre_prompt(image_index: int):
+    return base(image_index=image_index, override="prompt")
 
 
 @bp.route("/<int:image_index>/upload", methods=["GET"])
-def tab_pre_upload(author, title, chapter_number, language, image_index):
-    return base(author, title, chapter_number, language, image_index, override="upload")
+def tab_pre_upload(image_index: int):
+    return base(image_index=image_index, override="upload")
 
 
 @bp.route("/<int:image_index>/citation", methods=["GET"])
-def tab_pre_citation(author, title, chapter_number, language, image_index):
-    return base(
-        author, title, chapter_number, language, image_index, override="citation"
-    )
+def tab_pre_citation(image_index: int):
+    return base(image_index=image_index, override="citation")
 
 
 @bp.route("/<int:image_index>/", methods=["GET"])
-def base(image_index=0, override=None):
+def base(image_index: int, override=None):
     image_index = int(image_index)
 
     if override is None:
@@ -1700,10 +1606,6 @@ def base(image_index=0, override=None):
     pretty_title = g.chapter.config.get("title", g.title)
 
     text_with_highlight = surrounding_text(
-        g.author.name,
-        g.title,
-        g.chapter_number,
-        g.language,
         image_index,
     )[0]
 
@@ -1718,7 +1620,7 @@ def base(image_index=0, override=None):
     phrase_workshop_url = url_for(
         "library.book.chapter.audio.base",
         **g.chapter.kwargs,
-        page=image_xml.find_parent("paragraph").attrs.get("index", 0)
+        page=image_xml.find_parent("paragraph").attrs.get("index", 0),
     )
 
     log.info("Rendering images.html template...")
@@ -1743,9 +1645,7 @@ def base(image_index=0, override=None):
         draw_all_missing_tmi_images_button=htmx.draw_all_missing_tmi_images_button(
             g.chapter.url
         ),
-        generate_missing_image_metadata_button=htmx.generate_missing_image_metadata_button(
-            g.chapter.url
-        ),
+        generate_missing_image_metadata_button=htmx.generate_missing_image_metadata_button(),
         text_with_highlight=text_with_highlight,
         image_strip=htmx.image_strip(
             chapter=g.chapter,
@@ -1763,12 +1663,9 @@ def base(image_index=0, override=None):
 # PUT /Aesop/Fables/0024/image/4
 @bp.route("/<int:image_index>", methods=["PUT"])
 @bp.route("/<int:image_index>/", methods=["PUT"])
-def update(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def update(image_index=0):
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     for key in request.form:
         if key in [
@@ -1779,67 +1676,28 @@ def update(author, title, chapter_number, language, image_index=0):
         log.info("Setting image attribute %s to %s", key, request.form[key])
         image_xml.attrs[key] = request.form[key]
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # what is our return when we get a generic attribute update?
     respond_with = request.form.get("respond_with", "")
     if respond_with == "animation":
         return htmx.animation_workshop(
             image_xml=image_xml,
-            chapter=chapter,
+            chapter=g.chapter,
         )
     elif respond_with == "camera":
-        return camera_htmx.camera_workshop(image_xml=image_xml, chapter=chapter)
+        return camera_htmx.camera_workshop(image_xml=image_xml, chapter=g.chapter)
     elif respond_with == "prompt":
-        return htmx.prompt_panel(chapter, image_xml, with_class="pulse-green"), 200
+        return htmx.prompt_panel(g.chapter, image_xml, with_class="pulse-green"), 200
     elif respond_with == "citation":
-        return htmx.citation_panel(chapter, image_xml, force=True), 200
+        return htmx.citation_panel(g.chapter, image_xml, force=True), 200
     else:
-        return htmx.image_strip_centerpiece(chapter, image_xml)
-
-
-# def create_paragraph_image(chapter, image_index):
-#     """
-#     Generate a new selectable image for this image based
-#     on the 'whole paragraph' workflow.
-
-#     # image, prompt, workflows, Z-Image Turbo Paragraph Image.
-#     #
-#     """
-#     image_xml = chapter.get_image(image_index)
-
-
-#     comfyui_workflow_run
-
-#     # api.t2i.zit-paragraph_Z-Image Turbo Paragraph Image
-#     workflow = chapter.get_comfy_workflow(
-#         image_xml,
-#         interface="api",
-#         mode="t2i",
-#         workflow_template="zit-paragraph",
-#         video_index=None,
-#         template_environment=None
-#     )
-
-#     json_workflow = {"prompt": workflow}
-
-
-#     chapter.soup.new_tag("image")
-#     image_xml.attrs["index"] = str(image_index)
-#     image_xml.attrs["src"] = ""
-#     image_xml.attrs["prompt"] = ""
-#     image_xml.attrs["clip_prompt"] = ""
-#     image_xml.attrs["t5_prompt"] = ""
-#     image_xml.attrs["t2i"] = "flux.schnell"
-#     image_xml.attrs["loras"] = "[]"
-#     paragraph.append(image_xml)
-#     chapter.save_xml()
-#     return image_xml
+        return htmx.image_strip_centerpiece(g.chapter, image_xml)
 
 
 # POST /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/images/3/action/fancy
 @bp.route("/<int:image_index>/action/fancy", methods=["POST"])
-def fancy_image(author, title, chapter_number, language, image_index):
+def fancy_image(image_index: int):
     """
     Handle the "fancy" action for an image.
     """
@@ -1847,19 +1705,17 @@ def fancy_image(author, title, chapter_number, language, image_index):
     # zimage "create fanciful prompt" feature
     # then apply the chapter style, then generate the image.
     # all stuff that works independantly, we just want to chain them together.
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     # get the new prompt
-    set_fancyprompt(chapter, image_xml)
+    set_fancyprompt(g.chapter, image_xml)
 
     image_xml.attrs["t2i"] = "tsqn.zimageturbo"
 
     # apply the chapter style
-    style = chapter.config.get("style", "")
+    style = g.chapter.config.get("style", "")
     if style:
         log.info(
             f"Applying style {style} to prompt for image {image_xml.attrs.get('id')}"
@@ -1873,27 +1729,25 @@ def fancy_image(author, title, chapter_number, language, image_index):
     else:
         log.warning("No style found for chapter, skipping style application")
     # save in case there is a problem with 'generate_image'
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # draw the image
     image_module = t2i_registry.get("tsqn.zimageturbo")
     image_module().generate_image(image_xml, force=True)
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     return "", 200
 
 
 # http://localhost:5000/Oscar%20Wilde/The%20Picture%20of%20Dorian%20Gray/0001/images/actions/apply_fancy_here_to_end
 @bp.route("/<int:image_index>/actions/apply_fancy_here_to_end", methods=["POST"])
-def apply_fancy_here_to_end(author, title, chapter_number, language, image_index):
+def apply_fancy_here_to_end(image_index: int):
     log.info(f"{request.form}")
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
 
     # apply the chapter style
-    style = chapter.config.get("style", "")
+    style = g.chapter.config.get("style", "")
 
-    all_images = chapter.get_xml().findAll("image")
+    all_images = g.chapter.get_xml().findAll("image")
     for image_xml in all_images:
         if int(image_xml.attrs.get("index", -1)) >= image_index:
             # build the prompt if there isn't a prompt
@@ -1901,7 +1755,7 @@ def apply_fancy_here_to_end(author, title, chapter_number, language, image_index
                 "",
                 None,
             ]:
-                set_fancyprompt(chapter, image_xml)
+                set_fancyprompt(g.chapter, image_xml)
                 if "src" in image_xml.attrs:
                     # new prompt, new image
                     del image_xml.attrs["src"]
@@ -1922,7 +1776,7 @@ def apply_fancy_here_to_end(author, title, chapter_number, language, image_index
                 else:
                     log.warning(
                         "No style found for chapter, skipping style application: %s",
-                        chapter.config,
+                        g.chapter.config,
                     )
 
             if (
@@ -1931,7 +1785,7 @@ def apply_fancy_here_to_end(author, title, chapter_number, language, image_index
                 or not os.path.exists(
                     os.path.join(
                         const.LIBRARY_DIR,
-                        chapter.get_paragraph_dir(
+                        g.chapter.get_paragraph_dir(
                             image_xml.find_parent("paragraph").attrs["index"]
                         ),
                         os.path.basename(image_xml.attrs["src"]),
@@ -1941,7 +1795,7 @@ def apply_fancy_here_to_end(author, title, chapter_number, language, image_index
                 # draw the image
                 image_module = t2i_registry.get("tsqn.zimageturbo")
                 image_module().generate_image(image_xml, force=True)
-                chapter.save_xml()
+                g.chapter.save_xml()
 
     response = make_response("")
     response.headers["HX-Refresh"] = "true"
@@ -1951,16 +1805,9 @@ def apply_fancy_here_to_end(author, title, chapter_number, language, image_index
 # copy_previous_character_action
 # http://localhost:5000/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0002/images/41/actions/copy_previous_character_action
 @bp.route("/<int:image_index>/actions/copy_previous_character_action", methods=["POST"])
-def copy_previous_character_action(
-    author, title, chapter_number, language, image_index=0
-):
-    chapterdir = get_chapterdir(author, title, chapter)
-
-    mybook = booklib.get_book(chapterdir)
-    all_images = mybook.soup.findAll("image")
-
-    image_xml = all_images[image_index]
-    previous_image = image_xml.find_previous("image")
+def copy_previous_character_action(image_index: int):
+    image_xml = g.chapter.get_image(image_index)
+    previous_image = g.chapter.get_image(image_index - 1)
 
     character_name = request.form.get("character", "")
 
@@ -1968,51 +1815,48 @@ def copy_previous_character_action(
         image_xml.attrs[f"{character_name}_action"] = previous_image.attrs.get(
             f"{character_name}_action", ""
         )
-        mybook.save_xml()
+        g.chapter.save_xml()
         return "", 200
     else:
         return "No previous image found", 404
 
 
 @bp.route("/<int:image_index>/action/choose_file", methods=["GET", "POST"])
-def choose_file(author, title, chapter_number, language, image_index=0):
+def choose_file(image_index: int):
+    """
+    we've gotten a file upload, we need to save it to the right place and update the image src attribute.
+    """
     path_fn = request.files["file"]
     if path_fn.filename == "":
         return redirect(request.url)
 
-    chapterdir = get_chapterdir(author, title, chapter)
+    image_xml = g.chapter.get_image(image_index)
+    paragraph_xml = image_xml.find_parent("paragraph")
 
-    mybook = booklib.get_book(chapterdir)
-    mybook, image, paragraph, text_to_next = images.get_xml_for_image(
-        chapterdir, mybook, image_index
-    )
+    paragraph_dir = g.chapter.get_paragraph_dir(paragraph_xml.attrs["index"])
 
-    image = mybook.soup.findAll("image")[image_index]
+    # TODO: this breaks the naming convention, so uploaded images won't show
+    # up in the selector list.  We need to rename the upload properly.
+    image_fn = os.path.join(paragraph_dir, os.path.basename(str(path_fn.filename)))
 
-    # where should we put them?
-    # Bible/Old Testament/01 Torah/01 Genesis/paragraphs/000000/img_2_A_de
-    image_fn = os.path.join(paragraph.attrs["dir"], os.path.basename(path_fn.filename))
-    # _without_ a leading /
-    image.attrs["src"] = image_fn
+    image_xml.attrs["src"] = os.path.basename(str(path_fn.filename))
 
     path_fn.save(os.path.join(const.LIBRARY_DIR, image_fn))
 
-    mybook.save_xml()
+    g.chapter.save_xml()
     return "", 201
 
 
 # http://localhost:8080/library/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/1/english/images/4/choose_video
 @bp.route("/<int:image_index>/choose_video", methods=["GET", "POST"])
-def choose_video(author, title, chapter_number, language, image_index=0):
+def choose_video(image_index=0):
     """
     Select a video (from comfyui output) to become the chosen video for this image_index/video_index.
     Any existing video _frames_ will be cleared.
     Any existing video _file_ will be renamed (so you can change your mind)
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
     image_index = int(image_index)
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     # request.form:
     #   selected_video=%7B%22title%22%3A%22aeso-fabl-031-twm6_img_8_LTX23_00_00004_.mp4%22%2C%22poster%22%3A%22comfy%2Foutput%2Faeso-fabl-031-twm6_img_8_LTX23_00_00004_.mp4.png%22%2C%22sources%22%3A%5B%5D%2C%22tracks%22%3A%5B%5D%7D
@@ -2037,7 +1881,7 @@ def choose_video(author, title, chapter_number, language, image_index=0):
     else:
         return f"Video source file {video_source_fn} not found", 404
 
-    paragraph_dir = chapter.get_paragraph_dir(
+    paragraph_dir = g.chapter.get_paragraph_dir(
         image_xml.find_parent("paragraph").attrs["index"]
     )
     # for now...
@@ -2115,32 +1959,10 @@ def choose_video(author, title, chapter_number, language, image_index=0):
     # expand the new video into frames
     tools.extract_frames(video_destination_fn, frame_dir)
 
-    # chapterdir = get_chapterdir(author, title, chapter_number)
-
-    # mybook = booklib.get_book(chapterdir)
-    # mybook, image, paragraph, text_to_next = images.get_xml_for_image(
-    #     chapterdir, mybook, image_index
-    # )
-
-    # image = mybook.soup.findAll("image")[image_index]
-
-    # # where should we put them?
-    # # Bible/Old Testament/01 Torah/01 Genesis/paragraphs/000000/img_2_A_de
-    # video_fn = os.path.join(paragraph.attrs["dir"], os.path.basename(path_fn.filename))
-    # # _without_ a leading /
-    # image.attrs["src"] = video_fn
-
-    # path_fn.save(os.path.join(const.LIBRARY_DIR, video_fn))
     response = make_response("")
     response.headers["HX-Refresh"] = "true"
 
     return response
-
-
-# @bp.route("/<int:image_index>/image.png", methods=["GET"])
-# @bp.route("/<int:image_index>.png", methods=["GET"])
-
-# /Grimm/Fairy%20Tales/1/english/audio/actions/add_delay/3
 
 
 @bp.route("/<int:height>/<int:image_index>.png", methods=["GET"])
@@ -2232,30 +2054,19 @@ def show_image_by_index(height=0, image_index=0):
 
 
 @bp.route("/citation/<int:image_index>.png", methods=["GET"])
-def show_citation_by_index(author, title, chapter_number, language, image_index=0):
+def show_citation_by_index(image_index=0):
     """
     Serve the (full resolution) citation image by index.  If no citation image
     exists, create one.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     image_index = int(image_index)
-
-    image_xml = chapter.get_image(image_index)
-    paragraph_xml = image_xml.find_parent("paragraph")
+    image_xml = g.chapter.get_image(image_index)
 
     citation_image_fn = os.path.join(
-        const.LIBRARY_DIR, chapter.get_image_citation_filename(image_index)
+        const.LIBRARY_DIR, g.chapter.get_image_citation_filename(image_index)
     )
 
     if citation_image_fn:
-        # citation_image_pfn = os.path.join(
-        #     const.LIBRARY_DIR,
-        #     chapter.get_paragraphdir(paragraph_xml.attrs['index']),
-        #     citation_image_fn
-        # )
         if not os.path.exists(citation_image_fn):
             # create the citation image?
             cite_artist = image_xml.attrs.get("artist", "")
@@ -2283,18 +2094,18 @@ def show_citation_by_index(author, title, chapter_number, language, image_index=
         return f"Image {image_xml} has no 'src'", 404
 
 
-#   ost:5000/Aesop   /Fables      /0017     /images/000013/img_6_The_background_of_the_sce_137fc39f_491f.png
-# /Horace%20Hutchinson/The%20Greatest%20Story%20in%20the%20World%20period%201/chapter/0001/paragraphs/000000/img_2_The_front_of_a_record_alb_942f1a7d.png
-# /W.%20W.%20Jacobs/The%20Monkeys%20Paw/image/active/W.%20W.%20Jacobs/The%20Monkeys%20Paw/paragraphs/000001/img_0_A_close_up_view_of_a_draw_c46145ac.png
-# TODO: fixme
 # @bp.route("/<author>/<path:title>/<chapter>/paragraphs/<int:phrase_index>/<imagefile>")
-def active_images(author, title, chapter, phrase_index=0, imagefile=""):
+def active_images(phrase_index=0, imagefile=""):
+    """
+    Display a phrase image by filename
+    obsolete?
+    """
     print("Looking for file...")
-    chapterdir = get_chapterdir(author, title, chapter)
+    chapterdir = g.chapter.get_chapterdir()
 
     return send_from_directory(
         os.path.join(
-            "/home/jkane/books/active",
+            const.LIBRARY_DIR,
             chapterdir,
             "paragraphs",
             f"{phrase_index:06}",
@@ -2305,24 +2116,27 @@ def active_images(author, title, chapter, phrase_index=0, imagefile=""):
 
 
 @bp.route("/actions/draw_all_missing_images", methods=["POST"])
-def draw_all_missing_images(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def draw_all_missing_images():
+    """
+    Draw all missing images for the current chapter.
 
+    This makes some really crap-tastic assumptions.
+    TODO: rewrite for appropriate comfy workflows
+    """
     image_index = 0
-    all_images = chapter.get_xml().findAll("image")
+    all_images = g.chapter.get_xml().findAll("image")
 
-    style = chapter.config.get("default_style", "")
+    style = g.chapter.config.get("default_style", "")
 
     prompt_filter = None
     negative_prompt = None
     if style:
         # the currently selected style, applied to the current prompt.
-        log.info(f"Looking up style {style} for chapter {chapter}")
+        log.info(f"Looking up style {style} for chapter {g.chapter}")
         prompt_filter, negative_prompt = styles.get_style(style)
     else:
         log.warning(
-            f"No style found for chapter {chapter}, skipping style application."
+            f"No style found for chapter {g.chapter}, skipping style application."
         )
 
     for image_index, image_xml in enumerate(all_images):
@@ -2332,7 +2146,7 @@ def draw_all_missing_images(author, title, chapter_number, language):
             and os.path.exists(
                 os.path.join(
                     const.LIBRARY_DIR,
-                    chapter.get_paragraphdir(
+                    g.chapter.get_paragraphdir(
                         image_xml.find_parent("paragraph").attrs["index"]
                     ),
                     os.path.basename(image_xml.attrs["src"]),
@@ -2343,7 +2157,7 @@ def draw_all_missing_images(author, title, chapter_number, language):
             continue
 
         paragraph = image_xml.find_parent("paragraph")
-        paragraph_dir = chapter.get_paragraphdir(paragraph.attrs["index"])
+        paragraph_dir = g.chapter.get_paragraphdir(paragraph.attrs["index"])
 
         t2i_engine = image_xml.attrs.get("t2i", "tsqn.zimageturbo")
 
@@ -2362,7 +2176,7 @@ def draw_all_missing_images(author, title, chapter_number, language):
 
                 except IndexError:
                     text_to_next = get_text_to_next(
-                        image_xml=image, next_image_xml=None
+                        image_xml=image_xml, next_image_xml=None
                     )
 
                 t5_prompt = images.text_to_prompt(
@@ -2435,7 +2249,7 @@ def draw_all_missing_images(author, title, chapter_number, language):
 
                 # Use fancyprompt to generate the image prompt
                 set_fancyprompt(chapter, image_xml)
-                chapter.save_xml()
+                g.chapter.save_xml()
 
             # style?
             prompt = image_xml.attrs.get("prompt", "")
@@ -2443,21 +2257,21 @@ def draw_all_missing_images(author, title, chapter_number, language):
             if prompt_filter and "styled_prompt" not in image_xml.attrs:
                 styled_prompt = prompt_filter.format(prompt=prompt)
                 image_xml.attrs["styled_prompt"] = styled_prompt
-                chapter.save_xml()
+                g.chapter.save_xml()
 
             # draw the image
             image_module = t2i_registry.get(t2i_engine)
             image_module().generate_image(image_xml, force=True)
-            chapter.save_xml()
+            g.chapter.save_xml()
 
         # is this a fullscreen?
         if paragraph.attrs.get("fullscreen", "false").lower() == "true":
             log.info("Image is fullscreen.  We need to outpaint.")
 
-            aspect = chapter.get_aspect()  # portrait or widescreen
+            aspect = g.chapter.get_aspect()  # portrait or widescreen
             transformation_type = "crop_100_outpaint_" + aspect
             image_pil, image_fn = selector.apply_image_adjustments(
-                chapter,
+                g.chapter,
                 image_xml,
                 transformation_type,
                 image_xml.attrs["src"],
@@ -2466,21 +2280,22 @@ def draw_all_missing_images(author, title, chapter_number, language):
 
             # finally, make this our new image src
             image_xml.attrs["src"] = os.path.basename(image_fn)
-            chapter.save_xml()
+            g.chapter.save_xml()
             continue
 
-    return htmx.draw_all_missing_images_button(chapter)
+    return htmx.draw_all_missing_images_button(g.chapter)
 
 
 # draw_all_missing_tmi_images
 @bp.route("/actions/draw_all_missing_tmi_images", methods=["POST"])
-def draw_all_missing_tmi_images(author, title, chapter):
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    bookdir = get_bookdir(author, title)
+def draw_all_missing_tmi_images():
+    """
+    Draw all missing TMI images for the current chapter.
 
-    mybook = booklib.get_book(chapterdir)
-    all_images = mybook.soup.findAll("image")
+    I don't even remember what TMI stands for.
+    """
+
+    all_images = g.chapter.get_xml().findAll("image")
 
     for image_xml in all_images:
         paragraph = image_xml.find_parent("paragraph")
@@ -2490,144 +2305,57 @@ def draw_all_missing_tmi_images(author, title, chapter):
             or not image_xml.attrs["src"]
             or not os.path.exists(
                 os.path.join(
-                    const.LIBRARY_DIR, paragraph.attrs["dir"], image_xml.attrs["src"]
+                    const.LIBRARY_DIR,
+                    paragraph.attrs["dir"],
+                    image_xml.attrs["src"],
                 )
             )
         ):
-            # images.tmi_regenerate_image(
-            #     mybook, author, title, chapter, image_xml,
-            #     chapterdir, bookdir,
+            pass
+            # images.zmi_regenerate_image(
+            #     g.chapter,
+            #     g.author,
+            #     g.title,
+            #     image_xml,
+            #     chapterdir,
+            #     bookdir,
             # )
-            images.zmi_regenerate_image(
-                mybook,
-                author,
-                title,
-                chapter,
-                image_xml,
-                chapterdir,
-                bookdir,
-            )
 
-    return htmx.draw_all_missing_tmi_images_button(chapterurl)
+    return htmx.draw_all_missing_tmi_images_button(g.chapter.url)
 
 
 @bp.route("/actions/generate_missing_image_metadata", methods=["POST"])
-def generate_missing_image_metadata(author, title, chapter):
+def generate_missing_image_metadata():
     """
     Go through all the images and try to fill in missing metadata based on the text.
     """
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-
-    log.info(f"Generating missing image metadata for {chapterdir}")
-    for image_xml in mybook.soup.findAll("image"):
-        images.generate_metadata_from_text(chapterdir=chapterdir, image_xml=image_xml)
-        mybook.save_xml()
-    return htmx.generate_missing_image_metadata_button(chapterurl)
-
-
-@bp.route("/action/reprompt_redraw_all", methods=["POST"])
-def reprompt_redraw_all(author, title, chapter):
-    """
-    TODO
-    flux specific pipeline to reprompt and redraw all images in a chapter.
-    """
-    chapterdir = get_chapterdir(author, title, chapter)
-
-    mybook = booklib.get_book(chapterdir)
-
-    image_index = 0
-    while True:
-        # this will raise an exception when there are no more images.
-        image = mybook.soup.find("image", image_index=str(image_index))
-
-        paragraph = image.find_parent("paragraph")
-        # all the text between this image and the next image.
-        next_image = mybook.soup.find("image", image_index=image_index + 1)
-
-        # aggregate all the text between this image and the next image
-        text_to_next = get_text_to_next(image=image, next_image=next_image)
-
-        # make a new detailed prompt
-        image.attrs["t5_prompt"] = images.text_to_prompt(
-            image=image, paragraph=paragraph, text_to_next=text_to_next
-        )
-
-        # make a new clip prompt
-        image.attrs["clip_prompt"] = text_to_clip_prompt(
-            image=image,
-            paragraph=paragraph,
-            text_to_next=text_to_next,
-            t5_prompt=image.attrs["t5_prompt"],
-        )
-
-        # determine the correct new image_fn
-        image_fn = images.get_image_fn(
-            prompt=f"{image.attrs["clip_prompt"]}_{image.attrs["t5_prompt"]}",
-            loras=[],
-            paragraph_dir=paragraph.attrs["dir"],
-            image_index=image.attrs["index"],
-        )
-        image.attrs["src"] = image_fn
-        mybook.save_xml()
-
-        t5_prompt = image.attrs["t5_prompt"]
-        clip_prompt = image.attrs["clip_prompt"]
-
-        if os.path.exists(image_fn):
-            os.unlink(image_fn)
-
-        log.info(
-            f"Invoking {images.get_image}({image_fn=}, {clip_prompt=}, {t5_prompt=})"
-        )
-        images.get_flux_image(
-            image_fn=image_fn, clip_prompt=clip_prompt, t5_prompt=t5_prompt
-        )
-
-
-@bp.route("/action/clear_zero_duration_images", methods=["POST"])
-def clear_zero_duration_images(author, title, chapter):
-    chapterdir = get_chapterdir(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-
-    # first force a recalculation of the number of frames each image should be displayed.
-    audio._recalculate_all_phrase_frames(chapterdir)
-
-    for image in mybook.soup.findAll("image"):
-        if image.attrs.get("frames", "0") == "0":
-            image.decompose()
-            mybook.save_xml()
-
-    return redirect(f"/{author}/{title}/{chapter}/images/", code=302)
+    for image_xml in g.chapter.get_xml().findAll("image"):
+        images.generate_metadata_from_text(chapter=g.chapter, image_xml=image_xml)
+        g.chapter.save_xml()
+    return htmx.generate_missing_image_metadata_button()
 
 
 @bp.route("/<int:image_index>/transition/configuration", methods=["GET"])
-def get_transition_configuration_widgets(
-    author, title, chapter_number, language, image_index
-):
+def get_transition_configuration_widgets(image_index: int):
     image_index = int(image_index)
-    chapterdir = get_chapterdir(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-    value = htmx.get_transition_configuration_widgets(mybook.soup, image_index)
-    mybook.save_xml()
+
+    value = htmx.get_transition_configuration_widgets(g.chapter.get_xml(), image_index)
+    g.chapter.save_xml()
     log.info(f"Transition configuration widgets: {value}")
     return value, 200
 
 
-# TODO
-# @bp.route("/<author>/<path:title>/<chapter>/transition/<filename>.mp4")
-def deliver_transition_video(author, title, chapter, filename=""):
-    # /home/jkane/books/active/Aesop/Fables/chapter/0018/
-    # transitions/transition_000004.mp4
-    chapterdir = get_chapterdir(author, title, chapter)
-    # image_index = int(image_index)
-
+# route?
+def deliver_transition_video(filename=""):
+    """
+    Serve a transition video file from the chapter's transitions directory.
+    """
     full_filename = os.path.join(
-        const.LIBRARY_DIR, chapterdir, "transitions", filename + ".mp4"
+        const.LIBRARY_DIR,
+        g.chapter.chapterdir,
+        "transitions",
+        filename.rstrip(".mp4") + ".mp4",
     )
-
-    # filename = f"transition_{image_index:06}.mp4"
 
     return send_file(
         full_filename,
@@ -2639,9 +2367,7 @@ def deliver_transition_video(author, title, chapter, filename=""):
 
 # http://localhost:8080/library/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/1/english/images/4/delete_video?title=baum-marv-001-bhgv_img_4_LTX23__00_00005_.mp4&poster=comfy%2Foutput%2Fbaum-marv-001-bhgv_img_4_LTX23__00_00005_.mp4.png
 @bp.route("/<int:image_index>/delete_video", methods=["DELETE"])
-def delete_video(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def delete_video(image_index: int):
     image_index = int(image_index)
 
     video_title = request.args.get("title", "")
@@ -2651,8 +2377,8 @@ def delete_video(author, title, chapter_number, language, image_index):
     if not video_title:
         # there is only one video, the selected one.  Since there is only one
         # video, the selector that would populate the "title" field is absent.
-        image_xml = chapter.get_image(image_index)
-        image_filename = chapter.get_image_filename(image_xml)
+        image_xml = g.chapter.get_image(image_index)
+        image_filename = g.chapter.get_image_filename(image_xml)
         video_filename = image_filename.replace(".png", ".mp4")
         if os.path.exists(video_filename):
             os.remove(video_filename)
@@ -2674,7 +2400,7 @@ def delete_video(author, title, chapter_number, language, image_index):
 
     return (
         f"""<div id="previous_attempts" hx-swap-oob="true" hx-swap="innerHTML">
-        {htmx.previous_attempt(chapter, image_index)}
+        {htmx.previous_attempt(g.chapter, image_index)}
     </div>
     """,
         200,
@@ -2683,11 +2409,12 @@ def delete_video(author, title, chapter_number, language, image_index):
 
 @bp.route("/<int:image_index>/comfy/output/<filename>.mp4.png")
 @bp.route("/<int:image_index>/comfy/output/<cat>/<filename>.mp4.png")
-def deliver_comfy_video_portrait(
-    author, title, chapter_number, language, image_index, cat="", filename=""
-):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def deliver_comfy_video_portrait(image_index: int, cat: str = "", filename: str = ""):
+    """
+    We are yanking one frame from the middle of a comfyui output video and
+    serving it as a png.  This is used for the "poster" image in the video
+    player.
+    """
     image_index = int(image_index)
 
     if cat:
@@ -2748,15 +2475,8 @@ def deliver_comfy_video_portrait(
 
 @bp.route("/<int:image_index>/comfy/output/<filename>.mp4")
 @bp.route("/<int:image_index>/comfy/output/<cat>/<filename>.mp4")
-def deliver_comfy_video(
-    author, title, chapter_number, language, image_index, cat="", filename=""
-):
-    author = Author(author)
-    # chapter = Chapter(author, title, chapter_number, language)
+def deliver_comfy_video(image_index: int, cat: str = "", filename: str = ""):
     image_index = int(image_index)
-
-    # image_xml = chapter.get_image(image_index)
-    # paragraph = image_xml.find_parent("paragraph")
 
     if cat:
         full_filename = os.path.join(
@@ -2781,7 +2501,7 @@ def deliver_comfy_video(
 
 
 @bp.route("/<int:image_index>/animation/<filename>.mp4")
-def deliver_animation_video(image_index, filename=""):
+def deliver_animation_video(image_index: int, filename: str):
     image_index = int(image_index)
 
     image_xml = g.chapter.get_image(image_index)
@@ -2815,74 +2535,62 @@ def deliver_animation_video(image_index, filename=""):
 
 # http://localhost:8080/library/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/1/english/images/11/additional_video
 @bp.route("/<int:image_index>/additional_video", methods=["POST"])
-def create_additional_video(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def create_additional_video(image_index: int):
+    """
+    Add a "slot" for adding another video to this initial image.
+    All videos are concatenated into a single video at final render time.
+    """
     image_index = int(image_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     image_xml.attrs["animation_count"] = str(
         int(image_xml.attrs.get("animation_count", "1")) + 1
     )
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # we need the re-drawn "Animation" page with a second 'empty' video input set.
     # one layer below animation-panel..
     # this will hx-swap-oob itself into the right place.
-    return htmx.animation_workshop(image_xml, chapter), 200
-
-
-# additional_video_form(
-#         soup=soup,
-#         filename=os.path.basename(filename),
-#         chapterurl=get_chapterurl(author, title, chapter),
-#         chapterdir=chapterdir,
-#         image_index=image_index,
-#     ), 200
+    return htmx.animation_workshop(image_xml, g.chapter), 200
 
 
 @bp.route("/<int:image_index>/transition/<tag>", methods=["POST"])
-def create_transition_route(author, title, chapter_number, language, image_index, tag):
-    chapterurl = get_chapterurl(author, title, chapter)
-    chapterdir = get_chapterdir(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-    soup = mybook.soup
-
+def build_transition(image_index: int, tag: str):
     image_index = int(image_index)
 
     filename = images.create_transition(
         image_index,
-        chapterdir,
+        g.chapter,
         force=True,
     )
 
     return htmx.image_transition_form(
-        soup=soup,
+        chapter=g.chapter,
         filename=os.path.basename(filename),
-        chapterurl=chapterurl,
-        chapterdir=chapterdir,
         image_index=image_index,
         tag=tag,
     ), 200
 
 
 @bp.route("/<int:image_index>/transition/<tag>", methods=["DELETE"])
-def delete_transition_route(author, title, chapter_number, language, image_index, tag):
+def delete_transition(image_index: int, tag: str):
     image_index = int(image_index)
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-
-    mybook = booklib.get_book(chapterdir)
-    soup = mybook.soup
+    transitions_dir = os.path.join(
+        const.LIBRARY_DIR,
+        g.chapter.get_chapterdir(),
+        "transitions",
+    )
 
     transition_frames_directory = os.path.join(
-        const.LIBRARY_DIR, chapterdir, "transitions", f"transition_{image_index:06}"
+        transitions_dir,
+        f"transition_{image_index:06}",
     )
 
     # the mp4 name
     filename = os.path.join(
-        const.LIBRARY_DIR, chapterdir, "transitions", f"transition_{image_index:06}.mp4"
+        transitions_dir,
+        f"transition_{image_index:06}.mp4",
     )
 
     if os.path.exists(filename):
@@ -2894,10 +2602,8 @@ def delete_transition_route(author, title, chapter_number, language, image_index
         shutil.rmtree(transition_frames_directory)
 
     return htmx.image_transition_form(
-        soup=soup,
+        chapter=g.chapter,
         filename=os.path.basename(filename),
-        chapterurl=chapterurl,
-        chapterdir=chapterdir,
         image_index=image_index,
         tag=tag,
     ), 200
@@ -2905,11 +2611,8 @@ def delete_transition_route(author, title, chapter_number, language, image_index
 
 # POST /L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0001/images/action/reindex_images
 @bp.route("/action/reindex_images", methods=["POST"])
-def reindex_images(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
-    all_images = chapter.get_xml().findAll("image")
+def reindex_images():
+    all_images = g.chapter.get_xml().findAll("image")
     for image_index, image_xml in enumerate(all_images):
         if "index" not in image_xml.attrs or int(image_xml.attrs["index"]) != int(
             image_index
@@ -2919,52 +2622,25 @@ def reindex_images(author, title, chapter_number, language):
             )
             image_xml.attrs["index"] = int(image_index)
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # can you redirect to an empty relative path?
     return redirect("", code=302)
 
 
-# # http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/images/5/actions/apply_style
-# @bp.route("/<int:image_index>/actions/apply_style", methods=["POST", "PUT"])
-# def apply_style(author, title, chapter_number, language, image_index):
-#     author = Author(author)
-#     chapter = Chapter(author, title, chapter_number, language)
-#     image_index = int(image_index)
-
-#     image_xml = chapter.get_image(image_index)
-
-#     new_style = request.form.get("style", "")
-#     log.info(f"New style: {new_style}")
-
-#     if new_style:
-#         prompt_filter, negative_prompt = styles.get_style(new_style)
-
-#         if prompt_filter:
-#             image_xml.attrs["style"] = new_style
-#             if negative_prompt:
-#                 image_xml.attrs["negative_prompt"] = negative_prompt
-
-#         chapter.save_xml()
-
-#     return htmx.prompt_panel(chapter, image_xml), 200
-
-
 # hx-post="/{chapterurl}/images/{image_xml.attrs['index']}/actions/apply_prompt_template"
 @bp.route("/<int:image_index>/actions/apply_prompt_template", methods=["POST"])
-def apply_prompt_template(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def apply_prompt_template(image_index: int):
     image_index = int(image_index)
 
     log.info(f"{request.form}")
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
     # start with all global characters
-    all_characters = characters.get_all_characters(chapter, is_global=True)
+    all_characters = characters.get_all_characters(g.chapter, is_global=True)
 
     # update with all chapter-specific characters
-    all_characters.update(characters.get_all_characters(chapter, is_global=False))
+    all_characters.update(characters.get_all_characters(g.chapter, is_global=False))
 
     try:
         paragraph_text = get_text_to_next(image_xml, image_xml.find_next("image"))
@@ -2977,9 +2653,11 @@ def apply_prompt_template(author, title, chapter_number, language, image_index):
     if template:
         if template == "metadata_prompt":
             images.build_replacement_prompt(
-                all_characters, get_bookdir(author, title), image_xml
+                all_characters,
+                get_bookdir(g.chapter.get_author(), g.chapter.get_title()),
+                image_xml,
             )
-            chapter.save_xml()
+            g.chapter.save_xml()
 
         else:
             prompt_templates = {
@@ -2988,7 +2666,7 @@ def apply_prompt_template(author, title, chapter_number, language, image_index):
                 "chapter_page": "A classic and elegant book title page with the title {paragraph_text} in large ornate letters",
             }
 
-            subtitle = chapter.config.get("subtitle", "")
+            subtitle = g.chapter.config.get("subtitle", "")
             if subtitle:
                 # with a subtitle
                 prompt_templates["book_cover"] = (
@@ -3006,12 +2684,12 @@ def apply_prompt_template(author, title, chapter_number, language, image_index):
 
         if prompt_template:
             prompt = prompt_template.format(
-                author=chapter.config.get("author", author),
-                title=chapter.config.get("title", title),
-                chapter_title=chapter.config.get("chapter_title", chapter),
+                author=g.chapter.config.get("author", g.author.name),
+                title=g.chapter.config.get("title", g.title),
+                chapter_title=g.chapter.chapter_title,
                 paragraph_text=paragraph_text,
                 subtitle=subtitle,
-                translator=chapter.config.get("translator", ""),
+                translator=g.chapter.config.get("translator", ""),
                 prompt=image_xml.attrs.get("prompt", ""),
             )
             image_xml.attrs["prompt"] = prompt
@@ -3020,12 +2698,12 @@ def apply_prompt_template(author, title, chapter_number, language, image_index):
             image_xml.attrs["tags"] = "has-text=false,spoken-only=true"
             log.info(f"Updated prompt to {prompt}")
 
-        chapter.save_xml()
+        g.chapter.save_xml()
 
-    return htmx.prompt_panel(chapter, image_xml), 200
+    return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
-def standard_side_panels(image_xml, chapter, datastack=None):
+def standard_side_panels(image_xml: Tag, chapter, datastack=None):
     out = htmx.image_side_panel(
         image_xml=image_xml.find_previous("image"),
         chapter=chapter,
@@ -3044,7 +2722,7 @@ def standard_side_panels(image_xml, chapter, datastack=None):
 
 # GET /Bible/Old%20Testament/0001/images/1/image_tab_selector
 @bp.route("/<int:image_index>/image_tab_selector", methods=["POST"])
-def image_tab_selector(image_index):
+def image_tab_selector(image_index: int):
     author = g.author
     chapter = g.chapter
     image_index = int(image_index)
@@ -3206,21 +2884,17 @@ def image_tab_selector(image_index):
 @bp.route(
     "/<int:image_index>/frame/<int:video_index>/<int:frame_index>.png", methods=["GET"]
 )
-def deliver_animation_frame(
-    author, title, chapter_number, language, image_index, video_index, frame_index
-):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def deliver_animation_frame(image_index: int, video_index: int, frame_index: int):
     image_index = int(image_index)
     video_index = int(video_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     # /home/jkane/books/active/Aesop/Fables/chapter/0024/animation/animation_000004/000000.png
     framedir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
         "animation",
         f"image_{image_index:06d}_{video_index:02d}",
     )
@@ -3240,15 +2914,13 @@ def deliver_animation_frame(
 
 # POST /Aesop/Fables/0024/images/4/actions/get_last_good_frame_widget
 @bp.route("/<int:image_index>/actions/get_last_good_frame_widget", methods=["POST"])
-def get_last_good_frame_widget(author, title, chapter_number, language, image_index):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def get_last_good_frame_widget(image_index: int):
     image_index = int(image_index)
 
     chosen = int(request.form.get("chosen", "0"))
     video_index = int(request.form.get("video_index", "0"))
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
     # we start with
@@ -3268,7 +2940,7 @@ def get_last_good_frame_widget(author, title, chapter_number, language, image_in
     # /home/jkane/books/active/Aesop/Fables/chapter/0024/animation/animation_000004/000000.png
     framedir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph.attrs["index"]),
         "animation",
         f"image_{image_index:06d}_{video_index:02d}",
     )
@@ -3304,7 +2976,7 @@ def get_last_good_frame_widget(author, title, chapter_number, language, image_in
 
         last_good_frame_url = url_for(
             "library.book.chapter.images.get_last_good_frame_widget",
-            **chapter.kwargs,
+            **g.chapter.kwargs,
             image_index=image_index,
             video_index=video_index,
         )
@@ -3312,7 +2984,7 @@ def get_last_good_frame_widget(author, title, chapter_number, language, image_in
         if width > 10:
             frame_url = url_for(
                 "library.book.chapter.images.deliver_animation_frame",
-                **chapter.kwargs,
+                **g.chapter.kwargs,
                 image_index=image_index,
                 video_index=video_index,
                 frame_index=index,
@@ -3342,7 +3014,7 @@ def get_last_good_frame_widget(author, title, chapter_number, language, image_in
 
     remove_frames_after_url = url_for(
         "library.book.chapter.images.remove_frames_after",
-        **chapter.kwargs,
+        **g.chapter.kwargs,
         image_index=image_index,
         frame_index=chosen,
         video_index=video_index,
@@ -3368,18 +3040,14 @@ def get_last_good_frame_widget(author, title, chapter_number, language, image_in
     "/<int:image_index>/frame/<int:video_index>/remove_after/<int:frame_index>",
     methods=["DELETE"],
 )
-def remove_frames_after(
-    author, title, chapter_number, language, image_index, video_index, frame_index
-):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def remove_frames_after(image_index: int, video_index: int, frame_index: int):
     image_index = int(image_index)
     video_index = int(video_index)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     if image_xml is None:
         log.error(
-            f"Image index {image_index} not found in chapter {chapter.get_chapterdir()}"
+            f"Image index {image_index} not found in chapter {g.chapter.get_chapterdir()}"
         )
         return "Image not found", 404
 
@@ -3388,7 +3056,7 @@ def remove_frames_after(
     # /home/jkane/books/active/Aesop/Fables/chapter/0024/animation/animation_000004/000000.png
     framedir = os.path.join(
         const.LIBRARY_DIR,
-        chapter.get_paragraph_dir(paragraph_xml.attrs["index"]),
+        g.chapter.get_paragraph_dir(paragraph_xml.attrs["index"]),
         "animation",
         f"image_{image_index:06d}_{video_index:02d}",
     )
@@ -3400,7 +3068,7 @@ def remove_frames_after(
             log.info(f"Deleting frame {frame} after chosen {frame_index}")
             os.unlink(frame)
 
-    image_filename = chapter.get_image_filename(image_xml)
+    image_filename = g.chapter.get_image_filename(image_xml)
     if video_index == 0:
         video_filename = image_filename.replace(".png", ".mp4")
     else:

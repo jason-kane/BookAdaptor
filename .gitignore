@@ -7,3 +7,5 @@ src/.github_token
 src/pages/**/*
 src/artifact_editor/text_old/*
 active-test/*
+obs/*
+src/.coverage

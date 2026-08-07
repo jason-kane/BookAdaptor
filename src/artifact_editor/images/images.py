@@ -10,6 +10,7 @@ from functools import lru_cache
 
 import redis
 from ascii_magic import AsciiArt
+from bs4 import Tag
 from flask import url_for
 from PIL import Image, UnidentifiedImageError
 
@@ -1031,8 +1032,10 @@ def generate_metadata_character_action_old(character_dict, image_xml, force=Fals
             )
 
 
-def generate_metadata_from_text(chapter, image_xml, force_all=False):
-    # style
+def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> None:
+    """
+    Fill in all the metadata fields based on the text surrounding this image.
+    """
     if "style" not in image_xml.attrs or force_all:
         generate_metadata_style(image_xml)
 

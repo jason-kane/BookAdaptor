@@ -7,6 +7,12 @@
       "insert": "Book Page"
     },
     {
+      "insert": "\nBook title should be in the page title"
+    },
+    {
+      "attributes": {
+        "list": "bullet"
+      },
       "insert": "\n"
     },
     {
