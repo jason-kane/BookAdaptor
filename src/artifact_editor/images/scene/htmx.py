@@ -3,12 +3,12 @@ import os
 
 from flask import request, url_for
 from torch import div
-
+from bs4 import Tag
 import logger
 from artifact_editor.characters import characters
 from artifact_editor.styles import htmx as styles_htmx
 from artifact_editor.tools import generic_button
-
+from artifact_editor.chapter.chapter import Chapter
 from . import const as scene_const
 
 log = logger.log(__name__)
@@ -213,29 +213,30 @@ def tod(chapter, image_xml):
     tod = image_xml.attrs.get("tod", "")
 
     out = f"""<div class="wa-cluster" style="width: 100%" id="tod">
-        <wa-select
-            value="{tod}" 
-            hx-put="scene/tod"
-            hx-target="#tod"
-            hx-swap="outerHTML transition:true"
-            hx-trigger="change"
-            name="tod"
-            id="tod-select" 
-            label="Time of day">"""
+    <wa-select
+        value="{tod}" 
+        hx-put="scene/tod"
+        hx-target="#tod"
+        hx-swap="outerHTML transition:true"
+        hx-trigger="change"
+        name="tod"
+        id="tod-select" 
+        label="Time of day"
+    >""" + "\n"
     
     for tod_choice in scene_const.TIME_OF_DAY_CHOICES:
-        out += f'<wa-option value="{tod_choice[0]}">{tod_choice[1]}</wa-option>'
+        out += f'       <wa-option value="{tod_choice[0]}">{tod_choice[1]}</wa-option>\n'
         
-    out += "</wa-select>"
+    out += "    </wa-select>\n"
 
-    out += """<wa-button
+    out += """    <wa-button
         pill
         style="align-self: flex-end; margin-left: 1em;"
         hx-post="scene/tod"
         hx-target="#tod"
         hx-swap="outerHTML transition:true">
         Generate
-    </wa-button>"""
+    </wa-button>\n"""
     
     out += "</div>"
     return out
@@ -288,8 +289,8 @@ def mood(chapter, image_xml):
     </div>"""
 
 
-def camera_lighting(chapter, image_xml):
-    out = '<div class="wa-cluster">'
+def camera_lighting(chapter: Chapter, image_xml: Tag):
+    out = '<div id="camera-lighting" class="wa-cluster">'
 
     for aspect in ("direction", "source", "quality"):
         aspect_value = image_xml.attrs.get(f"lighting_{aspect}", "")
@@ -313,7 +314,7 @@ def camera_lighting(chapter, image_xml):
         pill
         style="align-self: flex-end; margin-left: 1em;"
         hx-post="scene/lighting"
-        hx-target="#camera"
+        hx-target="#camera-lighting"
         hx-swap="outerHTML transition:true">
         Generate
     </wa-button>"""

@@ -55,48 +55,22 @@ def my_url_value_preprocessor(endpoint, values):
     chapter_url_value_preprocessor(endpoint, values)    
 
 
-# POST /Aesop/Fables/0020/images/0/set_mode
-@bp.route("/set_mode", methods=["POST"])
-def set_image_mode(author, title, chapter, image_index=0):
-    log.info(f"Setting image mode for {author}/{title}/{chapter}/images/{image_index}")
-
-    new_mode = request.form.get("mode", "image")
-    log.info(f"New mode: {new_mode}")
-
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-
-    all_images = mybook.soup.findAll("image")
-    image_xml = all_images[image_index]
-
-    image_xml.attrs["mode"] = new_mode
-    mybook.save_xml()
-
-    return images_htmx.image_strip_centerpiece(chapter, image_xml, default="image")
-
-
 # /<author>/<path:title>/<chapter>/images/selector/<int:image_index>/actions/use_image
 @bp.route("/actions/use_image", methods=["POST"])
-def use_image(author, title, chapter_number, language, image_index=0):
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
-
+def use_image(image_index: int=0):
     log.info(f"{request.form}")
     selected_image_src = request.form["selectedImage"].split("?")[
         0
     ]  # remove cache buster if present
     image_index = int(request.form["image_index"])
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
     selected_image = os.path.basename(selected_image_src)
 
     log.info(f"Selected image: {selected_image}")
 
     image_xml.attrs["src"] = selected_image
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     cache.clear()  # clear cache to ensure new image is shown
 

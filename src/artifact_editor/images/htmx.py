@@ -1032,8 +1032,6 @@ def image_workshop(image_xml: Tag, chapter) -> str:
             hx-swap="none"
             panel="selector">Selector</wa-tab>""")
 
-        # tabs.append('<wa-tab panel="selector">Selector</wa-tab>')
-
         panels.append("""<wa-tab-panel name="selector">
             <div id="selector" class="skeleton-paragraphs">
                 <wa-skeleton></wa-skeleton>

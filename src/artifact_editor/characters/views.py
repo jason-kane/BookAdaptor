@@ -345,12 +345,12 @@ def update_character_description(character_tag):
 
     character_dict["description"] = description
     characters.save_character(
-        chapter,
+        g.chapter,
         character_tag,
         character_dict,
     )
 
-    return htmx.character_data(q.chapter, character_dict)
+    return htmx.character_data(g.chapter, character_dict)
 
 
 # /H.%20P.%20Lovecraft/Cool%20Air/0001/characters/Mechanic/actions/update_gender
@@ -834,7 +834,7 @@ def headshot(character_tag):
     return send_from_directory(
         os.path.join(
             const.LIBRARY_DIR, 
-            q.chapter.chapterdir,
+            g.chapter.chapterdir,
             "characters"
         ),
         f"{character_tag}.png",

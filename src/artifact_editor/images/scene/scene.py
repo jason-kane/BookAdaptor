@@ -62,27 +62,24 @@ def generate_tod(image_xml):
         next_image_xml=image_xml.find_next("image")
     )
 
-    # our prompt
-    tod_choices = [c[1] for c in scene_const.TIME_OF_DAY_CHOICES]
+    tod_choices = [c[0] for c in scene_const.TIME_OF_DAY_CHOICES]
+
     prompt = (
         f"I want to determine the time of day for a portion of a story."
         f"  The text is: {text}.  "
         f"The surrounding text is: {context}.  "
         "What is the time of day?  The answer must be one of the following: "
-        f"UNKNOWN, {', '.join(tod_choices)}.  "
+        f"[{', '.join(tod_choices)}]"
         "Single word response only."
     )
     
-    tod = llm.str_prompt(prompt)
-    if tod in tod_choices:
-        for c in scene_const.TIME_OF_DAY_CHOICES:
-            if c[1] == tod:
-                tod = c[0]
-
-    elif tod != "UNKNOWN":
+    tod = llm.str_prompt(prompt).lower().strip()
+    
+    if tod not in tod_choices:
         log.warning(
             f"Time of day '{tod}' is not in {scene_const.TIME_OF_DAY_CHOICES} for image {image_xml}"
         )
+        tod = f"Odd {tod}"
 
     return tod
 

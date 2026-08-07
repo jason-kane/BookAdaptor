@@ -897,6 +897,10 @@ class Chapter:
             # we need to survive an os.path.join, even if the result is discarded.
             prior_frame = ""
 
+        previous_image_comfy = ""
+        if previous_image_src:
+            previous_image_comfy = os.path.basename(previous_image_src)
+
         files_to_copy = [
             (
                 source_image,
@@ -1077,7 +1081,7 @@ class Chapter:
             "META": json.dumps(meta, indent=2),
             "NEGATIVE_PROMPT": negative_prompt,
             "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-            "PREVIOUS_IMAGE": previous_image_src,
+            "PREVIOUS_IMAGE": previous_image_comfy,
             "PRIOR_FRAME": os.path.basename(prior_frame)
             if prior_frame is not None
             else "",

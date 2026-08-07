@@ -7,6 +7,7 @@ TIME_OF_DAY_CHOICES = [
     ("dusk", "Dusk"),
     ("evening", "Evening"),
     ("night", "Night"),
+    ("unknown", "Unknown"),
 ]
 
 CAMERA_CHOICES = [

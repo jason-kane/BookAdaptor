@@ -184,7 +184,10 @@ def generate_lighting(image_index=0):
         image_xml.attrs[f"lighting_{aspect}"] = value
 
     g.chapter.save_xml()
-    return "", 200
+    return htmx.camera_lighting(
+        chapter=g.chapter,
+        image_xml=image_xml,
+    ), 200
 
 # Scene Characters
 @bp.route("characters", methods=["PUT"])

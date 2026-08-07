@@ -645,7 +645,7 @@
       "widgets_values": [
         "",
         "",
-        "wizardofoz",
+        "{{STYLE}}",
         1,
         0,
         true
@@ -1050,7 +1050,7 @@
         "Node name for S&R": "LoadImage"
       },
       "widgets_values": [
-        "{{PREVIOUS_IMAGE}} [input]",
+        "{{PREVIOUS_IMAGE}}",
         "image"
       ]
     }

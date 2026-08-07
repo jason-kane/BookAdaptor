@@ -279,10 +279,6 @@ def comfyui_workflow_run(image_index: int = 0):
     methods=["GET"],
 )
 def comfyui_workflow_open(
-    author: str,
-    title: str,
-    chapter_number: int,
-    language: str,
     image_index: int = 0,
     mode: str = "t2i",
     video_index: int = 0,
@@ -310,13 +306,13 @@ def comfyui_workflow_open(
 
     video_tag = f"_{video_index:02d}"
 
-    animation = animation.lower() in ["1", "true", "animation"]
-    log.info(f"animation is {animation}")
+    is_animation = animation.lower() in ["1", "true", "animation"]
+    log.info(f"animation is {is_animation}")
 
-    if not animation and request.args.get("workflow_image_template"):
+    if not is_animation and request.args.get("workflow_image_template"):
         workflow_template = request.args.get("workflow_image_template")
 
-    elif animation:
+    elif is_animation:
         # the kind of template used to animate this image over time
         # ie:  the "LTX23" part ^^^^^
         workflow_template = image_xml.attrs.get(
@@ -342,7 +338,7 @@ def comfyui_workflow_open(
 
     if request.args.get("prompt"):
         log.info("Overriding prompt with provided arg: %s", request.args.get("prompt"))
-        if animation:
+        if is_animation:
             image_xml.attrs[f"animation_prompt{video_tag}"] = request.args.get("prompt")
         else:
             image_xml.attrs["prompt"] = request.args.get("prompt")
@@ -350,7 +346,7 @@ def comfyui_workflow_open(
         log.info(
             "Overriding prompt with provided form arg: %s", request.form.get("prompt")
         )
-        if animation:
+        if is_animation:
             image_xml.attrs[f"animation_prompt{video_tag}"] = request.form.get("prompt")
         else:
             image_xml.attrs["prompt"] = request.form.get("prompt")
@@ -358,7 +354,7 @@ def comfyui_workflow_open(
         log.info(
             "Prompt override not provided.  Using existing prompt: %s",
             image_xml.attrs.get(
-                f"animation_prompt{video_tag}" if animation else "prompt", ""
+                f"animation_prompt{video_tag}" if is_animation else "prompt", ""
             ),
         )
 
@@ -366,7 +362,7 @@ def comfyui_workflow_open(
     # customization from template -> instance.
     # workflow is the json-ready dict representing a workflow.
     log.warning("Generating workflow", workflow_template=workflow_template)
-    workflow = chapter.get_comfy_workflow(
+    workflow = g.chapter.get_comfy_workflow(
         image_xml,
         interface="ui",
         mode=mode,
@@ -378,7 +374,7 @@ def comfyui_workflow_open(
         return "No workflow available for this image.", 400
 
     # this is the pisser that will show up in your workflow list.
-    workflow_name = f"{workflow_template}_{chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
+    workflow_name = f"{workflow_template}_{g.chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
     workflow_fn = os.path.join(
         const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_name + ".json"
     )
@@ -390,7 +386,7 @@ def comfyui_workflow_open(
 
     # 3. This workflow needs to become the one we use from now on for this image.
     # image_xml.attrs["workflow_name"] = workflow_name
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # 4. Unless the user (UX TBD) chooses to reset it.
     # TODO

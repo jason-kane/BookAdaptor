@@ -15,7 +15,7 @@ from artifact_editor.images import (
 from artifact_editor.tools import (
     generic_button,
 )
-
+from artifact_editor.chapter.chapter import Chapter
 from .selector import registry as selector_registry
 
 log = logger.log(__name__)
@@ -120,7 +120,7 @@ def get_mode_selector(src, aspect, image_xml):
 #     return buttons
 
 
-def image_metadata(chapter, image_xml, src):   
+def image_metadata(chapter: Chapter, image_xml: Tag, src:str):   
     log.debug(f"Getting image metadata for {chapter=}, {image_xml=}, {src=}")
     aspect = chapter.get_aspect()
     
@@ -226,19 +226,6 @@ def image_metadata(chapter, image_xml, src):
         </div>
         """          
 
-    # if src and (not base_fn or not os.path.exists(image_pfn)):
-    #     buttons = image_metadata_buttons(image_xml.attrs["index"], 'selector', verify_variant="neutral")
-        
-    #     out = f"""
-    #     <div id="image_metadata" style="max-width: 500px;">
-    #         <div>Image file not found</div>
-    #         <div>
-    #             {''.join(buttons)}
-    #         </div>
-    #     </div>
-    #     """
-    # else:
-
     return out
 
 def image_selector(
@@ -316,24 +303,6 @@ def image_selector(
         if camera_action:
             camera_action = f'<div class="wa-cluster">{camera_action}</div>'
         
-    # TODO
-    # else:
-    #     # which buttons only make sense when the image does _not_ exist?
-    #     buttons += [
-    #         generic_button(
-    #             imageurl,
-    #             category=None,
-    #             tag="zmi_generate",
-    #             cosmetic="ZMI Generate",
-    #             target="#selector",
-    #             vals=f"index: {image_index}, selectedImage: getSelectedImageSrc()",
-    #             tooltip="Generate a scene, create a prompt and draw it.",
-    #         )
-    #     ]
-
-    # height = 400
-    # width = 400
-
     # TODO: skip the carousel when there is only one image.
     log.info(f"impedence fullscreen={fullscreen} all_images={all_images}")
     
@@ -344,41 +313,16 @@ def image_selector(
             chapter.get_paragraph_dir(paragraph.attrs["index"]), 
             image_xml.attrs["src"]
         )
+
+    if src is None and len(all_images) > 0:
+        # if there is no src, but there are images, pick the first one.
+        src = os.path.join(
+            const.LIBRARY_DIR, 
+            chapter.get_paragraph_dir(paragraph.attrs["index"]), 
+            list(all_images)[0]
+        )
     
-    # if src and fullscreen and all_images:
-    #     # check for an impedence mismatch...
-    #     if src not in all_images:
-    #         log.info(
-    #             f"Image src {src} not found in all_images list.  Possible impedence mismatch."
-    #         )
-    #         log.info(f"all_images[0]: {all_images[0]}")
-    #         src = all_images[0]
-    #     else:
-    #         log.info("Impedence match confirmed.  Good job puppy.")
-
-    #     # display it in the aspect ratio it will be rendered in
-    #     # so mistakes are obvious.
-    #     if aspect == "widescreen":
-    #         # widescreen aspect
-    #         height = 225
-    #         ar = " --aspect-ratio: 16/9"
-    #     elif aspect == "portrait":
-    #         # portrait aspect
-    #         width = 225
-    #         ar = " --aspect-ratio: 9/16"
-    #     else:
-    #         # we're just going to cry in the corner.
-    #         ar = " --aspect-ratio: 1/1"
-
-    # elif src and all_images:
-    #     # not fullscreen
-    #     ar = " --aspect-ratio: 1/1"
-
     if src and os.path.exists(src):
-        # serve_image()
-        #imageurl = f"{chapterurl}/{paragraph['index']:0>4}/{image_xml.attrs['src']}"
-        # imageurl = f"{chapterurl}/images/{image_xml.attrs['index']}.png"       
-
         imageurl = url_for(
             'library.book.chapter.images.show_image_by_index',
             author=chapter.author.name,
