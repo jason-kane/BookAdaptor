@@ -85,6 +85,7 @@ def draw_text_layers(
     """
     log.info(f"draw_text_layers({chapter=}, {phrase_xml=}, {force=})")
     parser_class = {
+        'rich-text': typography.RichTextToLatex,
         'novel': typography.NovelToLatex,
         'verse': typography.VerseToLatex,
         'play': typography.PlayToLatex,

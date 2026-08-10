@@ -391,7 +391,7 @@
         "Node name for S&R": "BetterString"
       },
       "widgets_values": [
-        "Convert this scene description into a prompt suitable for z-image-turbo. Only include the optimized prompt.\n"
+        "Convert this scene description into a single high detail prose description.  Include a full description of the setting and each character or important object present.\n"
       ]
     },
     {

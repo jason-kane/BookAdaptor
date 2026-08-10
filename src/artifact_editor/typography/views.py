@@ -379,8 +379,6 @@ def hyper_redraw_all_text(aspect):
     """
     aspect = aspect.lstrip("_")
 
-    G = const.GEOMETRY[aspect]
-
     masterplan = g.chapter.get_masterplan()
     if masterplan is None:
         masterplan = generate_masterplan(g.chapter)

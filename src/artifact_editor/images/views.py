@@ -9,10 +9,11 @@ import time
 from tempfile import TemporaryDirectory
 from typing import TypedDict
 
-from bs4 import Tag
 import httpx
+from bs4 import Tag
 from flask import (
     Blueprint,
+    g,
     make_response,
     redirect,
     render_template,
@@ -20,7 +21,6 @@ from flask import (
     send_file,
     send_from_directory,
     url_for,
-    g,
 )
 from PIL import Image
 from pygments import format, lex
@@ -29,6 +29,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import HtmlLexer
 from transformers import T5Tokenizer
 
+import comfy
 import const
 import logger
 from animations.registry import registry as animation_registry
@@ -184,17 +185,24 @@ def comfyui_workflow_run(image_index: int = 0):
     #     mode = "t2i"
     # else:
     #     mode = "ti2i"
-
+    # we want to always use the ui workflow:
     workflow = g.chapter.get_comfy_workflow(
         image_xml,
-        interface="api",
+        interface="ui",
         mode=mode,
         workflow_template=workflow_template,
     )
 
-    json_workflow = {"prompt": workflow}
+    # then _convert_ it to the api workflow right at the
+    # edge.
+    json_workflow = {
+        "prompt": comfy.ui_to_api_workflow(workflow)
+    }
 
     # start the comfyui workflow
+    with open('/tmp/debug.json', 'w') as f:
+        f.write(json.dumps(json_workflow, indent=2))
+        
     response = client.post(
         const.COMFYUI_API_URL + "api/prompt",
         json=json_workflow,

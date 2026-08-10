@@ -1,10 +1,12 @@
 # generic helper for comfyUI interactions
 import glob
 import html
+import tempfile
 import json
 import os
 import re
 import shutil
+import subprocess
 import time
 
 import httpx
@@ -15,32 +17,137 @@ import logger
 log = logger.log(__name__)
 
 
+def workflow_type(workflow: dict) -> str:
+    """
+    Determine the type of a workflow based on its structure.
+
+    Returns:
+        str: The type of the workflow ('image', 'text', 'other').
+    """
+    if "nodes" in workflow:
+        return "ui"
+    if "1" in workflow:
+        return "api"
+
+    raise ValueError("Unknown workflow type.")
+
+
+class UiToApiConverter:
+    """
+    A class to convert a workflow from the UI format to the API format.
+    """
+
+    def __init__(self, workflow: dict):
+        if workflow_type(workflow) != "ui":
+            raise ValueError("Provided workflow is not in UI format.")
+        self.workflow = workflow
+        self.node_by_id = {node.get("id"): node for node in workflow.get("nodes", [])}
+
+    def convert(self) -> dict:
+        """
+        Convert the workflow from UI format to API format.
+
+        Returns:
+            dict: The converted workflow in API format.
+        """
+        out = {}
+        for node_id, node in self.node_by_id.items():
+            key = str(node.get("id"))
+            out[key] = {"inputs": {}, "class_type": node["type"], "_meta": {}}
+
+            if hasattr(self, node.get("type")):
+                out[key].update(getattr(self, node.get("type"))(node))
+            else:
+                raise ValueError(
+                    f"Conversion method for node type '{node.get('type')}' not implemented."
+                )
+
+            # for input_name, input_value in node.get("inputs", {}).items():
+            #     if isinstance(input_value, list) and len(input_value) > 0:
+            #         # Assuming the first element is the relevant one
+            #         out[key]["inputs"][input_name] = input_value[0]
+            #     else:
+            #         out[key]["inputs"][input_name] = input_value
+        return out
+
+    def CLIPLoader(self, node: dict) -> dict:
+        """
+        Handle specific conversion for CLIPLoader nodes.
+        """
+        clip_name, _type, device = node["properties"]["widgets_values"]
+        return {
+            "inputs": {"clip_name": clip_name, "type": _type, "device": device},
+            "class_type": "CLIPLoader",
+            "_meta": {"title": "Load CLIP"},
+        }
+
+
+def ui_to_api_workflow(workflow: dict) -> dict:
+    """
+    Convert a workflow from the UI format to the API format.
+
+    workflow is a json.load on a comfy ui workflow.
+    """
+    if workflow_type(workflow) != "ui":
+        raise ValueError("Provided workflow is not in UI format.")
+
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as tmp_file:
+        json.dump(workflow, tmp_file, indent=2)
+
+    log.info(f"Temporary workflow file created at {tmp_file.name}")
+
+    output = subprocess.run(
+        [
+            "comfy",
+            "run",
+            "--host", "comfyui",
+            "--print-prompt",
+            "--workflow",
+            tmp_file.name,
+            "--where=local",
+        ],
+        capture_output=True,
+    )
+
+    return json.loads(output.stdout.decode("utf-8"))["data"]["prompt"]
+
+
 def load_workflow_template(interface, mode, workflow_name: str) -> dict:
-    log.info('Loading workflow template', interface=interface, mode=mode, workflow_name=workflow_name)
+    log.info(
+        "Loading workflow template",
+        interface=interface,
+        mode=mode,
+        workflow_name=workflow_name,
+    )
     try:
-        workflow_fn = glob.glob(os.path.join(
-            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
-            f"{interface}.{mode}.{workflow_name}*.json"
-        ))[0]
+        workflow_fn = glob.glob(
+            os.path.join(
+                const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+                f"{interface}.{mode}.{workflow_name}*.json",
+            )
+        )[0]
     except IndexError:
         log.error(
-            "Workflow file not found",
-            glob=f"{interface}.{mode}.{workflow_name}*.json"
+            "Workflow file not found", glob=f"{interface}.{mode}.{workflow_name}*.json"
         )
-        raise ValueError(f"Workflow file not found for interface '{interface}', mode '{mode}', workflow name '{workflow_name}'.")
-    
-    workflow_fn = glob.glob(os.path.join(
-        const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
-        f"{interface}.{mode}.{workflow_name}*.json"
-    ))[0]
+        raise ValueError(
+            f"Workflow file not found for interface '{interface}', mode '{mode}', workflow name '{workflow_name}'."
+        )
+
+    workflow_fn = glob.glob(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+            f"{interface}.{mode}.{workflow_name}*.json",
+        )
+    )[0]
 
     if not os.path.exists(workflow_fn):
         log.error("Workflow file does not exist", workflow_fn=workflow_fn)
         raise ValueError(f"Workflow file {workflow_fn} does not exist.")
-    
+
     with open(workflow_fn, "r") as h:
         workflow = json.load(h)
-    
+
     return workflow
 
 
@@ -53,8 +160,8 @@ def apply_template_environment(workflow, template_environment):
         if "{{" in workflow and "}}" in workflow:
             log.info(f"Applying template environment to string: {workflow}")
             replacement_variables = re.findall(r"\{\{(.*?)\}\}", workflow)
-            log.info(f'Found replacement variables: {replacement_variables}')
-            for var in replacement_variables:                
+            log.info(f"Found replacement variables: {replacement_variables}")
+            for var in replacement_variables:
                 var_type = None
                 if ":" in var:
                     var_name, var_type = var.split(":")
@@ -62,31 +169,55 @@ def apply_template_environment(workflow, template_environment):
                     var_name = var
 
                 if var_name not in template_environment:
-                    log.warning("Template variable not found in environment", variable=var_name, template_environment=template_environment)
-                    raise ValueError(f"Template variable '{var_name}' not found in environment.")
+                    log.warning(
+                        "Template variable not found in environment",
+                        variable=var_name,
+                        template_environment=template_environment,
+                    )
+                    raise ValueError(
+                        f"Template variable '{var_name}' not found in environment."
+                    )
 
                 replacement_value = template_environment[var_name]
                 if var_type and var_type.lower() == "int":
                     replacement_value = int(replacement_value)
                     # remove the quotes around the (now-replaced) value to make it a 'real' int as far as JSON is concerned.
-                    log.info('Replacing "{{' + var + '}}" with int value %s', replacement_value)
-                    workflow = workflow.replace('"{{' + var + '}}"', str(replacement_value))
-                    workflow = workflow.replace('{{' + var + '}}', str(replacement_value))
-                    log.info('Result after replacement: %s', workflow)
+                    log.info(
+                        'Replacing "{{' + var + '}}" with int value %s',
+                        replacement_value,
+                    )
+                    workflow = workflow.replace(
+                        '"{{' + var + '}}"', str(replacement_value)
+                    )
+                    workflow = workflow.replace(
+                        "{{" + var + "}}", str(replacement_value)
+                    )
+                    log.info("Result after replacement: %s", workflow)
                 elif var_type and var_type.lower() == "float":
                     replacement_value = float(replacement_value)
                     # remove the quotes around the (now-replaced) value to make it a 'real' float as far as JSON is concerned.
-                    log.info('Replacing "{{' + var + '}}" with float value %s', replacement_value)
+                    log.info(
+                        'Replacing "{{' + var + '}}" with float value %s',
+                        replacement_value,
+                    )
                     # if we're wrapped in quote, get rid of the quotes.
-                    workflow = workflow.replace('"{{' + var + '}}"', str(replacement_value))
+                    workflow = workflow.replace(
+                        '"{{' + var + '}}"', str(replacement_value)
+                    )
                     # if we're not wrapped in quotes, just replace as is.
-                    workflow = workflow.replace('{{' + var + '}}', str(replacement_value))                    
+                    workflow = workflow.replace(
+                        "{{" + var + "}}", str(replacement_value)
+                    )
                 elif var_type and var_type.lower() == "safe":
                     replacement_value = str(replacement_value)
-                    workflow = workflow.replace("{{" + var_name + ":safe}}", replacement_value)
+                    workflow = workflow.replace(
+                        "{{" + var_name + ":safe}}", replacement_value
+                    )
                 else:
                     replacement_value = str(replacement_value)
-                    workflow = workflow.replace("{{" + var_name + "}}", replacement_value)
+                    workflow = workflow.replace(
+                        "{{" + var_name + "}}", replacement_value
+                    )
             #     else:
             #         log.warning("Template variable not found in environment", variable=var)
             #         raise ValueError(f"Template variable '{var}' not found in environment.")
@@ -95,7 +226,7 @@ def apply_template_environment(workflow, template_environment):
     elif isinstance(workflow, list):
         for index, item in enumerate(workflow):
             workflow[index] = apply_template_environment(item, template_environment)
-    
+
     elif isinstance(workflow, float):
         # no need to apply template environment to a float, but we want to make sure it is a valid JSON type.
         return workflow
@@ -108,7 +239,7 @@ def apply_template_environment(workflow, template_environment):
         for key, value in workflow.items():
             workflow[key] = apply_template_environment(value, template_environment)
             # if isinstance(value, str):
-                
+
             # elif isinstance(value, dict):
             #     # just recurse
             #     workflow[key] = apply_template_environment(value, template_environment)
@@ -119,13 +250,12 @@ def apply_template_environment(workflow, template_environment):
             #         new_list.append(item)
             #     workflow[key] = new_list
 
-
-                    # template_key = value[2:-2]
-                    # if template_key in template_environment:
-                    #     workflow[key] = template_environment[template_key]
-                    # else:
-                    #     log.warning("Template key not found in environment", template_key=template_key)
-                    #     raise ValueError(f"Template key '{template_key}' not found in environment.")
+            # template_key = value[2:-2]
+            # if template_key in template_environment:
+            #     workflow[key] = template_environment[template_key]
+            # else:
+            #     log.warning("Template key not found in environment", template_key=template_key)
+            #     raise ValueError(f"Template key '{template_key}' not found in environment.")
 
         # for key, value in template_environment.items():
         #     if value is None:
@@ -152,7 +282,7 @@ def apply_template_environment(workflow, template_environment):
         #         log.info('Preparing template substitution', key=key, value=value)
         #         value = value.replace("\n", "\\n").replace('"', r'\"')
         #         workflow_str = workflow_str.replace("{{" + key + "}}", value)
-        
+
         # every iteration should remain valid json.
         check = json.loads(json.dumps(workflow))
 
@@ -163,7 +293,12 @@ def apply_template_environment(workflow, template_environment):
         start = max(0, offset - context)
         end = offset + context
         snippet = workflow_str[start:end]
-        log.error("Unreplaced template placeholders found", snippet=snippet, pointer=" " * (offset - start + 2) + "v", all_keys=all_keys)
+        log.error(
+            "Unreplaced template placeholders found",
+            snippet=snippet,
+            pointer=" " * (offset - start + 2) + "v",
+            all_keys=all_keys,
+        )
         raise ValueError("Unreplaced template placeholders found in workflow.")
 
     # try:
@@ -182,8 +317,6 @@ def apply_template_environment(workflow, template_environment):
     return workflow
 
 
-
-
 def apply_template_environment_old(workflow, template_environment):
     # template substitutions are easy when workflow is a string.
     workflow_str = json.dumps(workflow)
@@ -192,7 +325,9 @@ def apply_template_environment_old(workflow, template_environment):
     for key, value in template_environment.items():
         if value is None:
             log.warning("Template environment value is None", key=key)
-            raise ValueError(f"Template environment value for key '{key}' is None. Please provide a valid value.")
+            raise ValueError(
+                f"Template environment value for key '{key}' is None. Please provide a valid value."
+            )
         # Hey bob, when it is a _bad_ time for the new python f-string? Well...
         # workflow_str = workflow_str.replace(f"{{{{{key}}}}}", str(value))
         if ":" in key:
@@ -204,28 +339,38 @@ def apply_template_environment_old(workflow, template_environment):
 
             if keytype == "int":
                 # remove the quotes around the (now-replaced) value
-                workflow_str = workflow_str.replace("{{" + key + ":" + keytype + "}}", json.dumps(int(value)))
+                workflow_str = workflow_str.replace(
+                    "{{" + key + ":" + keytype + "}}", json.dumps(int(value))
+                )
             elif keytype == "safe":
-                workflow_str = workflow_str.replace("{{" + key + ":" + keytype + "}}", str(value))
+                workflow_str = workflow_str.replace(
+                    "{{" + key + ":" + keytype + "}}", str(value)
+                )
             else:
                 log.error("Unknown key type", keytype=keytype)
-                workflow_str = workflow_str.replace("\"{{" + key + "}}\"", json.dumps(value))
+                workflow_str = workflow_str.replace(
+                    '"{{' + key + '}}"', json.dumps(value)
+                )
         else:
-            log.info('Preparing template substitution', key=key, value=value)
-            value = value.replace("\n", "\\n").replace('"', r'\"')
+            log.info("Preparing template substitution", key=key, value=value)
+            value = value.replace("\n", "\\n").replace('"', r"\"")
             workflow_str = workflow_str.replace("{{" + key + "}}", value)
-        
+
         # every iteration should remain valid json.
         check = json.loads(workflow_str)
 
-    
     if "{{" in workflow_str:
         offset = workflow_str.find("{{")
         context = 20
         start = max(0, offset - context)
         end = offset + context
         snippet = workflow_str[start:end]
-        log.error("Unreplaced template placeholders found", snippet=snippet, pointer=" " * (offset - start + 2) + "v", all_keys=all_keys)
+        log.error(
+            "Unreplaced template placeholders found",
+            snippet=snippet,
+            pointer=" " * (offset - start + 2) + "v",
+            all_keys=all_keys,
+        )
         raise ValueError("Unreplaced template placeholders found in workflow.")
 
     try:
@@ -236,7 +381,13 @@ def apply_template_environment_old(workflow, template_environment):
         start = max(0, e.pos - context)
         end = e.pos + context
         snippet = e.doc[start:end]
-        log.error("template replace problem",error=e, snippet=snippet, pointer=" " * (e.pos - start + 12) + "v", all_keys=all_keys)
+        log.error(
+            "template replace problem",
+            error=e,
+            snippet=snippet,
+            pointer=" " * (e.pos - start + 12) + "v",
+            all_keys=all_keys,
+        )
         with open("/tmp/failed_workflow.json", "w") as f:
             f.write(workflow_str)
         raise ValueError(f"Failed to parse workflow JSON: {e}")
@@ -246,28 +397,23 @@ def apply_template_environment_old(workflow, template_environment):
 
 def run_workflow(workflow, template_environment={}):
     """
-    our input is a workflow template object.  
+    our input is a workflow template object.
     (ie: What you get from json.load() on a comfyui workflow export)
-    its' a template because it has {{placeholders}} in it that we 
+    its' a template because it has {{placeholders}} in it that we
     want to replace with things in ^^ template_environment before we
     can execute (for api) or link to it (for ui).
-    
+
     This is 'run', so we're in the api lane. hang onto your butts.
-    
+
     apply this template environment to this workflow template, then run it.
     """
     if "SEED" not in template_environment:
         template_environment["SEED"] = int(time.time() * 1000) % 2**32
 
-    workflow = apply_template_environment(
-        workflow,
-        template_environment
-    )
-    
+    workflow = apply_template_environment(workflow, template_environment)
+
     try:
-        workflow = {
-            "prompt": workflow
-        }
+        workflow = {"prompt": workflow}
     except TypeError as e:
         with open("/tmp/failed_workflow.json", "w") as f:
             f.write(str(workflow))
@@ -278,15 +424,12 @@ def run_workflow(workflow, template_environment={}):
     client = httpx.Client()
 
     log.info(
-        "client.post(COMFYUI_API_URL + 'prompt', workflow)", 
-        COMFYUI_API_URL=const.COMFYUI_API_URL, 
-        workflow=json.dumps(workflow, indent=2)
+        "client.post(COMFYUI_API_URL + 'prompt', workflow)",
+        COMFYUI_API_URL=const.COMFYUI_API_URL,
+        workflow=json.dumps(workflow, indent=2),
     )
     # api/workflow
-    response = client.post(
-        const.COMFYUI_API_URL + "prompt", 
-        json=workflow
-    )
+    response = client.post(const.COMFYUI_API_URL + "prompt", json=workflow)
 
     if response.status_code != 200:
         log.error("Failed to create workflow", response_text=response.text)
@@ -308,33 +451,29 @@ def run_workflow(workflow, template_environment={}):
         if not finished:
             time.sleep(1)
 
-
     # text outputs use 'FILE_NAME'
-    if 'FILE_NAME' in template_environment:
+    if "FILE_NAME" in template_environment:
         try:
             # because the "easy safeText" POS only allows .txt and .csv
             output_file_path = os.path.join(
                 const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-                template_environment["FILE_NAME"]
+                template_environment["FILE_NAME"],
             )
-            
+
             if os.path.exists(output_file_path + ".txt"):
                 with open(output_file_path + ".txt", "r") as f:
                     output_content = f.read()
-                
-                # remove "extra" .txt extension
-                shutil.move(
-                    output_file_path + ".txt",
-                    output_file_path
-                )
 
-                log.info('Workflow output file content', output_content=output_content)
+                # remove "extra" .txt extension
+                shutil.move(output_file_path + ".txt", output_file_path)
+
+                log.info("Workflow output file content", output_content=output_content)
                 return output_content
-            
+
             log.info(
                 "os.listdir",
-                files=os.listdir(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]), 
-                output_file_path=output_file_path
+                files=os.listdir(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]),
+                output_file_path=output_file_path,
             )
             raise ValueError("Expected output file not found", output_file_path)
 
@@ -381,7 +520,9 @@ def run_workflow(workflow, template_environment={}):
                 )
 
                 shutil.copy(
-                    os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], filename),
+                    os.path.join(
+                        const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], filename
+                    ),
                     os.path.join(const.LIBRARY_DIR, pfn),
                 )
 

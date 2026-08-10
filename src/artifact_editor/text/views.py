@@ -359,6 +359,8 @@ def import_chapter(author, title, chapter_number, language):
 
         index = break_index + 1
 
+    chapter.save_delta({"ops": out_ops})
+
     chapter_xml = chapter_soup.find('chapter')
 
     with open(

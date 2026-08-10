@@ -223,6 +223,21 @@ def simple_paginator(page, errors_only, total_pages):
     """
     Create a dumb pagination object for the audio page.
     """
+    narrow = False
+    # takes about 1/4th of a screen width
+    if narrow:        
+        sidebar_width = 1
+        toleration_width = 2 
+    else:
+        sidebar_width = 2 # this is _total_ sidebar width, both sides.
+        toleration_width = 3
+
+    page_width = 2 + (sidebar_width + toleration_width) * 2 + 1
+
+    # <sidebar> ... <toleration><current page><toleration> ... <sidebar>
+    # [ 1 2 3 4 ... 97 98 99 100 ]
+    # with good behavior when sidebar and toleration collide.
+
     # total_pages = (total_phrases + per_page - 1) // per_page
     # return {
     #     'per_page': per_page,
@@ -246,7 +261,7 @@ def simple_paginator(page, errors_only, total_pages):
                 {htmx.left_chevron_button(page, errors_only)} """
 
     # if there are <= 9 pages, show them all
-    if total_pages <= 9:
+    if total_pages <= page_width:
         log.warning(f"Showing all {total_pages} audio pages in nav")
         # show all pages, highlighting the current page.
         for p in range(1, total_pages + 1):
@@ -260,37 +275,60 @@ def simple_paginator(page, errors_only, total_pages):
     else:
         buckets = []
         #
-        # there are seven slots
+        # there are page_width - 2 slots (-2 because the ellipsis on each side take up one)
         #
-        # first gets page 1
-        buckets.append(htmx.page_button(page, 1, errors_only=errors_only))
+        # first slot always gets page 1
+        for p in range(sidebar_width):
+            buckets.append(htmx.page_button(page, p + 1, errors_only=errors_only))
 
         first_over = True
         first_under = True
-        for page_option in range(2, total_pages):
-            span = 2
-            if page <= 4 or (total_pages - page < 4):
-                span = 4 - page
+        for page_option in range(sidebar_width + 1, total_pages):
+            # span is how much distance we are willing to tolerate.
+            span = toleration_width
+            # some edge cases.  When we're any of these:
+            # [ 1 2 3 4 ... 100 ] 
+            # we don't want an ellipsis on the left
+            # and if we're any of these:
+            # [ 1 ... 97 98 99 100 ]
+            # we similarly don't want an ellipsis on the right.
 
-            span = max(2, span)
+            # the currently chosen page is near the beginning or end of the range, # we want to show more pages on that side.  We will call that the  
+            # sidebar.  Because names are fun.
+            # 2-s  3-t
+            if page - toleration_width <= sidebar_width:
+                span = sidebar_width - page + toleration_width
+
+            #if page <= sidebar_width or (total_pages - page < sidebar_width):
+            #    span = sidebar_width - page
+
+            span = max(toleration_width, span)
 
             if (page - page_option) > span:
+                # once the page exceeds span we flip the first_over toggle.
                 if first_over:
-                    # if we are more than two pages away, we show a spacer
+                    # if we are more than span pages away, we show a spacer
                     buckets.append(htmx.spacer_button())
                     first_over = False
                 continue
 
             if (page_option - page) > span:
                 if first_under:
-                    # if we are more than two pages away, we show a spacer
+                    # if we are more than span pages away, we show a spacer
                     buckets.append(htmx.spacer_button())
                     first_under = False
                 continue
 
             buckets.append(htmx.page_button(page, page_option, errors_only=errors_only))
 
-        buckets.append(htmx.page_button(page, total_pages, errors_only=errors_only))
+        for p in range(sidebar_width):
+            buckets.append(
+                htmx.page_button(
+                    page, 
+                    total_pages - p, 
+                    errors_only=errors_only,
+                )
+            )
 
         out += "\n".join(buckets)
 

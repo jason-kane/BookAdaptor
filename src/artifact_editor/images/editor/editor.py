@@ -45,10 +45,12 @@ def outpaint_to_aspect(chapter, image_xml, aspect, outpaint_description=None):
 
     prompt = outpaint_description or default_outpaint_prompt
 
-    # invoke the comfyui job through comfy.py
+    # invoke the comfyui job through comfy.py we don't want to maintain both a
+    # UI and API workflow, so we will use the UI workflow and convert it to API
+    # format on-demand.
     workflow = chapter.get_comfy_workflow(
         image_xml=image_xml,
-        interface="api",
+        interface="ui",
         mode="ti2i",
         workflow_template="flux_fill_outpaint",
         template_environment={
@@ -62,7 +64,9 @@ def outpaint_to_aspect(chapter, image_xml, aspect, outpaint_description=None):
     )
 
     client = httpx.Client()
-    json_workflow = {"prompt": workflow}
+    json_workflow = {
+        "prompt": comfy.ui_to_api_workflow(workflow),
+    }
 
     response = client.post(
         const.COMFYUI_API_URL + "api/prompt",

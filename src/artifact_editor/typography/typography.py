@@ -4,6 +4,7 @@ import os
 import binascii
 import re
 import shutil
+from collections import defaultdict
 import subprocess
 from functools import lru_cache
 
@@ -1511,6 +1512,349 @@ class VerseToLatex(XmlToLatex):
         )
 
 
+class RichTextToLatex(XmlToLatex):
+    def save_as_latex(self, highlight_phrase, tex_fn, highlight_paragraph=False, rainbow=False):
+        delta = self.chapter.load_delta()
+
+        ops = list(delta.get("ops", []))
+        remainder = ""
+        # this is shit.  do better.
+        attributes = defaultdict(bool, False)
+        for phrase in self.chapter.soup.find_all("phrase"):
+            # we want the rainbow breaks to match phrase.
+            # but we want all the layout to come from
+            # the delta.
+            phrase['latex'] = ""
+            operation = ops.pop(0)
+            ins = operation.get("insert", "")
+
+            ins = ins.replace("\t", r"\hspace*{2em}")
+            if operation.get("attributes", {}) is not None:
+                # we are enabling a formatting attribute
+                if (not attributes["bold"] and operation.get("attributes", {}).get("bold")
+                    and
+                   not attributes["italic"] and operation.get("attributes", {}).get("italic")
+                ):
+                    # enable bold _and_ italic
+                    phrase['latex'] += r"\textbf{\textit{" + phrase.get_text(separator=" ", strip=True)
+                    attributes["bold"] = True
+                    attributes["italic"] = True
+                    continue
+
+                if not attributes["bold"] and operation.get("attributes", {}).get("bold"):
+                    # enable bold
+                    phrase['latex'] += r"\textbf{" + phrase.get_text(separator=" ", strip=True)
+                    attributes["bold"] = True
+                    continue
+
+                elif not attributes["italic"] and operation.get("attributes", {}).get("italic"):
+                    # enable italic
+                    phrase['latex'] += r"\textit{" + phrase.get_text(separator=" ", strip=True)
+                    attributes["italic"] = True
+                    continue
+
+                if (attributes["bold"] and not operation.get("attributes", {}).get("bold")
+                    and
+                   attributes["italic"] and not operation.get("attributes", {}).get("italic")
+                ):
+                    # disable bold _and_ italic
+                    phrase['latex'] += r"}}" + phrase.get_text(separator=" ", strip=True)
+                    attributes["bold"] = False
+                    attributes["italic"] = False
+                    continue
+
+                if attributes["bold"] and not operation.get("attributes", {}).get("bold"):
+                    # disable bold
+                    phrase['latex'] += r"}" + phrase.get_text(separator=" ", strip=True)
+                    attributes["bold"] = False
+                    continue
+                    
+                if attributes["italic"] and not operation.get("attributes", {}).get("italic"):
+                    # disable italic
+                    phrase['latex'] += r"}" + phrase.get_text(separator=" ", strip=True)
+                    attributes["italic"] = False
+                    continue
+                
+            if remainder:
+                phrase_text = remainder + phrase.get_text(separator=" ", strip=True)
+            else:
+                phrase_text = phrase.get_text(separator=" ", strip=True)
+
+            # this may be too little, exactly right or too much.
+            if phrase_text in ins:
+                # phrase is a direct subset or match for ins.
+                if phrase_text == ins:
+                    # exact match, we can just keep rolling.
+                    phrase['latex'] += phrase_text
+                    continue
+                else:
+                    # phrase is a subset of ins
+                    # we want to eat as much of ins as phrase occupies.
+                    start_index = ins.find(phrase_text)
+                    end_index = start_index + len(phrase_text)
+                    after = ins[end_index:]
+                    phrase['latex'] += phrase_text
+                    ops.insert(0, {'insert': after}) # the remainder will be the next ops.pop(0)
+
+            elif ins in phrase_text:
+                # ins is a subset of phrase_text
+                # we want to eat as much of phrase_text as ins occupies.
+                start_index = phrase_text.find(ins)
+                end_index = start_index + len(ins)
+                after = phrase_text[end_index:]
+                phrase['latex'] += ins
+                remainder += after
+            
+        log.info(f"Verse: save_as_latex({highlight_phrase=}, {tex_fn=}, {highlight_paragraph=}, {rainbow=})")
+        chapter_contents = ""
+
+        first_chapter = True
+        rainbow_series = []
+
+        if highlight_phrase:
+            highlight_phrase_index = int(highlight_phrase.attrs.get("index", -1))
+            log.info(f'highlight_phrase_index: {highlight_phrase_index}')
+        else:
+            highlight_phrase_index = -1
+
+        for paragraph_xml in self.soup.find_all("paragraph", recursive=True):
+            paragraph_tags = tags_to_dict(
+                paragraph_xml.attrs.get("tags", "")
+            )
+            
+            if paragraph_tags.get('has-text', True) is False:
+                # this paragraph has no text, skip it.
+                log.info('Paragraph %s has has_text=False tag, skipping...', paragraph_xml)
+                continue
+                        
+            for phrase_xml in paragraph_xml.find_all("phrase", recursive=False):
+                phrase_index = int(phrase_xml.attrs.get("index"))
+                # current design has no children, so this is not doing as much as it looks like.
+                plain_phrase = phrase_xml.get_text(separator=" ", strip=True)
+                phrase = []
+
+                if phrase_xml.attrs.get("type", "") == "dinkus":
+                    # https://ctan.math.illinois.edu/macros/latex/contrib/froufrou/froufrou.pdf
+                    log.info('Dinkus found...')
+                    dinkus_style = phrase_xml.attrs.get("style", "dinkus")
+                    phrase.append("\n" + f"\\froufrou[{dinkus_style}]" + "\n")
+                
+                elif phrase_xml.attrs.get("type", "") == "chapter_title":
+                    log.info('Typesetting chapter title...')
+                    # f strings and latex don't mix very well.
+                    # phrase = f"\\centerline{{\\textbf{{\\large {phrase}}}}}\n"
+                    if first_chapter:
+                        phrase.append("\n" + r"\vspace{0.25cm}" + "\n")
+                        first_chapter = False
+                    else:
+                        phrase.append("\n" + r"\vspace{1.5cm}" + "\n")
+
+                    # title_spread because sometimes chapter titles are too long
+                    # and latex will NOT make reasonable decisions about where
+                    # to break.
+                    for chapter_title_segment in self.title_spread(plain_phrase):
+                        phrase.append((r"\centerline{\textbf{\large %s}}" % chapter_title_segment) + "\n")
+
+                    phrase.append(r"\vspace{0.25cm}" + "\n")
+
+                elif phrase_xml.attrs.get("type", "") == "section_header":
+                    log.info('Typesetting section header...')
+                    phrase.append("\n" + r"\vspace{0.5cm}" + "\n")
+                    for segment in self.title_spread(plain_phrase):
+                        phrase.append((r"\centerline{\textbf{\normalsize %s}}" % segment) + "\n")
+                    phrase.append(r"\vspace{0.25cm}" + "\n")
+                else:
+                    if "\n" in plain_phrase:
+                        # this is a multi-line phrase, we need to add a linebreak
+                        # after each line.
+                        lines = plain_phrase.splitlines()
+                        for line in lines[:-1]:
+                            phrase.append(line.strip() + r"\nobreak\\")
+                        # let the last line fall through for the no_linebreak handler.
+                        plain_phrase = lines[-1].strip()
+
+                    if phrase_xml.attrs.get("no_linebreak", "false").lower() == "true":
+                        phrase.append(plain_phrase)
+                    else:
+                        phrase.append(plain_phrase + r"\nobreak\\")
+
+                phrase_str = "".join(phrase)
+                if "_" in phrase_str:
+                    log.debug("Adding italics...")
+                    phrase_str = phrase_str.replace(r"&", r"\&")
+                    phrase_str = re.sub(
+                        #r"_([-\' \’\?a-zA-Z \.!]+)_", 
+                        r"_([^_]+)_", 
+                        r"\\textit{\g<1>}", 
+                        phrase_str
+                    )
+
+                # for typograph purposes, we have a little fixing to do
+                if "œ" in phrase_str:
+                    log.debug(r"Replacing œ with \oe...")
+                    phrase_str = phrase_str.replace("œ", r"\oe")
+                
+                if "—" in phrase_str:
+                    log.debug("Replacing — with --...")
+                    phrase_str = phrase_str.replace("—", "--")                    
+
+                if rainbow:
+                    # convert the phrase_id unique to hex pairs
+                    index = 10 + int(phrase_xml.attrs.get('index', '0'))
+                    rainbow_int = index % 16777216  # limit to 24 bits
+
+                    log.info('index: %s', index)
+                    log.info('rainbow_int: %s', rainbow_int)
+                    rainbow_bytes = rainbow_int.to_bytes(3, 'big')
+                    r, g, b = rainbow_bytes
+                    log.info('rainbow_bytes: %s', rainbow_bytes)
+                    
+                    rainbow_series.append(f"\\definecolor{{B{rainbow_int:X}}}{{RGB}}{{{r},{g},{b}}}")
+                    if phrase_str.endswith(r"\nobreak\\"):
+                        # move the nobreak so it is _outside_ the highlight.
+                        phrase_str = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase_str[:-len(r'\nobreak\\')]}}}" + r"\nobreak\\" + "\n"
+                    else:
+                        phrase_str = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase_str}}}\n"
+                elif highlight_paragraph:
+                    phrase_str = HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
+                elif highlight_phrase_index == phrase_index:
+                    # this _phrase_ should be highlighted
+                    phrase_str = HIGHLIGHT_COMMAND + "{" + phrase_str + "}\n"
+                else:
+                    phrase_str += "\n"
+
+                chapter_contents += phrase_str
+            
+            # when the last line of the stanza ends with \\ it messes up the spacing.
+            if rainbow or highlight_phrase_index == phrase_index:
+                eol = r"}\nobreak\\" + "\n"
+                if chapter_contents.endswith(eol):
+                    chapter_contents = chapter_contents[:-1 * len(eol)] + "}\n"
+            else:
+                eol = "\\nobreak\\\\\n"               
+                if chapter_contents.endswith(eol):
+                    chapter_contents = chapter_contents[:-1 * len(eol)] + "\n"
+            
+            chapter_contents += "\n"
+
+            # phrase = phrase_xml.get_text(separator=" ")
+            # phrase = phrase.strip(" ") # spaces, but not newlines.
+
+            # if phrase_xml == highlight_phrase or highlight_phrase is None:
+            #     # this _phrase_ should be highlighted
+            #     phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+            # elif highlight_paragraph is not None:
+            #     if phrase_xml.parent == highlight_paragraph:
+            #         phrase = HIGHLIGHT_COMMAND + "{" + phrase + "}\n"
+            #     else:
+            #         phrase += "\n"                
+            # else:
+            #     # log.info(f'{phrase_xml} != {highlight_phrase}')
+            #     phrase += "\n"
+            
+            # if phrase_xml.attrs.get("last"):
+            #     # this is the last phrase in the stanza, we need to add an extra newline
+            #     # to separate stanzas.
+            #     phrase += "\n"
+
+            # chapter_contents += phrase
+
+        # quotes
+        if '"' in chapter_contents:
+            log.debug("Adding smart quotes...")
+            for quote in re.findall(r'"([^"]*)"', chapter_contents):
+                chapter_contents = chapter_contents.replace(
+                    f'"{quote}"', 
+                    f'\\enquote{{{quote}}}'
+                )
+
+        #  If you start a line with [ immediately after \\, LaTeX may interpret
+        #  it as an optional vertical spacing argument (e.g., \\[2cm]). 
+        clean_contents = []
+        for line in chapter_contents.splitlines():
+            if line.startswith("["):
+                clean_contents.append(r"{}[" + line[1:])
+            else:
+                clean_contents.append(line)
+
+        chapter_contents = "\n".join(clean_contents)
+                
+
+        # mass-market paperbacks are 4.25x6.87
+        # "trade" paperbacks are 5-5.5 x 8-8.5
+
+        # widescreen has 1920 - 1080 = 840 pixels for our text, which at 300 pixels
+        # per inch is only 2.8 inches.
+
+        # if we down-res to 200 ppi, we get 4.2 inches, which is much better,
+        # but blurrier.  It's a harsh trade-off.
+
+        # There is _another_ problem.  With the highlighting, we're easing the
+        # burder on the reader to track the text.  That makes a slightly faster
+        # scrolling speed more than tolerable.  A wider page, with more words and
+        # slower scrolling feels stagnant.
+        width = "2.825in"
+        if self.chapter.get_aspect() == "portrait":
+            # portrait has 1080 pixels for text, which at 300 pixels per inch is
+            # 3.6 inches.  Better than widescreen, but still very tight.  Any
+            # margins are handled in Latex, which presumably knows what it is
+            # doing.  At 200ppi we get 5.4 inches, trade-paperback size.
+            width = "3.6in"
+        # \usepackage{luaquotes}
+        with open(tex_fn, "w") as h:
+            # ,10pt
+            h.write(
+                r"""\documentclass[parskip=full]{scrartcl}
+\usepackage[paperheight=%sin,paperwidth=%s,top=0.5in,bottom=4in,left=0.0625in,right=0.0625in,heightrounded]{geometry}
+\addtokomafont{title}{\centering}
+\addtokomafont{author}{\centering}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{froufrou}
+\usepackage[osf]{libertinus-otf}
+
+\usepackage{luaquotes}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{titling}
+\usepackage{microtype}
+
+\usepackage{verse,anyfontsize}
+
+%s
+
+\pagenumbering{gobble}
+\widowpenalties 1 10000
+\raggedbottom
+\setlength{\leftmargini}{0.125em}
+\setlength{\vindent}{0.75em}
+
+\begin{document}
+\setlength{\droptitle}{-45pt}
+\posttitle{\par\end{center}}
+\title{%s}
+\author{%s}
+\date{}
+\maketitle
+\vspace{-0.5in}
+
+\begin{verse}
+%s
+\end{verse}                                        
+\end{document}
+"""
+            % (
+                PAPER_HEIGHT,
+                width,
+                "\n".join(rainbow_series),
+                self.config["title"], 
+                self.config["author"], 
+                chapter_contents,
+            )
+        )
+
+
+
 class PlayToLatex(XmlToLatex):
 
     def save_as_latex(self, highlight_phrase, tex_fn, highlight_paragraph=None, rainbow=False):
@@ -1731,7 +2075,9 @@ def XmlConverter(chapter, xml, aspect='widescreen'):
     # my_config = config.get_config(chapterdir)
     structure = chapter.config.get('TEXT_STRUCTURE', 'novel')
 
-    if structure == "novel":
+    if structure == "rich-text":
+        return RichTextToLatex(chapter)
+    elif structure == "novel":
         return NovelToLatex(chapter)
     elif structure == "verse":
         return VerseToLatex(chapter)

@@ -52,3 +52,6 @@ pygments
 pytest
 pytest-cov 
 coverage
+
+deepdiff
+comfy-cli

@@ -802,6 +802,12 @@ class Chapter:
         if template_environment is None:
             template_environment = {}
 
+        if interface != "ui":
+            log.warning(
+                "get_comfy_workflow() !OBSOLETE! called with interface=%s, which is not 'ui'.  This may not work as expected.",
+                interface,
+            )
+
         log.info(
             "get_comfy_workflow(image_xml=%s, interface=%s, workflow_template=%s, video_index=%s)",
             image_xml.attrs["index"],
@@ -952,15 +958,15 @@ class Chapter:
 
         workflow = comfy.load_workflow_template(interface, mode, workflow_template)
 
-        if interface == "ui" and "nodes" not in workflow:
-            raise ValueError(
-                f'Invalid UI Workflow Template {workflow_template} -- For a UI template you must use plain "Export" in ComfyUI'
-            )
+        # if interface == "ui" and "nodes" not in workflow:
+        #     raise ValueError(
+        #         f'Invalid UI Workflow Template {workflow_template} -- For a UI template you must use plain "Export" in ComfyUI'
+        #     )
 
-        if interface == "api" and "nodes" in workflow:
-            raise ValueError(
-                f'Invalid API Workflow Template {workflow_template} -- For an API template you must use "Export API" in ComfyUI'
-            )
+        # if interface == "api" and "nodes" in workflow:
+        #     raise ValueError(
+        #         f'Invalid API Workflow Template {workflow_template} -- For an API template you must use "Export API" in ComfyUI'
+        #     )
 
         ####
         # Useful variables for workflow construction.  These get substituted
@@ -1378,7 +1384,27 @@ class Chapter:
             const.LIBRARY_DIR, self.chapterdir, self.language, "chapter.delta.json"
         )
 
-    def load_delta(self) -> dict:
+    def save_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]]):
+        delta_fn = self.get_delta_fn()
+        os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
+        with open(delta_fn, "w") as f:
+            json.dump(delta, f, indent=2)
+
+    def load_delta(self) -> dict[str, list[dict[str, str|dict[str, bool]]]]:
+        """
+        Example:
+        delta = {
+            'ops': [
+                {
+                    "attributes": {
+                        "bold": true
+                    },
+                    "insert": "Real Computers"
+                },
+                ...
+            ]
+        }
+        """
         delta_fn = self.get_delta_fn()
         if os.path.exists(delta_fn):
             with open(delta_fn, "r") as f:
