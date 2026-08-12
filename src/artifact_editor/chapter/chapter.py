@@ -1387,6 +1387,7 @@ class Chapter:
     def save_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]]):
         delta_fn = self.get_delta_fn()
         os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
+        log.info('Saving delta to file', delta_fn=delta_fn)
         with open(delta_fn, "w") as f:
             json.dump(delta, f, indent=2)
 

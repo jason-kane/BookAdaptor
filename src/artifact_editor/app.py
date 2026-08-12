@@ -1,10 +1,12 @@
 import typing as t
 
-from flask import Flask
+from flask import Flask, g
 from flask_cors import CORS
 from redis.maint_notifications import MaintNotificationsConfig
 from werkzeug.routing import BaseConverter
 
+from artifact_editor.author.author import Author
+from artifact_editor.chapter.chapter import Chapter
 import logger
 import text_to_image
 from artifact_editor.cache import cache
@@ -28,6 +30,19 @@ from artifact_editor.therapy.views import bp as therapy
 from artifact_editor.todo.views import bp as todo
 from artifact_editor.typography.views import bp as typography
 from artifact_editor.video.views import bp as video
+
+
+if t.TYPE_CHECKING:
+    # if you're going to have globals, at least
+    # type them.
+    class TypedGlobals:
+        chapter: t.Optional[Chapter] = None
+        author: t.Optional[Author] = None
+        title: t.Optional[str] = None
+        number: t.Optional[int] = None
+        language: t.Optional[str] = None
+
+    g: TypedGlobals
 
 # register nested blueprints
 chapter.register_blueprint(

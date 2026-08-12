@@ -73,11 +73,23 @@
   <!-- Highlight.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
-  <!-- Quill -->
-  <script src="/static/js/quill.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
+  <link href="/static/styles/quill.snow.css" rel="stylesheet" />
 
-  <script>
+  <script type="importmap">
+    {
+      "imports": {
+        "quill-delta": "https://cdn.jsdelivr.net/npm/quill-delta@5.1.0/+esm",
+        "parchment": "https://cdn.jsdelivr.net/npm/parchment@3.0.0/dist/parchment.min.js",
+        "lodash-es": "https://cdn.jsdelivr.net/npm/lodash-es@4.18.1/+esm",
+        "eventemitter3": "https://cdn.jsdelivr.net/npm/eventemitter3@5.0.0/+esm",
+        "clone": "https://cdn.jsdelivr.net/npm/clone@2.1.2/+esm"
+      } 
+    }
+  </script>
+
+  <script type="module">
+    import Quill from "/static/js/quill.js";
+
     function beforeRequest(obj, event) {
       obj.setAttribute('loading', '');
     }
@@ -178,7 +190,7 @@
         drawer.open = true;
       });
     });
-    </script>
+  </script>
 
     <style>
       .ql-snow * {
@@ -218,7 +230,9 @@
   {% endblock %}
 </head>
 
-<body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+// hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+
+<body>
   <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
     <div id="todo-editor" class="todo-editor" style="height: 300px;"></div>
   </wa-drawer>
