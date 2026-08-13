@@ -93,12 +93,31 @@ function onNextPage() {
     queueRenderPage(pageNum);
 }
 
+function latex_rerender_url(url) {   
+    pdfjsLib.getDocument(url).promise.then(function (pdfDoc_) {
+        pdfDoc = pdfDoc_;
+        document.getElementById('page_count').textContent = pdfDoc.numPages;
+
+        // Initial/first page rendering
+        if (document.readyState === "loading") {
+          // DOM is still loading; wait for it
+          document.addEventListener("DOMContentLoaded", function() {
+              renderPage(pageNum);
+          });
+        } else {
+          // DOM is already "interactive" or "complete"; call now
+          renderPage(pageNum);
+        }        
+    });    
+}
+
 function latex_rerender(button, event) {
     // we just drew a new .pdf from the latex file
     /**
      * Asynchronously downloads PDF.
      */
-    var url = 'chapter.pdf' + '?t=' + new Date().getTime(); // add timestamp to prevent caching
+    var url = "{{ chapter_pdf_url }}" + '?t=' + new Date().getTime();
+    
     pdfjsLib.getDocument(url).promise.then(function (pdfDoc_) {
         pdfDoc = pdfDoc_;
         document.getElementById('page_count').textContent = pdfDoc.numPages;

@@ -619,8 +619,11 @@ def phrase_latex(chapter, phrase_xml):
     phrase = hyphen_fixer(phrase)
     # TODO: poetry lines end in \nobreak\\
 
-    phrase_xml.attrs["latex"] = f"{phrase}\n"
-    value = html.escape(phrase)
+    #phrase_xml.attrs["latex"] = phrase.attrs.get("latex")
+    # f"{phrase}\n"
+    value = html.escape(
+        phrase_xml.attrs.get("latex", phrase)
+    )
 
     return f"""
     <wa-textarea

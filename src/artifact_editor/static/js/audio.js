@@ -9,8 +9,8 @@
 
 import { EditorView, basicSetup } from "codemirror";
 import { latex } from 'codemirror-lang-latex';
-import {Compartment} from "@codemirror/state"
-import {oneDark} from "@codemirror/theme-one-dark"
+import { Compartment, EditorState } from "@codemirror/state";
+import { oneDark } from "@codemirror/theme-one-dark";
 
 // https://github.com/bigskysoftware/htmx/issues/3622#issuecomment-3781315963
 const elementsToFix = ["wa-select", "wa-input", "wa-radio", "wa-radio-group", "wa-button", "wa-checkbox"];
@@ -72,20 +72,18 @@ function latex_editor_init() {
         div.classList.add('phrase-latex');
         textarea.replaceWith(div);
 
-        // const fullHeightTheme = EditorView.theme({
-        // // The "&" targets the editor's outer container (.cm-editor)
-        // "&": { height: "100%" },
-        // // The scroller element must be told to allow scrolling
-        // ".cm-scroller": { overflow: "auto" }
-        // })
-
-        const editor = new EditorView({
+        const startState = EditorState.create({
             doc: textarea.getAttribute('value'),
             extensions: [
                 basicSetup,
                 latex(),
-                themeCompartment.of(oneDark)
-            ],  //, fullHeightTheme],
+                themeCompartment.of(oneDark),
+                EditorView.lineWrapping
+            ]
+        });
+
+        const editor = new EditorView({
+            state: startState,
             lineNumbers: true,
             theme: 'monokai',
             parent: div,

@@ -201,11 +201,23 @@ def audio_phrase(phrase_index: int):
 
 @bp.route("/phrases", methods=["GET"])
 def audio_phrases(page: int | None = None):
+    pretty_mode = False
+
     if page is None:
         page = request.args.get("page", None)
 
-    response = make_response(audio.phrase_sequence(g.chapter, page=page))
+    if pretty_mode:
+        payload = BeautifulSoup(
+            audio.phrase_sequence(g.chapter, page=page),
+            "xml"
+        ).prettify()
+    else:
+        payload = audio.phrase_sequence(g.chapter, page=page)
+
+    response = make_response(payload)
+    response.status_code = 200
     response.headers["HX-Trigger-After-Swap"] = "latex_editor_init"
+
     return response
 
 

@@ -81,6 +81,21 @@
         });
     });
 </script>
+<script src="/static/js/pdf.mjs" type="module"></script>
+<script src="/static/js/typography.js"></script>
+
+<script type="module">
+    // wait until the DOM is loaded before trying to access the canvas element
+    document.addEventListener("DOMContentLoaded", function () {
+        var { pdfjsLib } = globalThis;
+        // The workerSrc property shall be specified.
+        // this is why we're a module.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.mjs';
+        
+        // initialize the pdf rendering
+        latex_rerender_url("{{ chapter_pdf_url }}");
+    });
+</script>
 {% endblock %}
 
 {% block body %}
@@ -97,6 +112,14 @@
 
         <div class="wa-cluster">
             {{import_button|safe}}
+        </div>
+    </div>
+    <div id="prev"></div>
+    <div id="page_count"></div>
+    <div id="next"></div>
+    <div class="wa-stack">   
+        <div style="width:523px;height:46em;overflow-y:scroll;">
+            <canvas id="the-canvas"></canvas>
         </div>
     </div>
 

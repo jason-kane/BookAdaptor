@@ -17,6 +17,7 @@ from flask import (
     render_template,
     request,
     g,
+    url_for,
 )
 from titlecase import titlecase
 
@@ -84,6 +85,7 @@ def extract_title(delta, chapter, chapter_xml):
                 if line.strip().upper() == chapter.title.upper():
                     log.info("Found title page: %s", line)
                     add_title(chapter_xml, chapter)
+                    continue
 
                 insert_list.append(line)
 
@@ -108,6 +110,7 @@ def extract_author(delta, chapter, chapter_xml):
                 ]:
                     log.info("Found author page: %s", line)
                     add_author(chapter_xml, chapter)
+                    continue
 
                 insert_list.append(line)
             operation["insert"] = "\n".join(insert_list)
@@ -220,39 +223,18 @@ def import_chapter():
                         continue
 
                     if word.strip():
-                        if sentence_index == 0:
-                            out_ops.append(
-                                {
-                                    "insert": word,
-                                    "attributes": {**ops.get("attributes", {}), "phrase": 1},
-                                    "type": "title",
-                                }
-                            )
-                            index_start = len(out_ops)
-
-                        elif sentence_index == 1:
-                            out_ops.append(
-                                {
-                                    "insert": word,
-                                    "attributes": {**ops.get("attributes", {}), "phrase": 2},
-                                    "type": "author",
-                                }
-                            )
-                            index_start = len(out_ops)
-
-                        else:
-                            out_ops.append(
-                                {
-                                    "insert": word,
-                                    "attributes": ops.get("attributes", {}),
-                                    "type": "word",
-                                    # punctuation that isn't at the end of a sentence is a weak
-                                    # phrase break, way better than nothing.
-                                    "phrase_score": 1
-                                    if word[-1] in [".", "!", "?", ";", ":", ","]
-                                    else 0,
-                                }
-                            )
+                        out_ops.append(
+                            {
+                                "insert": word,
+                                "attributes": ops.get("attributes", {}),
+                                "type": "word",
+                                # punctuation that isn't at the end of a sentence is a weak
+                                # phrase break, way better than nothing.
+                                "phrase_score": 1
+                                if word[-1] in [".", "!", "?", ";", ":", ","]
+                                else 0,
+                            }
+                        )
                     elif word:
                         out_ops.append(
                             {
@@ -402,10 +384,27 @@ def import_chapter():
             # we know which phrase each word is in.
             out_ops[i]["attributes"]["phrase"] = 1 + len(phrases)
             plain_phrase += out_ops[i]["insert"]
-
+       
         phrases.append({"spoken": plain_phrase, "latex": "".join(typeset_phrase)})
 
         index = break_index + 1
+
+    out_ops[0]["insert"] = out_ops[0]["insert"].lstrip("\n")
+    out_ops = [
+        {
+            "attributes": {
+                "bold": True,
+                "phrase": 0
+            },
+            "insert": "The Story of Mel\n\n"
+        }, {
+            "insert": "by Ed Nather\n\n",
+            "attributes": {
+                "bold": False,
+                "phrase": 1
+            },
+        },        
+    ] + out_ops
 
     g.chapter.save_delta({"ops": out_ops})
 
@@ -479,7 +478,7 @@ def import_chapter():
 
             # limit to 24 bits, 10 offset to keep us away from pure black
             rainbow_int = (index + 10) % 16777216
-            phrase.attrs["latex"] = p["latex"].replace("\n", r"\n")
+            phrase.attrs["latex"] = html.escape(p["latex"].replace("\n", r"\n"))
 
             prior_whitespace = p["latex"][: len(p["latex"]) - len(p["latex"].lstrip())]
             post_whitespace = p["latex"][len(p["latex"].rstrip()) :]
@@ -1244,6 +1243,9 @@ def delete_chapter(author, title, chapter_number, language):
 def text_base():
     return render_template(
         "text.html",
+        chapter_pdf_url = url_for(
+            'library.book.chapter.typography.serve_chapter_pdf',
+        ),
         language=g.chapter.language,
         pretty_language=g.chapter.pretty_language,
         import_button=htmx.import_button(g.chapter),
