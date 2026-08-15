@@ -219,18 +219,18 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
     return out
 
 
-def simple_paginator(page, errors_only, total_pages):
+def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
     """
     Create a dumb pagination object for the audio page.
     """
     narrow = False
     # takes about 1/4th of a screen width
-    if narrow:        
-        sidebar_width = 1
-        toleration_width = 2 
-    else:
-        sidebar_width = 2 # this is _total_ sidebar width, both sides.
-        toleration_width = 3
+    # if narrow:        
+    #     sidebar_width = 1
+    #     toleration_width = 2 
+    # else:
+    sidebar_width = 2 # this is _total_ sidebar width, both sides.
+    toleration_width = 3
 
     page_width = 2 + (sidebar_width + toleration_width) * 2 + 1
 
@@ -283,7 +283,7 @@ def simple_paginator(page, errors_only, total_pages):
 
         first_over = True
         first_under = True
-        for page_option in range(sidebar_width + 1, total_pages):
+        for page_option in range(sidebar_width + 1, total_pages - sidebar_width):
             # span is how much distance we are willing to tolerate.
             span = toleration_width
             # some edge cases.  When we're any of these:
@@ -293,16 +293,46 @@ def simple_paginator(page, errors_only, total_pages):
             # [ 1 ... 97 98 99 100 ]
             # we similarly don't want an ellipsis on the right.
 
-            # the currently chosen page is near the beginning or end of the range, # we want to show more pages on that side.  We will call that the  
-            # sidebar.  Because names are fun.
-            # 2-s  3-t
-            if page - toleration_width <= sidebar_width:
-                span = sidebar_width - page + toleration_width
+            # the currently chosen page is near the beginning or end of the
+            # range, # we want to show more pages on that side.  We will call
+            # that the  
+            # sidebar.  Because names are fun. 
+            
+            # if (page 44) - 3 <= 2 
+            
+            # phrase_sequence is the page we are drawing
+            # page is the actual current, highlighted page
+
+            # span = distance away from the arrow at which we draw
+            # ellipsis.
+
+            #    41 - 2 <= 2
+            # we are in the left sidebar
+            if page < toleration_width + sidebar_width:
+
+                span: int = min(
+                    max(sidebar_width, toleration_width),
+                    page - 1 + toleration_width
+                )
+
+            # if (page 41) + 3 >= 44 - 2
+            # <sidebar2> ... <toleration=3><current page><toleration=3> ... <sidebar=2>
+            elif page >= total_pages - (sidebar_width + toleration_width):
+                # + toleration_width >= total_pages - sidebar_width:
+                # 2 - (44 - (page 41) + 3
+                #span: int = sidebar_width - (total_pages - page) + toleration_width
+                #1 : [41] 42 43 42 43
+                #2 : [41] 42 43 42 43
+                # wrong knob.
+                # we are inside the right sidebar
+                # sidebar_width = sidebar_width + toleration_width
+                distance_from_end = 1 + (total_pages - page)
+                span: int = (toleration_width + max(0, sidebar_width - distance_from_end))
 
             #if page <= sidebar_width or (total_pages - page < sidebar_width):
             #    span = sidebar_width - page
 
-            span = max(toleration_width, span)
+            # span = max(toleration_width, span)
 
             if (page - page_option) > span:
                 # once the page exceeds span we flip the first_over toggle.
@@ -312,16 +342,16 @@ def simple_paginator(page, errors_only, total_pages):
                     first_over = False
                 continue
 
-            if (page_option - page) > span:
+            if (page_option - page) > span and (total_pages - page_option) > sidebar_width:
                 if first_under:
-                    # if we are more than span pages away, we show a spacer
+                    # if we are more than span pages away from the end, we show a spacer
                     buckets.append(htmx.spacer_button())
                     first_under = False
                 continue
 
             buckets.append(htmx.page_button(page, page_option, errors_only=errors_only))
 
-        for p in range(sidebar_width):
+        for p in range(sidebar_width, 0, -1):
             buckets.append(
                 htmx.page_button(
                     page, 
