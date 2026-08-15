@@ -115,54 +115,111 @@ def set_theme():
 @bp.route("")
 @bp.route("/")
 def chapter_base():
-    chapter_xml = g.chapter.get_xml()
-    image_list = []
-    for image_index, image in enumerate(chapter_xml.find_all("image")):
-        log.info("Adding image..")
-        if "src" in image.attrs:
-            image_list.append(
-                {
-                    "url": url_for(
-                        "library.book.chapter.images.show_image_by_index",
-                        author=g.author.name,
-                        title=g.title,
-                        chapter_number=g.chapter.number,
-                        language="english",
-                        height=0,
-                        image_index=image_index,
-                    ),
-                    "alt": image.get("alt", ""),
-                    "index": image_index,
-                    "filename": os.path.basename(image.attrs["src"]),
-                }
-            )
-        else:
-            log.info("No src, no image")
-            log.info(image)
-
-    chapter_style_selector = styles_htmx.get_chapter_style_selector(g.chapter)
-
     return render_template(
-        "chapter.html",
-        chapter_style_selector=chapter_style_selector,
-        chapter_mood=htmx.chapter_mood_widget(g.chapter),
-        chapter_theme=htmx.chapter_theme_widget(g.chapter),
-        language="english",
-        pretty_language="English",
+        "text.html",
+        chapter_pdf_url = url_for(
+            'library.book.chapter.typography.serve_chapter_pdf',
+        ),
+        language=g.chapter.language,
+        pretty_language=g.chapter.pretty_language,
+        import_button=htmx.import_button(g.chapter),
         chapterurl=g.chapter.url,
         author=g.author,
         pretty_author=g.chapter.config.get("author", g.author),
         title=g.title,
-        pretty_title=g.chapter.config.get("pretty_title", g.title),
+        pretty_title=g.chapter.config.get("title", g.title),
         chapter=g.chapter,
-        chapter_image_url=url_for(
-            'library.chapter_cover',
-            author=g.author.name,
-            title=g.title,
-            chapter_number=g.chapter.number,
-        ),
-        image_list=image_list,
     )
+
+
+@bp.route("/delta", methods=["GET"])
+def get_delta():
+    try:
+        raw_text = g.chapter.load_delta()
+    except FileNotFoundError:
+        log.error(
+            "Delta file not found for chapter %s. Returning empty text.",
+            g.chapter.get_delta_fn(),
+        )
+        raw_text = {}
+
+    if raw_text in [{}, None]:
+        book_txt = os.path.join(
+            const.LIBRARY_DIR, g.chapter.get_chapterdir(), "book.txt"
+        )
+
+        # plain text file, not delta.  No problem.
+        if os.path.exists(book_txt):
+            log.info("Importing plain text %s", book_txt)
+
+            with open(book_txt, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+
+            delta = {"ops": [{"insert": raw_text}]}
+            raw_text = json.dumps(delta, indent=2)
+
+            os.makedirs(os.path.dirname(g.chapter.get_delta_fn()), exist_ok=True)
+            with open(g.chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+                f.write(raw_text)
+        else:
+            log.info(
+                "No book.txt found for chapter %s. Returning empty delta.",
+                g.chapter.get_chapterdir(),
+            )
+            raw_text = json.dumps({"ops": []}, indent=2)
+
+    return raw_text, 200
+
+
+
+    # chapter_xml = g.chapter.get_xml()
+    # image_list = []
+    # for image_index, image in enumerate(chapter_xml.find_all("image")):
+    #     log.info("Adding image..")
+    #     if "src" in image.attrs:
+    #         image_list.append(
+    #             {
+    #                 "url": url_for(
+    #                     "library.book.chapter.images.show_image_by_index",
+    #                     author=g.author.name,
+    #                     title=g.title,
+    #                     chapter_number=g.chapter.number,
+    #                     language="english",
+    #                     height=0,
+    #                     image_index=image_index,
+    #                 ),
+    #                 "alt": image.get("alt", ""),
+    #                 "index": image_index,
+    #                 "filename": os.path.basename(image.attrs["src"]),
+    #             }
+    #         )
+    #     else:
+    #         log.info("No src, no image")
+    #         log.info(image)
+
+    # chapter_style_selector = styles_htmx.get_chapter_style_selector(g.chapter)
+
+    # return render_template(
+    #     "chapter.html",
+    #     chapter_style_selector=chapter_style_selector,
+    #     chapter_mood=htmx.chapter_mood_widget(g.chapter),
+    #     chapter_theme=htmx.chapter_theme_widget(g.chapter),
+    #     language="english",
+    #     pretty_language="English",
+    #     chapterurl=g.chapter.url,
+    #     author=g.author,
+    #     pretty_author=g.chapter.config.get("author", g.author),
+    #     title=g.title,
+    #     pretty_title=g.chapter.config.get("pretty_title", g.title),
+    #     chapter=g.chapter,
+    #     chapter_image_url=url_for(
+    #         'library.chapter_cover',
+    #         author=g.author.name,
+    #         title=g.title,
+    #         chapter_number=g.chapter.number,
+    #     ),
+    #     image_list=image_list,
+    # )
 
 # PUT /library/Aesop/Fables/31/english/set_chapter_style
 @bp.route("/set_chapter_style", methods=["PUT"])

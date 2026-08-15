@@ -309,14 +309,12 @@
         </wa-breadcrumb-item>
         {% endif %}
 
-        {% if chapter and section %}
+        {% if chapter %}
         <wa-breadcrumb-item>
           <wa-dropdown>
             <wa-button slot="trigger" with-caret size="medium" appearance="filled">
               {{section_cosmetic or 'Workshops'}}
             </wa-button>
-            <a
-              href="{{ url_for('library.book.chapter.text.text_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Text</wa-dropdown-item></a>
             <a
               href="{{ url_for('library.book.chapter.characters.characters_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
             <wa-dropdown-item>
