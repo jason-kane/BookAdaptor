@@ -181,12 +181,20 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
     log.info("%s fragments processed", frament_count)
 
     # paginator at the top and bottom of the page, because I'm lazy.
-    out = ""
-    out += simple_paginator(
+    paginator, dv_str = simple_paginator(
         page=page,
         errors_only=errors_only,
         total_pages=total_paragraphs,
     )
+    log.info(
+        "simple_paginator(page=%s, errors_only=%s, total_pages=%s): %s",
+        page,
+        errors_only,
+        total_paragraphs,
+        dv_str,
+    )
+
+    out = paginator
 
     if errors_only:
         state = " checked"
@@ -210,26 +218,22 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
     # the actual phrases
     out += phrase_out
 
-    out += simple_paginator(
-        page=page,
-        errors_only=errors_only,
-        total_pages=total_paragraphs,
-    )
+    out += paginator
 
     return out
 
 
-def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
+def simple_paginator(page: int, errors_only: bool, total_pages: int) -> tuple[str, str]:
     """
     Create a dumb pagination object for the audio page.
     """
     narrow = False
     # takes about 1/4th of a screen width
-    # if narrow:        
+    # if narrow:
     #     sidebar_width = 1
-    #     toleration_width = 2 
+    #     toleration_width = 2
     # else:
-    sidebar_width = 2 # this is _total_ sidebar width, both sides.
+    sidebar_width = 2  # this is _total_ sidebar width, both sides.
     toleration_width = 3
 
     page_width = 2 + (sidebar_width + toleration_width) * 2 + 1
@@ -253,23 +257,26 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
     #         <wa-divider></wa-divider>
 
     # little stuff matters
+    dv = ["<"]
     out = f"""
-           <div class="wa-stack">      
+           <div class="wa-stack">
             <div class="wa-split">
               <span class="wa-caption-l">{text_description}</span>
               <wa-button-group orientation="horizontal">
                 {htmx.left_chevron_button(page, errors_only)} """
 
     # if there are <= 9 pages, show them all
-    if total_pages <= page_width:
+    if total_pages <= (page_width - 2):
         log.warning(f"Showing all {total_pages} audio pages in nav")
         # show all pages, highlighting the current page.
         for p in range(1, total_pages + 1):
             if p == page:
                 # selected
                 out += htmx.page_button(page, p, errors_only=errors_only)
+                dv.append(f"[{p}]")
             else:
                 out += htmx.page_button(page, p, errors_only=errors_only)
+                dv.append(str(p))
 
     # there are more pages than what we want to show.
     else:
@@ -280,14 +287,31 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
         # first slot always gets page 1
         for p in range(sidebar_width):
             buckets.append(htmx.page_button(page, p + 1, errors_only=errors_only))
+            if p + 1 == page:
+                dv.append(f"[{p + 1}]")
+            else:
+                dv.append(str(p + 1))
 
+        log.debug("first sidebar: %s", dv)
         first_over = True
         first_under = True
-        for page_option in range(sidebar_width + 1, total_pages - sidebar_width):
+        log.debug(
+            "Iterating range(%s, %s)", sidebar_width + 1, total_pages - sidebar_width
+        )
+        # <sidebar2> ... <toleration=3><current page><toleration=3> ... <sidebar=2>
+        # from sidebar_width + 1 to total_pages - sidebar_width, inclusive.
+        absorbr = []
+        absorbl = []
+        for page_option in range(
+            sidebar_width + 1,
+            (1 + total_pages) - sidebar_width,
+        ):
             # span is how much distance we are willing to tolerate.
-            span = toleration_width
+            spanl = toleration_width
+            spanr = toleration_width
+            log.debug("[a] spanl: %s, spanr: %s", spanl, spanr)
             # some edge cases.  When we're any of these:
-            # [ 1 2 3 4 ... 100 ] 
+            # [ 1 2 3 4 ... 100 ]
             # we don't want an ellipsis on the left
             # and if we're any of these:
             # [ 1 ... 97 98 99 100 ]
@@ -295,11 +319,11 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
 
             # the currently chosen page is near the beginning or end of the
             # range, # we want to show more pages on that side.  We will call
-            # that the  
-            # sidebar.  Because names are fun. 
-            
-            # if (page 44) - 3 <= 2 
-            
+            # that the
+            # sidebar.  Because names are fun.
+
+            # if (page 44) - 3 <= 2
+
             # phrase_sequence is the page we are drawing
             # page is the actual current, highlighted page
 
@@ -307,58 +331,153 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
             # ellipsis.
 
             #    41 - 2 <= 2
-            # we are in the left sidebar
-            if page < toleration_width + sidebar_width:
-
-                span: int = min(
-                    max(sidebar_width, toleration_width),
-                    page - 1 + toleration_width
+            # 'page' is inside the left sidebar
+            if page <= toleration_width + sidebar_width:
+                log.debug(
+                    "left sidebar: page=%s, toleration_width=%s, sidebar_width=%s",
+                    page,
+                    toleration_width,
+                    sidebar_width,
                 )
-
-            # if (page 41) + 3 >= 44 - 2
+                # max(2, 3) = 3
+                # 7 - 1 + 3 = 9
+                spanl: int = min(
+                    max(sidebar_width, toleration_width), page - 1 + toleration_width
+                )
+                log.debug("[y] spanl: %s, spanr: %s", spanl, spanr)
             # <sidebar2> ... <toleration=3><current page><toleration=3> ... <sidebar=2>
             elif page >= total_pages - (sidebar_width + toleration_width):
-                # + toleration_width >= total_pages - sidebar_width:
-                # 2 - (44 - (page 41) + 3
-                #span: int = sidebar_width - (total_pages - page) + toleration_width
-                #1 : [41] 42 43 42 43
-                #2 : [41] 42 43 42 43
-                # wrong knob.
-                # we are inside the right sidebar
-                # sidebar_width = sidebar_width + toleration_width
+                log.debug(
+                    "right sidebar: page=%s, toleration_width=%s, sidebar_width=%s, total_pages=%s",
+                    page,
+                    toleration_width,
+                    sidebar_width,
+                    total_pages,
+                )
                 distance_from_end = 1 + (total_pages - page)
-                span: int = (toleration_width + max(0, sidebar_width - distance_from_end))
+                spanr: int = toleration_width + max(
+                    0, sidebar_width - distance_from_end
+                )
+                spanl: int = min(
+                    page - (toleration_width + sidebar_width), toleration_width
+                )
 
-            #if page <= sidebar_width or (total_pages - page < sidebar_width):
-            #    span = sidebar_width - page
+                log.debug("[z] spanl: %s, spanr: %s", spanl, spanr)
 
-            # span = max(toleration_width, span)
+            log.debug(
+                "leftabsorb: %s > %s AND %s > %s AND %s < %s",
+                (page - page_option),
+                spanl,
+                (page - (page_option + 1)),
+                spanl,
+                page_option,
+                (page - toleration_width),
+            )
 
-            if (page - page_option) > span:
+            # we're looking at a page to the left of the selected page.
+            #
+            if (
+                (
+                    first_over
+                    and ((page - page_option) > spanl)
+                    and (page - (page_option + 1) > spanl)
+                )
+                or (not first_over and ((page - page_option) > spanl))
+            ) and (page_option < (page - toleration_width)):
                 # once the page exceeds span we flip the first_over toggle.
                 if first_over:
                     # if we are more than span pages away, we show a spacer
                     buckets.append(htmx.spacer_button())
+                    dv.append("...")
                     first_over = False
+                    log.debug(
+                        "leftside ... created: (page=%s - page_option=%s) > spanl=%s",
+                        page,
+                        page_option,
+                        spanl,
+                    )
+
+                log.debug(
+                    "left ... absorbing: page=%s, page_option=%s, spanl=%s",
+                    page,
+                    page_option,
+                    spanl,
+                )
+                absorbl.append(page_option)
                 continue
 
-            if (page_option - page) > span and (total_pages - page_option) > sidebar_width:
+            # page_option: 5
+            # page: 12
+            # spanr: 3
+            # spanl: 7
+            log.debug(
+                "rightabsorb: %s > %s AND %s > %s AND %s > %s",
+                page_option - page,
+                spanr,
+                (page_option + 1) - page,
+                spanr,
+                (1 + total_pages - page_option),
+                sidebar_width,
+            )
+            if (
+                (
+                    first_under
+                    and (page_option - page) > spanr
+                    and ((page_option + 1) - page) > spanr
+                )
+                or (not first_under and (page_option - page) > spanr)
+            ) and (
+                (1 + total_pages - page_option) > sidebar_width
+                and
+                (
+                    (first_under and page_option + 1 <= total_pages - sidebar_width)
+                    or 
+                    (not first_under and page_option <= total_pages - sidebar_width)
+                )
+            ):
                 if first_under:
                     # if we are more than span pages away from the end, we show a spacer
                     buckets.append(htmx.spacer_button())
+                    dv.append("...")
                     first_under = False
+                    log.debug(
+                        "rightside ... created: page=%s, page_option=%s, spanr=%s",
+                        page,
+                        page_option,
+                        spanr,
+                    )
+
+                log.debug(
+                    "right ... absorbing: page=%s, page_option=%s, spanr=%s",
+                    page,
+                    page_option,
+                    spanr,
+                )
+                absorbr.append(page_option)
                 continue
 
             buckets.append(htmx.page_button(page, page_option, errors_only=errors_only))
+            if page == page_option:
+                dv.append(f"[{page_option}]")
+            else:
+                dv.append(str(page_option))
+            log.debug("Adding page_option: %s, dv=%s", page_option, dv)
+
+        log.debug("after page_options: %s", dv)
 
         for p in range(sidebar_width, 0, -1):
             buckets.append(
                 htmx.page_button(
-                    page, 
-                    total_pages - p, 
+                    page,
+                    1 + (total_pages - p),
                     errors_only=errors_only,
                 )
             )
+            if page == 1 + (total_pages - p):
+                dv.append(f"[{1 + (total_pages - p)}]")
+            else:
+                dv.append(str(1 + (total_pages - p)))
+        log.debug("after trailing -1 range: %s", dv)
 
         out += "\n".join(buckets)
 
@@ -368,7 +487,15 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> str:
             </div>
           </div>
     """
-    return out
+    dv.append(">")
+    log.debug(
+        "simple_paginator(page=%s, errors_only=%s, total_pages=%s): %s",
+        page,
+        errors_only,
+        total_pages,
+        dv,
+    )
+    return out, " ".join(dv)
 
 
 def recalculate_image_frames(chapter):

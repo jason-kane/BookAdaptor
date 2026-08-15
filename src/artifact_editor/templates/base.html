@@ -326,7 +326,6 @@
               <wa-dropdown-item slot="submenu"><a
                   href="{{ url_for('library.book.chapter.audio.timeline.timeline', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Timeline</a></wa-dropdown-item>
             </wa-dropdown-item>
-            <a href="{{ url_for('library.book.chapter.typography.base_typography', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Typography</wa-dropdown-item></a>
             <a href="{{ url_for('library.book.chapter.images.base', author=author.name, title=title, chapter_number=chapter.number, language=language, image_index=0) }}"><wa-dropdown-item>Images</wa-dropdown-item></a>            
             <a href="{{ url_for('library.book.chapter.frames.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Frames</wa-dropdown-item></a>
             <a href="{{ url_for('library.book.chapter.music.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Music</wa-dropdown-item></a>

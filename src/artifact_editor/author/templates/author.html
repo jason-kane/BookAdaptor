@@ -33,6 +33,20 @@
 
             <h1>Author {{author.pretty_name}}</h1>
             
+            <h2>Biography</h2>
+            <div>
+              full name, country of birth, year born, died
+              all editable fields
+              any authentic images or paintings available
+            </div>
+
+            <h2>Bibliography</h2>
+            <div>
+              every book attributed to this author, default ordered by 
+              date of publication
+            </div>
+            <p>widget to add a new bibliographic entry</p>
+
             <div class="wa-cluster">
                 {% for title,bookdir in books %}
                 <wa-card class="card-media clickable-card" style="width: 200px;">
