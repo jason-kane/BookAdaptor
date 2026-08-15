@@ -243,14 +243,73 @@
         <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
         <wa-breadcrumb-item href="/library/">Library</wa-breadcrumb-item>
         {% if author %}<wa-breadcrumb-item
-          href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.pretty_name}}</wa-breadcrumb-item>{%
-        endif %}
-        {% if title %}<wa-breadcrumb-item
-          href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}">{{title}}</wa-breadcrumb-item>{%
-        endif %}
-        {% if chapter %}<wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">{{chapter.number}}: {{chapter.cosmetic}}</wa-breadcrumb-item>{% endif %}
+          href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.pretty_name}}
+        {% endif %}
+
+        {% if not author %}
+        <wa-button size="xs" style="margin-left: 1em" id="add_author" appearance="filled" variant="brand" pill>
+          <wa-icon name="plus"></wa-icon>
+        </wa-button>
+        <wa-tooltip for="add_author">
+          <div>Add a new author</div>
+        </wa-tooltip>
+        {% endif %}
+        
+        {% if author %}
+        </wa-breadcrumb-item>
+        {% endif %}        
+
+        {% if title %}
+        <wa-breadcrumb-item
+          href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}">
+            {{title}}
+        {% endif %}
+
+        {% if author and not title %}
+          <wa-button size="xs" style="margin-left: 1em" id="add_book" appearance="filled" variant="brand" pill>
+            <wa-icon name="plus"></wa-icon>
+          </wa-button>
+          <wa-tooltip for="add_book">
+            <div>Add a new book</div>
+          </wa-tooltip>
+        {% endif %}
+        
+        {% if title %}
+        </wa-breadcrumb-item>
+        {% endif %}
+
         {% if chapter %}
-        <wa-breadcrumb-item href="">{{pretty_language}}</wa-breadcrumb-item>
+          <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
+            {{chapter.number}}: {{chapter.cosmetic}}
+        {% endif %}
+        {% if section %}
+        {% endif %}
+
+        {% if title %}
+        <wa-button size="xs" style="margin-left: 1em" id="add_chapter" appearance="filled" variant="brand" pill>
+          <wa-icon name="plus"></wa-icon>
+        </wa-button>
+        <wa-tooltip for="add_chapter">
+          <div>Add a new chapter</div>
+        </wa-tooltip>
+        {% endif %}
+
+        {% if chapter %}
+        </wa-breadcrumb-item>
+        {% endif %}
+
+        {% if chapter and chapter.language != 'english' %}
+        <wa-breadcrumb-item href="">{{pretty_language}}
+        <wa-button size="xs" style="margin-left: 1em" id="add_translation" appearance="filled" variant="brand" pill>
+          <wa-icon name="plus"></wa-icon>
+        </wa-button>
+        <wa-tooltip for="add_translation">
+          <div>Add a new translation</div>
+        </wa-tooltip>        
+        </wa-breadcrumb-item>
+        {% endif %}
+
+        {% if chapter and section %}
         <wa-breadcrumb-item>
           <wa-dropdown>
             <wa-button slot="trigger" with-caret size="medium" appearance="filled">

@@ -76,8 +76,14 @@ function onPrevPage() {
 }
 
 function attachEventListeners() {
-    document.getElementById('prev').addEventListener('click', onPrevPage);
-    document.getElementById('next').addEventListener('click', onNextPage);
+    const prev = document.getElementById('prev');
+    if (prev) {
+        prev.addEventListener('click', onPrevPage);
+    }
+    const next = document.getElementById('next');
+    if (next) {
+        next.addEventListener('click', onNextPage);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', attachEventListeners);
@@ -96,7 +102,10 @@ function onNextPage() {
 function latex_rerender_url(url) {   
     pdfjsLib.getDocument(url).promise.then(function (pdfDoc_) {
         pdfDoc = pdfDoc_;
-        document.getElementById('page_count').textContent = pdfDoc.numPages;
+        const pc = document.getElementById('page_count');
+        if (pc) {
+            pc.textContent = pdfDoc.numPages;
+        }
 
         // Initial/first page rendering
         if (document.readyState === "loading") {
@@ -131,6 +140,6 @@ function latex_rerender(button, event) {
         } else {
           // DOM is already "interactive" or "complete"; call now
           renderPage(pageNum);
-        }        
+        }
     });
 };
