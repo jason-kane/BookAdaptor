@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html
+  class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo">
+
+  <head>
+    <link rel="icon" href="/static/images/favicon.ico" sizes="32x32">
+    <link rel="icon" href="/static/images/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/static/images/apple-touch-icon.png">
+
+    <!-- HTMX -->
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
+      integrity="sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G"
+      crossorigin="anonymous"></script>
+
+    <!-- Theme + color palette -->
+    <link
+      rel="stylesheet"
+      href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/themes/glossy.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/color/palettes/elegant.css"
+    />
+
+    <!-- Native styles/CSS reset -->
+    <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/native.css" />
+
+    <!-- CSS utilities -->
+    <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/styles/utilities.css" />
+
+    <!-- Fonts -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css2?family=Fraunces:ital,wght@0,100..900;1,100..900&display=swap"
+    />
+
+    <!-- Web Awesome autoloader -->
+    <script
+      type="module"
+      src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.7.0/webawesome.loader.js"
+    ></script>
+
+    <!-- custom theme overrides -->
+    <style>
+      :root {
+        --wa-font-family-body: Figtree, sans-serif;
+        --wa-font-family-heading: Figtree, sans-serif;
+        --wa-font-family-code: "Chivo Mono", monospace;
+        --wa-font-family-longform: Fraunces, serif;
+        --wa-font-weight-body: 400;
+        --wa-font-weight-heading: 800;
+        --wa-font-weight-code: 400;
+        --wa-font-weight-longform: 350;
+        --wa-border-radius-scale: 1.33;
+        --wa-border-width-scale: 1;
+        --wa-space-scale: 1.125;
+      }
+    </style>
+
+    <!-- Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Quill -->
+    <script src="/static/js/quill.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
+
+    <style>
+      .chapter-card {
+          border: 3px solid #410f80;
+          cursor: pointer;
+      }
+      .chapter-card:hover {
+          border-color: #ff00ff;  
+      }
+      .broken-badge {
+          background-color: #000000;
+          color: #ffffff;
+          position: absolute;
+          right: -3px;
+          top: -2px;        
+      }    
+      .beta-badge {
+          background-color: #ff0000;
+          color: #ffffff;
+          position: absolute;
+          right: -3px;
+          top: -2px;        
+      }
+      .module-container {
+          position: relative;
+          height: 30em;
+          width: 100%;
+      }
+      .label {
+          font-weight: bold;
+          width: 5em;
+      }
+      .module-container:hover {
+          background-color: #333333;
+          border-color: white;
+      }    
+    </style>
+
+    <script>
+      function beforeRequest(obj, event) {
+        obj.setAttribute('loading', '');
+      }
+      function afterRequest(obj, event) {
+        obj.removeAttribute('loading');
+        htmx.process(obj);
+      }
+      function showAdvanced() {
+        const advanced = document.getElementById("advanced");
+        advanced.style.display = "block";
+
+        advanced_button = document.getElementById("advanced-button");
+        advanced_button.onclick = hideAdvanced;
+        advanced_button.innerText = "Hide Advanced";
+        advanced_button.appearance = "filled";
+      }
+      function hideAdvanced() {
+        const advanced = document.getElementById("advanced");
+        advanced.style.display = "none";
+
+        advanced_button = document.getElementById("advanced-button");
+        advanced_button.onclick = showAdvanced;
+        advanced_button.innerText = "Advanced";
+        advanced_button.appearance = "outlined";
+      }
+      function get_pixel(axis, obj, event) {
+        if (axis === 'x') {
+          return obj.offsetX;
+        } else if (axis === 'y') {
+          return obj.offsetY;
+        }
+      }
+
+      // Wait for the DOM to finish loading
+      document.addEventListener('DOMContentLoaded', () => {
+        // Get the drawer and button elements
+        const drawer = document.getElementById("todo-drawer");
+        const openButton = document.getElementById("todo");
+        let quill_editor = null;
+        
+        openButton.addEventListener('click', () => {
+          // Initialize Quill editor when the drawer is opened
+          // but only the first time.
+          if (!quill_editor) {
+            quill_editor = new Quill('#editor', {
+              modules: {
+                  syntax: true,
+                  toolbar: [
+                      [{'font': []}, {'size': []}],
+                      ['bold', 'italic', 'underline', 'strike'], // toggled buttons
+                      ['color', 'background'], // defaults from theme
+                      ['blockquote', 'code-block'], // blockquote, code block
+                      [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
+                      ['link'], // links
+                      ['blockquote', 'code-block'],
+                  ]
+              },
+              theme: 'snow'
+            });
+
+            // Listen for text changes in the Quill editor and auto-save
+            // https://quilljs.com/docs/api#text-change
+            quill_editor.on('text-change', (delta, oldDelta, source) => {
+              // Right now _every_ change is being sent to the server.  
+              // This is a little ridiculous.  If we can soak and bundle
+              // changes for a few seconds, that would be less noisy.
+              htmx.ajax('POST', '/todo/', {
+                  headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  values: {
+                      delta: JSON.stringify(quill_editor.getContents()),
+                      key: 'home'
+                  },
+                  swap: 'none',
+                  onError: function (err) {
+                      console.error('Error updating:', err);
+                  }
+              });
+            });
+          }
+
+          // Retrieve any existing todo content, we do this every time
+          // because a change may have come from another tab.
+          htmx.ajax('GET', '/todo/', {
+            swap: 'none',
+            values: {
+              key: 'home'
+            },
+            handler: function(target, info) {
+              if (info.xhr.status === 200) {
+                quill_editor.setContents(JSON.parse(info.xhr.responseText));
+              } else {
+                console.error('Error fetching todo:', info.xhr.statusText);
+              }
+            }
+          });
+
+          drawer.open = true;
+        });
+      });
+    </script>
+
+    <style>
+      .ql-snow * {
+        box-shadow: none;
+        margin-bottom: 0;
+        transition: none;
+        color:rgb(242, 242, 242);
+      }
+      .ql-snow .ql-stroke {
+        stroke: rgb(242, 242, 242);
+      }
+      .ql-snow .ql-picker-options {
+        background-color: #000000;
+      }
+      .ql-snow .ql-picker-options .ql-picker-item {
+        background-color: #000000;
+      }
+      .ql-toolbar.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      .ql-container.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      #todo-drawer {
+        /* --size: 33vw; */
+        --size: 475px;
+      }
+    </style>
+
+    <title>Comfy Workflow Templates</title>
+  </head>
+
+  <body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+    <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
+      <div id="editor" class="editor" style="height: 300px;"></div>
+    </wa-drawer>
+
+    <div class="wa-stack">
+        <div class="wa-split" style="align-items: flex-start;">
+          <div class="wa-stack" style="align-items: flex-start;">
+            <wa-breadcrumb>
+                <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
+                <wa-breadcrumb-item href="/workflow_templates">Comfy Workflow Templates</wa-breadcrumb-item>
+            </wa-breadcrumb>
+            
+            <h1>Comfy Workflow Templates</h1>
+            <div class="wa-stack">
+            {% for mode in modes %}
+                <fieldset>
+                    <legend>{{mode}}</legend>
+                    {{ mode_descriptions[mode]|safe }}
+                    <div class="wa-stack">
+                    {% for template_dict in modes[mode] %}
+                        <wa-button href="/workflow_templates/{{template_dict.template_name}}">{{template_dict.template_cosmetic}}</wa-button>
+                    {% endfor %}
+                        <div class="wa-cluster">
+                            <wa-input label="New {{mode}} Template Name" name="new_{{mode}}"></wa-input>
+                            <wa-button href="/workflow_templates/new">Create New {{mode}} Workflow</wa-button>
+                        </div>
+                    </div>                    
+                </fieldset>
+            {% endfor %}
+            </div>
+          </div>
+        </div>
+    </div>
+
+  </body>
+</html>

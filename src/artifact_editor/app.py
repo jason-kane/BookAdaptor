@@ -30,6 +30,7 @@ from artifact_editor.publish.views import bp as publish
 from artifact_editor.static import bp as static
 from artifact_editor.styles.views import bp as styles
 from artifact_editor.therapy.views import bp as therapy
+from artifact_editor.workflow_templates.views import bp as workflow_templates
 from artifact_editor.todo.views import bp as todo
 from artifact_editor.typography.views import bp as typography
 from artifact_editor.video.views import bp as video
@@ -160,6 +161,11 @@ def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     app.register_blueprint(
         therapy,
         url_prefix="/therapy"
+    )
+
+    app.register_blueprint(
+        workflow_templates,
+        url_prefix="/workflow_templates"
     )
     
     app.register_blueprint(
