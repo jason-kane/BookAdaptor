@@ -274,10 +274,17 @@
                     {% for template_dict in modes[mode] %}
                         <wa-button href="/workflow_templates/{{template_dict.template_name}}">{{template_dict.template_cosmetic}}</wa-button>
                     {% endfor %}
+                      <form>
                         <div class="wa-cluster">
+                          
                             <wa-input label="New {{mode}} Template Name" name="new_{{mode}}"></wa-input>
-                            <wa-button href="/workflow_templates/new">Create New {{mode}} Workflow</wa-button>
+                            <wa-button 
+                              hx-post="/workflow_templates/new"
+                              hx-trigger="click"
+                              hx-swap="none"
+                              >Create New {{mode}} Workflow</wa-button>
                         </div>
+                      </form>
                     </div>                    
                 </fieldset>
             {% endfor %}

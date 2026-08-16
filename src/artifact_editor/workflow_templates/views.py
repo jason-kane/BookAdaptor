@@ -81,9 +81,15 @@ def workflow_templates_base():
     ):  
         template_name = template_name.rstrip(".json")
         
-        interface, mode, template = template_name.split(".", maxsplit=2)
+        try:
+            interface, mode, template = template_name.split(".", maxsplit=2)
+        except ValueError:
+            log.error('Invalid template name: %s', template_name)
+            continue
+
         if interface != "ui":
             continue
+
         if mode not in modes:
             modes[mode] = []
 
@@ -94,6 +100,9 @@ def workflow_templates_base():
                 log.error('Invalid template: %s', template)
                 template_name = template
                 template_cosmetic = template
+        else:
+            template_name = template
+            template_cosmetic = template
 
         modes[mode].append({
             'template_name': template_name,
@@ -114,36 +123,38 @@ def workflow_templates_base():
         }
     )
 
-# /therapy/update_query/20
-@bp.route("/update_<side>/<int:index>", methods=["POST"])
-def update_query(side, index):
-    if not os.path.exists("therapy.json"):
-        return "No history to update", 400
 
-    with open("therapy.json", "r") as f:
-        history = [
-            json.loads(as_str) for as_str in f.read().split("\n\n") if as_str.strip()
-        ]
+@bp.route("/new", methods=["POST"])
+def new_workflow_template():
+    mode = ""
+    name = ""
+    for arg in request.form:
+        if arg.startswith("new_"):
+            mode = arg.split("_", maxsplit=1)[1]
+            name = request.form.get(arg)
+            break
 
-    if index >= len(history):
-        return "Invalid index (%s >= %s)" % (index, len(history)), 400
+    if not mode or not name:
+        return "Invalid request", 400
 
-    log.info(f"{request.form} {request.data}")
-    new_query = request.form.get("delta")
-    if not new_query:
-        return entry_format(index, history[index]), 200
+    # Copy the mode-template file as the baseline for the new template
+    source_template_path = os.path.join(
+        const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
+        f"master.{mode}.json"
+    )
 
-    # new_query is html, I think ideally we want it as markdown.  
-    # maybe delta is okay..
-    history[index][side] = new_query
-    # html_to_delta(new_query)
+    slugname = name.lower().replace(" ", "_").replace("-", "_")
 
-    with open("therapy.json", "w") as f:
-        f.write("\n\n".join(json.dumps(entry) for entry in history))
+    # copy it into the workflow directory with the new name
+    dest_template_path = os.path.join(
+        const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
+        f"ui.{mode}.{slugname}-{name}.json"
+    )
+    shutil.copyfile(source_template_path, dest_template_path)
 
-    return entry_format(index, history[index]), 200
 
-    # return htmx.user_comment(history[index]['query']) + htmx.ai_comment(history[index]['response']), 200
+    return redirect(url_for('workflow_templates.workflow_templates_base'))
+
 
 
 def entry_format(index, entry):
