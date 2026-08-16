@@ -42,3 +42,72 @@ re-generate audio
 video durations will be wrong
 
 WIP, getting closer.
+
+Status -
+
+The first convert to xml tags each delta segment in the rich text the phrase number.  It doesn't get the title or author parts right.  
+
+There are a bunch of newline only 'insert' delta objects that do not have phrases.  
+
+I think a pass to put them all on the previous line will work.
+
+I put the rendered pdf on the text page.  I haven't gotten it all tied it so when you 'import chapter' it refreshes the pdf.
+
+The author/title thing bothers me.  The problem is author/title have their own special place in the latex.  They aren't part of the chapter, they are part of the book.
+
+I've also removed the ability to change the chapter name (oops), and by putting a pdf preview on the text page, the typography page is entirely redundant or broken.
+
+text page?
+should have an input fields for the cosmetic:
+    book title
+    chapter title
+    author name
+
+NO!  The book is named at the book layer.  author at author.  Translator?  Layer between the book and the language.  Default is the author is also the translator into whatever language it is written in.  The system recognizes author==translator and drops translator.
+
+^ UI goes on the language page; it's not "language" so much as it is "translator" where the language is a prominent attribute.
+
+good insight.  Replace the language page with a translator page.  Use the proper language code for the original language, the code + translator name otherwise.
+
+top of language page selector for translation
+add translation:
+    translator
+    language code
+    unicode character set
+
+I like where the new content story can go.
+
+Library (+ Add Author)
+    Where to put it.. A "+"" next to "Library"?
+    crumb-bar level change seems appropriate, and may be applicable in other depth-contexts.
+
+    thats base.html  // TODO: rename to "library.html"
+
+    the context is "add chapter", so it should always be there regardless of other chapters already exist.
+
+    if there is a chapter, we want to be just to the right of it.  Picking apart base.html I can see we're aready..
+
+    I wonder what it would look _after_ the </wa-breadcrumb-item>?
+
+<pre>
+        {% if title %}<wa-breadcrumb-item
+          href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}">{{title}}</wa-breadcrumb-item>{%
+        endif %}
+        {% if chapter %}
+        <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
+          {{chapter.number}}: {{chapter.cosmetic}}
+        </wa-breadcrumb-item>
+        ** HERE **
+        {% endif %}
+        
+        {% if chapter %}
+        <wa-breadcrumb-item href="">{{pretty_language}}</wa-breadcrumb-item>
+</pre>
+---
+
+The intent is to have it up against the right side of the chapter label so we don't have to fight through a bunch of formatting layers.
+
+should have a non-editable region displaying the title and author, centered with bold title and larger font (close appearance to the latex title).
+
+I got it.  They don't actually _work_ yet, but decent looking entry widgets for new authors, books and chapters.
+
