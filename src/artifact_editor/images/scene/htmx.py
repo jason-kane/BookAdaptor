@@ -1,14 +1,19 @@
 import html
 import os
+from typing import TYPE_CHECKING
 
+from bs4 import Tag
 from flask import request, url_for
 from torch import div
-from bs4 import Tag
+
 import logger
 from artifact_editor.characters import characters
 from artifact_editor.styles import htmx as styles_htmx
 from artifact_editor.tools import generic_button
-from artifact_editor.chapter.chapter import Chapter
+
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 from . import const as scene_const
 
 log = logger.log(__name__)

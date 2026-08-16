@@ -2,8 +2,11 @@ import glob
 import json
 import os
 import re
+import html
 import shutil
 import roman
+import spacy
+import subprocess
 
 from flask import (
     Blueprint,
@@ -21,6 +24,7 @@ from artifact_editor import (
     config,
     tools,
 )
+from bs4 import BeautifulSoup
 from artifact_editor.author.author import Author
 from artifact_editor.tools import (
     get_bookdir,
@@ -130,6 +134,545 @@ def chapter_base():
         pretty_title=g.chapter.config.get("title", g.title),
         chapter=g.chapter,
     )
+
+
+def add_author(chapter_xml, chapter):
+    """
+    Add an author page to the given chapter XML.
+    """
+    author_page = chapter_xml.new_tag("paragraph")
+    author_page.attrs["tags"] = "has-text=false,spoken-only=true"
+    author_page.attrs["fullscreen"] = "true"
+    chapter_xml.find("chapter").append(author_page)
+
+    author_image = chapter_xml.new_tag("image")
+    author_prompt = f"Renown author {chapter.author.name} at a desk writing the famous story {chapter.title}"
+    author_image.attrs["prompt"] = author_prompt
+    author_page.append(author_image)
+
+    phrase = chapter_xml.new_tag("phrase")
+    phrase.string = f"By {chapter.author.name}"
+    phrase.attrs["speaker"] = "Narrator"
+    author_page.append(phrase)
+
+
+def extract_title(delta, chapter, chapter_xml):
+    """
+    Extract the title from the delta and add it to the chapter_xml.
+    """
+    ops = []
+    for operation in delta["ops"]:
+        if "insert" in operation:
+            insert_list = []
+            for line in operation["insert"].split("\n"):
+                if line.strip().upper() == chapter.title.upper():
+                    log.info("Found title page: %s", line)
+                    add_title(chapter_xml, chapter)
+                    continue
+
+                insert_list.append(line)
+
+        operation["insert"] = "\n".join(insert_list)
+        ops.append(operation)
+
+    return {"ops": ops}
+
+
+def extract_author(delta, chapter, chapter_xml):
+    """
+    Extract the author from the delta and add it to the chapter_xml.
+    """
+    ops = []
+    for operation in delta["ops"]:
+        if "insert" in operation:
+            insert_list = []
+            for line in operation["insert"].split("\n"):
+                if line.strip().upper() in [
+                    f"BY {chapter.author.name.upper()}",
+                    f"{chapter.author.name.upper()}",
+                ]:
+                    log.info("Found author page: %s", line)
+                    add_author(chapter_xml, chapter)
+                    continue
+
+                insert_list.append(line)
+            operation["insert"] = "\n".join(insert_list)
+        ops.append(operation)
+
+    return {"ops": ops}
+
+
+@bp.route("/import_chapter", methods=["POST"])
+def import_chapter():
+    """
+    New algorithm based on scoring every word based on how good of a phrase
+    break it is and how suitable it is as a new image.
+    """
+    chapter_soup = BeautifulSoup("<chapter></chapter>", "xml")
+
+    delta = g.chapter.load_delta()
+
+    # we want to be able to slice-and-dice the plain text and the formatted
+    # text in parallel.  It's stupid, but I think it might actually be
+    # easiest to leave it in Delta format for a little longer than I had
+    # originally intended.
+
+    # These confuse the phrase breaking algorithm, so we pop them out.
+    delta = extract_title(delta, g.chapter, chapter_soup)
+    delta = extract_author(delta, g.chapter, chapter_soup)
+
+    # nltk.download('punkt_tab')
+    spacy.prefer_gpu()
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        log.info("Downloading spacy model en_core_web_sm...")
+        subprocess.run(
+            [
+                "python",
+                "-m",
+                "spacy",
+                "download",
+                "en_core_web_sm",
+                "--break-system-packages",
+            ]
+        )
+        nlp = spacy.load("en_core_web_sm")
+
+    # break all the 'inserts' in delta up into single delta sentences.
+    out_ops = []
+    index_start = 0
+    for ops in delta["ops"]:
+        log.info("Processing ops: %s", repr(ops))
+
+        for major_break in re.split(r"(\n\n+)", ops.get("insert", "")):
+            sentence_spans = list(nlp(major_break).sents)
+            sentence_count = len(sentence_spans)
+            log.info("Operation has %s sentences", sentence_count)
+            for sentence_index, sentence_span in enumerate(sentence_spans, index_start):
+                log.info("[%s] sentence_span: %s", sentence_index, repr(sentence_span))
+                log.info("[%s] sentence_span.text_with_ws: %s", sentence_index, repr(sentence_span.text_with_ws))
+                log.info("[%s] sentence_span.text: %s", sentence_index, repr(sentence_span.text))
+                sentence = sentence_span.text_with_ws
+
+                # ARGG!! spacy still fucks up trailing newlines.
+                # we _need_ the trailing whitespace.
+                # is this the last sentence?
+                # if sentence_index == sentence_count - 1:
+                #     log.info("%s == %s", sentence_index, sentence_count - 1)
+                #     whitespace = ops["insert"][len(ops["insert"].rstrip()) :]
+                #     log.info("whitespace: %s", repr(whitespace))
+                #     sentence += whitespace
+                # else:
+                #     log.info("%s != %s", sentence_index, sentence_count)
+
+                # the problem with nltk.sent_tokenize is that it destroys whitespace.
+                # some of that whitespace is critical for correct typesetting.
+                # example:
+                #  input: " wrote in machine code.\n\nNot FORTRAN.  \n\tNot RATFOR."
+                #  output: ["wrote in machine code.", "Not FORTRAN.", "Not RATFOR."]
+
+                # the trailing whatever, don't care, but the leading tabs and extra
+                # newlines must be preserved.  I'll try spacy...
+
+                if sentence[0] in [",", ".", "!", "?", ";", ":"]:
+                    # the sentence begins with punctuation.
+                    # we can't move it to the end of the previous because it's here because
+                    # the formatting has changed.  Not a problem exactly, we just
+                    # have to fix the trailing whitespace on the previous opt_ops.
+                    if out_ops[-1]["insert"][-1] == " ":
+                        out_ops[-1]["insert"] = out_ops[-1]["insert"][:-1]
+
+                log.info("sentence: %s", repr(sentence))
+                for word in re.split(r"([ \n])", sentence):
+                    log.info('word: %s', repr(word))
+                    if out_ops and word in [" ", "\n"]:
+                        out_ops[-1]["insert"] += word
+                        continue
+
+                    if word.strip():
+                        out_ops.append(
+                            {
+                                "insert": word,
+                                "attributes": ops.get("attributes", {}),
+                                "type": "word",
+                                # punctuation that isn't at the end of a sentence is a weak
+                                # phrase break, way better than nothing.
+                                "phrase_score": 1
+                                if word[-1] in [".", "!", "?", ";", ":", ","]
+                                else 0,
+                            }
+                        )
+                    elif word:
+                        out_ops.append(
+                            {
+                                "insert": word,
+                                "attributes": ops.get("attributes", {}),
+                                "type": "whitespace",
+                                "phrase_score": 0,
+                            }
+                        )
+
+                if out_ops[-1]["insert"].strip():
+                    try:
+                        out_ops[-1]["phrase_score"] += {
+                            ".": 5,
+                            "!": 5,
+                            "?": 5,
+                            ";": 3,
+                            ":": 3,
+                            ",": 1,
+                        }[out_ops[-1]["insert"].strip()[-1]]
+                    except KeyError:
+                        pass
+
+    index = index_start
+    attributes = {}
+    phrases = []
+    # then out_ops to latex.
+    while index < len(out_ops):
+        # for phrases -- the visual highlighted text, we want each section
+        # to be small enough to fit the readers eye.  Less than 10 words,
+        # with a strong preference for ending on a sentence break or strong
+        # punctuation mark.
+
+        # This is also the unit of TTS.  Its much easier for the TTS to
+        # sound good when it gets a complete sentence.
+
+        # we will use a WINDOW_SIZE word evaluation window that resets whenever we
+        # choose a phrase break point.
+
+        window_size = 18  # 25 is too big
+
+        break_index = None
+        while break_index is None and window_size < 60:
+            highest = 0
+
+            for i in range(index, min(index + window_size, len(out_ops))):
+                if out_ops[i]["type"] == "whitespace":
+                    continue
+
+                if out_ops[i].get("phrase_score", 0) > highest:
+                    highest = out_ops[i]["phrase_score"]
+                    break_index = i
+                    break
+
+            if break_index is None:
+                if i == len(out_ops) - 1:
+                    break_index = i
+
+            if break_index is None:
+                log.info(
+                    "No phrase break found in window size %d, increasing window size...",
+                    window_size,
+                )
+                window_size += 2
+
+        if break_index is None:
+            log.info("!FAILURE! No phrase break found!")
+            p = out_ops[index : min(index + window_size, len(out_ops))]
+            log.info("p: %s", p)
+            log.info("phrase: %s", " ".join([o["insert"] for o in p]))
+
+            raise ValueError("No phrase break found!")
+
+        # if out_ops[index]["type"] == "whitespace":
+
+        # log.info(' Spoken phrase: %s', plain_phrase)
+        alignment = "left"
+
+        typeset_phrase = [
+            
+        ]
+        log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
+        for orig in out_ops[index : break_index + 1]:
+            o = orig.copy()
+            if "\t" in o["insert"]:
+                log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
+                o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
+
+            if o.get('attributes', {}).get('align') == 'center':
+                # the previous line (this is a \n) should be
+                # centered.
+                typeset_phrase[-1] = r"\begin{center}" + typeset_phrase[-1] + r"\end{center}"
+
+            # That I have to treat this as a special edge case means my
+            # algorithm is shit.  Adding more features is going to be a
+            # nightmare until I redesign to handle arbitrary combinations of
+            # attributes.
+            if (
+                o["attributes"].get("italic")
+                and attributes.get("italic") is None
+                and o["attributes"].get("bold")
+                and attributes.get("bold") is None
+            ):
+                # bold _and_ italics.
+                typeset_phrase.append(r"\textit{\textbf{" + o["insert"])
+                attributes["italic"] = True
+                attributes["bold"] = True
+                continue
+
+            if o["attributes"].get("italic") and attributes.get("italic") is None:
+                # we are starting an italic block
+                typeset_phrase.append(r"\textit{" + o["insert"])
+                attributes["italic"] = True
+                continue
+
+            if o["attributes"].get("italic") is None and attributes.get("italic"):
+                # we are ending an italic block
+                if typeset_phrase:
+                    # retain the trailing whitespace, _after_ the close tag.
+                    stripped = typeset_phrase[-1].rstrip()
+                    trailing_whitespace = typeset_phrase[-1][len(stripped) :]
+                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+                else:
+                    phrases[-1]["latex"] += "}"
+                attributes["italic"] = None
+
+            if o["attributes"].get("bold") and attributes.get("bold") is None:
+                # we are starting a bold block
+                typeset_phrase.append(r"\textbf{" + o["insert"])
+                attributes["bold"] = True
+                continue
+
+            if o["attributes"].get("bold") is None and attributes.get("bold"):
+                # how many characters long was the previous line
+                # prior to the trailing whitespace?
+                if typeset_phrase:
+                    stripped = typeset_phrase[-1].rstrip()
+                    trailing_whitespace = typeset_phrase[-1][len(stripped) :]
+                    # tuck the } close brace between the string and its trailing whitespace.
+                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+                    # we aren't bold anymore.
+                else:
+                    #  we went bold in a previous phrase.
+                    stripped = phrases[-1]["latex"].rstrip()
+                    trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
+                    phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+
+                attributes["bold"] = None
+
+            typeset_phrase.append(o["insert"])
+
+        plain_phrase = ""
+        for i in range(index, break_index + 1):
+            # close.. but we aren't setting the phrase id
+            # for the title or author correctly.
+            # we know which phrase each word is in.
+            out_ops[i]["attributes"]["phrase"] = 1 + len(phrases)
+            plain_phrase += out_ops[i]["insert"]
+       
+        phrases.append({"spoken": plain_phrase, "latex": "".join(typeset_phrase)})
+
+        index = break_index + 1
+
+    # clear any leading newlines from the first phrase.
+    out_ops[0]["insert"] = out_ops[0]["insert"].lstrip("\n")
+    # out_ops = [
+    #     {
+    #         "attributes": {
+    #             "bold": True,
+    #             "phrase": 0
+    #         },
+    #         "insert": "The Story of Mel\n\n"
+    #     }, {
+    #         "insert": "by Ed Nather\n\n",
+    #         "attributes": {
+    #             "bold": False,
+    #             "phrase": 1
+    #         },
+    #     },        
+    # ] + out_ops
+
+    g.chapter.save_delta({"ops": out_ops})
+
+    chapter_xml = chapter_soup.find("chapter")
+
+    with open(
+        os.path.join(
+            const.LIBRARY_DIR,
+            g.chapter.get_chapterdir(),
+            g.chapter.language,
+            "chapter.latex",
+        ),
+        "w",
+    ) as h, open(
+        os.path.join(
+            const.LIBRARY_DIR,
+            g.chapter.get_chapterdir(),
+            g.chapter.language,
+            "chapter.rainbow.latex",
+        ),
+        "w",
+    ) as rainbow_h:
+        header = r"""\documentclass[parskip=full]{scrartcl}
+\usepackage[paperheight=200in,paperwidth=2.825in,top=0.5in,bottom=4in,left=0.1in,right=0.1in,heightrounded]{geometry}
+\addtokomafont{title}{\centering}
+\addtokomafont{author}{\centering}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{froufrou}
+
+\usepackage{luaquotes}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{titling}
+
+\usepackage[osf]{libertinus-otf}
+
+%s
+
+\pagenumbering{gobble}
+\widowpenalties 1 10000
+\raggedbottom
+\setlength{\leftmargini}{0.125em}
+
+\begin{document}
+\setlength{\droptitle}{-45pt}
+\posttitle{\par\end{center}}
+\title{%s}
+\author{%s}
+\date{}
+\maketitle
+\vspace{-0.5in}
+\tolerance=9999
+\hyphenpenalty=10000
+\exhyphenpenalty=100                    
+"""
+
+        latex_block = ""
+        latex_rainbow_block = ""
+        paragraph = chapter_soup.new_tag("paragraph")
+
+        rainbow_series = []
+
+        initial_index = len(chapter_soup.find_all("phrase"))
+
+        for index, p in enumerate(phrases, initial_index):
+            phrase = chapter_soup.new_tag("phrase")
+            phrase.string = p["spoken"]
+            phrase.attrs["index"] = index
+
+            # limit to 24 bits, 10 offset to keep us away from pure black
+            rainbow_int = (index + 10) % 16777216
+            phrase.attrs["latex"] = html.escape(p["latex"].replace("\n", r"\n"))
+
+            prior_whitespace = p["latex"][: len(p["latex"]) - len(p["latex"].lstrip())]
+            post_whitespace = p["latex"][len(p["latex"].rstrip()) :]
+            p["latex_rainbow"] = (
+                f"{prior_whitespace}\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{p['latex'].strip()}}}{post_whitespace}"
+            )
+            phrase.attrs["latex_rainbow"] = p["latex_rainbow"].replace("\n", r"\n")
+
+            _r, _g, _b = rainbow_int.to_bytes(3, "big")
+            rainbow_series.append(
+                f"\\definecolor{{B{rainbow_int:X}}}{{RGB}}{{{_r},{_g},{_b}}}"
+            )
+
+            latex_block += p["latex"]
+            latex_rainbow_block += p["latex_rainbow"]
+
+            # double newline == paragraph break.
+            if phrase.attrs["latex"].lstrip(" ").startswith(r"\n\n"):
+                new_paragraph = chapter_soup.new_tag("paragraph")
+                new_paragraph.append(phrase)
+                chapter_xml.append(new_paragraph)
+                paragraph = new_paragraph
+            elif phrase.attrs["latex"].rstrip(" ").endswith(r"\n\n"):
+                paragraph.append(phrase)
+                new_paragraph = chapter_soup.new_tag("paragraph")
+                chapter_xml.append(new_paragraph)
+                paragraph = new_paragraph
+            else:
+                log.info("s: %s", p["spoken"])
+                paragraph.append(phrase)
+
+        # chapter_xml.append(paragraph)
+
+        all_lines = []
+        for line in latex_block.splitlines(keepends=True):
+            if line.strip() and all_lines and all_lines[-1].strip():
+                # there is a non-blank line after a non-blank line.  We need to add a \\
+                all_lines[-1] = all_lines[-1].rstrip() + r"\\" + "\n"
+
+            # escapes
+            if "$" in line:
+                line = line.replace("$", r"\$")
+
+            all_lines.append(line)
+
+        all_rainbow_lines = []
+        for line in latex_rainbow_block.splitlines(keepends=True):
+            if line.strip() and all_rainbow_lines and all_rainbow_lines[-1].strip():
+                # there is a non-blank line after a non-blank line.  We need to add a \\
+                all_rainbow_lines[-1] = all_rainbow_lines[-1].rstrip() + r"\\" + "\n"
+
+            # escapes
+            if "$" in line:
+                line = line.replace("$", r"\$")
+
+            all_rainbow_lines.append(line)
+
+        h.write(header % ("", g.title, g.author.pretty_name))
+        rainbow_h.write(
+            header % ("\n".join(rainbow_series), g.title, g.author.pretty_name)
+        )
+
+        h.write("".join(all_lines))
+        rainbow_h.write("".join(all_rainbow_lines))
+
+        h.write(r"""\end{document}""")
+        rainbow_h.write(r"""\end{document}""")
+
+    #delta["ops"] = out_ops
+    g.chapter.soup = chapter_xml
+    g.chapter.save_xml()
+
+    cwd = os.path.join(
+        const.LIBRARY_DIR,
+        g.chapter.get_chapterdir(),
+        g.chapter.language,
+    )
+
+    # sorry assholes.
+    subprocess.run(["lualatex", "./chapter.latex"], cwd=cwd)
+    subprocess.run(
+        [
+            "gs",
+            "-dNOPAUSE",
+            "-sDEVICE=pngalpha",
+            "-r600",
+            "-dTextAlphaBits=4",
+            "-dGraphicsAlphaBits=4",
+            "-sOutputFile=chapter-%d.png",
+            "chapter.pdf",
+            "-c",
+            "quit",
+        ],
+        cwd=cwd,
+    )
+
+    subprocess.run(["lualatex", "./chapter.rainbow.latex"], cwd=cwd)
+
+    subprocess.run(
+        [
+            "gs",
+            "-dNOPAUSE",
+            "-sDEVICE=pngalpha",
+            "-r600",
+            "-dTextAlphaBits=4",
+            "-dGraphicsAlphaBits=4",
+            "-sOutputFile=chapter.rainbow-%d.png",
+            "chapter.rainbow.pdf",
+            "-c",
+            "quit",
+        ],
+        cwd=cwd,
+    )
+
+    return "", 200
+
 
 
 @bp.route("/delta", methods=["GET"])

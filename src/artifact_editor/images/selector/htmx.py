@@ -1,6 +1,7 @@
 import glob
 import os
 import shutil
+from typing import TYPE_CHECKING
 
 from bs4 import Tag
 from flask import url_for
@@ -15,7 +16,10 @@ from artifact_editor.images import (
 from artifact_editor.tools import (
     generic_button,
 )
-from artifact_editor.chapter.chapter import Chapter
+
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 from .selector import registry as selector_registry
 
 log = logger.log(__name__)

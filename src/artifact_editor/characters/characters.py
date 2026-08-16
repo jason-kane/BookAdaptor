@@ -333,7 +333,7 @@ def generate_sample_audio(
             delete=False
         ).name
 
-        # this needs to comply with audio.xml_to_list_of_wav() conventions.
+        # this needs to comply with xml_to_list_of_wav() conventions.
         soup = f"<phrase id='0_0' speaker=\"{character_name}\">{sample_sentence}</phrase>"
 
         # fragdex,

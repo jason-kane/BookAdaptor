@@ -1,12 +1,9 @@
 import html
 import json
-import os
 import re
-import numpy as np
 
 from flask import request, url_for, render_template
 
-import const
 import logger
 from artifact_editor.characters import characters
 from artifact_editor.tools import generic_button
@@ -216,7 +213,7 @@ def soundslike(phrase_xml, soundslike_url):
 
 def pronunciation_helper(chapter, phrase_xml):
     soundslike_url = url_for(
-        "library.book.chapter.audio.pronunciation.soundslike",
+        "library.book.chapter.phrases.pronunciation.soundslike",
         author=chapter.author.name,
         title=chapter.title,
         chapter_number=chapter.number,
@@ -239,7 +236,7 @@ def pronunciation_helper(chapter, phrase_xml):
             continue
 
         microphone_url = url_for(
-            "library.book.chapter.audio.record_audio",
+            "library.book.chapter.phrases.record_audio",
             **chapter.kwargs,
             phrase_index=phrase_xml['index'],
         )
@@ -294,7 +291,7 @@ def audio_player(chapter, phrase_xml):
 
 def generate_audio_button(chapter, phrase_xml):
     generate_audio_url = url_for(
-        "library.book.chapter.audio.regenerate_phrase",
+        "library.book.chapter.phrases.regenerate_phrase",
         author=chapter.author.name,
         title=chapter.title,
         chapter_number=chapter.number,
@@ -317,7 +314,7 @@ def pronunciation_textarea(chapter, phrase_xml):
         class="pronunciation-input"
         label="Pronunciation (IPA)"
         name="pronunciation"
-        hx-put="{url_for('library.book.chapter.audio.pronunciation.save', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
+        hx-put="{url_for('library.book.chapter.phrases.pronunciation.save', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
         hx-trigger="change delay:500ms"
         placeholder="IPA Pronunciation" 
         resize="auto"
@@ -353,7 +350,7 @@ def base_text_phrase(chapter, phrase_xml):
         <div class="wa-cluster">
             {phrase}
             <wa-checkbox
-                hx-put="{url_for('library.book.chapter.audio.set_linebreak', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
+                hx-put="{url_for('library.book.chapter.phrases.set_linebreak', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
                 hx-vals='{{"no_linebreak": { "false" if value else "true" }}}'
                 hx-swap="outerHTML"
                 hx-target="#phrase-{phrase_xml['index']}"
@@ -366,7 +363,7 @@ def base_text_phrase(chapter, phrase_xml):
 
 def split_phrase_button(chapter, phrase_xml):
     split_phrase_url = url_for(
-        "library.book.chapter.audio.split_phrase",
+        "library.book.chapter.phrases.split_phrase",
         author=chapter.author.name,
         title=chapter.title,
         chapter_number=chapter.number,
@@ -424,7 +421,7 @@ def add_image_slot_button(chapter, phrase_xml, page, after=True):
         return ""
     
     add_image_slot_url = url_for(
-        "library.book.chapter.audio.add_image_slot",
+        "library.book.chapter.phrases.add_image_slot",
         author=chapter.author.name,
         title=chapter.title,
         chapter_number=chapter.number,
@@ -458,7 +455,7 @@ def add_image_slot_button(chapter, phrase_xml, page, after=True):
 
 def repronounce_button(chapter, phrase_xml):
     return f"""<wa-button
-        hx-post="{ url_for('library.book.chapter.audio.pronunciation.repronounce_phrase', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index']) }"
+        hx-post="{ url_for('library.book.chapter.phrases.pronunciation.repronounce_phrase', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index']) }"
         hx-target="#pronounce_{phrase_xml['index']}"
         hx-swap="outerHTML"
         hx-trigger="click">Re-pronounce</wa-button>"""
@@ -468,7 +465,7 @@ def repronounce_button(chapter, phrase_xml):
 def merge_with_previous_button(chapter, phrase_xml, previous_phrase_xml, page):
     if previous_phrase_xml:
         merge_with_previous_url = url_for(
-            'library.book.chapter.audio.merge_with_previous',
+            'library.book.chapter.phrases.merge_with_previous',
             **chapter.kwargs,
         )
         return f"""<wa-button
@@ -669,7 +666,7 @@ def phrase_latex_rainbow(chapter, phrase_xml):
 
 def get_phrase_latex_image(chapter, phrase_xml):
     redraw_url = url_for(
-        "library.book.chapter.audio.redraw_text_snippet",
+        "library.book.chapter.phrases.redraw_text_snippet",
         **chapter.kwargs,
         phrase_index=phrase_xml['index'],
     )
@@ -763,13 +760,13 @@ def split_phrase_text(chapter, phrase_xml, split, page):
 
     
     set_split_url = url_for(
-        "library.book.chapter.audio.set_split",
+        "library.book.chapter.phrases.set_split",
         **chapter.kwargs,
         phrase_index=phrase_xml['index'],
     )
 
     save_split_url = url_for(
-        "library.book.chapter.audio.save_split_phrase",
+        "library.book.chapter.phrases.save_split_phrase",
         **chapter.kwargs,
         phrase_index=phrase_xml['index'],
     )
@@ -840,7 +837,7 @@ def speaker_selector(chapter, phrase_xml):
         log.error("Speaker %s not found in speakers list!!", speaker)
 
     assign_speaker_url = url_for(
-        "library.book.chapter.audio.assign_phrase_speaker",
+        "library.book.chapter.phrases.assign_phrase_speaker",
         **chapter.kwargs,
         phrase_index=phrase_xml['index'],
     )
@@ -929,7 +926,7 @@ def generate_all_missing_audio_button(chapter):
     # {'author': 'L. Frank Baum', 'title': 'The Marvelous Land of Oz', 'chapter_number': 2, 'language': 'english'}
 
     return f"""<wa-button 
-    hx-post="{ url_for('library.book.chapter.audio.generate_all_missing_audio', **(chapter.kwargs)) }"
+    hx-post="{ url_for('library.book.chapter.phrases.generate_all_missing_audio', **(chapter.kwargs)) }"
     hx-on::before-request="beforeRequest(this,event)"
     hx-on::after-request="afterRequest(this,event)"
     hx-swap="outerHTML"
@@ -945,7 +942,7 @@ def regenerate_all_audio_button(chapter):
     # {'author': 'L. Frank Baum', 'title': 'The Marvelous Land of Oz', 'chapter_number': 2, 'language': 'english'}
 
     return f"""<wa-button 
-    hx-post="{ url_for('library.book.chapter.audio.regenerate_all_audio', **(chapter.kwargs)) }"
+    hx-post="{ url_for('library.book.chapter.phrases.regenerate_all_audio', **(chapter.kwargs)) }"
     hx-on::before-request="beforeRequest(this,event)"
     hx-on::after-request="afterRequest(this,event)"
     hx-swap="outerHTML"
@@ -959,7 +956,7 @@ def regenerate_all_audio_button(chapter):
 def repronounce_where_missing_button(chapter):
     return generic_button(
         chapter.url,
-        category="audio",
+        category="phrases",
         tag="repronounce_missing_words",
         cosmetic="Repronounce Missing Words",
     )
@@ -968,7 +965,7 @@ def repronounce_where_missing_button(chapter):
 def reset_audio_cache_json_button(chapter):
     return generic_button(
         chapter.url,
-        category="audio",
+        category="phrases",
         tag="reset_audio_cache_json",
         cosmetic="Reset Audio Cache",
     )
@@ -976,7 +973,7 @@ def reset_audio_cache_json_button(chapter):
 
 def recalculate_all_phrase_frames_button(chapter):
     recalculate_frames_url = url_for(
-        "library.book.chapter.audio.recalculate_all_phrase_frames",
+        "library.book.chapter.phrases.recalculate_all_phrase_frames",
         **chapter.kwargs,
     )
 

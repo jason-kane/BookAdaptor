@@ -20,9 +20,9 @@ from artifact_editor import (
     llm,
     tools,
 )
-from artifact_editor.audio.pronunciation.views import bp as pronunciation_bp
-from artifact_editor.audio.sound.views import bp as sound_bp
-from artifact_editor.audio.timeline.views import bp as timeline_bp
+from artifact_editor.phrases.pronunciation.views import bp as pronunciation_bp
+from artifact_editor.phrases.sound.views import bp as sound_bp
+from artifact_editor.phrases.timeline.views import bp as timeline_bp
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
     Chapter,
@@ -31,14 +31,14 @@ from artifact_editor.chapter.chapter import (
 )
 
 from . import (
-    audio,
     htmx,
+    phrases,
 )
 
 log = logger.log(__name__)
 
 bp = Blueprint(
-    "audio",
+    "phrases",
     __name__,
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
@@ -62,7 +62,7 @@ bp.register_blueprint(timeline_bp, url_prefix="/timeline")
 @bp.route("/actions/try_cmu_dict", methods=["POST"])
 def audio_try_cmu_dict():
     bookdir = tools.get_bookdir(g.author.name, g.title)
-    audio.try_cmu_dict(bookdir)
+    phrases.try_cmu_dict(bookdir)
     return "", 204
 
 
@@ -208,11 +208,11 @@ def audio_phrases(page: int | None = None):
 
     if pretty_mode:
         payload = BeautifulSoup(
-            audio.phrase_sequence(g.chapter, page=page),
+            phrases.phrase_sequence(g.chapter, page=page),
             "xml"
         ).prettify()
     else:
-        payload = audio.phrase_sequence(g.chapter, page=page)
+        payload = phrases.phrase_sequence(g.chapter, page=page)
 
     response = make_response(payload)
     response.status_code = 200
@@ -245,7 +245,7 @@ def set_paragraph_fullscreen():
 
     g.chapter.save_xml()
 
-    return audio.phrase_sequence(g.chapter, page=paragraph_index + 1)
+    return phrases.phrase_sequence(g.chapter, page=paragraph_index + 1)
 
 
 @bp.route("/text_snippet/<phrase_index>.png", methods=["GET"])
@@ -279,7 +279,7 @@ def base():
     pretty_title = g.chapter.config.get("title", g.title)
 
     return render_template(
-        "audio.html",
+        "phrases.html",
         language="english",
         pretty_language="English",
         author=g.author,
@@ -288,7 +288,7 @@ def base():
         pretty_title=pretty_title,
         chapter=g.chapter,
         chapterurl=g.chapter.url,
-        phrase_sequence=audio.phrase_sequence(g.chapter, page=page),
+        phrase_sequence=phrases.phrase_sequence(g.chapter, page=page),
         regenerate_all_audio_button=htmx.regenerate_all_audio_button(g.chapter),
         generate_all_missing_audio_button=htmx.generate_all_missing_audio_button(
             g.chapter
@@ -309,9 +309,9 @@ def base():
 def recalculate_all_phrase_frames():
 
     for phrase_xml in g.chapter.get_xml().find_all("phrase"):
-        wavfile = audio.get_wavfile_filename(phrase_xml, g.chapter)
+        wavfile = phrases.get_wavfile_filename(phrase_xml, g.chapter)
         if wavfile and os.path.exists(wavfile):
-            duration = audio.get_wav_duration(wavfile)
+            duration = phrases.get_wav_duration(wavfile)
             phrase_xml.attrs["duration"] = str(duration)
             phrase_xml.attrs["frames"] = int(duration * const.FPS)
         else:
@@ -320,7 +320,7 @@ def recalculate_all_phrase_frames():
             )
     g.chapter.save_xml()
 
-    audio.recalculate_image_frames(g.chapter)
+    phrases.recalculate_image_frames(g.chapter)
 
     return htmx.recalculate_all_phrase_frames_button(g.chapter)
 
@@ -356,7 +356,7 @@ def assign_phrase_speaker(author: str, title: str, chapter_number: int, language
 
     speaker = request.form.get("speaker", None)
 
-    audio.save_speaker(chapter, phrase_index, speaker)
+    phrases.save_speaker(chapter, phrase_index, speaker)
     return htmx.speaker_selector(
         chapter,
         chapter.get_phrase(phrase_index),
@@ -500,7 +500,7 @@ def save_split_phrase(author: str, title: str, chapter_number: int, language: st
     # hx-get="phrases?page={page}"
     # return htmx_phrase_editor(chapterurl, chapterdir, phrase_xml), 200
     page = request.form.get("page", None)
-    return audio.phrase_sequence(chapter, page=page)
+    return phrases.phrase_sequence(chapter, page=page)
 
 
 # /Ambrose%20Bierce/An%20Occurrence%20at%20Owl%20Creek%20Bridge/chapter/0001/audio/actions/split_phrase
@@ -551,7 +551,7 @@ def regenerate_phrase(
         return "Phrase not found", 404
 
     # adds 'src' if it doesn't exist, with a plausible filename.
-    wavfile = audio.get_wavfile_filename(phrase_xml, chapter)
+    wavfile = phrases.get_wavfile_filename(phrase_xml, chapter)
 
     log.warning("Beta", phrase_xml=phrase_xml, has_soup=chapter.soup is not None)
     
@@ -572,7 +572,7 @@ def regenerate_phrase(
             log.info(f"Phrase {phrase_index} already has an audio file: {wavfile}")
             return htmx.phrase_editor(chapter, phrase_xml, page), 200
 
-    text_to_speak = audio.clean_latex(phrase_xml.get_text())
+    text_to_speak = phrases.clean_latex(phrase_xml.get_text())
     log.info(f"Submitting {text_to_speak} to TTS for phrase {phrase_index}")
 
     # regenerate the wav for this phrase
@@ -610,10 +610,10 @@ def regenerate_phrase(
 
     # in-place pad audio with silence, just enough to be an exact fps mulitple
     log.info("[regenerate_phrase] Padding audio file to frame: %s", wavfile)
-    audio.wav_pad_to_frame(wavfile)
+    phrases.wav_pad_to_frame(wavfile)
 
     phrase_xml.attrs["src"] = os.path.basename(wavfile)
-    duration = audio.get_wav_duration(wavfile)
+    duration = phrases.get_wav_duration(wavfile)
 
     log.info("Duration measured as: %s seconds", duration)
     phrase_xml.attrs["duration"] = str(duration)
@@ -638,7 +638,7 @@ def regenerate_phrase(
     phrase_xml = chapter.get_phrase(phrase_index)
     log.info(f"After 2: {phrase_xml.attrs=}")
 
-    audio.recalculate_image_frames(chapter)
+    phrases.recalculate_image_frames(chapter)
 
     chapter.save_xml()
     return htmx.phrase_editor(chapter, phrase_xml, page), 200
@@ -650,7 +650,7 @@ def repronounce_missing_words(author: str, title: str, chapter_number: int):
     chapterdir = tools.get_chapterdir(author, title, chapter_number)
     chapterurl = tools.get_chapterurl(author, title, chapter_number)
 
-    audio.repronounce_where_missing(chapterdir)
+    phrases.repronounce_where_missing(chapterdir)
 
     return htmx.repronounce_where_missing_button(chapterurl)
 
@@ -757,7 +757,7 @@ def record_audio(author: str, title: str, chapter_number: int, language: str, ph
 
     # # write audio to a WAV file
     # with open("microphone-results.wav", "wb") as f:
-    #     f.write(audio.get_wav_data())
+    #     f.write(phrases.get_wav_data())
 
 
 @bp.route("/actions/merge_with_previous", methods=["POST"])
@@ -827,7 +827,7 @@ def generate_all_missing_audio(author: str, title: str, chapter_number: int, lan
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
-    audio.generate_all_audio(chapter, force=False)
+    phrases.generate_all_audio(chapter, force=False)
 
     return htmx.generate_all_missing_audio_button(chapter)
 
@@ -837,7 +837,7 @@ def regenerate_all_audio(author: str, title: str, chapter_number: int, language:
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
-    audio.generate_all_audio(chapter, force=True)
+    phrases.generate_all_audio(chapter, force=True)
     return htmx.regenerate_all_audio_button(chapter)
 
 

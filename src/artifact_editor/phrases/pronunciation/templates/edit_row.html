@@ -17,7 +17,7 @@
                     <wa-input
                         label="SoundsLike"
                         hint="Try an english word with the sound you want to help find the IPA symbols."
-                        hx-post="{{ url_for('library.book.chapter.audio.pronunciation.soundslike', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
+                        hx-post="{{ url_for('library.book.chapter.phrases.pronunciation.soundslike', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
                         hx-target="#soundslike_{{key}}"
                         hx-swap="outerHTML"
                         name="soundslike"
@@ -35,14 +35,14 @@
                 </div>
 
                 <audio controls="">
-                    <source src="{{ url_for('library.book.chapter.audio.pronunciation.get_pronunciation_audio', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) + '?cachebuster=' + cachebuster }}" type="audio/wav">
+                    <source src="{{ url_for('library.book.chapter.phrases.pronunciation.get_pronunciation_audio', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) + '?cachebuster=' + cachebuster }}" type="audio/wav">
                 </audio>
             </div>
         </td>
         <td>
             <div class="wa-cluster">
                 <wa-button
-                    hx-delete="{{ url_for('library.book.chapter.audio.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) }}"
+                    hx-delete="{{ url_for('library.book.chapter.phrases.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=key) }}"
                     hx-target="#global_pronunciation"
                     hx-swap="outerHTML"
                 >Delete</wa-button>

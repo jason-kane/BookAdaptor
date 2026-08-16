@@ -16,7 +16,6 @@ def generate_image(
         lora_weights_json,
         sample) -> bytes:
     log.info(f'generate_image({provider_key=}, {chapter=})')
-    #from artifact_editor.chapter import Chapter
 
     # incoming message, strip off the first arg as the provider key, the reset
     # we send on to generate_image()

@@ -220,7 +220,7 @@ def timeline():
 # http://localhost:5000/Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/images/0.png
 
     # add_image_slot_url = url_for(
-    #     "library.book.chapter.audio.add_image_slot",
+    #     "library.book.chapter.phrases.add_image_slot",
     #     author=chapter.author.name,
     #     title=chapter.title,
     #     chapter_number=chapter.number,

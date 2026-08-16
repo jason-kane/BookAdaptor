@@ -16,7 +16,7 @@ from artifact_editor import (
     config,
     camera,
     video,
-    audio,
+    phrases,
     typography,
     tools,
 )
@@ -911,7 +911,7 @@ class Book:
             audio_fn = os.path.join(
                 const.LIBRARY_DIR, self.chapterdir.lstrip("/"), "audio.wav"
             )
-            audio.audio.assemble(audio_tracks=audio_tracks, outfile=audio_fn)
+            phrases.phrases.assemble(audio_tracks=audio_tracks, outfile=audio_fn)
 
             # now make an mp4 with these frames set to this audio.
             video_pfn = self.get_video_filename()

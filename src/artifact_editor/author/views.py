@@ -11,12 +11,6 @@ from flask import (
 
 import const
 import logger
-# from artifact_editor import (
-#     config,
-#     tools,
-# )
-# from artifact_editor.chapter.chapter import Chapter
-# from artifact_editor.chapter import htmx as chapter_htmx
 
 
 from .author import Author

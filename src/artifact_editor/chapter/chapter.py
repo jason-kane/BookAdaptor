@@ -21,7 +21,7 @@ from artifact_editor import (
     config,
     tools,
 )
-from artifact_editor.audio.pronunciation.pronunciation import get_global_pronunciations
+from artifact_editor.phrases.pronunciation.pronunciation import get_global_pronunciations
 from artifact_editor.author.author import Author
 from artifact_editor.masterplan import masterplan
 from artifact_editor.styles import styles
@@ -440,7 +440,7 @@ class Chapter:
                 phrase_index=phrase_xml.attrs["index"],
             )
             return url_for(
-                "library.book.chapter.audio.text_snippet",
+                "library.book.chapter.phrases.text_snippet",
                 **self.kwargs,
                 phrase_index=phrase_xml.attrs["index"],
             )
@@ -522,7 +522,7 @@ class Chapter:
         img.save(fn)
 
         return url_for(
-            "library.book.chapter.audio.text_snippet",
+            "library.book.chapter.phrases.text_snippet",
             **self.kwargs,
             phrase_index=phrase_xml.attrs["index"],
         )

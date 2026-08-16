@@ -260,7 +260,7 @@ def frame_display(chapter, frame_index: int):
             hx-swap="none"
         >Show in File Manager</wa-button>
     </div>
-    <wa-button href="/{chapter.url}/audio?page={int(paragraph_xml.attrs['index']) + 1}">Audio Workshop</wa-button>
+    <wa-button href="/{chapter.url}/phrases?page={int(paragraph_xml.attrs['index']) + 1}">Audio Workshop</wa-button>
     <wa-button href="/{chapter.url}/images/{image_xml.attrs['index']}">Image Workshop</wa-button>
     <wa-button 
         hx-post="/{chapter.url}/frames/regenerate_w_tmi"

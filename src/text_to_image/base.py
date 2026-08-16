@@ -30,15 +30,6 @@ class TextToImageProviderUI:
     buttons = []
 
     def __init__(self, chapter):
-        #from artifact_editor.author.author import Author
-        #from artifact_editor.chapter.chapter import Chapter
-        #chapter_kwargs = tools.requestToChapterKwargs(request.url)
-        #chapter_kwargs['author'] = Author(chapter_kwargs['author'])
-        # self.chapter_key = chapter_key
-        
-        # args = tools.chapterkey_to_chapterargs(chapter_key)
-        # author = Author(args.pop(0))
-        # self.chapter = Chapter(author, *args)
         self.chapter = chapter
 
     def generate_ui(self) -> str:

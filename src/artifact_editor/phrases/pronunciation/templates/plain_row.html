@@ -1,6 +1,6 @@
 <tr 
         id="pronounce_{{word['key']}}"
-        hx-get="{{ url_for('library.book.chapter.audio.pronunciation.edit', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
+        hx-get="{{ url_for('library.book.chapter.phrases.pronunciation.edit', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
         hx-target="#pronounce_{{word['key']}}"
         hx-swap="outerHTML"
         hx-vals='{"key": "{{word['key']}}"}'
@@ -11,7 +11,7 @@
         <td>
             <div class="wa-cluster">
                 <wa-button
-                    hx-delete="{{ url_for('library.book.chapter.audio.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=word['key']) }}"
+                    hx-delete="{{ url_for('library.book.chapter.phrases.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=word['key']) }}"
                     hx-target="#global_pronunciation"
                     hx-swap="outerHTML"
                 >Delete</wa-button>

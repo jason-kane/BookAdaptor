@@ -17,7 +17,7 @@ log = logger.log(__name__)
 
 def import_button(chapter: Chapter):
     import_url = url_for(
-        'library.book.chapter.text.import_chapter',
+        'library.book.chapter.import_chapter',
         **chapter.kwargs,
     )
     return f"""

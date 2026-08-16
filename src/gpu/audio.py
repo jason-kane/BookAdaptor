@@ -13,12 +13,12 @@ import logger
 from artifact_editor.characters import characters
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import Chapter
-from artifact_editor.audio.pronunciation import pronunciation
+from artifact_editor.phrases.pronunciation import pronunciation
 
 import numpy as np
 import random
 
-from artifact_editor.audio import utterances
+from artifact_editor.phrases import utterances
 
 # KOKORO_VOICES
 from artifact_editor.characters import voices

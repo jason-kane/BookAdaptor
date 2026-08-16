@@ -188,21 +188,17 @@ def delete_image(author, title, chapter_number, language, image_index=0, force=T
 
 
 @bp.route("/get_image_metadata", methods=["GET"])
-def get_image_metadata(author, title, chapter_number, language, image_index=0):
+def get_image_metadata(image_index=0):
     """
     Get metadata for an image.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     image_index = int(image_index)
 
     src = request.args.get("src", None)
 
-    image_xml = chapter.get_image(image_index)
+    image_xml = g.chapter.get_image(image_index)
 
-    return htmx.image_metadata(chapter, image_xml, src), 200
+    return htmx.image_metadata(g.chapter, image_xml, src), 200
 
 
 ##

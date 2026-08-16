@@ -22,9 +22,9 @@ from artifact_editor import (
     config,
     tools,
 )
-from artifact_editor.audio import audio, utterances
-from artifact_editor.audio import htmx as audio_htmx
-from artifact_editor.audio.pronunciation import pronunciation
+from artifact_editor.phrases import phrases, utterances
+from artifact_editor.phrases import htmx as phrases_htmx
+from artifact_editor.phrases.pronunciation import pronunciation
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
     Chapter,
@@ -72,7 +72,7 @@ def base():
         section="phrase.pronunciation",
         section_cosmetic="Phrase › Pronunciation Guide",
         add_global_pronunciation_url=url_for(
-            'library.book.chapter.audio.pronunciation.add_global_pronunciation',
+            'library.book.chapter.phrases.pronunciation.add_global_pronunciation',
             **g.chapter.kwargs,
         ),
     )
@@ -88,7 +88,7 @@ def edit():
 # POST /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/audio/actions/find_unpronouncable_words
 @bp.route("actions/find_unpronouncable_words", methods=["POST"])
 def find_unpronouncable_words():
-    unpronouncable_words = audio.find_unpronouncable_words(g.chapter)
+    unpronouncable_words = phrases.find_unpronouncable_words(g.chapter)
     log.info("Found new unpronouncable words: %s", unpronouncable_words)
 
     if unpronouncable_words:
@@ -106,7 +106,7 @@ def save(phrase_index):
     phrase_xml.attrs["pronunciation"] = pronunciation
     g.chapter.save_xml()
 
-    return audio_htmx.phrase_editor(
+    return phrases_htmx.phrase_editor(
         g.chapter,
         phrase_xml,
         page=0,
@@ -133,7 +133,7 @@ def save_pronunciation_filter(phrase_index):
     phrase_xml.attrs["pronunciation_filter"] = pronunciation_filter
     g.chapter.save_xml()
 
-    return audio_htmx.phrase_editor(g.chapter, phrase_xml, page)
+    return phrases_htmx.phrase_editor(g.chapter, phrase_xml, page)
 
 
 @bp.route("actions/add_global_pronunciation", methods=["POST"])
@@ -226,7 +226,7 @@ def repronounce_phrase(phrase_index, force=True):
         log.error("Invalid phrase_index: %s", phrase_index)
         return
 
-    pronunciation = audio.repronounce_phrase(g.chapter, phrase_xml)
+    pronunciation = phrases.repronounce_phrase(g.chapter, phrase_xml)
 
     phrase_xml = g.chapter.get_phrase(phrase_index)
     phrase_xml.attrs["pronunciation"] = pronunciation
@@ -268,7 +268,7 @@ def get_pronunciation_audio(key):
 
     if True:
         log.info(f"Generating pronunciation audio for '{word}' as '{pronun}'")
-        # so sloppy audio.speak(), you are embarassing.
+        # so sloppy phrases.speak(), you are embarassing.
         phrase_xml = BeautifulSoup(
             f"""<phrase 
                 id=\"0_0\" 
@@ -278,7 +278,7 @@ def get_pronunciation_audio(key):
             "xml",
         )
 
-        _, pronunciation_str = audio.speak(
+        _, pronunciation_str = phrases.speak(
             chapter=g.chapter,
             phrase_xml=phrase_xml,
             wavfile=wavfile,
@@ -310,7 +310,7 @@ def soundslike():
     soundslike = soundslike.replace("\n", " ")
     key = request.form.get("key", "").strip()
 
-    p = audio.fix_jonvert_accents(
+    p = phrases.fix_jonvert_accents(
         eng_to_ipa.jonvert(soundslike)
     )
 

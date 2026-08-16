@@ -2,38 +2,23 @@ rich==13.7.1
 git+https://github.com/huggingface/diffusers
 torch
 pillow
-#peft
-#sentencepiece
-#protobuf
 openai
 httpx
+idna < 3.18
 torchvision
 torchaudio 
 transformers
 pyfiglet
 ascii_magic
-#azure-cognitiveservices-speech
-#optimum[quanto]
-#whisper-timestamped
 bs4
-#opencv-python
 torchao==0.12.0
 filelock
-nltk
 spacy
-# [cuda11x]
-#coqui-tts
-#elevenlabs
 lxml
-#numba==0.60.0
-#thinc
 Flask
-# git+https://github.com/declare-lab/TangoFlux
 titlecase
-#wiktionaryparser
 git+https://github.com/mphilli/English-to-IPA
 Flask-Caching
-#requests-oauthlib
 structlog
 flask-cors
 redis
@@ -45,7 +30,7 @@ colour
 pyparsing
 GitPython
 PyGithub
-#html-to-quill-delta
+
 flask-sock
 pygments
 
@@ -56,3 +41,4 @@ pytest-xdist
 
 deepdiff
 comfy-cli
+ncdeltaprocess[latex]

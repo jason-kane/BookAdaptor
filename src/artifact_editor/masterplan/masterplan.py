@@ -10,7 +10,7 @@ import const
 from artifact_editor.tools import (
     tags_to_dict,
 )
-from artifact_editor.audio import audio
+from artifact_editor.phrases import phrases
 
 log = logger.log(__name__)
 
@@ -127,7 +127,7 @@ def generate_masterplan(chapter):
                         )
                         duration = 0
                         if os.path.exists(audio_filename):
-                            duration = audio.get_wav_duration(audio_filename)
+                            duration = phrases.get_wav_duration(audio_filename)
 
                         # the audio should be padded to fall on precise frame intervals
                         # but duration _is_ a float.  maybe it shouldn't be a float?

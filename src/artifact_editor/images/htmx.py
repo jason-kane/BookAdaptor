@@ -10,6 +10,11 @@ from flask import request, url_for
 from PIL import Image
 
 import animations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 import const
 import logger
 import text_to_image
@@ -125,11 +130,11 @@ def prompt_panel(chapter, image_xml: Tag, with_class=""):
     function; it may include a default value.
     """
     # which LLM are we prompting for?
-    #t2i = image_xml.attrs.get("t2i", "")
-    #if t2i == "":
+    # t2i = image_xml.attrs.get("t2i", "")
+    # if t2i == "":
     #    t2i = chapter.config.get("default_t2i", "comfyui.workflow")
     t2i = "comfyui.workflow"
-    image_xml.attrs["t2i"] = t2i 
+    image_xml.attrs["t2i"] = t2i
 
     # text_to_image.registry.search(gpu=False)
     selector = text_to_image.registry.selector(
@@ -221,7 +226,12 @@ def generate_missing_image_metadata_button():
     )
 
 
-def image_side_panel(image_xml: Tag | None, chapter, datastack=None, label="Previous"):
+def image_side_panel(
+    image_xml: Tag | None,
+    chapter: Chapter,
+    datastack: str | None = None,
+    label: str = "Previous",
+):
     tag = label.lower()
     out = f"""
     <div id="{tag}_panel" hx-swap-oob="true" style="width: 24%;">
@@ -229,7 +239,9 @@ def image_side_panel(image_xml: Tag | None, chapter, datastack=None, label="Prev
     """
 
     if image_xml:
-        out += f"""<a href="{image_page_url(chapter, image_xml)}"><h4>{label}</h4></a>"""
+        out += (
+            f"""<a href="{image_page_url(chapter, image_xml)}"><h4>{label}</h4></a>"""
+        )
         out += image_widget(
             chapter=chapter,
             image_xml=image_xml,
@@ -248,7 +260,7 @@ def image_side_panel(image_xml: Tag | None, chapter, datastack=None, label="Prev
     return out
 
 
-def image_strip(chapter, image_xml):
+def image_strip(chapter: Chapter, image_xml: Tag):
     """ """
     previous_image = image_xml.find_previous("image")
     next_image = image_xml.find_next("image")
@@ -265,7 +277,7 @@ def image_strip(chapter, image_xml):
 
 
 def image_transition_form(
-    chapter, filename: str, image_index: int, tag="solo"
+    chapter: Chapter, filename: str, image_index: int, tag="solo"
 ):
     out = f'<div class="wa-stack" id="{tag}_image_transition_form_{image_index}">'
     # "transition_000004.mp4" on load
@@ -314,7 +326,7 @@ def image_transition_form(
     if image_xml:
         out += transitions.registry.selector(
             get_url=url_for(
-                'library.book.chapter.images.get_transition_configuration_widgets',
+                "library.book.chapter.images.get_transition_configuration_widgets",
                 **chapter.kwargs,
                 image_index=image_index,
             ),
@@ -322,7 +334,9 @@ def image_transition_form(
         )
 
         out += '<div id="transition_configuration">'
-        out += get_transition_configuration_widgets(chapter=chapter, image_index=image_index)
+        out += get_transition_configuration_widgets(
+            chapter=chapter, image_index=image_index
+        )
         out += "</div>"
 
         build_transition_url = url_for(
@@ -493,9 +507,7 @@ def get_animation_url(chapter, image_index: int):
     if has_src and image_xml.attrs.get("animation_method", "disabled") != "disabled":
         # looks like the .attrs will fail first..
         # like a stairway with no bannister.
-        video_filename = os.path.splitext(
-            os.path.basename(image_xml.attrs["src"])
-        )[0]
+        video_filename = os.path.splitext(os.path.basename(image_xml.attrs["src"]))[0]
 
         return url_for(
             "library.book.chapter.images.deliver_animation_video",
@@ -557,7 +569,7 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
         chapter=chapter.url,
         image_index=image_xml.attrs["index"],
     )
-    
+
     players = []
     last_index = int(image_xml.attrs.get("animation_count", "1"))
     next_image = ""
@@ -577,7 +589,7 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
             f"workflow_animation_template{video_tag}", ""
         )
         if workflow_template == "":
-            log.warning('No workflow_animation_template found for %s', video_tag)
+            log.warning("No workflow_animation_template found for %s", video_tag)
 
         paragraph = image_xml.find_parent("paragraph")
 
@@ -609,7 +621,7 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
         # the video does not exist.  Try to find it and put
         # a copy where it belongs.
         if not os.path.exists(full_filename) and video_index == 0:
-            llog.info('Looking for %s', full_filename)
+            llog.info("Looking for %s", full_filename)
             # backwards compatability, no tag == tag 0
             tagless_video_filename = (
                 os.path.splitext(os.path.basename(image_src))[0] + ".mp4"
@@ -636,7 +648,7 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
             audio_frames = int(float(image_xml.attrs.get("frames", "0")))
             os.makedirs(frame_dir, exist_ok=True)
             video_frames = len(os.listdir(frame_dir))
-                
+
             if video_frames > audio_frames:
                 # tempting to just auto-trim, but if the audio isn't actually
                 # done that would really fork us up.
@@ -653,7 +665,6 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                     variant="brand">Trim {int(video_frames - audio_frames)} Excess Frames</wa-button>"""
                 buttons.append(trim_to_audio_button)
 
-
         if not os.path.exists(full_filename):
             # _best_ match
 
@@ -667,14 +678,18 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                 f"{chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}{video_tag}*.mp4",
             )
 
-            llog.info('looking for %s.. checking comfyui output dir for %s', full_filename, mp4_filename)
+            llog.info(
+                "looking for %s.. checking comfyui output dir for %s",
+                full_filename,
+                mp4_filename,
+            )
             # /output/aeso-fabl-031-twm6_img_4_LTX23_00_00001_.mp4
             # Check the comfyui output directory for a copy of this video.
 
             # sloppier matches
             # check the "video" subdirectory.
             video_files = glob.glob(mp4_filename)
-            llog.info('Found %d matches for %s', len(video_files), mp4_filename)
+            llog.info("Found %d matches for %s", len(video_files), mp4_filename)
 
             if not video_files:
                 expected_glob = os.path.join(
@@ -682,9 +697,9 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                     "video",
                     f"{chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}{video_tag}*.mp4",
                 )
-                
+
                 video_files = glob.glob(expected_glob)
-                llog.info('Found %d matches for %s', len(video_files), expected_glob)
+                llog.info("Found %d matches for %s", len(video_files), expected_glob)
 
                 # Log for failure modes.
                 if len(video_files) > 1:
@@ -706,7 +721,11 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                 )
                 shutil.copy(video_files[0], full_filename)
             else:
-                log.info("No animation video found", mp4_filename=video_files, full_filename=full_filename)
+                log.info(
+                    "No animation video found",
+                    mp4_filename=video_files,
+                    full_filename=full_filename,
+                )
                 # .. do the frames exist?  We can work with that.
                 if os.path.exists(frame_dir) and len(os.listdir(frame_dir)) > 0:
                     log.info(
@@ -719,12 +738,11 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                         framedir=frame_dir,
                         wavfile=None,
                         videofile=full_filename,
-                        image_match='frame_%06d.png'
+                        image_match="frame_%06d.png",
                     )
-        
+
         # some things only make sense after we've when we have
         if video_filename and os.path.exists(full_filename):
-
             if not os.path.exists(frame_dir) or len(os.listdir(frame_dir)) == 0:
                 log.info(
                     f"Animation video found for {full_filename}, extracting frames..."
@@ -786,18 +804,22 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
                     recursed=False,
                     video_index=video_index - 1,
                 )
-            
+
                 destination_frame = chapter.get_image_filename(image_xml)
-                destination_frame = destination_frame.replace(".png", f"_lastframe_{video_index - 1:02d}.png")
+                destination_frame = destination_frame.replace(
+                    ".png", f"_lastframe_{video_index - 1:02d}.png"
+                )
 
                 shutil.copy(frame_filename, destination_frame)
-                log.info(f"Copied last frame of animation from {frame_filename} to {destination_frame}")
-                
+                log.info(
+                    f"Copied last frame of animation from {frame_filename} to {destination_frame}"
+                )
+
                 img_url = url_for(
                     "library.book.chapter.images.selector.get_alternate_image",
                     **chapter.kwargs,
                     image_index=image_index,
-                    filename=os.path.basename(destination_frame)
+                    filename=os.path.basename(destination_frame),
                 )
 
             video_player = f"""
@@ -855,7 +877,6 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
             **chapter.kwargs,
             image_index=image_index,
         )
-
 
         build_animation_button = f"""<wa-button hx-post="{build_animation_url}"
             hx-swap="none"

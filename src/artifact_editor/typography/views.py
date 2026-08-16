@@ -26,7 +26,7 @@ import logger
 from artifact_editor import (
     config,
 )
-from artifact_editor.audio import audio
+from artifact_editor.phrases import phrases
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
     Chapter,
@@ -461,7 +461,7 @@ def reset_camera():
     masterplan = generate_masterplan(g.chapter)
     save_masterplan(g.chapter, masterplan)
 
-    audio.recalculate_paragraph_durations(g.chapter)
+    phrases.recalculate_paragraph_durations(g.chapter)
 
     camera.delete_camera(g.chapter)
     g.chapter.build_frame_to_camera(aspect, force=True)

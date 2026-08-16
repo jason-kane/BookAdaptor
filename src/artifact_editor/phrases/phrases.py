@@ -7,7 +7,7 @@ import math
 import os
 import re
 import wave
-from typing import TYPE_CHECKING
+
 
 import eng_to_ipa
 import fnv_hash_fast
@@ -17,8 +17,8 @@ from flask import request
 import const
 import logger
 from artifact_editor import llm
-from artifact_editor.audio.pronunciation import pronunciation
-from artifact_editor.audio.sound import htmx as sound_htmx
+from artifact_editor.phrases.pronunciation import pronunciation
+from artifact_editor.phrases.sound import htmx as sound_htmx
 from artifact_editor.characters.characters import name_to_tag
 from artifact_editor.tools import (
     get_tag,
@@ -28,11 +28,50 @@ from . import (
     audio_cache,
     htmx,
 )
+from ncdeltaprocess import TranslatorQuillJS
 
+from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from artifact_editor.chapter.chapter import Chapter
 
 log = logger.log(name=__name__)
+
+class Phrase:
+    def __init__(self, chapter: Chapter, phrase_id: int):
+        self.chapter = chapter
+        self.phrase_id = phrase_id
+        self.phrase_xml = chapter.get_phrase(phrase_id)
+        self.attrs = self.phrase_xml.attrs
+        self.text = self.phrase_xml.text
+
+    def as_delta(self):
+        """
+        return a list of delta objects describing this phrase in rich text.
+        """
+        delta = self.chapter.load_delta()
+        my_ops = []
+        started = False
+        for ops in delta["ops"]:
+            ops_phrase_id = int(ops.get("attributes", {}).get("phrase_id", -1))
+
+            if ops_phrase_id == self.phrase_id:
+                started = True
+
+            if started and ops_phrase_id != self.phrase_id:
+                return my_ops
+
+            if started:
+                my_ops.append(ops)
+
+    def as_latex(self):
+        delta = self.as_delta()
+
+        t = TranslatorQuillJS()
+        doc = t.ops_to_internal_representation({
+            "ops": delta
+        })
+        latex = doc.render_tree(mode='latex')
+        return latex
 
 
 def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
@@ -918,7 +957,7 @@ def repronounce_phrase(chapter, phrase_xml):
         "pronunciation_filter", "2000"
     )
 
-    # so sloppy audio.speak(), you are embarassing.
+    # so sloppy phrases.speak(), you are embarassing.
     _, pronunciation = speak(
         chapter=chapter,
         phrase_xml=phrase_xml,
@@ -1124,7 +1163,7 @@ def generate_audio(chapter):
                         spoken_text = fragment.get_text().strip()
                         speaker = fragment.attrs.get("speaker", "Narrator")
 
-                        # speakers = audio.soup_to_set_of_characters(
+                        # speakers = phrases.soup_to_set_of_characters(
                         #    fragment
                         # )
                         # log.info('This segment of text has speakers: %s', speakers)
@@ -1165,7 +1204,7 @@ def generate_audio(chapter):
                                 )
 
                                 fragment.attrs["duration"] = duration
-                                # audio.from_xml() has already padded the wav file to fit
+                                # phrases.from_xml() has already padded the wav file to fit
                                 # exactly in an int() number of video frames and account
                                 # for the 0.2s of padding that is added between phrases by the assembler.
                                 # we need this to be accurate or we won't have enough/too many frames.

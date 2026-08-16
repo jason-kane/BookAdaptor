@@ -3,7 +3,7 @@ import html
 import os
 from urllib.parse import parse_qs, urlparse
 
-from flask import request, url_for
+from flask import g, request, url_for
 
 import artifact_editor.images.htmx as images_htmx
 import artifact_editor.styles.htmx as styles_htmx
@@ -65,13 +65,16 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         """
         Response is a string of HTML components.
         """
-        from artifact_editor.chapter.chapter import Chapter
-
-        chapter_kwargs = tools.requestToChapterKwargs(request.url)
-        chapter_kwargs["author"] = Author(chapter_kwargs["author"])
-        chapter = Chapter(**chapter_kwargs)
+        # from artifact_editor.chapter.chapter import Chapter
+        # chapter_kwargs = tools.requestToChapterKwargs(request.url)
+        # chapter_kwargs["author"] = Author(chapter_kwargs["author"])
+        # chapter = Chapter(**chapter_kwargs)
+        chapter = g.chapter
 
         # chapter.sync_comfyui_images(image_xml)
+        # 'modes' are a simple shorthand for the expected inputs and outputs.
+        # Here, if we have an input image, we provide
+        # ti2i options that would utilize it.
         if chapter.is_first_image(image_xml):
             modes = ["t2i"]
         else:
@@ -84,6 +87,8 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         #   choose to "run" the workflow
         #   progress bar and see the new image in-place when it finishes
 
+        # this is a URL that will create the requested workflow then
+        # redirect to comfyui.
         choose_workflow_url = url_for(
             "library.book.chapter.images.comfyui_workflow_choose",
             **chapter.kwargs,
@@ -96,7 +101,6 @@ class ComfyWorkflowUI(TextToImageProviderUI):
             workflow_image_template = workflow_image_template.split(".")[-1]
         else:
             mode = "*"
-        # mode = image_xml.attrs.get("image_mode", "")
 
         workflow_selector = f"""
         <div style="width: 100%">

@@ -1,6 +1,6 @@
 from flask import render_template, url_for
 
-from artifact_editor.audio.sound import sound
+from artifact_editor.phrases.sound import sound
 import os
 import wave
 import const
@@ -41,7 +41,7 @@ def local_sound_selector(chapter, sound_xml, page):
                     </div>
                     <div class="wa-cluster wa-gap-xs">
                         <wa-button 
-                            hx-post="{ url_for('library.book.chapter.audio.sound.select_local_sound', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, sound_index=sound_xml['index'], page=page) }"
+                            hx-post="{ url_for('library.book.chapter.phrases.sound.select_local_sound', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, sound_index=sound_xml['index'], page=page) }"
                             hx-vals='{{ "index": "{sound_xml["index"]}", "sound_file": "{sound_file}" }}'
                             data-dialog="close"
                             appearance="outlined">

@@ -88,7 +88,7 @@ def calculate_paragraph_durations(author, title, chapter):
     chapterdir = get_chapterdir(author, title, chapter)
     chapterurl = get_chapterurl(author, title, chapter)
 
-    audio.recalculate_paragraph_durations(chapterdir)
+    phrases.recalculate_paragraph_durations(chapterdir)
     
     return htmx.calculate_paragraph_durations_button(chapterurl)
 

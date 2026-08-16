@@ -50,7 +50,7 @@
                 {% for phrase in block.phrases %}
                     <p>{% if 'chapter' in phrase.attrs %}<strong>{{ phrase.attrs['chapter'] }}:{{ phrase.attrs['verse'] }}</strong> {% endif %}
                         {{ phrase.text }} <wa-button
-                        hx-post="{{ url_for("library.book.chapter.audio.add_image_slot",author=chapter.author.name,title=chapter.title,chapter_number=chapter.number,language=chapter.language,phrase_index=phrase.attrs['index'],after=True) }}"
+                        hx-post="{{ url_for("library.book.chapter.phrases.add_image_slot",author=chapter.author.name,title=chapter.title,chapter_number=chapter.number,language=chapter.language,phrase_index=phrase.attrs['index'],after=True) }}"
                         hx-swap="none"
                         variant="brand"
                         hx-trigger="click">&#x2193; Add Image Slot &#x2193;</wa-button>
@@ -136,9 +136,9 @@
 
                     <div class="wa-cluster">
                         <b>Workshops:</b>
-                        <a href="{{ url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block['image']['index']) }}">Image</a>               
+                        <a href="{{ url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block['image']['index']) }}">Image</a>
                         <a href="{{ url_for('library.book.chapter.frames.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, frame_index=block.first_frame) }}">Frame</a>               
-                        <a href="{{ url_for('library.book.chapter.audio.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, page=block.paragraph_index + 1) }}">Audio</a>
+                        <a href="{{ url_for('library.book.chapter.phrases.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, page=block.paragraph_index + 1) }}">Audio</a>
                     </div>
                 </div>
             </wa-card>

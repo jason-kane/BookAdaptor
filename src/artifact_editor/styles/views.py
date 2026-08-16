@@ -37,8 +37,6 @@ from artifact_editor import (
 )
 from .styles import as_id, id_to_category
 
-# from artifact_editor.chapter.chapter import Chapter
-# from artifact_editor.chapter import htmx as chapter_htmx
 from artifact_editor.author.author import Author
 from artifact_editor.cache import cache
 

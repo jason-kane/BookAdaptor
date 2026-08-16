@@ -6,12 +6,16 @@ from redis.maint_notifications import MaintNotificationsConfig
 from werkzeug.routing import BaseConverter
 
 from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 import logger
 import text_to_image
 from artifact_editor.cache import cache
 
-from artifact_editor.audio.views import bp as audio
+from artifact_editor.phrases.views import bp as phrases
 from artifact_editor.author.views import bp as author
 from artifact_editor.book.views import bp as book
 from artifact_editor.chapter.views import bp as chapter
@@ -25,7 +29,6 @@ from artifact_editor.music.views import bp as music
 from artifact_editor.publish.views import bp as publish
 from artifact_editor.static import bp as static
 from artifact_editor.styles.views import bp as styles
-from artifact_editor.text.views import bp as text
 from artifact_editor.therapy.views import bp as therapy
 from artifact_editor.todo.views import bp as todo
 from artifact_editor.typography.views import bp as typography
@@ -44,11 +47,11 @@ if t.TYPE_CHECKING:
 
     g: TypedGlobals
 
-# register nested blueprints
-chapter.register_blueprint(
-    text,
-    url_prefix="/text",
-)
+# # register nested blueprints
+# chapter.register_blueprint(
+#     text,
+#     url_prefix="/text",
+# )
 
 chapter.register_blueprint(
     characters, 
@@ -56,8 +59,8 @@ chapter.register_blueprint(
 )
 
 chapter.register_blueprint(
-    audio,
-    url_prefix="/audio",
+    phrases,
+    url_prefix="/phrases",
 )
 
 chapter.register_blueprint(

@@ -9,7 +9,7 @@ from artifact_editor import camera
 import const
 import logger
 from artifact_editor import tools
-from artifact_editor.audio import audio
+from artifact_editor.phrases import phrases
 from artifact_editor.frames import frames
 
 log = logger.log(__name__)
@@ -258,7 +258,7 @@ def book_to_video(chapter, aspect="widescreen", force=False):
             chapter.chapterdir.lstrip("/"), 
             "audio.wav"
         )
-        audio.assemble(audio_tracks=audio_tracks, outfile=audio_fn)
+        phrases.assemble(audio_tracks=audio_tracks, outfile=audio_fn)
 
         # now make an mp4 with these frames set to this audio.
         video_pfn = chapter.get_video_filename()

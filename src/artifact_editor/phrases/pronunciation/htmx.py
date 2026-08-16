@@ -9,7 +9,7 @@ from flask import (
 
 import const
 import logger
-from artifact_editor.audio import utterances
+from artifact_editor.phrases import utterances
 from artifact_editor.tools import (
     generic_button,
 )
@@ -96,7 +96,7 @@ def global_pronunciation_table(chapter):
     pronunciation_dict = pronunciation.get_global_pronunciations(chapter)
     
     add_global_pronunciation_url = url_for(
-        'library.book.chapter.audio.pronunciation.add_global_pronunciation',
+        'library.book.chapter.phrases.pronunciation.add_global_pronunciation',
         **chapter.kwargs,
     )
 

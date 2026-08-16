@@ -1622,7 +1622,7 @@ def base(image_index: int, override=None):
     css_styles = muted_formatter.get_style_defs() + highlight_formatter.get_style_defs()
 
     phrase_workshop_url = url_for(
-        "library.book.chapter.audio.base",
+        "library.book.chapter.phrases.base",
         **g.chapter.kwargs,
         page=image_xml.find_parent("paragraph").attrs.get("index", 0),
     )

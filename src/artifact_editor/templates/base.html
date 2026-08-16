@@ -383,11 +383,11 @@
             <wa-dropdown-item>
               Phrases
               <wa-dropdown-item slot="submenu"><a
-                  href="{{ url_for('library.book.chapter.audio.base') }}">Phrase Workshop</a></wa-dropdown-item>
+                  href="{{ url_for('library.book.chapter.phrases.base') }}">Phrase Workshop</a></wa-dropdown-item>
               <wa-dropdown-item slot="submenu"><a
-                  href="{{ url_for('library.book.chapter.audio.pronunciation.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Pronunciation Guide</a></wa-dropdown-item>
+                  href="{{ url_for('library.book.chapter.phrases.pronunciation.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Pronunciation Guide</a></wa-dropdown-item>
               <wa-dropdown-item slot="submenu"><a
-                  href="{{ url_for('library.book.chapter.audio.timeline.timeline', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Timeline</a></wa-dropdown-item>
+                  href="{{ url_for('library.book.chapter.phrases.timeline.timeline', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Timeline</a></wa-dropdown-item>
             </wa-dropdown-item>
             <a href="{{ url_for('library.book.chapter.images.base', author=author.name, title=title, chapter_number=chapter.number, language=language, image_index=0) }}"><wa-dropdown-item>Images</wa-dropdown-item></a>            
             <a href="{{ url_for('library.book.chapter.frames.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Frames</wa-dropdown-item></a>

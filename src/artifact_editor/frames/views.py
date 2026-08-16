@@ -22,7 +22,7 @@ from artifact_editor import (
     camera,
     config,
 )
-from artifact_editor.audio.audio import recalculate_image_frames
+from artifact_editor.phrases.phrases import recalculate_image_frames
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
     Chapter,
