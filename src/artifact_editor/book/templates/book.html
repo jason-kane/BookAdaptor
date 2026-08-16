@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}     
-<title>Table of Contents</title>
+<title>Book: {{ pretty_title }}</title>
 {% endblock %}
 
 {% block styles %}
@@ -22,7 +22,7 @@
     }
     .chapter-container {
         position: relative;
-        height: 30em;
+        height: 21em;
         width: 13.5em;
     }
     .label {
@@ -37,8 +37,16 @@
 {% endblock %}
 
 {% block body %}
-<h2>{{ pretty_title }}</h2>
+
+<h2>Book {{ pretty_title }}</h2>
 <h3>By <i>{{author.pretty_name}}</i></h3>
-{{ book_metadata|safe }}
+        
+<div class="wa-cluster">
+    <div>book cover img</div>
+    <div class="wa-stack">
+        {{ book_metadata|safe }}
+    </div>
+</div>
+
 {{ chapter_list|safe }}
 {% endblock %}

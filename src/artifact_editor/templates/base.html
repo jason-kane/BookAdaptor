@@ -247,12 +247,34 @@
         {% endif %}
 
         {% if not author %}
-        <wa-button size="xs" style="margin-left: 1em" id="add_author" appearance="filled" variant="brand" pill>
-          <wa-icon name="plus"></wa-icon>
-        </wa-button>
-        <wa-tooltip for="add_author">
-          <div>Add a new author</div>
-        </wa-tooltip>
+        <wa-breadcrumb-item>
+        <form id="add_author_form"></form>
+          <div class="wa-cluster wa-gap-xs">
+            <wa-input
+              id="author_name"
+              name="author_name"
+              placeholder="Author Name"
+              size="small"
+              style="width: 10em;"
+            ></wa-input>
+            <wa-button 
+              hx-post="/library/author/add"
+              hx-include="#author_name"
+              hx-swap="none"
+              size="xs"
+              id="add_author"
+              appearance="filled"
+              variant="brand"
+              pill
+            >
+              <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+            </wa-button>
+            <wa-tooltip for="add_author">
+              <div>Add a new author</div>
+            </wa-tooltip>
+          </div>
+        </form>
+        </wa-breadcrumb-item>
         {% endif %}
         
         {% if author %}
@@ -266,12 +288,34 @@
         {% endif %}
 
         {% if author and not title %}
-          <wa-button size="xs" style="margin-left: 1em" id="add_book" appearance="filled" variant="brand" pill>
-            <wa-icon name="plus"></wa-icon>
-          </wa-button>
-          <wa-tooltip for="add_book">
-            <div>Add a new book</div>
-          </wa-tooltip>
+        <wa-breadcrumb-item>
+        <form id="add_book_form"></form>
+          <div class="wa-cluster wa-gap-xs">
+            <wa-input
+              id="book_name"
+              name="book_name"
+              placeholder="Book Name"
+              size="small"
+              style="width: 10em;"
+            ></wa-input>
+            <wa-button 
+              hx-post="/library/book/add"
+              hx-include="#book_name"
+              hx-swap="none"
+              size="xs"
+              id="add_book"
+              appearance="filled"
+              variant="brand"
+              pill
+            >
+              <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+            </wa-button>
+            <wa-tooltip for="add_book">
+              <div>Add a new book</div>
+            </wa-tooltip>
+          </div>
+        </form>
+        </wa-breadcrumb-item>
         {% endif %}
         
         {% if title %}
@@ -281,21 +325,40 @@
         {% if chapter %}
           <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
             {{chapter.number}}: {{chapter.cosmetic}}
+          </wa-breadcrumb-item>
         {% endif %}
         {% if section %}
         {% endif %}
 
-        {% if title %}
-        <wa-button size="xs" style="margin-left: 1em" id="add_chapter" appearance="filled" variant="brand" pill>
-          <wa-icon name="plus"></wa-icon>
-        </wa-button>
-        <wa-tooltip for="add_chapter">
-          <div>Add a new chapter</div>
-        </wa-tooltip>
-        {% endif %}
-
-        {% if chapter %}
-        </wa-breadcrumb-item>
+        {% if title and not chapter %}
+        <wa-breadcrumb-item>
+        <form id="add_chapter_form"></form>
+          <div class="wa-cluster wa-gap-xs">
+            <wa-input
+              id="chapter_name"
+              name="chapter_name"
+              placeholder="Chapter Name or Number"
+              size="small"
+              style="width: 15em;"
+            ></wa-input>
+            <wa-button 
+              hx-post="/library/chapter/add"
+              hx-include="#chapter_name"
+              hx-swap="none"
+              size="xs"
+              id="add_chapter"
+              appearance="filled"
+              variant="brand"
+              pill
+            >
+              <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+            </wa-button>
+            <wa-tooltip for="add_chapter">
+              <div>Add a new chapter</div>
+            </wa-tooltip>
+          </div>
+        </form>
+        </wa-breadcrumb-item>        
         {% endif %}
 
         {% if chapter and chapter.language != 'english' %}

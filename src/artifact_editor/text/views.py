@@ -149,7 +149,7 @@ def import_chapter():
     # easiest to leave it in Delta format for a little longer than I had
     # originally intended.
 
-    # if there is a title, add a title page
+    # These confuse the phrase breaking algorithm, so we pop them out.
     delta = extract_title(delta, g.chapter, chapter_soup)
     delta = extract_author(delta, g.chapter, chapter_soup)
 
@@ -261,6 +261,7 @@ def import_chapter():
     index = index_start
     attributes = {}
     phrases = []
+    # then out_ops to latex.
     while index < len(out_ops):
         # for phrases -- the visual highlighted text, we want each section
         # to be small enough to fit the readers eye.  Less than 10 words,
@@ -310,14 +311,22 @@ def import_chapter():
         # if out_ops[index]["type"] == "whitespace":
 
         # log.info(' Spoken phrase: %s', plain_phrase)
+        alignment = "left"
 
-        typeset_phrase = []
+        typeset_phrase = [
+            
+        ]
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
         for orig in out_ops[index : break_index + 1]:
             o = orig.copy()
             if "\t" in o["insert"]:
                 log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
                 o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
+
+            if o.get('attributes', {}).get('align') == 'center':
+                # the previous line (this is a \n) should be
+                # centered.
+                typeset_phrase[-1] = r"\begin{center}" + typeset_phrase[-1] + r"\end{center}"
 
             # That I have to treat this as a special edge case means my
             # algorithm is shit.  Adding more features is going to be a
@@ -389,22 +398,23 @@ def import_chapter():
 
         index = break_index + 1
 
+    # clear any leading newlines from the first phrase.
     out_ops[0]["insert"] = out_ops[0]["insert"].lstrip("\n")
-    out_ops = [
-        {
-            "attributes": {
-                "bold": True,
-                "phrase": 0
-            },
-            "insert": "The Story of Mel\n\n"
-        }, {
-            "insert": "by Ed Nather\n\n",
-            "attributes": {
-                "bold": False,
-                "phrase": 1
-            },
-        },        
-    ] + out_ops
+    # out_ops = [
+    #     {
+    #         "attributes": {
+    #             "bold": True,
+    #             "phrase": 0
+    #         },
+    #         "insert": "The Story of Mel\n\n"
+    #     }, {
+    #         "insert": "by Ed Nather\n\n",
+    #         "attributes": {
+    #             "bold": False,
+    #             "phrase": 1
+    #         },
+    #     },        
+    # ] + out_ops
 
     g.chapter.save_delta({"ops": out_ops})
 
@@ -717,6 +727,9 @@ def add_title(chapter_xml, chapter):
 
 
 def add_author(chapter_xml, chapter):
+    """
+    Add an author page to the given chapter XML.
+    """
     author_page = chapter_xml.new_tag("paragraph")
     author_page.attrs["tags"] = "has-text=false,spoken-only=true"
     author_page.attrs["fullscreen"] = "true"

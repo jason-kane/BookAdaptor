@@ -221,6 +221,17 @@ def get_delta():
     #     image_list=image_list,
     # )
 
+@bp.route("/delta", methods=["POST"])
+def save_delta():
+    new_delta = request.form["delta"]
+
+    with open(g.chapter.get_delta_fn(), "w", encoding="utf-8") as f:
+        as_json = json.loads(new_delta)
+        # pretty print it.
+        f.write(json.dumps(as_json, indent=2))
+
+    return "", 200
+
 # PUT /library/Aesop/Fables/31/english/set_chapter_style
 @bp.route("/set_chapter_style", methods=["PUT"])
 def set_chapter_style():
