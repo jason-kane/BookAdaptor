@@ -904,7 +904,10 @@ def serve_chapter_pdf():
     if not os.path.exists(pdf_path):
         log.info("%s not found for %s", pdf_path, g.chapter)
         pdf_path = os.path.join(
-            const.LIBRARY_DIR, g.chapter.chapterdir, "text_highlighted_plain.pdf"
+            const.LIBRARY_DIR, 
+            g.chapter.chapterdir,
+            g.language,
+            "chapter.pdf",
         )
 
     if not os.path.exists(pdf_path):

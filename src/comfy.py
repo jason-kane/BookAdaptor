@@ -468,6 +468,7 @@ def run_workflow(workflow, template_environment={}):
                 shutil.move(output_file_path + ".txt", output_file_path)
 
                 log.info("Workflow output file content", output_content=output_content)
+                # This is the expected, normal path.
                 return output_content
 
             log.info(

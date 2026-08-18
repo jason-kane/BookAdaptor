@@ -339,7 +339,7 @@ def base_text_phrase(chapter, phrase_xml):
     """
 
     if (
-        chapter.config['paragraph_technique'] == "poetry"
+        chapter.config.get('paragraph_technique', '') == "poetry"
         and phrase_xml.find_parent('paragraph').attrs.get('fullscreen', 'false') != 'true'
     ):
         # we need more control over when there are and aren't line breaks

@@ -246,8 +246,8 @@ def import_chapter():
     # originally intended.
 
     # These confuse the phrase breaking algorithm, so we pop them out.
-    delta = extract_title(delta, g.chapter, chapter_soup)
-    delta = extract_author(delta, g.chapter, chapter_soup)
+    #delta = extract_title(delta, g.chapter, chapter_soup)
+    #delta = extract_author(delta, g.chapter, chapter_soup)
 
     # nltk.download('punkt_tab')
     spacy.prefer_gpu()
@@ -574,17 +574,17 @@ def import_chapter():
 \setlength{\leftmargini}{0.125em}
 
 \begin{document}
-\setlength{\droptitle}{-45pt}
-\posttitle{\par\end{center}}
-\title{%s}
-\author{%s}
-\date{}
-\maketitle
-\vspace{-0.5in}
 \tolerance=9999
 \hyphenpenalty=10000
 \exhyphenpenalty=100                    
 """
+# \setlength{\droptitle}{-45pt}
+# \posttitle{\par\end{center}}
+# \title{%s}
+# \author{%s}
+# \date{}
+# \maketitle
+# \vspace{-0.5in}
 
         latex_block = ""
         latex_rainbow_block = ""
@@ -659,9 +659,9 @@ def import_chapter():
 
             all_rainbow_lines.append(line)
 
-        h.write(header % ("", g.title, g.author.pretty_name))
+        h.write(header % (""))
         rainbow_h.write(
-            header % ("\n".join(rainbow_series), g.title, g.author.pretty_name)
+            header % ("\n".join(rainbow_series))
         )
 
         h.write("".join(all_lines))
