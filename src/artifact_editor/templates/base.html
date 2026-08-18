@@ -299,7 +299,7 @@
               style="width: 10em;"
             ></wa-input>
             <wa-button 
-              hx-post="/library/book/add"
+              hx-post="/library/{{author.name}}/add"
               hx-include="#book_name"
               hx-swap="none"
               size="xs"

@@ -128,6 +128,20 @@ def book_cover(author, title):
     )
 
 
+@bp.route("/author/add", methods=["POST"])
+def add_author():
+    author_name = request.form.get("author_name")
+    if not author_name:
+        return "Missing author name", 400
+
+    author = Author(author_name)
+    if os.path.exists(author.authordir):
+        return f"Author {author_name} already exists", 400
+
+    os.makedirs(author.authordir, exist_ok=True)
+
+    return f"Author {author_name} created", 200
+
 
 @bp.route("/<author>/<title>/<chapter_number>/video/cover.png")
 @bp.route("/<author>/<title>/<chapter_number>/cover.png")

@@ -122,8 +122,11 @@ def chapter_list(author, title):
             "book.txt",
         )
 
-        with open(book_filename, "r") as f:
-            book = f.read()
+        if os.path.exists(book_filename):
+            with open(book_filename, "r") as f:
+                book = f.read()
+        else:
+            book = ""
 
         out.append(
             render_template(

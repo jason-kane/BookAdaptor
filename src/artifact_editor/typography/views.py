@@ -909,6 +909,10 @@ def serve_chapter_pdf():
 
     if not os.path.exists(pdf_path):
         chapters_dir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "paragraphs")
+        if not os.path.exists(chapters_dir):
+            log.error("Chapters directory does not exist: %s", chapters_dir)
+            return "PDF file not found", 404
+                
         for aspect in ["widescreen", "portrait"]:
             for paragraph_name in sorted(os.listdir(chapters_dir)):
                 # look for any highlighted pdf to copy

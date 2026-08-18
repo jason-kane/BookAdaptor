@@ -786,6 +786,229 @@ class Chapter:
         if not video_fn or not os.path.exists(video_fn):
             log.error("Video file does not exist", video_fn=video_fn)
 
+    def get_workflow(
+        self,
+        image_xml: Tag,
+        workflow_name: str,  # flux_phrasechain
+        video_index: int|None=None,
+        template_environment: dict[str, str]|None=None,
+    ):
+        """
+        We want the indicated workflow, with variables based on
+        the provided image_xml and surrounding material.
+
+        template_environment is an override dict.
+        """
+        # we load the workflow template, 
+        # fill in the variables, 
+        # save a copy in the workflow directory with a suitable filename
+        # return the name of that file.  
+        
+        # It is easy to go from there to a one-click workflow load.
+        
+        # ui.ti2i.flux_phrasechain-Flux Klein Image Edit.json
+        #               ^-- workflow_name, global unique.
+        #
+        if template_environment is None:
+            template_environment = {}
+
+        template_fn = glob.glob(os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+            f"ui.*.{workflow_name}-*.json"
+        ))[0]
+
+        return self.get_workflow_by_filename(
+            image_xml=image_xml,
+            workflow_filename=template_fn,
+            video_index=video_index,
+            template_environment=template_environment,
+        )
+
+
+    def get_workflow_by_filename(
+        self,
+        image_xml: Tag,
+        workflow_filename: str,
+        video_index: int|None=None,
+        template_environment: dict[str, str]|None=None,
+    ):
+        with open(workflow_filename, 'r') as f:
+            workflow = json.load(f)
+
+        try:
+            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0].split('.')[2]
+        except IndexError:
+            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
+
+        height = 1024
+        width = 1024
+
+        duration_in_frames = self.get_image_frames(image_xml)
+        duration_in_seconds = duration_in_frames / const.FPS
+
+        source_image = self.get_image_filename(image_xml)
+        if video_index not in [None, ""]:
+            source_image = self.get_last_frame(image_xml, video_index=video_index)
+
+        # our last frame generally the _next_ image.
+        last_frame = os.path.basename(
+            g.chapter.get_image_filename(
+                self.get_image(int(image_xml.attrs["index"]) + 1)
+            )
+        )
+        if not last_frame:
+            last_frame = source_image
+
+        # reasonable default
+        prior_frame = os.path.basename(
+            g.chapter.get_image_filename(
+                self.get_image(int(image_xml.attrs["index"]) - 1)
+            )
+        )
+
+        # we've got a _lot_ of variables to fill in.
+        out_nodes = []
+        for node in workflow.get('nodes', []):
+            if node.get('type') == 'PrimitiveString':
+                if node.get('title') in ['FILE_NAME', 'FILENAME_PREFIX']:
+                    if 'FILENAME_PREFIX' in template_environment:
+                        filename_prefix = template_environment['FILENAME_PREFIX']
+                    else:
+                        filename_prefix = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}"
+                        if video_index not in [None, ""]:
+                            filename_prefix += f"_{video_index:02d}"
+
+                    node["widgets_values"] = [filename_prefix]
+                    node["widgets_values_named"] = {"value": filename_prefix}
+
+                elif node.get('title') in ['PREVIOUS_IMAGE', 'PRIOR_FRAME']:
+                    node["widgets_values"] = [prior_frame]
+                    node["widgets_values_named"] = {"value": prior_frame}
+
+                elif node.get('title') in ['FIRST_FRAME', 'INPUT_IMAGE']:
+                    # filename for the first frame
+                    if source_image:
+                        node["widgets_values"] = [os.path.basename(source_image)]
+                        node["widgets_values_named"] = {"value": os.path.basename(source_image)}
+                    else:
+                        log.warning('No source image found for node %s', node.get('title'))
+
+                elif node.get('title') in ['INPUT_IMAGE_PATH']:
+                    node["widgets_values"] = [const.COMFY_DIRS["comfyui"]["INPUT_DIR"]]
+                    node["widgets_values_named"] = {"value": const.COMFY_DIRS["comfyui"]["INPUT_DIR"]}
+
+                elif node.get('title') in ['OUTPUT_DIR']:
+                    node["widgets_values"] = [const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],]
+                    node["widgets_values_named"] = {"value": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]}
+
+                elif node.get('title') in ['PROMPT_FN']:
+                    prompt_fn = (
+                        f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.prompt"
+                    )
+                    node["widgets_values"] = [prompt_fn]
+                    node["widgets_values_named"] = {"value": prompt_fn}
+
+                elif node.get('title') in ["SCENE_DESCRIPTION_FN"]:
+                    scene_description_fn = (
+                        f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.txt"
+                    )
+                    node["widgets_values"] = [scene_description_fn]
+                    node["widgets_values_named"] = {"value": scene_description_fn}
+
+                elif node.get('title') in ['LAST_FRAME']:
+                    if last_frame:
+                        node["widgets_values"] = [last_frame]
+                        node["widgets_values_named"] = {"value": last_frame}
+                    else:
+                        log.warning('No last frame found for node %s', node.get('title'))
+
+            elif node.get('type') == 'PrimitiveInt':
+                if node.get('title') in ['HEIGHT', 'WIDTH']:
+                    if node.get('title') == 'HEIGHT':
+                        node["widgets_values"] = [height]
+                        node["widgets_values_named"] = {"value": height}
+                    elif node.get('title') == 'WIDTH':
+                        node["widgets_values"] = [width]
+                        node["widgets_values_named"] = {"value": width}
+
+            elif node.get('type') == 'PrimitiveFloat':
+                if node.get('title') in ['DURATION']:
+                    node["widgets_values"] = [duration_in_seconds]
+                    node["widgets_values_named"] = {"value": duration_in_seconds}
+
+            elif node.get('type') == 'PrimitiveStringMultiline':
+                if node.get('title') in ['META']:
+                    value = json.dumps(
+                        self.get_meta_dict(),
+                        indent=2
+                    ).replace("\n", r"\n")
+                    node["widgets_values"] = [value]
+                    node["widgets_values_named"] = {"value": value}
+
+                elif node.get('title') in ['NEGATIVE_PROMPT']:
+                    negative_prompt = "pc game, console game, video game, cartoon, childish, ugly"
+                    node["widgets_values"] = [negative_prompt]
+                    node["widgets_values_named"] = {"value": negative_prompt}
+
+                elif node.get('title') in ['SYSTEM_PROMPT']:
+                    system_prompt = "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
+                    node["widgets_values"] = [system_prompt]
+                    node["widgets_values_named"] = {"value": system_prompt}
+
+                elif node.get('title') in ['PROMPT']:
+                    prompt = self.get_prompt(image_xml)
+                    node["widgets_values"] = [prompt]
+                    node["widgets_values_named"] = {"value": prompt}
+
+                elif node.get('title') in ['SCENE']:
+                    value = json.dumps(
+                        self.get_scene(image_xml), 
+                        indent=2
+                    ).replace("\n", r"\n")
+                    node["widgets_values"] = [value]
+                    node["widgets_values_named"] = {"value": value}
+
+                elif node.get('title') in ['SOURCE']:
+                    # the portion of the text between this image and the next image.                    
+                    our_source = self.get_paragraph_snippet(
+                        image_xml,
+                        context_before=3,
+                        context_after=0,
+                        focus_marker="FOCUS_PARAGRAPH",
+                        focus_phrases=list(
+                            range(
+                                int(image_xml.find_next("phrase").attrs["index"]), 
+                                1 + int(image_xml.find_next("image").find_previous("phrase").attrs["index"])
+                            )
+                        ),
+                    )
+                    value = json.dumps(
+                        our_source,
+                        indent=2
+                    ).replace("\n", r"\n")
+                    node["widgets_values"] = [value]
+                    node["widgets_values_named"] = {"value": value}
+
+            elif node.get('type') == 'CustomStyler':
+                if node.get('title') in ['STYLE']:
+                    style = self.get_image_style(image_xml)
+                    node["widgets_values"][2] = [style]
+                    node["widgets_values_named"]['Custom'] = style
+
+            out_nodes.append(node)
+
+        workflow['nodes'] = out_nodes
+
+        workflow_fn = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+            f"{self.nice}_workflow_{image_xml['index']}_{workflow_name}.json"
+        )
+        with open(workflow_fn, 'w') as f:
+            json.dump(workflow, f, indent=2)
+
+        return workflow_fn
+        
+        
     def get_comfy_workflow(
         self,
         image_xml: Tag,
@@ -823,20 +1046,13 @@ class Chapter:
         width = 1024
 
         # is an image an input to this workflow?  If so we need to copy it to the comfyUI input directory.
-        previous_image_xml = self.get_image(int(image_xml.attrs["index"]) - 1)
 
         # reasonable default
-        prior_frame = ""
-        previous_image_src = ""
-        if previous_image_xml:
-            previous_image_src = os.path.join(
-                const.LIBRARY_DIR,
-                self.get_paragraphdir(
-                    previous_image_xml.find_parent("paragraph").attrs["index"]
-                ),
-                previous_image_xml.attrs.get("src", "error.png"),
+        prior_frame = os.path.basename(
+            g.chapter.get_image_filename(
+                self.get_image(int(image_xml.attrs["index"]) - 1)
             )
-            prior_frame = previous_image_src
+        )
 
         # copy the current version of "this" image as an input image
         source_image = self.get_image_filename(image_xml) or "image.png"
@@ -902,10 +1118,6 @@ class Chapter:
         if prior_frame is None:
             # we need to survive an os.path.join, even if the result is discarded.
             prior_frame = ""
-
-        previous_image_comfy = ""
-        if previous_image_src:
-            previous_image_comfy = os.path.basename(previous_image_src)
 
         files_to_copy = [
             (

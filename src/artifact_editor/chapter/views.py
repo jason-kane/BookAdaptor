@@ -202,6 +202,34 @@ def extract_author(delta, chapter, chapter_xml):
     return {"ops": ops}
 
 
+@bp.route("/reflow_paragraphs", methods=["PUT"])
+def reflow_paragraphs():
+    """
+    Reflow the paragraphs in the chapter.
+    """
+    # we want to remove all "excess" newlines from this chapter
+    # this will allow the contents to reflow based on latex rules
+    # which are generally best.
+    
+    # The trouble, or the challenge, is they are in delta format which
+    # is not paragraph aware.
+    delta = g.chapter.load_delta()
+    out_ops = []
+    for operation in delta["ops"]:
+        if "insert" in operation:
+            operation["insert"] = re.sub(r"\n{2,}", "**PARAGRAPH**", operation["insert"])
+
+            # remove all newlines that are not followed by a newline
+            # (reducing our \n\n\n to \n\n)
+            operation["insert"] = re.sub(r"\n([^\n])", r" \1", operation["insert"])
+
+            operation["insert"] = re.sub(r"\*\*PARAGRAPH\*\*", "\n\n", operation["insert"])
+        out_ops.append(operation)
+
+    g.chapter.save_delta({"ops": out_ops})
+    return "", 200
+
+
 @bp.route("/import_chapter", methods=["POST"])
 def import_chapter():
     """
@@ -387,6 +415,20 @@ def import_chapter():
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
         for orig in out_ops[index : break_index + 1]:
             o = orig.copy()
+            # replacements with latex symbols
+            if "—" in o["insert"]:
+                log.info("Replacing em dash with -- in phrase: %s", o["insert"])
+                o["insert"] = o["insert"].replace("—", "--")
+
+            if "œ" in o["insert"]:
+                log.info("Replacing œ with oe in phrase: %s", o["insert"])
+                o["insert"] = o["insert"].replace("œ", r"\oe")
+
+            # simple escapes
+            if "&" in o["insert"]:
+                log.info("Replacing & with \& in phrase: %s", o["insert"])
+                o["insert"] = o["insert"].replace("&", r"\&")
+
             if "\t" in o["insert"]:
                 log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
                 o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
@@ -426,7 +468,10 @@ def import_chapter():
                     trailing_whitespace = typeset_phrase[-1][len(stripped) :]
                     typeset_phrase[-1] = stripped + "}" + trailing_whitespace
                 else:
-                    phrases[-1]["latex"] += "}"
+                    stripped = phrases[-1]["latex"].rstrip()
+                    trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
+                    phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+
                 attributes["italic"] = None
 
             if o["attributes"].get("bold") and attributes.get("bold") is None:
@@ -685,6 +730,12 @@ def get_delta():
             g.chapter.get_delta_fn(),
         )
         raw_text = {}
+
+    if raw_text in [{}, None]:
+        raw_text = g.chapter.load_txt()
+        delta = {"ops": [{"insert": raw_text}]}        
+        g.chapter.save_delta(delta)
+        raw_text = json.dumps(delta, indent=2)
 
     if raw_text in [{}, None]:
         book_txt = os.path.join(

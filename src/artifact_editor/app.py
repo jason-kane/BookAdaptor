@@ -156,6 +156,10 @@ def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     print('Importing blueprints...')
 
     text_to_image.registry.search(gpu=False)
+    app.register_blueprint(
+        library,
+        url_prefix="/library"
+    )
 
     # top level blueprints
     app.register_blueprint(
@@ -174,11 +178,6 @@ def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     )
 
     app.register_blueprint(static)
-
-    app.register_blueprint(
-        library,
-        url_prefix="/library"
-    )
 
     app.register_blueprint(
         todo,

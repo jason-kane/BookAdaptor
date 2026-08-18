@@ -1,6 +1,7 @@
 import glob
 import os
 import shutil
+import json
 
 from flask import (
     Blueprint,
@@ -57,3 +58,25 @@ def author_base(author):
         books=books
     )
 
+
+def title_to_directory(book_title):
+    book_title = book_title.replace(';', '')
+    book_title = book_title.replace(',', '')
+    return book_title
+
+# http://localhost:8080/library/Mary%20Wollstonecraft%20Shelley/add
+@bp.route("/add", methods=['POST'])
+def add_book(author):
+    author = Author(author)
+    book_title = request.form.get('book_name')
+
+    book_dir = os.path.join(
+        author.authordir,
+        title_to_directory(book_title),
+    )
+    os.makedirs(book_dir, exist_ok=True)
+
+    with open(os.path.join(book_dir, 'config.json'), 'w') as h:
+        h.write(json.dumps({}))
+
+    return f"Created entry for {book_title}", 200

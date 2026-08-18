@@ -114,6 +114,17 @@
         </div>
 
         <div class="wa-cluster">
+            <wa-button 
+                id="reflow_btn" 
+                hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}""
+                hx-on::before-request="beforeRequest(this,event)"
+                hx-on::after-request="afterRequest(this,event)"
+                hx-swap="none" 
+                variant="neutral" 
+                appearance="accent" 
+                size="medium" 
+            >Reflow Paragraphs</wa-button>
+
             {{import_button|safe}}
         </div>
     </div>

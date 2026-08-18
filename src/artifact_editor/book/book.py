@@ -41,6 +41,7 @@ class Book:
             <wa-input
                 name="{key}"
                 hx-target="#book_metadata"
+                hx-trigger="change"
                 hx-put="{self.set_book_metadata_url}"
                 value="{value}"></wa-input>
         </div>

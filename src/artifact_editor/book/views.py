@@ -184,7 +184,21 @@ def indicates_a_new_chapter(book_config, index, book_lines):
                 ):
                     # strip everything after the period
                     clean_line = clean_line[: clean_line.find(".")]
-
+        elif book_config.get("CALL_THEM_CHAPTERS_OR_LETTERS", False):
+            if "CHAPTER" in clean_line.upper():
+                clean_line = ireplace("CHAPTER", "", clean_line)
+                if "." in clean_line and book_config.get(
+                    "CHAPTER_TITLE_ON_SAME_LINE", False
+                ):
+                    # strip everything after the period
+                    clean_line = clean_line[: clean_line.find(".")]
+            elif "LETTER" in clean_line.upper():
+                clean_line = ireplace("LETTER", "", clean_line)
+                if "." in clean_line and book_config.get(
+                    "CHAPTER_TITLE_ON_SAME_LINE", False
+                ):
+                    # strip everything after the period
+                    clean_line = clean_line[: clean_line.find(".")]
         elif book_config.get("CALL_THEM_BOOKS", False):
             if "BOOK" in clean_line.upper():
                 clean_line = ireplace("BOOK", "", clean_line)
@@ -221,6 +235,27 @@ def indicates_a_new_chapter(book_config, index, book_lines):
             return True
 
         return False
+
+    elif book_config["CALL_THEM_CHAPTERS_OR_LETTERS"]:
+        if "CHAPTER" in clean_line.upper():
+            remainder = clean_line.upper().replace("CHAPTER", "").strip().strip(".").strip()
+            try:
+                if int(remainder):
+                    return True
+            except ValueError:
+                return False
+            
+            return False
+        elif "LETTER" in clean_line.upper():
+            remainder = clean_line.upper().replace("LETTER", "").strip().strip(".").strip()
+            try:
+                if int(remainder):
+                    return True
+            except ValueError:
+                return False
+            return False
+        else:
+            return False
 
     log.error('Unknown chapter break method in config: "%s"', book_config)
     return False
@@ -292,7 +327,8 @@ def breakdown_chapters(author, title):
     language = "english"
     author = Author(author)
     log.info("Author: %s, Title: %s", author, title)
-    bookdir = tools.get_bookdir(author.name, title)
+
+    bookdir = os.path.join(author.name, title)
     book_config = config.get_config(bookdir)
 
     # we have:
@@ -326,7 +362,7 @@ def breakdown_chapters(author, title):
     #             The Beginning
     # or
     #             Chapter I. The Beginning
-    log.info("request.form: %s", request.form)
+    # log.info("request.form: %s", request.form)
     splitstyle = request.form.get("splitstyle")
 
     # default values
@@ -337,24 +373,28 @@ def breakdown_chapters(author, title):
         book_config["HAS_ROMAN_NUMERAL_CHAPTERS"] = False
         book_config["HAS_ALLCAPS_BREAKS"] = False
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
 
     elif splitstyle == "roman":
         book_config["HAS_NUMBERED_CHAPTERS"] = False
         book_config["HAS_ROMAN_NUMERAL_CHAPTERS"] = True
         book_config["HAS_ALLCAPS_BREAKS"] = False
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
 
     elif splitstyle == "all_caps_title":
         book_config["HAS_NUMBERED_CHAPTERS"] = False
         book_config["HAS_ROMAN_NUMERAL_CHAPTERS"] = False
         book_config["HAS_ALLCAPS_BREAKS"] = True
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
 
     elif splitstyle == "unpunctuated_single_line":
         book_config["HAS_NUMBERED_CHAPTERS"] = False
         book_config["HAS_ROMAN_NUMERAL_CHAPTERS"] = False
         book_config["HAS_ALLCAPS_BREAKS"] = False
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = True
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
 
     elif splitstyle == "allcaps_and_chapter_roman":
         book_config["HAS_NUMBERED_CHAPTERS"] = False
@@ -362,6 +402,7 @@ def breakdown_chapters(author, title):
         book_config["HAS_ALLCAPS_BREAKS"] = True
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
         book_config["CALL_THEM_CHAPTERS"] = True
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
 
     elif splitstyle == "CHAPTER_roman_title":
         book_config["HAS_NUMBERED_CHAPTERS"] = False
@@ -369,7 +410,16 @@ def breakdown_chapters(author, title):
         book_config["HAS_ALLCAPS_BREAKS"] = False
         book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
         book_config["CALL_THEM_CHAPTERS"] = True
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = False
         book_config["CHAPTER_TITLE_ON_SAME_LINE"] = True
+
+    elif splitstyle == "letter_or_chapter_arabic":
+        book_config["HAS_NUMBERED_CHAPTERS"] = False
+        book_config["HAS_ROMAN_NUMERAL_CHAPTERS"] = False
+        book_config["HAS_ALLCAPS_BREAKS"] = False
+        book_config["HAS_UNPUNCTUATED_SINGLE_LINE"] = False
+        book_config["CALL_THEM_CHAPTERS"] = False
+        book_config["CALL_THEM_CHAPTERS_OR_LETTERS"] = True
 
     elif splitstyle == "bible_breakdown":
         # based on the king james .txt I have
@@ -406,11 +456,11 @@ def breakdown_chapters(author, title):
         book_lines = raw.splitlines()
         log.info("Found %d lines of text in book", len(book_lines))
         first = True
-        for index, line in enumerate(book_lines):
-            log.info('Processing line %d: "%s"', index, line)
+        for lineindex, line in enumerate(book_lines):
+            log.info('Processing line %d: "%s"', lineindex, line)
             if indicates_a_new_chapter(
                 book_config,
-                index,
+                lineindex,
                 book_lines,
             ):
                 log.info('New Chapter: "%s"', line)
