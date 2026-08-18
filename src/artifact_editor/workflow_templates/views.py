@@ -25,6 +25,8 @@ import camera
 import const
 import logger
 from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.chapter.author import Author
+
 from artifact_editor import (
     config,
     llm,
@@ -140,8 +142,14 @@ def new_workflow_template():
     # Copy the mode-template file as the baseline for the new template
     source_template_path = os.path.join(
         const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
-        f"master.{mode}.json"
+        f"prime.{mode}.json"
     )
+    if not os.path.exists(source_template_path):
+        # we don't have a prime template for this mode.  Copy the generic prime.json instead.
+        source_template_path = os.path.join(
+            const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
+            "prime.json"
+        )
 
     slugname = name.lower().replace(" ", "_").replace("-", "_")
 
@@ -150,12 +158,66 @@ def new_workflow_template():
         const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
         f"ui.{mode}.{slugname}-{name}.json"
     )
+
     shutil.copyfile(source_template_path, dest_template_path)
-
-
     return redirect(url_for('workflow_templates.workflow_templates_base'))
 
 
+# open_workflow
+@bp.route("/open/<workflow>", methods=["GET"])
+def open_workflow(workflow: str):
+    # redirect to comfyui with this workflow loaded.
+    return redirect(
+        const.COMFYUI_UI_URL + "?workflow=" + workflow
+    )
+
+@bp.route("/edit/<mode>/<template_name>", methods=["GET"])
+def workflow_edit(mode: str, template_name: str):
+    # is there an existing edit workflow for this template?
+    template_pfn = glob.glob(
+        os.path.join(
+            const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'], 
+            f"ui.{mode}.{template_name}-*.json"
+        )
+    )[0]
+
+    workflow_pfn = os.path.join(
+        const.COMFY_DIRS['artifactserver']['WORKFLOWS_DIR'], 
+        f"edit.{mode}.{template_name}.json"
+    )
+
+    if os.path.exists(workflow_pfn):
+        # there is.  Copy it to template dir
+        shutil.copyfile(
+            workflow_pfn,
+            template_pfn
+        )
+
+    else:
+        if not os.path.exists(template_pfn):
+            # the template doesn't exist either.
+            prime_template_pfn = os.path.join(const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'], f"prime.{mode}.json")
+            if not os.path.exists(prime_template_pfn):
+                # we don't even have a prime template for this mode.
+                shutil.copyfile(
+                    os.path.join(const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'], f"prime.json"),
+                    prime_template_pfn
+                )
+
+            shutil.copyfile(
+                prime_template_pfn,
+                template_pfn
+            )
+
+        # copy the template to the workflow dir for editing
+        shutil.copyfile(
+            template_pfn,
+            workflow_pfn
+        )
+    
+    return redirect(
+        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow_pfn)
+    )
 
 
 # POST to /prime_edit
@@ -169,14 +231,14 @@ def prime_edit():
     # source for all the metadata.  g.chapter won't work
     # we don't have author/title/chapter context.
     chapter = Chapter(
-        author="default_author",
-        title="default_title",
+        author=Author("Mary Wollstonecraft Shelley"),
+        title="Frankenstein",
         number=1,
         language="en"
     )
     image_xml = chapter.get_image(0)
 
-    filled_template_fn = chapter.get_workflow_by_filename(
+    workflow = chapter.get_workflow_by_filename(
         image_xml=image_xml,
         workflow_filename=f"prime.{mode}.json",
         video_index=None,
@@ -185,8 +247,5 @@ def prime_edit():
 
     # redirect to comfyui with this workflow loaded.
     return redirect(
-        url_for(
-            "comfyui.comfyui_base",
-            workflow=filled_template_fn
-        )
+        const.COMFYUI_UI_URL + "?workflow=" + workflow
     )

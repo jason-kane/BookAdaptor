@@ -272,7 +272,7 @@
                     {{ mode_descriptions[mode]|safe }}
                     <div class="wa-stack">
                     {% for template_dict in modes[mode] %}
-                        <wa-button href="/workflow_templates/{{template_dict.template_name}}">{{template_dict.template_cosmetic}}</wa-button>
+                        <wa-button href="/workflow_templates/edit/{{mode}}/{{template_dict.template_name}}">{{template_dict.template_cosmetic}}</wa-button>
                     {% endfor %}
                       <form>
                         <div class="wa-cluster">
