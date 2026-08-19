@@ -1,1196 +1,1274 @@
 {
-    "id": "9821b217-b990-4247-8629-d3c974ec164a",
-    "revision": 0,
-    "last_node_id": 26,
-    "last_link_id": 0,
-    "nodes": [
+  "id": "9821b217-b990-4247-8629-d3c974ec164a",
+  "revision": 0,
+  "last_node_id": 29,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        358.3333333333333
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
         {
-            "id": 1,
-            "type": "PrimitiveString",
-            "pos": [
-                -360,
-                380
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 0,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "FILE_NAME",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 2,
-            "type": "MarkdownNote",
-            "pos": [
-                -600,
-                380
-            ],
-            "size": [
-                225,
-                78
-            ],
-            "flags": {},
-            "order": 1,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [],
-            "properties": {},
-            "widgets_values": [
-                "The name of a .TXT file in the Comfy \"Output\" directory."
-            ],
-            "widgets_values_named": {
-                "text": "The name of a .TXT file in the Comfy \"Output\" directory."
-            },
-            "color": "#432",
-            "bgcolor": "#653",
-            "shape": 4
-        },
-        {
-            "id": 3,
-            "type": "PrimitiveInt",
-            "pos": [
-                -340,
-                -170
-            ],
-            "size": [
-                270,
-                82
-            ],
-            "flags": {},
-            "order": 2,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "INT",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "INT",
-                    "name": "INT",
-                    "type": "INT",
-                    "links": null
-                }
-            ],
-            "title": "HEIGHT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveInt"
-            },
-            "widgets_values": [
-                0,
-                "fixed"
-            ],
-            "widgets_values_named": {
-                "value": 0,
-                "fixed": "fixed"
-            }
-        },
-        {
-            "id": 4,
-            "type": "PrimitiveInt",
-            "pos": [
-                -340,
-                -30
-            ],
-            "size": [
-                270,
-                82
-            ],
-            "flags": {},
-            "order": 3,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "INT",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "INT",
-                    "name": "INT",
-                    "type": "INT",
-                    "links": null
-                }
-            ],
-            "title": "WIDTH",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveInt"
-            },
-            "widgets_values": [
-                0,
-                "fixed"
-            ],
-            "widgets_values_named": {
-                "value": 0,
-                "fixed": "fixed"
-            }
-        },
-        {
-            "id": 5,
-            "type": "PrimitiveFloat",
-            "pos": [
-                -340,
-                100
-            ],
-            "size": [
-                270,
-                62
-            ],
-            "flags": {},
-            "order": 4,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "FLOAT",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "FLOAT",
-                    "name": "FLOAT",
-                    "type": "FLOAT",
-                    "links": null
-                }
-            ],
-            "title": "DURATION",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveFloat"
-            },
-            "widgets_values": [
-                0
-            ],
-            "widgets_values_named": {
-                "value": 0
-            }
-        },
-        {
-            "id": 6,
-            "type": "PrimitiveString",
-            "pos": [
-                -340,
-                220
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 5,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "FILENAME_PREFIX",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 7,
-            "type": "PrimitiveString",
-            "pos": [
-                -350,
-                540
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 6,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "FIRST_FRAME",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 8,
-            "type": "PrimitiveString",
-            "pos": [
-                -350,
-                660
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 7,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "INPUT_IMAGE_PATH",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 9,
-            "type": "PrimitiveString",
-            "pos": [
-                -350,
-                790
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 8,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "INPUT_IMAGE",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 10,
-            "type": "PrimitiveString",
-            "pos": [
-                -350,
-                910
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 9,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "LAST_FRAME",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 11,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -480,
-                1030
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 10,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "META",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 12,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -480,
-                1280
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 11,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "NEGATIVE_PROMPT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 13,
-            "type": "PrimitiveString",
-            "pos": [
-                -360,
-                1540
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 12,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "OUTPUT_DIR",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 14,
-            "type": "PrimitiveString",
-            "pos": [
-                -360,
-                1670
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 13,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "PREVIOUS_IMAGE",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 15,
-            "type": "PrimitiveString",
-            "pos": [
-                -360,
-                1790
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 14,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "PRIOR_FRAME",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 16,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -490,
-                1920
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 15,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "PRIOR_RESULT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 17,
-            "type": "PrimitiveString",
-            "pos": [
-                -360,
-                2180
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 16,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "PROMPT_FN",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 18,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -490,
-                2310
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 17,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "PROMPT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 19,
-            "type": "PrimitiveString",
-            "pos": [
-                -370,
-                2570
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 18,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "SCENE_DESCRIPTION_FN",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 20,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -500,
-                2700
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 19,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "SCENE",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 21,
-            "type": "PrimitiveString",
-            "pos": [
-                -380,
-                2960
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 20,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "SOURCE",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 22,
-            "type": "PrimitiveString",
-            "pos": [
-                -380,
-                3080
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 21,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "STYLE",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 23,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -510,
-                3200
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 22,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "SYSTEM_PROMPT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 24,
-            "type": "PrimitiveStringMultiline",
-            "pos": [
-                -510,
-                3450
-            ],
-            "size": [
-                400,
-                200
-            ],
-            "flags": {},
-            "order": 23,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "ANIMATION_PROMPT",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveStringMultiline"
-            },
-            "widgets_values": [
-                ""
-            ],
-            "widgets_values_named": {
-                "value": ""
-            }
-        },
-        {
-            "id": 25,
-            "type": "PrimitiveString",
-            "pos": [
-                -380,
-                3710
-            ],
-            "size": [
-                270,
-                70
-            ],
-            "flags": {},
-            "order": 24,
-            "mode": 0,
-            "inputs": [
-                {
-                    "localized_name": "value",
-                    "name": "value",
-                    "type": "STRING",
-                    "widget": {
-                        "name": "value"
-                    },
-                    "link": null
-                }
-            ],
-            "outputs": [
-                {
-                    "localized_name": "STRING",
-                    "name": "STRING",
-                    "type": "STRING",
-                    "links": null
-                }
-            ],
-            "title": "TOTAL_FRAMES",
-            "properties": {
-                "cnr_id": "comfy-core",
-                "ver": "0.33.1",
-                "Node name for S&R": "PrimitiveString"
-            },
-            "widgets_values": [
-                "SAMPLE_INPUT.TXT"
-            ],
-            "widgets_values_named": {
-                "value": "SAMPLE_INPUT.TXT"
-            }
-        },
-        {
-            "id": 26,
-            "type": "MarkdownNote",
-            "pos": [
-                -600,
-                -360
-            ],
-            "size": [
-                530,
-                130
-            ],
-            "flags": {},
-            "order": 1,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [],
-            "properties": {},
-            "widgets_values": [
-                "Superset of all trivially supported workflow inputs.  Exactly which fields are relevant is highly dependent on the type of model.  Some cleanup is inevitable."
-            ],
-            "widgets_values_named": {
-                "text": "Superset of all trivially supported workflow inputs.  Exactly which fields are relevant is highly dependent on the type of model.  Some cleanup is inevitable."
-            },
-            "color": "#432",
-            "bgcolor": "#653",
-            "shape": 4
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
         }
-    ],
-    "links": [],
-    "groups": [
+      ],
+      "outputs": [
         {
-            "id": 1,
-            "title": "FILE_NAME",
-            "bounding": [
-                -610,
-                310,
-                530,
-                158
-            ],
-            "color": "#3f789e",
-            "flags": {}
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
         }
-    ],
-    "config": {},
-    "extra": {
-        "ds": {
-            "scale": 1.422672388780134,
-            "offset": [
-                789.1900211760365,
-                579.3640413118587
-            ]
-        }
+      ],
+      "title": "FILE_NAME",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "shel-fran-001-dkkx_img_0_prime.i2v"
+      ],
+      "widgets_values_named": {
+        "value": "shel-fran-001-dkkx_img_0_prime.i2v"
+      }
     },
-    "version": 0.4
+    {
+      "id": 2,
+      "type": "MarkdownNote",
+      "pos": [
+        200,
+        485.41666666666663
+      ],
+      "size": [
+        250,
+        100
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "The name of a .TXT file in the Comfy \"Output\" directory."
+      ],
+      "widgets_values_named": {
+        "text": "The name of a .TXT file in the Comfy \"Output\" directory."
+      },
+      "color": "#432",
+      "bgcolor": "#653",
+      "shape": 4
+    },
+    {
+      "id": 3,
+      "type": "PrimitiveInt",
+      "pos": [
+        150,
+        -150
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "INT",
+          "name": "INT",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "title": "HEIGHT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        1024,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
+    },
+    {
+      "id": 4,
+      "type": "PrimitiveInt",
+      "pos": [
+        150,
+        -22.916666666666668
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "INT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "INT",
+          "name": "INT",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "title": "WIDTH",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        1024,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "value": 1024,
+        "fixed": "fixed"
+      }
+    },
+    {
+      "id": 5,
+      "type": "PrimitiveFloat",
+      "pos": [
+        150,
+        104.16666666666666
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "FLOAT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "FLOAT",
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "title": "DURATION",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveFloat"
+      },
+      "widgets_values": [
+        0.04
+      ],
+      "widgets_values_named": {
+        "value": 0.04
+      }
+    },
+    {
+      "id": 6,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        231.25
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "FILENAME_PREFIX",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "shel-fran-001-dkkx_img_0_prime.i2v"
+      ],
+      "widgets_values_named": {
+        "value": "shel-fran-001-dkkx_img_0_prime.i2v"
+      }
+    },
+    {
+      "id": 8,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        612.5
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "INPUT_IMAGE_PATH",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "/root/ComfyUI/input/"
+      ],
+      "widgets_values_named": {
+        "value": "/root/ComfyUI/input/"
+      }
+    },
+    {
+      "id": 11,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        1493.75
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "META",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "{\\n  \"title\": \"Frankenstein\",\\n  \"chapter_title\": \"Chapter 1\",\\n  \"author\": \"Mary Wollstonecraft Shelley\",\\n  \"chapter\": 1,\\n  \"mood\": \"dark,occult,mombi the witch is scary\",\\n  \"theme\": \"Secrets, Hidden Childhood, Supernatural Threat, Survival\"\\n}"
+      ],
+      "widgets_values_named": {
+        "value": "{\\n  \"title\": \"Frankenstein\",\\n  \"chapter_title\": \"Chapter 1\",\\n  \"author\": \"Mary Wollstonecraft Shelley\",\\n  \"chapter\": 1,\\n  \"mood\": \"dark,occult,mombi the witch is scary\",\\n  \"theme\": \"Secrets, Hidden Childhood, Supernatural Threat, Survival\"\\n}"
+      }
+    },
+    {
+      "id": 12,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        2097.9166666666665
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "NEGATIVE_PROMPT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "pc game, console game, video game, cartoon, childish, ugly"
+      ],
+      "widgets_values_named": {
+        "value": "pc game, console game, video game, cartoon, childish, ugly"
+      }
+    },
+    {
+      "id": 13,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        2325
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "OUTPUT_DIR",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "/root/ComfyUI/output/"
+      ],
+      "widgets_values_named": {
+        "value": "/root/ComfyUI/output/"
+      }
+    },
+    {
+      "id": 14,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        2452.0833333333335
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "PREVIOUS_IMAGE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        null
+      ],
+      "widgets_values_named": {
+        "value": null
+      }
+    },
+    {
+      "id": 15,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        2579.1666666666665
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "PRIOR_FRAME",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        null
+      ],
+      "widgets_values_named": {
+        "value": null
+      }
+    },
+    {
+      "id": 16,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        2706.25
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "PRIOR_RESULT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "value": ""
+      }
+    },
+    {
+      "id": 17,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        2933.3333333333335
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "PROMPT_FN",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "shel-fran-001-dkkx_img_0_prime.i2v.prompt"
+      ],
+      "widgets_values_named": {
+        "value": "shel-fran-001-dkkx_img_0_prime.i2v.prompt"
+      }
+    },
+    {
+      "id": 18,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        3060.4166666666665
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "PROMPT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        null
+      ],
+      "widgets_values_named": {
+        "value": null
+      }
+    },
+    {
+      "id": 19,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        3287.5
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "SCENE_DESCRIPTION_FN",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "shel-fran-001-dkkx_img_0_prime.i2v.txt"
+      ],
+      "widgets_values_named": {
+        "value": "shel-fran-001-dkkx_img_0_prime.i2v.txt"
+      }
+    },
+    {
+      "id": 20,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        3414.583333333333
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "SCENE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "{\\n  \"lighting\": {}\\n}"
+      ],
+      "widgets_values_named": {
+        "value": "{\\n  \"lighting\": {}\\n}"
+      }
+    },
+    {
+      "id": 21,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        3641.6666666666665
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "SOURCE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "SAMPLE_INPUT.TXT"
+      ],
+      "widgets_values_named": {
+        "value": "SAMPLE_INPUT.TXT"
+      }
+    },
+    {
+      "id": 22,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        3768.75
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "STYLE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "SAMPLE_INPUT.TXT"
+      ],
+      "widgets_values_named": {
+        "value": "SAMPLE_INPUT.TXT"
+      }
+    },
+    {
+      "id": 23,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        3895.833333333333
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "SYSTEM_PROMPT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        [
+          "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene."
+        ]
+      ],
+      "widgets_values_named": {
+        "value": [
+          "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene."
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        50,
+        4122.916666666667
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "ANIMATION_PROMPT",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "value": ""
+      }
+    },
+    {
+      "id": 25,
+      "type": "PrimitiveString",
+      "pos": [
+        150,
+        4350
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "value",
+          "name": "value",
+          "type": "STRING",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "TOTAL_FRAMES",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        "SAMPLE_INPUT.TXT"
+      ],
+      "widgets_values_named": {
+        "value": "SAMPLE_INPUT.TXT"
+      }
+    },
+    {
+      "id": 26,
+      "type": "MarkdownNote",
+      "pos": [
+        50,
+        -350
+      ],
+      "size": [
+        550,
+        150
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "Superset of all trivially supported workflow inputs.  Exactly which fields are relevant is highly dependent on the type of model.  Some cleanup is inevitable."
+      ],
+      "widgets_values_named": {
+        "text": "Superset of all trivially supported workflow inputs.  Exactly which fields are relevant is highly dependent on the type of model.  Some cleanup is inevitable."
+      },
+      "color": "#432",
+      "bgcolor": "#653",
+      "shape": 4
+    },
+    {
+      "id": 27,
+      "type": "LoadImage",
+      "pos": [
+        50,
+        739.5833333333333
+      ],
+      "size": [
+        400,
+        350
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "choose file to upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "INPUT_IMAGE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.3",
+        "Node name for S&R": "LoadImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "img_0_zit-paragraph_00_00001_.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "img_0_zit-paragraph_00_00001_.png",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 28,
+      "type": "LoadImage",
+      "pos": [
+        50,
+        1116.6666666666667
+      ],
+      "size": [
+        400,
+        350
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "choose file to upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "FIRST_FRAME",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.3",
+        "Node name for S&R": "LoadImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "img_0_zit-paragraph_00_00001_.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "img_0_zit-paragraph_00_00001_.png",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 29,
+      "type": "LoadImage",
+      "pos": [
+        50,
+        1720.8333333333333
+      ],
+      "size": [
+        400,
+        350
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "choose file to upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "LAST_FRAME",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.3",
+        "Node name for S&R": "LoadImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "img_0_zit-paragraph_00_00001_.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "img_0_zit-paragraph_00_00001_.png",
+        "upload": "image"
+      }
+    }
+  ],
+  "links": [],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.3797498335832416,
+      "offset": [
+        1132.7123946389718,
+        1589.1341684858678
+      ]
+    }
+  },
+  "version": 0.4
 }

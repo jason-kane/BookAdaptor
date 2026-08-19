@@ -283,7 +283,9 @@
                               hx-swap="none"
                               >Create New {{mode}} Workflow</wa-button>
                             <wa-button 
-                              hx-post="/workflow_templates/prime_edit"
+                              hx-get="/workflow_templates/prime_edit"
+                              href="/workflow_templates/prime_edit?mode={{mode}}"
+                              target="_blank"
                               hx-vals='{"mode": "{{mode}}"}'
                               hx-trigger="click"
                               hx-swap="none"

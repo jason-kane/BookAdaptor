@@ -576,18 +576,28 @@ class Chapter:
         """
         self.load_xml()
         image = self.soup.find("image", attrs={"index": str(index)})
+        if image is None:
+            log.warning(
+                f"No image found with attr index={index} in {self.kwargs}",
+            )
         return image
 
-    def get_image_frames(self, image_xml):
+    def get_image_frames(self, image_xml: Tag):
         """
         How many frames of duration will we display this image?
         """
         return int(image_xml.attrs.get("frames", 1))
 
-    def get_image_filename(self, image_xml):
+    def get_image_filename(self, image_xml: Tag) -> str | None:
         """
         Get the filename for a given image, if it exists.
         """
+        if image_xml is None:
+            return None
+    
+        if not isinstance(image_xml, Tag):
+            return None
+        
         base_image = image_xml.attrs.get("src")
         try:
             paragraph = image_xml.find_parent("paragraph")
@@ -831,19 +841,40 @@ class Chapter:
         workflow_filename: str,
         video_index: int|None=None,
         template_environment: dict[str, str]|None=None,
+        force_name: str|None=None,
     ):
+        """
+        image_xml: BeautifulSoup Tag for an <image> block
+        
+        workflow_filename: filename of a /template JSON 
+        
+        video_index: if this is a video, it may be part of a sequence of videos.  If that is the case, which number in the
+        sequence is it? (matters for file naming reasons)
+
+        template_environment: dict of variable overrides for the workflow template.
+
+        force_name: if provided, this will be used as the output filename for the workflow JSON, instead of the generated name.
+        """
         with open(workflow_filename, 'r') as f:
             workflow = json.load(f)
 
         try:
-            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0].split('.')[2]
+            workflow_name = os.path.splitext(
+                os.path.basename(workflow_filename)
+            )[0].split('.')[2]
         except IndexError:
-            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
+            workflow_name = os.path.splitext(
+                os.path.basename(workflow_filename)
+            )[0]
 
         height = 1024
         width = 1024
 
-        duration_in_frames = self.get_image_frames(image_xml)
+        try:
+            duration_in_frames = self.get_image_frames(image_xml)
+        except AttributeError:
+            duration_in_frames = 1
+
         duration_in_seconds = duration_in_frames / const.FPS
 
         source_image = self.get_image_filename(image_xml)
@@ -851,25 +882,76 @@ class Chapter:
             source_image = self.get_last_frame(image_xml, video_index=video_index)
 
         # our last frame generally the _next_ image.
-        last_frame = os.path.basename(
-            g.chapter.get_image_filename(
-                self.get_image(int(image_xml.attrs["index"]) + 1)
+        try:
+            last_frame = os.path.basename(
+                self.get_image_filename(
+                    self.get_image(int(image_xml.attrs["index"]) + 1)
+                )
             )
-        )
+        except TypeError:
+            last_frame = None
+
         if not last_frame:
             last_frame = source_image
 
         # reasonable default
-        prior_frame = os.path.basename(
-            g.chapter.get_image_filename(
-                self.get_image(int(image_xml.attrs["index"]) - 1)
+        try:
+            prior_frame = os.path.basename(
+                self.get_image_filename(
+                    self.get_image(int(image_xml.attrs["index"]) - 1)
+                )
             )
-        )
+        except TypeError:
+            prior_frame = None
 
         # we've got a _lot_ of variables to fill in.
         out_nodes = []
         for node in workflow.get('nodes', []):
-            if node.get('type') == 'PrimitiveString':
+            if node.get('type') == 'LoadImage':
+
+                if node.get('title') in ['INPUT_IMAGE', 'FIRST_FRAME']:
+                    target = os.path.join(
+                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"], 
+                        os.path.basename(source_image)
+                    )
+
+                    log.info('Copying %s to %s', source_image, target)
+
+                    shutil.copyfile(
+                        source_image, 
+                        target
+                    )
+                    node["widgets_values"] = [
+                        os.path.basename(target),
+                        "image"
+                    ]
+                    node["widgets_values_named"] = {
+                        "image": os.path.basename(target),
+                        'upload': 'image'
+                    }
+
+                if node.get('title') in ['LAST_FRAME']:
+                    target = os.path.join(
+                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"], 
+                        os.path.basename(last_frame)
+                    )
+
+                    log.info('Copying %s to %s', last_frame, target)
+
+                    shutil.copyfile(
+                        last_frame, 
+                        target
+                    )
+                    node["widgets_values"] = [
+                        os.path.basename(target),
+                        "image"
+                    ]
+                    node["widgets_values_named"] = {
+                        "image": os.path.basename(target),
+                        'upload': 'image'
+                    }
+                
+            elif node.get('type') == 'PrimitiveString':
                 if node.get('title') in ['FILE_NAME', 'FILENAME_PREFIX']:
                     if 'FILENAME_PREFIX' in template_environment:
                         filename_prefix = template_environment['FILENAME_PREFIX']
@@ -884,14 +966,6 @@ class Chapter:
                 elif node.get('title') in ['PREVIOUS_IMAGE', 'PRIOR_FRAME']:
                     node["widgets_values"] = [prior_frame]
                     node["widgets_values_named"] = {"value": prior_frame}
-
-                elif node.get('title') in ['FIRST_FRAME', 'INPUT_IMAGE']:
-                    # filename for the first frame
-                    if source_image:
-                        node["widgets_values"] = [os.path.basename(source_image)]
-                        node["widgets_values_named"] = {"value": os.path.basename(source_image)}
-                    else:
-                        log.warning('No source image found for node %s', node.get('title'))
 
                 elif node.get('title') in ['INPUT_IMAGE_PATH']:
                     node["widgets_values"] = [const.COMFY_DIRS["comfyui"]["INPUT_DIR"]]
@@ -923,18 +997,17 @@ class Chapter:
                         log.warning('No last frame found for node %s', node.get('title'))
 
             elif node.get('type') == 'PrimitiveInt':
-                if node.get('title') in ['HEIGHT', 'WIDTH']:
-                    if node.get('title') == 'HEIGHT':
-                        node["widgets_values"] = [height]
-                        node["widgets_values_named"] = {"value": height}
-                    elif node.get('title') == 'WIDTH':
-                        node["widgets_values"] = [width]
-                        node["widgets_values_named"] = {"value": width}
+                if node.get('title') == 'HEIGHT':
+                    node["widgets_values"] = [height, "fixed"]
+                    node["widgets_values_named"] = {"value": height, "fixed": "fixed"}
+                elif node.get('title') == 'WIDTH':
+                    node["widgets_values"] = [width, "fixed"]
+                    node["widgets_values_named"] = {"value": width, "fixed": "fixed"}
 
             elif node.get('type') == 'PrimitiveFloat':
                 if node.get('title') in ['DURATION']:
-                    node["widgets_values"] = [duration_in_seconds]
-                    node["widgets_values_named"] = {"value": duration_in_seconds}
+                    node["widgets_values"] = [min(0.5, float(duration_in_seconds))]
+                    node["widgets_values_named"] = {"value": min(0.5, float(duration_in_seconds))}
 
             elif node.get('type') == 'PrimitiveStringMultiline':
                 if node.get('title') in ['META']:
@@ -994,15 +1067,24 @@ class Chapter:
                     style = self.get_image_style(image_xml)
                     node["widgets_values"][2] = [style]
                     node["widgets_values_named"]['Custom'] = style
+            else:
+                log.info("Skipping node type: %s", node.get('type'))
 
             out_nodes.append(node)
 
         workflow['nodes'] = out_nodes
 
-        workflow_fn = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-            f"{self.nice}_workflow_{image_xml['index']}_{workflow_name}.json"
-        )
+        if force_name:
+            workflow_fn = os.path.join(
+                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+                force_name
+            )
+        else:
+            workflow_fn = os.path.join(
+                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+                f"{self.nice}_workflow_{image_xml['index']}_{workflow_name}.json"
+            )
+
         with open(workflow_fn, 'w') as f:
             json.dump(workflow, f, indent=2)
 
@@ -1047,12 +1129,15 @@ class Chapter:
 
         # is an image an input to this workflow?  If so we need to copy it to the comfyUI input directory.
 
+        previous_image_xml = self.get_image(int(image_xml.attrs["index"]) - 1)
+
         # reasonable default
-        prior_frame = os.path.basename(
-            g.chapter.get_image_filename(
-                self.get_image(int(image_xml.attrs["index"]) - 1)
+        if previous_image_xml:
+            prior_frame = os.path.basename(
+                self.get_image_filename(
+                    previous_image_xml
+                )
             )
-        )
 
         # copy the current version of "this" image as an input image
         source_image = self.get_image_filename(image_xml) or "image.png"
@@ -1139,13 +1224,6 @@ class Chapter:
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
                     os.path.basename(next_image_src),
-                ),
-            ),
-            (
-                previous_image_src,
-                os.path.join(
-                    const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
-                    os.path.basename(previous_image_src),
                 ),
             ),
         ]
@@ -1299,7 +1377,7 @@ class Chapter:
             "META": json.dumps(meta, indent=2),
             "NEGATIVE_PROMPT": negative_prompt,
             "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-            "PREVIOUS_IMAGE": previous_image_comfy,
+            "PREVIOUS_IMAGE": os.path.basename(prior_frame),
             "PRIOR_FRAME": os.path.basename(prior_frame)
             if prior_frame is not None
             else "",
@@ -1706,7 +1784,7 @@ class Chapter:
         returns true if we got contents
         """
         if self.STUB:
-            self.soup = BeautifulSoup("<book></book>", "xml")
+            self.soup = BeautifulSoup("<chapter></chapter>", "xml")
             return self.soup
 
         if self.soup is not None:
@@ -1717,9 +1795,9 @@ class Chapter:
             else:
                 log.info("** Forced reload of chapter XML **")
 
-        log.info("Cache not loaded, loading fresh XML for chapter")
-
         xml_fn = self.get_xml_fn()
+
+        log.info("Cache not loaded, loading fresh XML for chapter", xml_fn=xml_fn)
 
         if os.path.exists(xml_fn):
             with open(xml_fn, "r") as h:

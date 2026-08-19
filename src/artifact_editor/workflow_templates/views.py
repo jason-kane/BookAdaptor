@@ -25,7 +25,7 @@ import camera
 import const
 import logger
 from artifact_editor.chapter.chapter import Chapter
-from artifact_editor.chapter.author import Author
+from artifact_editor.author.author import Author
 
 from artifact_editor import (
     config,
@@ -168,7 +168,8 @@ def new_workflow_template():
 def open_workflow(workflow: str):
     # redirect to comfyui with this workflow loaded.
     return redirect(
-        const.COMFYUI_UI_URL + "?workflow=" + workflow
+        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow),
+        code=302,
     )
 
 @bp.route("/edit/<mode>/<template_name>", methods=["GET"])
@@ -209,23 +210,58 @@ def workflow_edit(mode: str, template_name: str):
                 template_pfn
             )
 
-        # copy the template to the workflow dir for editing
-        shutil.copyfile(
-            template_pfn,
-            workflow_pfn
-        )
-    
-    return redirect(
-        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow_pfn)
+    chapter = Chapter(
+        author=Author("Mary Wollstonecraft Shelley"),
+        title="Frankenstein",
+        number=1,
+        language="english"
     )
 
+    image_xml = chapter.get_image(0)
+    if image_xml is None:
+        log.error('No image 0 found in chapter %s', chapter.kwargs)
+        return f"No image 0 found in chapter {chapter.kwargs}", 400
+
+    workflow = chapter.get_workflow_by_filename(
+        image_xml=image_xml,
+        workflow_filename=template_pfn,
+        video_index=None,
+        template_environment={},
+        force_name=os.path.basename(workflow_pfn)
+    )
+    
+    return redirect(
+        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow),
+        code=302,
+    )
 
 # POST to /prime_edit
-@bp.route("/prime_edit", methods=["POST"])
+@bp.route("/prime_edit", methods=["GET"])
 def prime_edit():
-    mode = request.form.get("mode")
+    mode = request.args.get("mode")
     if not mode:
         return "Missing mode", 400
+
+    force_name=f"prime.{mode}.json"
+    # does this prime template exist in workflow_templates?
+    if os.path.exists(
+        os.path.join(
+            const.COMFY_DIRS['artifactserver']['WORKFLOWS_DIR'], 
+            force_name
+        )
+    ):
+        # it _does_ exist.  Copy it into templates.
+        shutil.copyfile(
+            os.path.join(
+                const.COMFY_DIRS['artifactserver']['WORKFLOWS_DIR'], 
+                force_name
+            ),
+            os.path.join(
+                const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'], 
+                force_name
+            )
+        )
+        # let the rest of this play out
 
     # we need to choose a default chapter/image_xml 
     # source for all the metadata.  g.chapter won't work
@@ -234,18 +270,27 @@ def prime_edit():
         author=Author("Mary Wollstonecraft Shelley"),
         title="Frankenstein",
         number=1,
-        language="en"
+        language="english"
     )
+
     image_xml = chapter.get_image(0)
+    if image_xml is None:
+        log.error('No image 0 found in chapter %s', chapter.kwargs)
+        return f"No image 0 found in chapter {chapter.kwargs}", 400
 
     workflow = chapter.get_workflow_by_filename(
         image_xml=image_xml,
-        workflow_filename=f"prime.{mode}.json",
+        workflow_filename=os.path.join(
+            const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'],
+            f"prime.{mode}.json",
+        ),
         video_index=None,
-        template_environment={}
+        template_environment={},
+        force_name=force_name
     )
 
     # redirect to comfyui with this workflow loaded.
     return redirect(
-        const.COMFYUI_UI_URL + "?workflow=" + workflow
+        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow),
+        code=302,
     )
