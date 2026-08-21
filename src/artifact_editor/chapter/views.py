@@ -42,7 +42,13 @@ from artifact_editor.chapter.chapter import (
 
 from artifact_editor.styles import htmx as styles_htmx
 
+from ncdeltaprocess import TranslatorQuillJS
+
+from typing import Any
+
 log = logger.log(__name__)
+
+t = TranslatorQuillJS()
 
 bp = Blueprint(
     "chapter",
@@ -132,6 +138,7 @@ def chapter_base():
         pretty_author=g.chapter.config.get("author", g.author),
         title=g.title,
         pretty_title=g.chapter.config.get("title", g.title),
+        chapter_title=g.chapter.chapter_title,
         chapter=g.chapter,
     )
 
@@ -230,6 +237,55 @@ def reflow_paragraphs():
     return "", 200
 
 
+def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compressed = []
+    attributes = {}
+    same = []
+    for operation in ops:  # type: dict[str, Any]
+        try:
+            del operation["attributes"]["phrase"]
+        except KeyError:
+            pass
+
+        if not same:
+            same.append(operation)
+        else:
+            if operation.get("attributes") == same[-1].get("attributes"):
+                same.append(operation)
+            else:
+                # different attributes, we need to compress the previous same list into a single operation.
+                if len(same) > 1:
+                    compressed.append(
+                        {
+                            "insert": "".join([o["insert"] for o in same]),
+                            "attributes": same[-1].get("attributes", {}),
+                            "type": same[-1].get("type", "word"),
+                        }
+                    )
+                else:
+                    compressed.append(same[-1])
+                same = [operation]
+
+    # compress any remaining operations in 'same'
+    if same:
+        if len(same) > 1:
+            compressed.append(
+                {
+                    "insert": "".join([o["insert"] for o in same]),
+                    "attributes": same[-1].get("attributes", {}),
+                    "type": same[-1].get("type", "word"),
+                }
+            )
+        else:
+            compressed.append(same[-1])
+
+        if compressed and operation.get("type") == compressed[-1].get("type") == "word":
+            compressed[-1]["insert"] += operation["insert"]
+        else:
+            compressed.append(operation)
+    return compressed
+
+
 @bp.route("/import_chapter", methods=["POST"])
 def import_chapter():
     """
@@ -238,13 +294,17 @@ def import_chapter():
     """
     chapter_soup = BeautifulSoup("<chapter></chapter>", "xml")
 
+    # load_delta knows to fallback to chapter.txt with a thin wrapper if there
+    # is no delta file.
     delta = g.chapter.load_delta()
 
-    # we want to be able to slice-and-dice the plain text and the formatted
-    # text in parallel.  It's stupid, but I think it might actually be
-    # easiest to leave it in Delta format for a little longer than I had
-    # originally intended.
-
+    # The title and author at the beginning of the chapter are a pain in the
+    # ass. They have to be special, because if we're rendering a single chapter
+    # as a video we want to include and speak both the book and author.  If
+    # we're chapter 4 of 20 in a six hour video, we don't want to waste a moment
+    # with tedious repetition of the title and author.
+    
+    
     # These confuse the phrase breaking algorithm, so we pop them out.
     #delta = extract_title(delta, g.chapter, chapter_soup)
     #delta = extract_author(delta, g.chapter, chapter_soup)
@@ -270,10 +330,14 @@ def import_chapter():
     # break all the 'inserts' in delta up into single delta sentences.
     out_ops = []
     index_start = 0
+
+    delta["ops"] = compress_ops(delta["ops"])
+
     for ops in delta["ops"]:
         log.info("Processing ops: %s", repr(ops))
 
         for major_break in re.split(r"(\n\n+)", ops.get("insert", "")):
+            log.info('major_break: %s', repr(major_break))
             sentence_spans = list(nlp(major_break).sents)
             sentence_count = len(sentence_spans)
             log.info("Operation has %s sentences", sentence_count)
@@ -372,6 +436,12 @@ def import_chapter():
 
         window_size = 18  # 25 is too big
 
+        # we are starting at out_ops[index], and we want to know where we need
+        # to put out_ops[break_index] to split at the best possible phrase break
+        # point.  We're going to evaluate and score each word in the window,
+        # then pick the highest scoring word as the break point.  If we don't
+        # find a break point, ie: nothing scores higher than a threshold -- we
+        # will increase the window size and try again.
         break_index = None
         while break_index is None and window_size < 60:
             highest = 0
@@ -383,11 +453,10 @@ def import_chapter():
                 if out_ops[i].get("phrase_score", 0) > highest:
                     highest = out_ops[i]["phrase_score"]
                     break_index = i
-                    break
 
             if break_index is None:
-                if i == len(out_ops) - 1:
-                    break_index = i
+                if index + window_size >= len(out_ops):
+                    break_index = len(out_ops)
 
             if break_index is None:
                 log.info(
@@ -404,110 +473,121 @@ def import_chapter():
 
             raise ValueError("No phrase break found!")
 
-        # if out_ops[index]["type"] == "whitespace":
-
-        # log.info(' Spoken phrase: %s', plain_phrase)
-        alignment = "left"
-
-        typeset_phrase = [
-            
-        ]
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
-        for orig in out_ops[index : break_index + 1]:
-            o = orig.copy()
-            # replacements with latex symbols
-            if "—" in o["insert"]:
-                log.info("Replacing em dash with -- in phrase: %s", o["insert"])
-                o["insert"] = o["insert"].replace("—", "--")
+        typeset_phrase = []
 
-            if "œ" in o["insert"]:
-                log.info("Replacing œ with oe in phrase: %s", o["insert"])
-                o["insert"] = o["insert"].replace("œ", r"\oe")
+        our_ops = out_ops[index : break_index + 1]
 
-            # simple escapes
-            if "&" in o["insert"]:
-                log.info("Replacing & with \& in phrase: %s", o["insert"])
-                o["insert"] = o["insert"].replace("&", r"\&")
+        doc = t.ops_to_internal_representation(our_ops)
+        as_latex = doc.render_tree(mode='latex')
+        as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
 
-            if "\t" in o["insert"]:
-                log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
-                o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
+        plain_phrase = "".join([o["insert"] for o in our_ops])
 
-            if o.get('attributes', {}).get('align') == 'center':
-                # the previous line (this is a \n) should be
-                # centered.
-                typeset_phrase[-1] = r"\begin{center}" + typeset_phrase[-1] + r"\end{center}"
+        # for orig_index in range(index, break_index + 2):
+        #     if orig_index >= len(out_ops):
+        #         close_only = True
+        #         orig = {"insert": "", "attributes": {}}
+        #     else:
+        #         orig = out_ops[orig_index]
+        #         close_only = False
 
-            # That I have to treat this as a special edge case means my
-            # algorithm is shit.  Adding more features is going to be a
-            # nightmare until I redesign to handle arbitrary combinations of
-            # attributes.
-            if (
-                o["attributes"].get("italic")
-                and attributes.get("italic") is None
-                and o["attributes"].get("bold")
-                and attributes.get("bold") is None
-            ):
-                # bold _and_ italics.
-                typeset_phrase.append(r"\textit{\textbf{" + o["insert"])
-                attributes["italic"] = True
-                attributes["bold"] = True
-                continue
+        #     o = orig.copy()
+        #     if not close_only:
+        #         # replacements with latex symbols
+        #         if "—" in o["insert"]:
+        #             log.info("Replacing em dash with -- in phrase: %s", o["insert"])
+        #             o["insert"] = o["insert"].replace("—", "--")
 
-            if o["attributes"].get("italic") and attributes.get("italic") is None:
-                # we are starting an italic block
-                typeset_phrase.append(r"\textit{" + o["insert"])
-                attributes["italic"] = True
-                continue
+        #         if "œ" in o["insert"]:
+        #             log.info("Replacing œ with oe in phrase: %s", o["insert"])
+        #             o["insert"] = o["insert"].replace("œ", r"\oe")
 
-            if o["attributes"].get("italic") is None and attributes.get("italic"):
-                # we are ending an italic block
-                if typeset_phrase:
-                    # retain the trailing whitespace, _after_ the close tag.
-                    stripped = typeset_phrase[-1].rstrip()
-                    trailing_whitespace = typeset_phrase[-1][len(stripped) :]
-                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
-                else:
-                    stripped = phrases[-1]["latex"].rstrip()
-                    trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
-                    phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+        #         # simple escapes
+        #         if "&" in o["insert"]:
+        #             log.info("Replacing & with \& in phrase: %s", o["insert"])
+        #             o["insert"] = o["insert"].replace("&", r"\&")
 
-                attributes["italic"] = None
+        #         if "\t" in o["insert"]:
+        #             log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
+        #             o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
 
-            if o["attributes"].get("bold") and attributes.get("bold") is None:
-                # we are starting a bold block
-                typeset_phrase.append(r"\textbf{" + o["insert"])
-                attributes["bold"] = True
-                continue
+        #         if o.get('attributes', {}).get('align') == 'center':
+        #             # the previous line (this is a \n) should be
+        #             # centered.
+        #             typeset_phrase[-1] = r"\begin{center}" + typeset_phrase[-1] + r"\end{center}"
 
-            if o["attributes"].get("bold") is None and attributes.get("bold"):
-                # how many characters long was the previous line
-                # prior to the trailing whitespace?
-                if typeset_phrase:
-                    stripped = typeset_phrase[-1].rstrip()
-                    trailing_whitespace = typeset_phrase[-1][len(stripped) :]
-                    # tuck the } close brace between the string and its trailing whitespace.
-                    typeset_phrase[-1] = stripped + "}" + trailing_whitespace
-                    # we aren't bold anymore.
-                else:
-                    #  we went bold in a previous phrase.
-                    stripped = phrases[-1]["latex"].rstrip()
-                    trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
-                    phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+        #         # That I have to treat this as a special edge case means my
+        #         # algorithm is shit.  Adding more features is going to be a
+        #         # nightmare until I redesign to handle arbitrary combinations of
+        #         # attributes.
+        #         if (
+        #             o["attributes"].get("italic")
+        #             and attributes.get("italic") is None
+        #             and o["attributes"].get("bold")
+        #             and attributes.get("bold") is None
+        #         ):
+        #             # bold _and_ italics.
+        #             typeset_phrase.append(r"\textit{\textbf{" + o["insert"])
+        #             attributes["italic"] = True
+        #             attributes["bold"] = True
+        #             continue
 
-                attributes["bold"] = None
+        #         if o["attributes"].get("italic") and attributes.get("italic") is None:
+        #             # we are starting an italic block
+        #             typeset_phrase.append(r"\textit{" + o["insert"])
+        #             attributes["italic"] = True
+        #             continue
 
-            typeset_phrase.append(o["insert"])
+        #         if o["attributes"].get("bold") and attributes.get("bold") is None:
+        #             # we are starting a bold block
+        #             typeset_phrase.append(r"\textbf{" + o["insert"])
+        #             attributes["bold"] = True
+        #             continue
 
-        plain_phrase = ""
-        for i in range(index, break_index + 1):
-            # close.. but we aren't setting the phrase id
-            # for the title or author correctly.
-            # we know which phrase each word is in.
-            out_ops[i]["attributes"]["phrase"] = 1 + len(phrases)
-            plain_phrase += out_ops[i]["insert"]
+        #     if o["attributes"].get("italic") is None and attributes.get("italic"):
+        #         # we are ending an italic block
+        #         if typeset_phrase:
+        #             # retain the trailing whitespace, _after_ the close tag.
+        #             stripped = typeset_phrase[-1].rstrip()
+        #             trailing_whitespace = typeset_phrase[-1][len(stripped) :]
+        #             typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+        #         else:
+        #             stripped = phrases[-1]["latex"].rstrip()
+        #             trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
+        #             phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+
+        #         attributes["italic"] = None
+
+        #     if o["attributes"].get("bold") is None and attributes.get("bold"):
+        #         # how many characters long was the previous line
+        #         # prior to the trailing whitespace?
+        #         if typeset_phrase:
+        #             stripped = typeset_phrase[-1].rstrip()
+        #             trailing_whitespace = typeset_phrase[-1][len(stripped) :]
+        #             # tuck the } close brace between the string and its trailing whitespace.
+        #             typeset_phrase[-1] = stripped + "}" + trailing_whitespace
+        #             # we aren't bold anymore.
+        #         else:
+        #             #  we went bold in a previous phrase.
+        #             stripped = phrases[-1]["latex"].rstrip()
+        #             trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
+        #             phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
+
+        #         attributes["bold"] = None
+
+        #     if not close_only:
+        #         typeset_phrase.append(o["insert"])
+
+        # plain_phrase = ""
+        # for i in range(index, break_index):
+        #     # close.. but we aren't setting the phrase id
+        #     # for the title or author correctly.
+        #     # we know which phrase each word is in.
+        #     # out_ops[i]["attributes"]["phrase"] = 1 + len(phrases)
+        #     plain_phrase += out_ops[i]["insert"]
        
-        phrases.append({"spoken": plain_phrase, "latex": "".join(typeset_phrase)})
+        phrases.append({"spoken": plain_phrase, "latex": as_latex})
 
         index = break_index + 1
 
@@ -633,7 +713,7 @@ def import_chapter():
                 log.info("s: %s", p["spoken"])
                 paragraph.append(phrase)
 
-        # chapter_xml.append(paragraph)
+        chapter_xml.append(paragraph)
 
         all_lines = []
         for line in latex_block.splitlines(keepends=True):
@@ -663,6 +743,15 @@ def import_chapter():
         rainbow_h.write(
             header % ("\n".join(rainbow_series))
         )
+
+        # now write the header, in latex format.
+        title_delta = g.chapter.load_title_delta()
+        # t = TranslatorQuillJS()
+        doc = t.ops_to_internal_representation(title_delta["ops"])
+        as_latex = doc.render_tree(mode='latex')
+        as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
+        as_latex += "\n\\vspace{3.5em}"
+        h.write(as_latex)
 
         h.write("".join(all_lines))
         rainbow_h.write("".join(all_rainbow_lines))
@@ -718,6 +807,13 @@ def import_chapter():
 
     return "", 200
 
+
+#  /update_title
+@bp.route("/update_title", methods=["PUT"])
+def update_title():
+    new_title = request.form.get("chapter_title")
+    g.chapter.set_chapter_title(new_title)
+    return "", 200
 
 
 @bp.route("/delta", methods=["GET"])
@@ -815,6 +911,7 @@ def get_delta():
     #     image_list=image_list,
     # )
 
+
 @bp.route("/delta", methods=["POST"])
 def save_delta():
     new_delta = request.form["delta"]
@@ -825,6 +922,17 @@ def save_delta():
         f.write(json.dumps(as_json, indent=2))
 
     return "", 200
+
+@bp.route("/title_delta", methods=["POST"])
+def save_title_delta():
+    new_delta = json.loads(request.form["delta"])
+    g.chapter.save_title_delta(new_delta)
+    return "", 200
+
+@bp.route("/title_delta", methods=["GET"])
+def get_title_delta():
+    delta = g.chapter.load_title_delta()
+    return delta, 200
 
 # PUT /library/Aesop/Fables/31/english/set_chapter_style
 @bp.route("/set_chapter_style", methods=["PUT"])

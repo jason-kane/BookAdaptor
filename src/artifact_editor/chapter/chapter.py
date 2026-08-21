@@ -250,7 +250,7 @@ class Chapter:
 
             self.config = self.get_config()
 
-            self.chapter_title = self.config.get("chapter_title", f"Chapter {number}")
+            self.chapter_title: str = self.config.get("chapter_title", f"Chapter {number}")
 
             self.mood = self.config.get("mood", self.mood)
             self.theme = self.config.get("theme", self.theme)
@@ -834,7 +834,6 @@ class Chapter:
             template_environment=template_environment,
         )
 
-
     def get_workflow_by_filename(
         self,
         image_xml: Tag,
@@ -1089,7 +1088,6 @@ class Chapter:
             json.dump(workflow, f, indent=2)
 
         return workflow_fn
-        
         
     def get_comfy_workflow(
         self,
@@ -1704,6 +1702,27 @@ class Chapter:
             log.warning("Delta file not found", delta_fn=delta_fn)
             return {}
 
+    def get_title_delta_fn(self):
+        return os.path.join(
+            const.LIBRARY_DIR, self.chapterdir, self.language, "chapter.title.delta.json",
+        )
+
+    def save_title_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]]):
+        delta_fn = self.get_title_delta_fn()
+        os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
+        log.info('Saving title delta to file', delta_fn=delta_fn)
+        with open(delta_fn, "w") as f:
+            json.dump(delta, f, indent=2)
+
+    def load_title_delta(self) -> dict[str, list[dict[str, str|dict[str, bool]]]]:
+        delta_fn = self.get_title_delta_fn()
+        if os.path.exists(delta_fn):
+            with open(delta_fn, "r") as f:
+                return json.load(f)
+        else:
+            log.warning("Title delta file not found", delta_fn=delta_fn)
+            return {}
+
     def delete(self):
         """
         Delete all files associated with this chapter.
@@ -2075,6 +2094,12 @@ class Chapter:
         full_title = self.config["title"]
         safe_title = re.sub(r"[/\\?%*:|\"<>\x7F\x00-\x1F]", "-", full_title)
         return safe_title.replace(" ", "_")
+
+    def set_chapter_title(self, new_title):
+        self.config["chapter_title"] = new_title
+        self.chapter_title = new_title
+        self.save_config()
+        
 
     def get_video_filename(self):
         video_pfn = os.path.join(

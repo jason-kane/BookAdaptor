@@ -12,6 +12,21 @@
     .ql-editor {
         font-size: 16px;
     }
+
+    .ql-snow .ql-picker.ql-size .ql-picker-label[data-value]::before,
+    .ql-snow .ql-picker.ql-size .ql-picker-item[data-value]::before {
+        content: attr(data-value) !important;
+    }
+
+    .ql-snow .ql-picker.ql-font .ql-picker-label[data-value]::before,
+    .ql-snow .ql-picker.ql-font .ql-picker-item[data-value]::before {
+        content: attr(data-value) !important;
+    }    
+ 
+    .ql-snow .ql-picker.ql-font {
+        width: 150px !important;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -24,19 +39,81 @@
         scope: Parchment.Scope.INLINE,
     });
     Quill.register(Phrase, true);
-    
+
+    const fontFamilyArr = ["Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
+    let fonts = Quill.import("attributors/style/font");
+    fonts.whitelist = fontFamilyArr;
+    Quill.register(fonts, true);
+
+    const fontSizeArr = ['10px', '11px', '12px', '14px', '18px', '24px'];
+    var Size = Quill.import('attributors/style/size');
+    Size.whitelist = fontSizeArr;
+    Quill.register(Size, true);
+
     let text_editor = null;
+    let text_editor_title = null;
+
     // Wait for the DOM to finish loading
     document.addEventListener('DOMContentLoaded', () => {
+        if (!text_editor_title) {
+            text_editor_title = new Quill('#text_editor_title', {
+                modules: {
+                    syntax: true,
+                    toolbar: [
+                        // only include features supported through to Latex.
+                        [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
+                        ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
+                        [
+                            { align: ''}, 
+                            { align: 'center' }, 
+                            // { align: 'right' },
+                            { align: 'justify' }
+                        ], // text alignment
+                        // ['color', 'background'], // defaults from theme
+                        // ['blockquote', 'code-block'], // blockquote, code block
+                        // [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
+                        // ['link'], // links
+                        // ['blockquote', 'code-block'],
+                    ]
+                },
+                theme: 'snow'
+            });
+
+            // Listen for text changes in the Quill editor and auto-save
+            // https://quilljs.com/docs/api#text-change
+            text_editor_title.on('text-change', (delta, oldDelta, source) => {
+                // Right now _every_ change is being sent to the server.  
+                // This is a little ridiculous.  If we can soak and bundle
+                // changes for a few seconds, that would be less noisy.
+                htmx.ajax('POST', 'title_delta', {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    values: {
+                        delta: JSON.stringify(text_editor_title.getContents()),
+                    },
+                    swap: 'none',
+                    onError: function (err) {
+                        console.error('Error updating:', err);
+                    }
+                });
+            });
+        }
+
         if (!text_editor) {
             text_editor = new Quill('#text_editor', {
                 modules: {
                     syntax: true,
                     toolbar: [
                         // only include features supported through to Latex.
-                        //[{'font': []}, {'size': []}],
+                        [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
                         ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
-                        [{'align': ''}, { align: 'center' }, { align: 'right' }, { align: 'justify' }], // text alignment
+                        [
+                            { align: ''}, 
+                            { align: 'center' }, 
+                            // { align: 'right' },
+                            { align: 'justify' }
+                        ], // text alignment
                         // ['color', 'background'], // defaults from theme
                         // ['blockquote', 'code-block'], // blockquote, code block
                         // [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
@@ -70,6 +147,7 @@
 
         // Retrieve the current chapter content
         htmx.ajax('GET', 'delta', {
+          source: '#text_editor',
           swap: 'none',
           handler: function(target, info) {
             if (info.xhr.status === 200) {
@@ -79,6 +157,20 @@
             }
           }
         });
+
+        // Retrieve the current chapter title content
+        htmx.ajax('GET', 'title_delta', {
+          source: '#text_editor_title',
+          swap: 'none',
+          handler: function(target, info) {
+            if (info.xhr.status === 200) {
+              text_editor_title.setContents(JSON.parse(info.xhr.responseText));
+            } else {
+              console.error('Error fetching todo:', info.xhr.statusText);
+            }
+          }
+        });
+
     });
 </script>
 <script src="/static/js/pdf.mjs" type="module"></script>
@@ -102,9 +194,24 @@
 
 <div class="wa-cluster wa-align-items-start" style="gap: 32px;">
     <div class="wa-stack">
+        <h4>Book Header</h4>
+        <div 
+            id="text_editor_title" 
+            class="text-editor"
+            style="height: 13em;">
+        </div>
+
         <div>
             <div>
-                <wa-input label="Chapter Title" name="chapter_title"></wa-input>
+                <wa-input 
+                    label="Chapter Title" 
+                    hx-put="{{ url_for('library.book.chapter.update_title') }}"
+                    id="chapter_title_input"
+                    hx-trigger="change"
+                    swap="none"
+                    value="{{ chapter_title }}"
+                    name="chapter_title">
+                </wa-input>
             </div>
             <div 
                 id="text_editor" 
