@@ -248,12 +248,15 @@ def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
             pass
 
         if not same:
+            # when same is empty, we add our operation to it.  done.
             same.append(operation)
         else:
+            # same is not empty
             if operation.get("attributes") == same[-1].get("attributes"):
+                # if the attributes are the same, we can merge them together.
                 same.append(operation)
             else:
-                # different attributes, we need to compress the previous same list into a single operation.
+                # The attributes are different.
                 if len(same) > 1:
                     compressed.append(
                         {
@@ -264,6 +267,7 @@ def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     )
                 else:
                     compressed.append(same[-1])
+
                 same = [operation]
 
     # compress any remaining operations in 'same'
@@ -279,10 +283,6 @@ def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else:
             compressed.append(same[-1])
 
-        if compressed and operation.get("type") == compressed[-1].get("type") == "word":
-            compressed[-1]["insert"] += operation["insert"]
-        else:
-            compressed.append(operation)
     return compressed
 
 
@@ -421,7 +421,7 @@ def import_chapter():
     index = index_start
     attributes = {}
     phrases = []
-    # then out_ops to latex.
+    log.info('Iterating index from %s to %s', index, len(out_ops))
     while index < len(out_ops):
         # for phrases -- the visual highlighted text, we want each section
         # to be small enough to fit the readers eye.  Less than 10 words,
@@ -474,13 +474,17 @@ def import_chapter():
             raise ValueError("No phrase break found!")
 
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
-        typeset_phrase = []
-
         our_ops = out_ops[index : break_index + 1]
 
         doc = t.ops_to_internal_representation(our_ops)
         as_latex = doc.render_tree(mode='latex')
         as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
+
+        # clear any \emph{} that is empty, it adds vertical space.
+        as_latex = as_latex.replace(r"\emph{}", "")
+
+        trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
+        as_latex = as_latex.strip() + trailing_whitespace
 
         plain_phrase = "".join([o["insert"] for o in our_ops])
 
@@ -608,8 +612,7 @@ def import_chapter():
     #         },
     #     },        
     # ] + out_ops
-
-    g.chapter.save_delta({"ops": out_ops})
+    g.chapter.save_delta({"ops": out_ops}, tag="A")
 
     chapter_xml = chapter_soup.find("chapter")
 

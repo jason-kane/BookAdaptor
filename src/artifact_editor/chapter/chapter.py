@@ -1667,13 +1667,16 @@ class Chapter:
         with open(txt_fn, "w") as f:
             f.write(raw)
 
-    def get_delta_fn(self):
+    def get_delta_fn(self, tag=""):
         return os.path.join(
-            const.LIBRARY_DIR, self.chapterdir, self.language, "chapter.delta.json"
+            const.LIBRARY_DIR, 
+            self.chapterdir, 
+            self.language, 
+            f"chapter{'.' + tag if tag else ''}.delta.json",
         )
 
-    def save_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]]):
-        delta_fn = self.get_delta_fn()
+    def save_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]], tag=""):
+        delta_fn = self.get_delta_fn(tag)
         os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
         log.info('Saving delta to file', delta_fn=delta_fn)
         with open(delta_fn, "w") as f:
