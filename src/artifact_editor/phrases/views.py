@@ -529,38 +529,32 @@ def split_phrase(author: str, title: str, chapter_number: int, language: str):
 
 
 @bp.route("/actions/regenerate_phrase/<int:phrase_index>", methods=["POST"])
-def regenerate_phrase(
-    author: str, title: str, chapter_number: int, language: str, phrase_index: int, force=True
-):
+def regenerate_phrase(phrase_index: int, force=True):
     """
     TODO: this should redraw the whole clip frame, not just the
     stupid button.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     phrase_index = int(phrase_index)
 
     page = request.form.get("page", None)
-    chapter.load_xml()
+    g.chapter.load_xml()
 
-    phrase_xml = chapter.get_phrase(phrase_index)
-    log.warning("Alpha", phrase_xml=phrase_xml, has_soup=chapter.soup is not None)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
+    log.warning("Alpha", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
     if phrase_xml is None:
         return "Phrase not found", 404
 
     # adds 'src' if it doesn't exist, with a plausible filename.
-    wavfile = phrases.get_wavfile_filename(phrase_xml, chapter)
+    wavfile = phrases.get_wavfile_filename(phrase_xml, g.chapter)
 
-    log.warning("Beta", phrase_xml=phrase_xml, has_soup=chapter.soup is not None)
+    log.warning("Beta", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
     
     # should do NOTHING.
-    phrase_xml = chapter.get_phrase(phrase_index)
-    log.warning("Gamma", phrase_xml=phrase_xml, has_soup=chapter.soup is not None)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
+    log.warning("Gamma", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
 
     if wavfile is None:
-        log.error(f"Phrase with index {phrase_index} not found in book {chapter}")
+        log.error(f"Phrase with index {phrase_index} not found in book {g.chapter}")
         return "Phrase not found", 404
 
     if os.path.exists(wavfile):
@@ -570,14 +564,14 @@ def regenerate_phrase(
             os.remove(wavfile)            
         else:
             log.info(f"Phrase {phrase_index} already has an audio file: {wavfile}")
-            return htmx.phrase_editor(chapter, phrase_xml, page), 200
+            return htmx.phrase_editor(g.chapter, phrase_xml, page), 200
 
     text_to_speak = phrases.clean_latex(phrase_xml.get_text())
     log.info(f"Submitting {text_to_speak} to TTS for phrase {phrase_index}")
 
     # regenerate the wav for this phrase
     llm.text_2_audio(
-        chapter,
+        g.chapter,
         text_to_speak,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
@@ -628,20 +622,20 @@ def regenerate_phrase(
     elif not new_pronunciation:
         log.warning(f"No pronunciation found for phrase {phrase_index} at {wavfile}")
 
-    test_phrase = chapter.get_phrase(phrase_index)
+    test_phrase = g.chapter.get_phrase(phrase_index)
     log.warning(f"Test phrase after regeneration: {test_phrase}")
     
     log.info(f"Before: {phrase_xml.attrs=}")
-    chapter.save_xml()
+    g.chapter.save_xml()
     
     log.info(f"After 1: {phrase_xml.attrs=}")
-    phrase_xml = chapter.get_phrase(phrase_index)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
     log.info(f"After 2: {phrase_xml.attrs=}")
 
-    phrases.recalculate_image_frames(chapter)
+    phrases.recalculate_image_frames(g.chapter)
 
-    chapter.save_xml()
-    return htmx.phrase_editor(chapter, phrase_xml, page), 200
+    g.chapter.save_xml()
+    return htmx.phrase_editor(g.chapter, phrase_xml, page), 200
 
 
 # POST /Bible/Old%20Testament/0001/audio/actions/repronounce_missing_words
@@ -823,13 +817,10 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
 
 
 @bp.route("/actions/generate_all_missing_audio", methods=["POST"])
-def generate_all_missing_audio(author: str, title: str, chapter_number: int, language: str):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def generate_all_missing_audio():
+    phrases.generate_all_audio(g.chapter, force=False)
 
-    phrases.generate_all_audio(chapter, force=False)
-
-    return htmx.generate_all_missing_audio_button(chapter)
+    return htmx.generate_all_missing_audio_button(g.chapter)
 
 
 @bp.route("/actions/regenerate_all_audio", methods=["POST"])

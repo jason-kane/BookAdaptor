@@ -155,6 +155,7 @@ def timeline():
 
     first_frame = 0
     total_frames = 0
+    # assign frame numbers to each image based on 'frames' which is based on the audio.
     for paragraph_index in range(len(paragraphs)):
         for image_index in range(len(paragraphs[paragraph_index]['images'])):
             paragraphs[paragraph_index]['images'][image_index]['first_frame'] = first_frame
@@ -163,8 +164,8 @@ def timeline():
             paragraphs[paragraph_index]['images'][image_index]['last_frame'] = first_frame
             first_frame += 1
 
-        paragraphs[paragraph_index]['duration'] = paragraphs[paragraph_index]['frames'] / const.FPS
-        total_frames += paragraphs[paragraph_index]['frames']
+        paragraphs[paragraph_index]['duration'] = paragraphs[paragraph_index].get('frames', 0) / const.FPS
+        total_frames += paragraphs[paragraph_index].get('frames', 0)
 
     avg_image_frames = total_frames / len(paragraphs)
 
@@ -177,14 +178,18 @@ def timeline():
             # (else) == green
             # 2x == yellow
             # 4x == red
-            variation = abs((ii['frames'] - avg_image_frames) / avg_image_frames)
-            color_index = int(variation * 32)
-            color_index = max(0, min(31, color_index))
-            log.info(f'Distance: {variation} => {color_index}')
+            if avg_image_frames:
+                variation = abs((ii.get('frames', 0) - avg_image_frames) / avg_image_frames)
+                color_index = int(variation * 32)
+                color_index = max(0, min(31, color_index))
+                log.info(f'Distance: {variation} => {color_index}')
+            else:
+                variation = 0
+                color_index = 0
 
-            if ii['frames'] > avg_image_frames:
+            if ii.get('frames', 0) > avg_image_frames:
                 ii['variation_message'] = "Too Long"
-            elif ii['frames'] < avg_image_frames:
+            elif ii.get('frames', 0) < avg_image_frames:
                 ii['variation_message'] = "Too Short"
 
             ii['frame_variation'] = variation

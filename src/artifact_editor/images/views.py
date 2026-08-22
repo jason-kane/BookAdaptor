@@ -175,7 +175,7 @@ def comfyui_workflow_run(image_index: int = 0):
     workflow_template = image_xml.attrs.get("workflow_image_template", "")
     # mode.workflow_template
     if "." in workflow_template:
-        mode = workflow_template.split(".")[0]
+        #mode = workflow_template.split(".")[0]
         workflow_template = workflow_template.split(".")[-1]
         image_xml.attrs["workflow_image_template"] = workflow_template
 
@@ -186,13 +186,22 @@ def comfyui_workflow_run(image_index: int = 0):
     # else:
     #     mode = "ti2i"
     # we want to always use the ui workflow:
-    workflow = g.chapter.get_comfy_workflow(
-        image_xml,
-        interface="ui",
-        mode=mode,
-        workflow_template=workflow_template,
-    )
+    if workflow_template:
+        workflow_fn = g.chapter.get_workflow(
+            image_xml,
+            workflow_name=workflow_template,
+            video_index=None,
+            template_environment={}
+        )
+        log.info('Workflow file for image %s: %s', image_index, workflow_fn)
+        
+        with open(workflow_fn, "r") as h:
+            workflow = json.load(h)
 
+    if not workflow_template or workflow is None:
+        log.error("No workflow found for image['workflow_image_template']: '%s'", workflow_template)
+        return f"No workflow found for image['workflow_image_template']: '{workflow_template}'", 404
+    
     # then _convert_ it to the api workflow right at the
     # edge.
     json_workflow = {

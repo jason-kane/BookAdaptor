@@ -612,7 +612,7 @@ def import_chapter():
     #         },
     #     },        
     # ] + out_ops
-    g.chapter.save_delta({"ops": out_ops}, tag="A")
+    g.chapter.save_delta({"ops": out_ops})
 
     chapter_xml = chapter_soup.find("chapter")
 
@@ -671,12 +671,31 @@ def import_chapter():
 
         latex_block = ""
         latex_rainbow_block = ""
+
+        # header block
+        title_paragraph = chapter_soup.new_tag("paragraph")
+        title_paragraph.attrs["tags"] = "has-text=false,spoken-only=true"
+
+        title_image = chapter_soup.new_tag("image")
+        title_image.attrs["prompt"] = f"Elegant book cover for {g.chapter.title} by {g.chapter.author.name} in an environment that represents the themes of the book."
+        title_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+
+        title_phrase = chapter_soup.new_tag("phrase")
+        title_phrase.string = f"{g.chapter.title}\n\nby {g.chapter.author.name}"
+        title_phrase.attrs["speaker"] = "Narrator"
+        title_phrase.attrs["index"] = "0"
+
+        title_paragraph.append(title_image)
+        title_paragraph.append(title_phrase)
+
+        chapter_xml.append(title_paragraph)
+
         paragraph = chapter_soup.new_tag("paragraph")
 
         rainbow_series = []
 
         initial_index = len(chapter_soup.find_all("phrase"))
-
+        first = True
         for index, p in enumerate(phrases, initial_index):
             phrase = chapter_soup.new_tag("phrase")
             phrase.string = p["spoken"]
@@ -702,11 +721,12 @@ def import_chapter():
             latex_rainbow_block += p["latex_rainbow"]
 
             # double newline == paragraph break.
-            if phrase.attrs["latex"].lstrip(" ").startswith(r"\n\n"):
+            if first or phrase.attrs["latex"].lstrip(" ").startswith(r"\n\n"):
                 new_paragraph = chapter_soup.new_tag("paragraph")
                 new_paragraph.append(phrase)
                 chapter_xml.append(new_paragraph)
                 paragraph = new_paragraph
+                first = False
             elif phrase.attrs["latex"].rstrip(" ").endswith(r"\n\n"):
                 paragraph.append(phrase)
                 new_paragraph = chapter_soup.new_tag("paragraph")

@@ -822,10 +822,18 @@ class Chapter:
         if template_environment is None:
             template_environment = {}
 
-        template_fn = glob.glob(os.path.join(
-            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
-            f"ui.*.{workflow_name}-*.json"
-        ))[0]
+        try:
+            template_fn = glob.glob(os.path.join(
+                const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+                f"ui.*.{workflow_name}-*.json"
+            ))[0]
+        except IndexError:
+            log.error(
+                "No workflow template found for workflow_name",
+                workflow_name=workflow_name,
+                templates_dir=const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+            )
+            return None
 
         return self.get_workflow_by_filename(
             image_xml=image_xml,
@@ -841,8 +849,11 @@ class Chapter:
         video_index: int|None=None,
         template_environment: dict[str, str]|None=None,
         force_name: str|None=None,
-    ):
+    ) -> str:
         """
+        Returns the filename of a workflow JSON file
+        created inside your workflow directory.
+
         image_xml: BeautifulSoup Tag for an <image> block
         
         workflow_filename: filename of a /template JSON 

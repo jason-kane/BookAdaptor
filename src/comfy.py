@@ -38,8 +38,10 @@ class UiToApiConverter:
     """
 
     def __init__(self, workflow: dict):
-        if workflow_type(workflow) != "ui":
-            raise ValueError("Provided workflow is not in UI format.")
+        wft = workflow_type(workflow)
+        if wft != "ui":
+            raise ValueError(f"Provided workflow is {wft}, not 'ui' format.")
+        
         self.workflow = workflow
         self.node_by_id = {node.get("id"): node for node in workflow.get("nodes", [])}
 
@@ -88,8 +90,9 @@ def ui_to_api_workflow(workflow: dict) -> dict:
 
     workflow is a json.load on a comfy ui workflow.
     """
-    if workflow_type(workflow) != "ui":
-        raise ValueError("Provided workflow is not in UI format.")
+    wft = workflow_type(workflow)
+    if wft != "ui":
+        raise ValueError(f"Provided workflow is {wft}, not 'ui' format.")
 
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as tmp_file:
         json.dump(workflow, tmp_file, indent=2)

@@ -16,6 +16,8 @@ COMFYUI_API_URL = "http://comfyui:8188/"
 # when we provide a link to a comfyui workflow
 COMFYUI_UI_URL = "http://localhost:8188/"
 
+DEFAULT_IMAGE_TEMPLATE = "zit"
+
 # global output FPS
 FPS = 25
 

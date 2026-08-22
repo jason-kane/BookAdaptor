@@ -154,8 +154,7 @@ def get_style_old(style_name, from_all=False):
     return prompt_filter, negative_prompt
 
 
-VERSION = 1.20
-
+VERSION = 1.30
 
 def check_upgrade(category_name: str | None=None):
     version = r.get("styles_version")
@@ -264,9 +263,10 @@ class Style:
     def __init__(self, category_name, style_tag):
         self.category_name = category_name
         self.style_tag = style_tag
+        self.tag = style_tag
         self.key = as_id(f"{category_name}/{style_tag}")
 
-        self.style = {
+        self.style: dict[str, str] = {
             "name": style_tag,
             "tag": style_tag,
             "category_name": category_name,
@@ -276,9 +276,10 @@ class Style:
             "tier": "2",
             "chosen": "False",
             "cosmetic": style_tag,
+            "filename": "",
         }
         self.vcard = None
-
+        self.tags = []
         self.load_from_redis()        
         self.load_tags()
 
@@ -304,6 +305,18 @@ class Style:
 
         self.style.update(redis_data)
 
+    def save_to_redis(self):
+        log.info('Saving style to redis', key=self.key, mapping=self.style)
+        tags = self.style.get("tags", [])
+        del self.style["tags"]
+
+        for tag in tags:
+            r.sadd(self.key + "/tags", tag)
+        
+        r.hset(self.key, mapping=self.style)
+
+        self.style["tags"] = tags
+
     def load_tags(self):
         try:
             self.vcard = r.scard(self.key + "/tags")
@@ -321,6 +334,10 @@ class Style:
                 )
                 tags.append(tag)
             self.style["tags"] = tags
+
+    @property
+    def tier(self):
+        return int(self.style.get("tier", "2"))
 
     @property
     def name(self):
@@ -348,6 +365,37 @@ class Style:
             style_tag=style_tag
         )
 
+    def set_tier(self, tier: int):
+        self.style["tier"] = tier
+        self.save_to_redis()
+
+        # and save the change to the file system.
+        if "filename" in self.style and self.style["filename"]:
+            fn = os.path.join(
+                const.STYLES_DIR, 
+                self.category_name, 
+                self.style["filename"],
+            )
+            lock = FileLock(fn + ".lock")
+            with lock:
+                with open(fn, "r") as h:
+                    try:
+                        all_styles = json.loads(h.read())
+                    except json.JSONDecodeError as e:
+                        log.error("Error decoding JSON from %s: %s", fn, e)
+                        raise
+
+                for s in all_styles:
+                    if "tag" not in s:
+                        log.warning("Style in file %s missing 'tag': %s", fn, s)
+
+                    if s.get("tag", "") == self.style_tag:
+                        s["tier"] = tier
+                        break
+
+                with open(fn, "w") as f:
+                    json.dump(all_styles, f, indent=4)
+        
 
     def __repr__(self):
         return f"<Style {self.category_name}/{self.style_tag}>"
@@ -569,6 +617,7 @@ def styles_in_group(category_key: str, group: str, **filters):
         with open(pfn, "r") as f:
             styles = json.loads(f.read())
             for s in styles:
+                s["filename"] = group + ".json"
                 s["category"] = category_dir
                 if (
                     min_tier <= int(s.get("tier", "2")) <= max_tier
@@ -611,6 +660,9 @@ tier_cosmetics = [
 
 
 def set_style_tier(category_name, style_tag, tier):
+    """
+    Obsolete, use Style.set_tier() instead.
+    """
     style_file, style = get_style(category_name, style_tag)
     if not style:
         log.error("Style %s not found in category %s", style_tag, category_name)

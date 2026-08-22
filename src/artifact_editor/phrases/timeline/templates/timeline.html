@@ -81,7 +81,7 @@
                                 hx-swap="none"
                                 hx-on::beforeRequest="beforeRequest(this,event)"
                                 hx-on::afterRequest="afterRequest(this,event)"
-                                value="{{ block.image.attrs['description'] }}"
+                                value="{{ block.image.attrs.get('description', block.image.attrs['prompt']) }}"-
                             ></wa-textarea>
                             {% endif %}
                             
@@ -90,7 +90,7 @@
                                 <wa-button
                                     hx-post="{{ url_for('library.book.chapter.images.comfyui_workflow_run', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=block.image['index']) }}"
                                     hx-vars="workflow_image_template: 't2i.zit-paragraph'"
-                                    hx-on::beforeRequest="beforeRequest(this,event)"
+                                     hx-on::beforeRequest="beforeRequest(this,event)"
                                     hx-on::afterRequest="afterRequest(this,event)"
                                     variant="brand"
                                     hx-swap="none">Draw Paragraph Image</wa-button>
