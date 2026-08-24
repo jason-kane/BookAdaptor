@@ -2,6 +2,7 @@ import contextlib
 import fcntl
 import json
 import os
+from tokenize import group
 import const
 import re
 import redis
@@ -154,19 +155,24 @@ def get_style_old(style_name, from_all=False):
     return prompt_filter, negative_prompt
 
 
-VERSION = 1.30
+VERSION = 1.37
 
 def check_upgrade(category_name: str | None=None):
     version = r.get("styles_version")
     if version is None:
         log.info("No styles_version found in redis, importing all styles")
 
-    upgrading = r.get("upgrading")
+    try:
+        upgrading = r.get("upgrading")
+    except redis.exceptions.ResponseError as e:
+        log.warning("Error checking upgrading flag in redis: %s", e)
+        upgrading = None
+
     if upgrading:
         log.info("Styles upgrade in progress, skipping check_upgrade()")
         return
 
-    r.set("upgrading", "1")
+    r.set("upgrading", "1", ex=300)
     # set the flag to indicate upgrade in progress
 
     if version is None or float(version) < VERSION or category_name is not None:
@@ -180,77 +186,119 @@ def check_upgrade(category_name: str | None=None):
         r.flushdb()
 
         log.info("Importing styles into redis")
-        # each data/ directory is a category
-        if category_name is None:
-            categories = all_categories()
 
-        if category_name is not None:
-            categories = [c for c in all_categories() if c["category"] == category_name]
+        for directory in os.listdir(const.STYLES_DIR):
+            for fn in glob.glob(os.path.join(const.STYLES_DIR, directory, "*.json")):
+                log.info("Found style file %s", fn)
+                with open(fn, "r") as f:
+                    try:
+                        styles = json.loads(f.read())
+                    except json.JSONDecodeError as e:
+                        log.error("Error decoding JSON from %s: %s", fn, e)
+                        raise
 
-        log.info("Found %s categories", len(categories))
-        for category in categories:
-            if category["tag"] in ['nouns',]:
-                #log.info('Skipping category "%s"', category["category"])
-                continue
+                    for style in styles:
+                        # some reserved words
+                        if style['name'] in ['tags', 'categories']:
+                            continue
+
+                        key = as_id(style['name'])
+
+                        # add tags
+                        dir_tag = os.path.basename(directory).lower()
+                        json_tag = os.path.splitext(
+                            os.path.basename(fn)
+                        )[0].lower()
+
+                        r.sadd(key + "/tags", dir_tag)
+                        r.sadd(key + "/tags", json_tag)
+
+                        # add tag indexes
+                        r.sadd("tags", dir_tag)
+                        r.sadd("tags", json_tag)
+
+                        r.sadd(dir_tag + "/tags", key)
+                        r.sadd(json_tag + "/tags", key)
+
+                        # save the style itself
+                        try:
+                            r.hset(key, mapping={
+                                "name": style.get("name", ""),
+                                "prompt": style.get("prompt", "{prompt}"),
+                                "negative_prompt": style.get("negative_prompt", ""),
+                            })
+                        except redis.exceptions.ResponseError as e:
+                            log.error("Error saving style '%s' to redis: %s", key, e)
+                            raise
+
+                        # for tag in style["name"].split("_") + [ group ]:
+                        #     r.sadd(key + "/tags", tag)
+                        #     r.sadd("tags", tag)  # for reverse lookup of all tags
+
+
 
             # if category["tag"] not in ["era"]:
             #     # log.info('Skipping category "%s"', category["category"])
             #     continue
 
-            log.info('Scanning category "%s"', category["category"])
+            #log.info('Scanning category "%s"', category["category"])
             # each json file in the directory is a group
-            for group in set(style_groups_in_category(category["category"])):
-                log.info(
-                    'Importing styles in group "%s" of category "%s"', group, category
-                )
-                ticker = 100
-                bulk_data = {}
-                for style in styles_in_group(category["category"], group):
-                    style["tag"] = as_id(style.get("cosmetic", style.get("name")))
-                    style["group"] = group
-                    key = as_id(f"{category['category']}/{style['tag']}")
+            # for group in set(style_groups_in_category(category["category"])):
+            #     log.info(
+            #         'Importing styles in group "%s" of category "%s"', group, category
+            #     )
+            #     ticker = 100
+            #     bulk_data = {}
+            #     for style in styles_in_group(category["category"], group):
+            #         key = as_id(f"{category['category']}/{style['name']}")
 
-                    #if ticker % 5000 == 0:
-                    if True:
-                        log.info(
-                            "[%s] Importing style to hset(%s)",
-                            ticker,
-                            key,
-                            style=style,
-                        )
+            #         #if ticker % 5000 == 0:
+            #         if True:
+            #             log.info(
+            #                 "[%s] Importing style to hset(%s)",
+            #                 ticker,
+            #                 key,
+            #                 style=style,
+            #             )
 
-                    bulk_data[key] = style
+            #         bulk_data[key] = style
 
-                    # r.hset(key, mapping=style)
+            #         # style.setdefault("tags", [])
+            #         # for tag in style["name"].split("_") + [ group ]:    
+            #         #     if tag not in style["tags"]:
+            #         #         style["tags"].append(tag)
 
-                    r.sadd(key + "/tags", category["category"])
-                    # log.info("category %s", category)
-                    r.sadd(key + "/tags", group)
-                    if "tags" in style:
-                        for tag in style["tags"]:
-                            r.sadd(key + "/tags", tag)
+            #         # r.hset(key, mapping=style)
 
-                    ticker += 1
+            #         r.sadd(key + "/tags", category["category"])
+            #         # log.info("category %s", category)
+            #         r.sadd(key + "/tags", group)
+
+            #         for tag in style["name"].split("_") + [ group ]:
+            #             r.sadd(key + "/tags", tag)
+            #             r.sadd("tags", tag)  # for reverse lookup of all tags
+
+            #         ticker += 1
 
                 # massive speedup
-                # log.info("Executing bulk import of %s styles into redis", len(bulk_data))
-                pipe = r.pipeline(transaction=False)
-                for key, style in bulk_data.items():
-                    # for fast reverse lookup
-                    pipe.rpush(category["category"], key)
-                    pipe.rpush(group, key)
-                    log.info(
-                        "Saving style",
-                        key=key,
-                        mapping=style
-                    )
-                    pipe.hset(key, mapping=style)
+                # # log.info("Executing bulk import of %s styles into redis", len(bulk_data))
+                # pipe = r.pipeline(transaction=False)
+                # for key, style in bulk_data.items():
+                #     # for fast reverse lookup
+                #     # pipe.rpush(category["category"], key)
+                #     # pipe.rpush(group, key)
+                #     log.info(
+                #         "Saving style",
+                #         key=key,
+                #         mapping=style
+                #     )
+                #     pipe.hset(key, mapping=style)
 
-                pipe.execute()
+                # pipe.execute()
                 # log.info("Bulk import complete")
 
-        if len(bulk_data) == 0:
-            log.info("No styles imported")
+        # if len(bulk_data) == 0:
+        #     log.info("No styles imported")
 
         r.set("styles_version", VERSION)
 
@@ -260,25 +308,21 @@ def check_upgrade(category_name: str | None=None):
     r.delete("upgrading")  # clear the flag after upgrade is done
 
 class Style:
-    def __init__(self, category_name, style_tag):
-        self.category_name = category_name
+    def __init__(self, style_tag):
         self.style_tag = style_tag
         self.tag = style_tag
-        self.key = as_id(f"{category_name}/{style_tag}")
+        self.key = as_id(style_tag)
 
         self.style: dict[str, str] = {
             "name": style_tag,
             "tag": style_tag,
-            "category_name": category_name,
-            "group": "",
             "prompt": "{prompt}",
             "negative_prompt": "",
             "tier": "2",
             "chosen": "False",
             "cosmetic": style_tag,
-            "filename": "",
         }
-        self.vcard = None
+        self.tag_count = 0
         self.tags = []
         self.load_from_redis()        
         self.load_tags()
@@ -296,44 +340,52 @@ class Style:
 
         if not redis_data:
             log.warning("Style %s not found in redis, checking for upgrade", self.key)
-            check_upgrade(category_name=self.category_name)
+            check_upgrade()
             redis_data = r.hgetall(self.key)
 
             if not redis_data:
                 log.error("Style %s still not found in redis after upgrade", self.key)
-                raise ValueError(f"Style {self.style_tag} not found in category {self.category_name}")
+                raise ValueError(f"Style {self.style_tag} not found.")
 
+        # self.style is a dict, so we're merging
+        # with redis writing over.
         self.style.update(redis_data)
 
     def save_to_redis(self):
+        """
+        In Redis:
+
+        Hash Key [self.key] to a mapping of the style object with all string values.
+        Set Key [self.key + "/tags"] to a set of tags for this style, the tags are strings.
+        """
         log.info('Saving style to redis', key=self.key, mapping=self.style)
         tags = self.style.get("tags", [])
+        # we can't include tags in the hash because
+        # it is a list, unsupported unless we serialize.
+        # but that is fine, we want them in a set anyway.
         del self.style["tags"]
 
-        for tag in tags:
-            r.sadd(self.key + "/tags", tag)
+        # TODO:
+        # we have to remove all the tags first,
+        # or use a smarter update method.
+        r.delete(self.key + "/tags")
+
+        r.sadd(self.key + "/tags", *tags)
+        r.sadd("tags", *tags)
         
         r.hset(self.key, mapping=self.style)
 
+        # restore the tags
         self.style["tags"] = tags
 
     def load_tags(self):
         try:
-            self.vcard = r.scard(self.key + "/tags")
+            # get the number of tags for this style from Redis
+            self.tag_count = r.scard(self.key + "/tags")
         except redis.exceptions.ResponseError:
-            self.vcard = 0
+            self.tag_count = 0
 
-        tags = []
-        if self.vcard:
-            vrange = r.smembers(self.key + "/tags")
-            for tag_element in vrange:
-                tag = (
-                    tag_element.decode("utf-8")
-                    if isinstance(tag_element, bytes)
-                    else tag_element
-                )
-                tags.append(tag)
-            self.style["tags"] = tags
+        self.style["tags"] = r.smembers(self.key + "/tags")
 
     @property
     def tier(self):
@@ -399,6 +451,95 @@ class Style:
 
     def __repr__(self):
         return f"<Style {self.category_name}/{self.style_tag}>"
+
+
+class StyleLibrary:
+    def __init__(self):
+        self.styles = {}
+
+    def get_ranked_tags(self, force=False, **filters):
+        check_upgrade()
+        none = True
+        if not force:
+            for element in r.lrange("categories", 0, -1):
+                none = False
+                if isinstance(element, bytes):
+                    element = element.decode("utf-8")
+                yield element
+
+        if none:
+            ranking = []
+            for tag in r.smembers("tags"):
+                none = False
+                if isinstance(tag, bytes):
+                    tag = tag.decode("utf-8")
+
+                try:
+                    ranking.append((r.scard(tag + "/tags"), tag))
+
+                except redis.exceptions.ResponseError:
+                    log.warning(
+                        "Error counting tags for %s in redis, skipping", tag
+                    )
+                    raise
+
+            if none:
+                # iterate every hash in redis
+                all_tags = set()
+                for style_key in r.scan_iter(_type="HASH"):
+                    tag = style_key.decode("utf-8")
+                    for e in tag.split("_"):
+                        all_tags.add(e)
+                        r.sadd("tags", e)
+                        r.sadd(e + "/tags", tag)
+                    
+                for tag_bytename in r.smembers("tags"):
+                    tag = tag_bytename.decode("utf-8")
+                    ranking.append((r.scard(tag + "/tags"), tag))
+                    log.info("Counting tags: %s", ranking[-1])
+
+            sorted_ranking = [
+                tag for _, tag in sorted(
+                    ranking,
+                    key=lambda x: x[0],
+                    reverse=True
+                )
+            ]
+            log.info(f"{sorted_ranking=}")
+
+            if sorted_ranking:
+                r.lpush("categories", *sorted_ranking)
+
+            for tag in sorted_ranking:
+                yield tag
+            
+
+    def get_style(self, category_name, style_tag):
+        key = as_id(f"{category_name}/{style_tag}")
+        if key in self.styles:
+            return self.styles[key]
+        else:
+            style = Style(category_name, style_tag)
+            self.styles[key] = style
+            return style
+
+    def with_tag(self, tag):
+        """
+        Return a list of Style objects that have the given tag.
+        """
+        check_upgrade()
+        styles = []
+        log.info('Retrieving set "%s/tags" from redis', tag)
+        for style_key in r.smembers(tag + "/tags"):
+            if isinstance(style_key, bytes):
+                style_key = style_key.decode("utf-8")
+
+            style = r.hgetall(style_key)
+
+            styles.append(style)
+        
+        return styles
+
 
 # def get_style(category_name, style_tag):
 #     """

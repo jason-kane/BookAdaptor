@@ -73,8 +73,8 @@ def get_groupings_count(item_count):
 # so each character, "costs" 0.25 tokens.  roughly.
 # this is so we can show the user how much of the
 # context is being used up by the style.
-@bp.route("/show_sample/<category_name>/<path:filename>")
-def show_sample(category_name, filename):
+@bp.route("/show_sample/<path:filename>")
+def show_sample(filename: str):
     filename = unicodedata.normalize("NFC", filename)
     
     sample_pfn = os.path.join(
@@ -88,7 +88,7 @@ def show_sample(category_name, filename):
     # generate a new sample image.
     style_tag = filename.removesuffix(".png")
 
-    sample_pfn = draw_sample(category_name, style_tag)
+    sample_pfn = draw_sample(style_tag)
     sample_pfn = unicodedata.normalize("NFC", sample_pfn)
 
     log.info('draw_sample() returned %s', sample_pfn)
@@ -111,25 +111,16 @@ def show_sample(category_name, filename):
 base_prompt = "stunning woman in a flimsy, sheer lace dress.  Detailed background with something rare and exciting happening."
 
 
-def draw_sample(category_name, style_tag):
-    log.info("draw_sample()", category_name=category_name, style_tag=style_tag)
+def draw_sample(style_tag):
+    log.info("draw_sample()", style_tag=style_tag)
     workflow = comfy.load_workflow_template("api", "t2i", "style_sample")
 
-    style = styles.Style(category_name=category_name, style_tag=style_tag)
-    if not style:
-        log.warning(
-            "Invalid style %s in category %s",
-            style_tag,
-            category_name,
-        )
-        return
-
+    style = styles.Style(style_tag=style_tag)
     cachebreak = random.randint(0, 999999999)
 
     template_environment = {
         "PROMPT": style.prompt.format(prompt=base_prompt),
-        "FILENAME_PREFIX": os.path.join("samples", style.name + f"_{cachebreak}"),
-        "STYLE_CATEGORY": category_name,
+        "FILENAME_PREFIX": os.path.join("samples", style.name + f"_{cachebreak}")
     }
 
     comfy.run_workflow(
@@ -557,13 +548,12 @@ def get_favorite_control_button(style, favorite_styles):
 @bp.route("/style_details")
 def style_details(oob=False):
     style_tag = request.form.get("style_tag") or request.args.get("style_tag")
-    category_name = request.form.get("category") or request.args.get("category")
-    log.info("style_details()", style_tag=style_tag, category_name=category_name)
+    log.info("style_details()", style_tag=style_tag)
 
     favorite_styles = styles.all_favorite_styles()
 
     try:
-        style = styles.Style(category_name=category_name, style_tag=style_tag)
+        style = styles.Style(style_tag=style_tag)
     except ValueError as e:
         log.error("Error getting style: %s", e)
         return "", 404
@@ -603,7 +593,7 @@ def style_details(oob=False):
     tooltips = []
     for tier, icon, variant, cosmetic in styles.tier_cosmetics:
         tier_buttons += f"""<wa-button
-                hx-post="{category_name}/{style.tag}/tier"
+                hx-post="{style.tag}/tier"
                 hx-vals="js:{{tier: {tier}}}"
                 variant="{variant}"
                 size="s"
@@ -637,7 +627,6 @@ def style_details(oob=False):
     token_price = (len(prompt_prefix) + len(prompt_postfix)) * CHARS_TO_TOKENS
     prompt_price = len(clean_prompt) * CHARS_TO_TOKENS
 
-    #
     # {favorite_control_button}
 
     out += f"""
@@ -681,8 +670,8 @@ def style_details(oob=False):
             hx-swap="none"
             pill>Regenerate</wa-button>
         <wa-button 
-            href="regenerate_ui?category={category_name}&style_tag={style_tag}"
-            hx-get="regenerate_ui?category={category_name}&style_tag={style_tag}"
+            href="regenerate_ui?style_tag={style_tag}"
+            hx-get="regenerate_ui?style_tag={style_tag}"
             target="_blank"
             variant="brand" 
             appearance="accent"
@@ -863,14 +852,18 @@ def set_style_tier(category_name, style_tag):
 
 
 class Card:
-    def __init__(self, style_name, category_name, **meta):
-        log.info('Card.__init__()', style_name=style_name, category_name=category_name, meta=meta)
+    def __init__(self, style_name: str, **meta):
+        if style_name is None:
+            raise ValueError("style_name is required")
+
+        #category_name = meta.pop("category_name", None)
+        log.info('Card.__init__()', style_name=style_name, meta=meta)
         self.style_name = style_name
 
-        if category_name is None:
-            self.category_name = self.find_category(style_name)
-        else:
-            self.category_name = category_name
+        # if category_name is None:
+        #     self.category_name = self.find_category(style_name)
+        # else:
+        #     self.category_name = category_name
 
         self.tag = as_id(style_name)
         if "tier" in meta:
@@ -899,6 +892,7 @@ class Card:
         """
         Given a style name, find the first group containing that style.
         """
+        log.error('Obsolete find_category()')
         for category in styles.all_categories():
             for group in styles.style_groups_in_category(category["category"]):
                 for style in styles.styles_in_group(category["category"], group):
@@ -907,6 +901,7 @@ class Card:
 
     @classmethod
     def from_style_name(cls, style_name):
+        log.error('Obsolete from_style_name()')
         # this is rough.  Just having a style name isn't enough unless we've ALREADY
         # done an image, in which case we have metadata cached and it's no problem.
         full_metadata_name = os.path.join(
@@ -918,7 +913,11 @@ class Card:
         if os.path.exists(full_metadata_name):
             with open(full_metadata_name, "r") as f:
                 meta = json.loads(f.read())
-            return cls(style_name=style_name, group_name=meta.get("group_name"), **meta)
+            return cls(
+                style_name=style_name, 
+                group_name=meta.get("group_name"),
+                **meta
+            )
         else:
             # we have not done this style before, and we don't know
             # which category it belongs to.
@@ -987,7 +986,6 @@ class Card:
 
         image_url = url_for(
             "styles.show_sample",
-            category_name=self.category_name,
             filename=self.style_name + ".png",
         )
 
@@ -1008,7 +1006,7 @@ class Card:
             </img>
             <wa-details
                 hx-get="style_details"
-                hx-vals='{{"category": "{self.category_name}", "style_tag": "{self.tag}"}}'
+                hx-vals='{{"style_tag": "{self.tag}"}}'
                 hx-trigger="intersect once"
                 hx-target="#style_details_{self.tag}"
                 icon-placement="start">
@@ -1213,11 +1211,11 @@ class Grouper:
             return None
 
 
-@bp.route("/choose_category", methods=["PUT"])
-def choose_category():
+@bp.route("/choose_tag", methods=["PUT"])
+def choose_tag():
     # TODO: support more filters
-    log.info(f"choose_category with args: {request.args}")
-    log.info(f"choose_category with form: {request.form}")
+    log.info(f"choose_tag with args: {request.args}")
+    log.info(f"choose_tag with form: {request.form}")
     min_rating, max_rating = request.form.getlist("rating_filter")
 
     filters = {
@@ -1226,35 +1224,31 @@ def choose_category():
     }
     # category_tag =
     # category_dirname = styles.category_tag_to_dirname(category_tag)
-    category_key = request.form.get("group", None)
+    tag = request.form.get("tag", None)
 
-    log.info("Delivering category_key %s with filters %s", category_key, filters)
+    log.info("Delivering tag %s with filters %s", tag, filters)
 
     response = (
-        f"""<div class="wa-stack" hx-swap-oob="true" id="group_{category_key}">"""
+        f"""<div class="wa-stack" hx-swap-oob="true" id="tag_{tag}">"""
     )
+    log.info('Retrieving styles with tag "%s"', tag)
+    styles_in_tag = list(styles.StyleLibrary().with_tag(tag))
+    log.info("Found %s styles with tag %s", len(styles_in_tag), tag)
+
     # TODO: apply filters
-    for group in styles.style_groups_in_category(category_key):
-        log.info("Delivering group %s in category %s", group, category_key)
-
-        response += f"""<h3>{ group }</h3>"""
-        # category key won't work here, we need the raw category name (directory name)
-        all_styles = styles.styles_in_group(category_key, group, **filters)
-
-        # response += "<div class='wa-grid' style='grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));'>"
+    for style_index, style in enumerate(styles_in_tag):
         response += "<div class='wa-cluster wa-align-items-start wa-gap-3xs'>"
-        for style_index, style in enumerate(all_styles):
-            log.info("style: %s", style)
+        
+        log.info("style: %s", style)
 
-            response += Card(
-                style_name=style.get("cosmetic", style.get("name")),
-                category_name=category_key,
-                prompt=style.get("prompt", ""),
-                name=style.get("name", ""),
-                negative_prompt=style.get("negative_prompt", ""),
-                category=category_key,
-                tier=style.get("tier", default_tier),
-            ).as_html()
+        response += Card(
+            style_name=style.get("cosmetic", style.get("name")),
+            prompt=style.get("prompt", ""),
+            name=style.get("name", ""),
+            negative_prompt=style.get("negative_prompt", ""),
+            tier=style.get("tier", default_tier),
+        ).as_html()
+
         response += "</div>"
 
     response += """</div>"""
@@ -1391,6 +1385,7 @@ def choose_category():
 
 @cache.cached(timeout=60 * 60 * 24)
 def get_categories_and_counts(style_dir, default_tier):
+    log.error("Obsolete get_categories_and_counts()")
     all_categories = []
     count = defaultdict(int)
 
@@ -1414,7 +1409,7 @@ def get_categories_and_counts(style_dir, default_tier):
 def styles_base():
     min_tier = request.args.get("min_tier", 2)  # default to C or better
     max_tier = request.args.get("max_tier", 7)  # SSS or worse
-    group = request.args.get("group", None)
+    tag = request.args.get("tag", "Custom")
 
     filters = {
         "min_tier": min_tier,
@@ -1433,13 +1428,18 @@ def styles_base():
 
     # why isn't the value from get_categories_and_counts() being used?
     # Because it is wrong.
-    all_categories = styles.all_categories()
+    sl = styles.StyleLibrary()
+    all_tags = list(sl.get_ranked_tags(**filters))[:50]
 
-    # category = styles.get_category(all_categories, group)
-    if group:
-        category = styles.get_category(all_categories, group)
-    else:
-        category = all_categories[0]
+
+    # # category = styles.get_category(all_categories, group)
+    # if group:
+    #     category = styles.get_category(all_categories, group)
+    # else:
+    #     category = all_categories[0]
+
+    # tag = ""
+    # all_categories = []
 
     fcount = {}
 
@@ -1467,9 +1467,8 @@ def styles_base():
     response = flask.make_response(
         render_template(
             "styles-tabgroups.html",
-            active_grouping=group,
-            active_category=f"category_{category['tag']}",
-            all_categories=all_categories,
+            active_tag=tag,
+            all_tags=all_tags,
             # groupings=groupings,
             base_prompt=base_prompt,
             count=count,

@@ -81,30 +81,7 @@
 
 {% block scripts %}
 <script>
-    // after page load
-    document.addEventListener("DOMContentLoaded", function() {
-        // Add click event listener to all images with the class "image_sample"
-        const tagGroup = document.querySelector("#grouping-tag-group");
 
-        if (tagGroup) {
-            //const group = event.target.getAttribute("panel").replace("group_", "");
-            htmx.ajax('PUT', 'grouping', {
-                target: '#groupings',
-                swap: 'none',
-                values: {
-                    group: tagGroup.getAttribute("active")
-                }
-            });
-        }
-        // htmx.ajax('PUT', 'grouping', {
-        //         target: '#groupings',
-        //         swap: 'none',
-        //         values: {
-        //             group: tagGroup.active
-        //         }
-        //     });
-        // }
-    });
 </script>
 {% endblock %}
 
@@ -116,8 +93,8 @@
         range
         min="0" 
         max="7"
-        hx-put="choose_category"
-        hx-vals="js:{rating_filter: [this.minValue, this.maxValue], group: document.querySelector('#category-tab-group').active}"
+        hx-put="choose_tag"
+        hx-vals="js:{rating_filter: [this.minValue, this.maxValue], tag: document.querySelector('#category-tab-group').active}"
         hx-swap="none"
         min-value="{{ min_tier }}"
         max-value="{{ max_tier }}"
@@ -135,21 +112,22 @@
 
     <wa-tab-group
         id="category-tab-group"
-        active="{{ active_category }}"
+        active="{{ active_tag }}"
     >
-        {% for category in all_categories %}
+        {% for tag in all_tags %}
         <wa-tab 
-            panel="category_{{ category.tag }}"
-            hx-put="choose_category"
-            hx-vals='{"group": "{{category.tag}}"}'
-            hx-swap="none">{{ category.cosmetic }}
+            panel="tag_{{ tag }}"
+            hx-put="choose_tag"
+            hx-vals='{"tag": "{{tag}}"}'
+            hx-swap="none">{{ tag }}
         </wa-tab>
         {% endfor %}
-        
-        {% for category in all_categories %}
-        <wa-tab-panel name="category_{{ category.tag }}">
-            <div id="group_{{ category.tag }}" class="skeleton-paragraphs">
-                <wa-skeleton class=""square" count="2"></wa-skeleton>
+
+        <!-- Tab panels -->
+        {% for tag in all_tags %}
+        <wa-tab-panel name="tag_{{ tag }}">
+            <div id="tag_{{ tag }}" class="skeleton-paragraphs">
+                <wa-skeleton class="square" count="2"></wa-skeleton>
             </div>
         </wa-tab-panel>
         {% endfor %}

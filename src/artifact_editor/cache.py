@@ -7,6 +7,6 @@ print('Initializing cache...')
 # on this to tie it into Flask.  If you want to change how it's configured, that
 # stuff lives in app.py, not here.
 cache = Cache()
-r = redis.Redis(host='redis', port=6379, db=0)
+r = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
 print('Import Cache initialized as %s' % cache)
