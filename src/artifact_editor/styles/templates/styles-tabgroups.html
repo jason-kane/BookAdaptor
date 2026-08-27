@@ -17,7 +17,6 @@
         width: 100%;        
     }
     .card-overview {
-        width: 24em;
         position: relative;
     }
     ::part(body) {
@@ -76,12 +75,34 @@
     .active_tier {
         border: 2px solid white;
     }
+    .stylesample {
+        height: 256px;
+        width: 256px;
+    }
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    function tag_listeners({style_tag, tag}) {
+        const div = document.querySelector('.tags-removable');
 
+        div.addEventListener('wa-remove', event => {
+            //tag.style.opacity = '0';
+            //setTimeout(() => (tag.style.opacity = '1'), 2000);
+            htmx.ajax('DELETE', 'tag', {
+                values: { 
+                    tag: event.target.innerText, 
+                    style_tag: style_tag 
+                },
+                swap: 'none',
+                handler: (response) => {
+                    console.log('Tag removed:', response);
+                    event.target.remove();
+                }
+            });
+        });
+    }
 </script>
 {% endblock %}
 
@@ -126,9 +147,7 @@
         <!-- Tab panels -->
         {% for tag in all_tags %}
         <wa-tab-panel name="tag_{{ tag }}">
-            <div id="tag_{{ tag }}" class="skeleton-paragraphs">
-                <wa-skeleton class="square" count="2"></wa-skeleton>
-            </div>
+            <div id="tag_{{ tag }}"></div>
         </wa-tab-panel>
         {% endfor %}
         

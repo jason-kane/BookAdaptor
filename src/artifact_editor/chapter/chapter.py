@@ -21,7 +21,9 @@ from artifact_editor import (
     config,
     tools,
 )
-from artifact_editor.phrases.pronunciation.pronunciation import get_global_pronunciations
+from artifact_editor.phrases.pronunciation.pronunciation import (
+    get_global_pronunciations,
+)
 from artifact_editor.author.author import Author
 from artifact_editor.masterplan import masterplan
 from artifact_editor.styles import styles
@@ -37,14 +39,14 @@ def chapter_url_defaults_helper(endpoint, values):
     if they are not already present.
     """
     log.info("bp.url_defaults() called", endpoint=endpoint, values=values)
-    
-    if 'author' not in values and hasattr(g, "author"):
+
+    if "author" not in values and hasattr(g, "author"):
         values["author"] = g.author.name
-    if 'title' not in values and hasattr(g, "title"):
+    if "title" not in values and hasattr(g, "title"):
         values["title"] = g.title
-    if 'chapter_number' not in values and hasattr(g, "chapter_number"):
+    if "chapter_number" not in values and hasattr(g, "chapter_number"):
         values["chapter_number"] = int(g.chapter_number)
-    if 'language' not in values and hasattr(g, "language"):
+    if "language" not in values and hasattr(g, "language"):
         values["language"] = g.language
     return endpoint, values
 
@@ -55,13 +57,13 @@ def chapter_url_value_preprocessor(endpoint, values: dict):
     them in the Flask global context (g).
     """
     log.info("Pulling higher nesting values", endpoint=endpoint, values=values)
-    if 'author' in values:
+    if "author" in values:
         g.author = Author(values.pop("author"))
-    if 'title' in values:
+    if "title" in values:
         g.title = str(values.pop("title"))
-    if 'chapter_number' in values:
+    if "chapter_number" in values:
         g.chapter_number = int(values.pop("chapter_number"))
-    if 'language' in values:
+    if "language" in values:
         g.language = str(values.pop("language"))
     g.chapter = Chapter(
         author=g.author,
@@ -70,7 +72,6 @@ def chapter_url_value_preprocessor(endpoint, values: dict):
         language=g.language,
     )
     return endpoint, values
-
 
 
 def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:
@@ -250,7 +251,9 @@ class Chapter:
 
             self.config = self.get_config()
 
-            self.chapter_title: str = self.config.get("chapter_title", f"Chapter {number}")
+            self.chapter_title: str = self.config.get(
+                "chapter_title", f"Chapter {number}"
+            )
 
             self.mood = self.config.get("mood", self.mood)
             self.theme = self.config.get("theme", self.theme)
@@ -295,13 +298,15 @@ class Chapter:
         # make a nice string for filenames and such.
         nice = []
         # first four characters of the authors last name
-        nice.append(self.author.name.split()[-1][:4])
+        if self.author.name:
+            nice.append(self.author.name.split()[-1][:4])
 
         # first four characters of the title skipping "the" if it's there.
         title = self.title
-        if title.lower().startswith("the "):
-            title = title[4:]
-        nice.append(title.split()[0][:4])
+        if title:
+            if title.lower().startswith("the "):
+                title = title[4:]
+            nice.append(title.split()[0][:4])
 
         # the chapter number, zero-padded to 3 digits
         nice.append(f"{self.number:0>3}")
@@ -349,10 +354,7 @@ class Chapter:
 
     def get_paragraph(self, paragraph_index: int) -> Tag | None:
         self.load_xml()
-        return self.soup.find(
-            "paragraph",
-            attrs={"index": str(paragraph_index)}
-        )
+        return self.soup.find("paragraph", attrs={"index": str(paragraph_index)})
 
     def get_bottom_height(self, force=False) -> int:
         all_phrases = self.phrases()
@@ -360,7 +362,7 @@ class Chapter:
         last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
         return last_phrase_dimensions["bottom"]
 
-    def get_text_height(self, force: bool=False) -> int:
+    def get_text_height(self, force: bool = False) -> int:
         all_phrases = self.phrases()
 
         # first_phrase = Phrase(all_phrases[0])
@@ -466,7 +468,13 @@ class Chapter:
             )
             return None
 
-        log.info('Opening %s to find highlight region for phrase with color (%s, %s, %s)', text_layer_rainbow_fn, r, g, b)
+        log.info(
+            "Opening %s to find highlight region for phrase with color (%s, %s, %s)",
+            text_layer_rainbow_fn,
+            r,
+            g,
+            b,
+        )
         with open(text_layer_rainbow_fn, "rb") as h:
             img = Image.open(h)
             img = img.convert("RGBA")
@@ -594,10 +602,10 @@ class Chapter:
         """
         if image_xml is None:
             return None
-    
+
         if not isinstance(image_xml, Tag):
             return None
-        
+
         base_image = image_xml.attrs.get("src")
         try:
             paragraph = image_xml.find_parent("paragraph")
@@ -770,7 +778,7 @@ class Chapter:
                 )
                 return
 
-            if video_index == 0:   
+            if video_index == 0:
                 video_fn = image_fn.replace(".png", ".mp4")
             else:
                 video_fn = image_fn.replace(".png", f"_{video_index:02d}.mp4")
@@ -800,8 +808,9 @@ class Chapter:
         self,
         image_xml: Tag,
         workflow_name: str,  # flux_phrasechain
-        video_index: int|None=None,
-        template_environment: dict[str, str]|None=None,
+        video_index: int | None = None,
+        template_environment: dict[str, str] | None = None,
+        force_name: str | None = None,
     ):
         """
         We want the indicated workflow, with variables based on
@@ -809,13 +818,13 @@ class Chapter:
 
         template_environment is an override dict.
         """
-        # we load the workflow template, 
-        # fill in the variables, 
+        # we load the workflow template,
+        # fill in the variables,
         # save a copy in the workflow directory with a suitable filename
-        # return the name of that file.  
-        
+        # return the name of that file.
+
         # It is easy to go from there to a one-click workflow load.
-        
+
         # ui.ti2i.flux_phrasechain-Flux Klein Image Edit.json
         #               ^-- workflow_name, global unique.
         #
@@ -823,15 +832,19 @@ class Chapter:
             template_environment = {}
 
         try:
-            template_fn = glob.glob(os.path.join(
-                const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
-                f"ui.*.{workflow_name}-*.json"
-            ))[0]
+            template_fn = glob.glob(
+                os.path.join(
+                    const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+                    f"ui.*.{workflow_name}-*.json",
+                )
+            )[0]
         except IndexError:
             log.error(
                 "No workflow template found for workflow_name",
                 workflow_name=workflow_name,
-                templates_dir=const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+                templates_dir=const.COMFY_DIRS["artifactserver"][
+                    "WORKFLOW_TEMPLATES_DIR"
+                ],
             )
             return None
 
@@ -840,24 +853,25 @@ class Chapter:
             workflow_filename=template_fn,
             video_index=video_index,
             template_environment=template_environment,
+            force_name=force_name
         )
 
     def get_workflow_by_filename(
         self,
         image_xml: Tag,
         workflow_filename: str,
-        video_index: int|None=None,
-        template_environment: dict[str, str]|None=None,
-        force_name: str|None=None,
+        video_index: int | None = None,
+        template_environment: dict[str, str] | None = None,
+        force_name: str | None = None,
     ) -> str:
         """
         Returns the filename of a workflow JSON file
         created inside your workflow directory.
 
         image_xml: BeautifulSoup Tag for an <image> block
-        
-        workflow_filename: filename of a /template JSON 
-        
+
+        workflow_filename: filename of a /template JSON
+
         video_index: if this is a video, it may be part of a sequence of videos.  If that is the case, which number in the
         sequence is it? (matters for file naming reasons)
 
@@ -865,20 +879,18 @@ class Chapter:
 
         force_name: if provided, this will be used as the output filename for the workflow JSON, instead of the generated name.
         """
-        with open(workflow_filename, 'r') as f:
+        with open(workflow_filename, "r") as f:
             workflow = json.load(f)
 
         try:
-            workflow_name = os.path.splitext(
-                os.path.basename(workflow_filename)
-            )[0].split('.')[2]
+            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[
+                0
+            ].split(".")[2]
         except IndexError:
-            workflow_name = os.path.splitext(
-                os.path.basename(workflow_filename)
-            )[0]
+            workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
 
-        height = 1024
-        width = 1024
+        height = int(template_environment.get("HEIGHT", 1024))
+        width = int(template_environment.get("WIDTH", 1024))
 
         try:
             duration_in_frames = self.get_image_frames(image_xml)
@@ -900,6 +912,8 @@ class Chapter:
             )
         except TypeError:
             last_frame = None
+        except KeyError:
+            last_frame = None
 
         if not last_frame:
             last_frame = source_image
@@ -913,58 +927,47 @@ class Chapter:
             )
         except TypeError:
             prior_frame = None
+        except KeyError:
+            prior_frame = None
 
         # we've got a _lot_ of variables to fill in.
         out_nodes = []
-        for node in workflow.get('nodes', []):
-            if node.get('type') == 'LoadImage':
-
-                if node.get('title') in ['INPUT_IMAGE', 'FIRST_FRAME']:
+        for node in workflow.get("nodes", []):
+            if node.get("type") == "LoadImage":
+                if node.get("title") in ["INPUT_IMAGE", "FIRST_FRAME"]:
                     target = os.path.join(
-                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"], 
-                        os.path.basename(source_image)
+                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
+                        os.path.basename(source_image),
                     )
 
-                    log.info('Copying %s to %s', source_image, target)
+                    log.info("Copying %s to %s", source_image, target)
 
-                    shutil.copyfile(
-                        source_image, 
-                        target
-                    )
-                    node["widgets_values"] = [
-                        os.path.basename(target),
-                        "image"
-                    ]
+                    shutil.copyfile(source_image, target)
+                    node["widgets_values"] = [os.path.basename(target), "image"]
                     node["widgets_values_named"] = {
                         "image": os.path.basename(target),
-                        'upload': 'image'
+                        "upload": "image",
                     }
 
-                if node.get('title') in ['LAST_FRAME']:
+                if node.get("title") in ["LAST_FRAME"]:
                     target = os.path.join(
-                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"], 
-                        os.path.basename(last_frame)
+                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
+                        os.path.basename(last_frame),
                     )
 
-                    log.info('Copying %s to %s', last_frame, target)
+                    log.info("Copying %s to %s", last_frame, target)
 
-                    shutil.copyfile(
-                        last_frame, 
-                        target
-                    )
-                    node["widgets_values"] = [
-                        os.path.basename(target),
-                        "image"
-                    ]
+                    shutil.copyfile(last_frame, target)
+                    node["widgets_values"] = [os.path.basename(target), "image"]
                     node["widgets_values_named"] = {
                         "image": os.path.basename(target),
-                        'upload': 'image'
+                        "upload": "image",
                     }
-                
-            elif node.get('type') == 'PrimitiveString':
-                if node.get('title') in ['FILE_NAME', 'FILENAME_PREFIX']:
-                    if 'FILENAME_PREFIX' in template_environment:
-                        filename_prefix = template_environment['FILENAME_PREFIX']
+
+            elif node.get("type") == "PrimitiveString":
+                if node.get("title") in ["FILE_NAME", "FILENAME_PREFIX"]:
+                    if "FILENAME_PREFIX" in template_environment:
+                        filename_prefix = template_environment["FILENAME_PREFIX"]
                     else:
                         filename_prefix = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}"
                         if video_index not in [None, ""]:
@@ -973,141 +976,165 @@ class Chapter:
                     node["widgets_values"] = [filename_prefix]
                     node["widgets_values_named"] = {"value": filename_prefix}
 
-                elif node.get('title') in ['PREVIOUS_IMAGE', 'PRIOR_FRAME']:
+                elif node.get("title") in ["PREVIOUS_IMAGE", "PRIOR_FRAME"]:
                     node["widgets_values"] = [prior_frame]
                     node["widgets_values_named"] = {"value": prior_frame}
 
-                elif node.get('title') in ['INPUT_IMAGE_PATH']:
+                elif node.get("title") in ["INPUT_IMAGE_PATH"]:
                     node["widgets_values"] = [const.COMFY_DIRS["comfyui"]["INPUT_DIR"]]
-                    node["widgets_values_named"] = {"value": const.COMFY_DIRS["comfyui"]["INPUT_DIR"]}
+                    node["widgets_values_named"] = {
+                        "value": const.COMFY_DIRS["comfyui"]["INPUT_DIR"]
+                    }
 
-                elif node.get('title') in ['OUTPUT_DIR']:
-                    node["widgets_values"] = [const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],]
-                    node["widgets_values_named"] = {"value": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]}
+                elif node.get("title") in ["OUTPUT_DIR"]:
+                    node["widgets_values"] = [
+                        const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
+                    ]
+                    node["widgets_values_named"] = {
+                        "value": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]
+                    }
 
-                elif node.get('title') in ['PROMPT_FN']:
-                    prompt_fn = (
-                        f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.prompt"
-                    )
+                elif node.get("title") in ["PROMPT_FN"]:
+                    if "index" in image_xml.attrs:
+                        prompt_fn = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.prompt"
+                    else:
+                        prompt_fn = f"{self.nice}_{workflow_name}.prompt"
+
                     node["widgets_values"] = [prompt_fn]
                     node["widgets_values_named"] = {"value": prompt_fn}
 
-                elif node.get('title') in ["SCENE_DESCRIPTION_FN"]:
-                    scene_description_fn = (
-                        f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.txt"
-                    )
+                elif node.get("title") in ["SCENE_DESCRIPTION_FN"]:
+                    if "index" in image_xml.attrs:
+                        scene_description_fn = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.txt"
+                    else:
+                        scene_description_fn = f"{self.nice}_{workflow_name}.txt"
                     node["widgets_values"] = [scene_description_fn]
                     node["widgets_values_named"] = {"value": scene_description_fn}
 
-                elif node.get('title') in ['LAST_FRAME']:
+                elif node.get("title") in ["LAST_FRAME"]:
                     if last_frame:
                         node["widgets_values"] = [last_frame]
                         node["widgets_values_named"] = {"value": last_frame}
                     else:
-                        log.warning('No last frame found for node %s', node.get('title'))
+                        log.warning(
+                            "No last frame found for node %s", node.get("title")
+                        )
 
-            elif node.get('type') == 'PrimitiveInt':
-                if node.get('title') == 'HEIGHT':
+            elif node.get("type") == "PrimitiveInt":
+                if node.get("title") == "HEIGHT":
                     node["widgets_values"] = [height, "fixed"]
                     node["widgets_values_named"] = {"value": height, "fixed": "fixed"}
-                elif node.get('title') == 'WIDTH':
+                elif node.get("title") == "WIDTH":
                     node["widgets_values"] = [width, "fixed"]
                     node["widgets_values_named"] = {"value": width, "fixed": "fixed"}
 
-            elif node.get('type') == 'PrimitiveFloat':
-                if node.get('title') in ['DURATION']:
+            elif node.get("type") == "PrimitiveFloat":
+                if node.get("title") in ["DURATION"]:
                     node["widgets_values"] = [min(0.5, float(duration_in_seconds))]
-                    node["widgets_values_named"] = {"value": min(0.5, float(duration_in_seconds))}
+                    node["widgets_values_named"] = {
+                        "value": min(0.5, float(duration_in_seconds))
+                    }
 
-            elif node.get('type') == 'PrimitiveStringMultiline':
-                if node.get('title') in ['META']:
-                    value = json.dumps(
-                        self.get_meta_dict(),
-                        indent=2
-                    ).replace("\n", r"\n")
+            elif node.get("type") == "PrimitiveStringMultiline":
+                if node.get("title") in ["META"]:
+                    value = json.dumps(self.get_meta_dict(), indent=2).replace(
+                        "\n", r"\n"
+                    )
                     node["widgets_values"] = [value]
                     node["widgets_values_named"] = {"value": value}
 
-                elif node.get('title') in ['NEGATIVE_PROMPT']:
-                    negative_prompt = "pc game, console game, video game, cartoon, childish, ugly"
+                elif node.get("title") in ["NEGATIVE_PROMPT"]:
+                    negative_prompt = (
+                        "pc game, console game, video game, cartoon, childish, ugly"
+                    )
                     node["widgets_values"] = [negative_prompt]
                     node["widgets_values_named"] = {"value": negative_prompt}
 
-                elif node.get('title') in ['SYSTEM_PROMPT']:
-                    system_prompt = "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
+                elif node.get("title") in ["SYSTEM_PROMPT"]:
+                    system_prompt = (
+                        "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
+                    )
                     node["widgets_values"] = [system_prompt]
                     node["widgets_values_named"] = {"value": system_prompt}
 
-                elif node.get('title') in ['PROMPT']:
-                    prompt = self.get_prompt(image_xml)
+                elif node.get("title") in ["PROMPT"]:
+                    prompt = template_environment.get(
+                        "PROMPT",
+                        self.get_prompt(image_xml),
+                    )
                     node["widgets_values"] = [prompt]
                     node["widgets_values_named"] = {"value": prompt}
 
-                elif node.get('title') in ['SCENE']:
-                    value = json.dumps(
-                        self.get_scene(image_xml), 
-                        indent=2
-                    ).replace("\n", r"\n")
-                    node["widgets_values"] = [value]
-                    node["widgets_values_named"] = {"value": value}
-
-                elif node.get('title') in ['SOURCE']:
-                    # the portion of the text between this image and the next image.                    
-                    our_source = self.get_paragraph_snippet(
-                        image_xml,
-                        context_before=3,
-                        context_after=0,
-                        focus_marker="FOCUS_PARAGRAPH",
-                        focus_phrases=list(
-                            range(
-                                int(image_xml.find_next("phrase").attrs["index"]), 
-                                1 + int(image_xml.find_next("image").find_previous("phrase").attrs["index"])
-                            )
-                        ),
+                elif node.get("title") in ["SCENE"]:
+                    value = json.dumps(self.get_scene(image_xml), indent=2).replace(
+                        "\n", r"\n"
                     )
-                    value = json.dumps(
-                        our_source,
-                        indent=2
-                    ).replace("\n", r"\n")
                     node["widgets_values"] = [value]
                     node["widgets_values_named"] = {"value": value}
 
-            elif node.get('type') == 'CustomStyler':
-                if node.get('title') in ['STYLE']:
+                elif node.get("title") in ["SOURCE"]:
+                    # the portion of the text between this image and the next image.
+                    if image_xml.find_next("phrase") is not None:
+                        our_source = self.get_paragraph_snippet(
+                            image_xml,
+                            context_before=3,
+                            context_after=0,
+                            focus_marker="FOCUS_PARAGRAPH",
+                            focus_phrases=list(
+                                range(
+                                    int(image_xml.find_next("phrase").attrs["index"]),
+                                    1
+                                    + int(
+                                        image_xml.find_next("image")
+                                        .find_previous("phrase")
+                                        .attrs["index"]
+                                    ),
+                                )
+                            ),
+                        )
+                    else:
+                        our_source = ""
+                    value = json.dumps(our_source, indent=2).replace("\n", r"\n")
+                    node["widgets_values"] = [value]
+                    node["widgets_values_named"] = {"value": value}
+
+            elif node.get("type") == "CustomStyler":
+                if node.get("title") in ["STYLE"]:
                     style = self.get_image_style(image_xml)
                     node["widgets_values"][2] = [style]
-                    node["widgets_values_named"]['Custom'] = style
+                    node["widgets_values_named"]["Custom"] = style
             else:
-                log.info("Skipping node type: %s", node.get('type'))
+                log.info("Skipping node type: %s", node.get("type"))
 
             out_nodes.append(node)
 
-        workflow['nodes'] = out_nodes
+        workflow["nodes"] = out_nodes
 
         if force_name:
             workflow_fn = os.path.join(
-                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-                force_name
+                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], 
+                force_name,
             )
         else:
+            # KeyErrors?  Use force_name.
             workflow_fn = os.path.join(
                 const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-                f"{self.nice}_workflow_{image_xml['index']}_{workflow_name}.json"
+                f"{self.nice}_workflow_{image_xml['index']}_{workflow_name}.json",
             )
 
-        with open(workflow_fn, 'w') as f:
+        with open(workflow_fn, "w") as f:
             json.dump(workflow, f, indent=2)
 
-        return workflow_fn
-        
+        return os.path.basename(workflow_fn)
+
     def get_comfy_workflow(
         self,
         image_xml: Tag,
-        interface: str="ui",
-        mode: str="*",
-        workflow_template: str | None=None,
-        video_index: int|None=None,
-        template_environment: dict|None=None,
+        interface: str = "ui",
+        mode: str = "*",
+        workflow_template: str | None = None,
+        video_index: int | None = None,
+        template_environment: dict | None = None,
     ):
         """
         The problem is we don't know if this is an animation or an image gen (or
@@ -1142,11 +1169,7 @@ class Chapter:
 
         # reasonable default
         if previous_image_xml:
-            prior_frame = os.path.basename(
-                self.get_image_filename(
-                    previous_image_xml
-                )
-            )
+            prior_frame = os.path.basename(self.get_image_filename(previous_image_xml))
 
         # copy the current version of "this" image as an input image
         source_image = self.get_image_filename(image_xml) or "image.png"
@@ -1361,14 +1384,10 @@ class Chapter:
         input_image = os.path.basename(source_image)
 
         style_name = self.get_image_style(image_xml)
-        style_category = template_environment.get('STYLE_CATEGORY', 'Custom')
-        style = styles.Style(
-            category_name=style_category,
-            style_tag=style_name
-        )
-        log.info('style: %s', style)
+        style_category = template_environment.get("STYLE_CATEGORY", "Custom")
+        style = styles.Style(category_name=style_category, style_tag=style_name)
+        log.info("style: %s", style)
         #  Using image style: gothic_manuscript_illumination name=artifact_editor.chapter.chapter
-
 
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
@@ -1680,20 +1699,22 @@ class Chapter:
 
     def get_delta_fn(self, tag=""):
         return os.path.join(
-            const.LIBRARY_DIR, 
-            self.chapterdir, 
-            self.language, 
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
             f"chapter{'.' + tag if tag else ''}.delta.json",
         )
 
-    def save_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]], tag=""):
+    def save_delta(
+        self, delta: dict[str, list[dict[str, str | dict[str, bool]]]], tag=""
+    ):
         delta_fn = self.get_delta_fn(tag)
         os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
-        log.info('Saving delta to file', delta_fn=delta_fn)
+        log.info("Saving delta to file", delta_fn=delta_fn)
         with open(delta_fn, "w") as f:
             json.dump(delta, f, indent=2)
 
-    def load_delta(self) -> dict[str, list[dict[str, str|dict[str, bool]]]]:
+    def load_delta(self) -> dict[str, list[dict[str, str | dict[str, bool]]]]:
         """
         Example:
         delta = {
@@ -1718,17 +1739,22 @@ class Chapter:
 
     def get_title_delta_fn(self):
         return os.path.join(
-            const.LIBRARY_DIR, self.chapterdir, self.language, "chapter.title.delta.json",
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
+            "chapter.title.delta.json",
         )
 
-    def save_title_delta(self, delta: dict[str, list[dict[str, str|dict[str, bool]]]]):
+    def save_title_delta(
+        self, delta: dict[str, list[dict[str, str | dict[str, bool]]]]
+    ):
         delta_fn = self.get_title_delta_fn()
         os.makedirs(os.path.dirname(delta_fn), exist_ok=True)
-        log.info('Saving title delta to file', delta_fn=delta_fn)
+        log.info("Saving title delta to file", delta_fn=delta_fn)
         with open(delta_fn, "w") as f:
             json.dump(delta, f, indent=2)
 
-    def load_title_delta(self) -> dict[str, list[dict[str, str|dict[str, bool]]]]:
+    def load_title_delta(self) -> dict[str, list[dict[str, str | dict[str, bool]]]]:
         delta_fn = self.get_title_delta_fn()
         if os.path.exists(delta_fn):
             with open(delta_fn, "r") as f:
@@ -1789,7 +1815,7 @@ class Chapter:
 
     @property
     def url(self):
-        log.warning('Obsolete chapter.url reference')
+        log.warning("Obsolete chapter.url reference")
         if not hasattr(self, "_url"):
             self._url = tools.get_chapterurl(self.author.name, self.title, self.number)
         return self._url
@@ -1797,13 +1823,15 @@ class Chapter:
     @property
     def chapterdir(self):
         if not hasattr(self, "_chapterdir"):
-            self._chapterdir = tools.get_chapterdir(self.author.name, self.title, self.number)
+            self._chapterdir = tools.get_chapterdir(
+                self.author.name, self.title, self.number
+            )
         return self._chapterdir
 
     def get_chapterdir(self):
         return self.chapterdir
 
-    def get_paragraph_dir(self, paragraph_index:int) -> str:
+    def get_paragraph_dir(self, paragraph_index: int) -> str:
         return os.path.join(self.chapterdir, "paragraphs", f"{paragraph_index:0>6}")
 
     def get_xml(self):
@@ -2113,7 +2141,6 @@ class Chapter:
         self.config["chapter_title"] = new_title
         self.chapter_title = new_title
         self.save_config()
-        
 
     def get_video_filename(self):
         video_pfn = os.path.join(
@@ -2152,7 +2179,7 @@ def xml_upgrade(chapter, soup):
         chapter_xml.name = "chapter"
 
     version = float(chapter_xml.attrs.get("version", "0.0"))
-    #version = 0
+    # version = 0
 
     if version < 1.0:
         log.warning("Upgrading XML from version %s to 1.0", version)

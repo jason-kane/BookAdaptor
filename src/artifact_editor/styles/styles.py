@@ -3,6 +3,8 @@ import fcntl
 import json
 import os
 from tokenize import group
+
+from flask import url_for
 import const
 import re
 import redis
@@ -310,7 +312,6 @@ def check_upgrade(category_name: str | None=None):
 class Style:
     def __init__(self, style_tag):
         self.style_tag = style_tag
-        self.tag = style_tag
         self.key = as_id(style_tag)
 
         self.style: dict[str, str] = {
@@ -323,7 +324,6 @@ class Style:
             "cosmetic": style_tag,
         }
         self.tag_count = 0
-        self.tags = []
         self.load_from_redis()        
         self.load_tags()
 
@@ -359,34 +359,29 @@ class Style:
         Set Key [self.key + "/tags"] to a set of tags for this style, the tags are strings.
         """
         log.info('Saving style to redis', key=self.key, mapping=self.style)
-        tags = self.style.get("tags", [])
+
         # we can't include tags in the hash because
         # it is a list, unsupported unless we serialize.
         # but that is fine, we want them in a set anyway.
-        del self.style["tags"]
+        if 'tags' in self.style:
+            del self.style['tags']
 
-        # TODO:
-        # we have to remove all the tags first,
-        # or use a smarter update method.
-        r.delete(self.key + "/tags")
-
-        r.sadd(self.key + "/tags", *tags)
-        r.sadd("tags", *tags)
+        #r.delete(self.key + "/tags")
+        #r.sadd(self.key + "/tags", *self.tags)
+        #r.sadd("tags", *self.tags)
         
         r.hset(self.key, mapping=self.style)
 
-        # restore the tags
-        self.style["tags"] = tags
-
-    def load_tags(self):
+    def load_tags(self) -> list[str]:
         try:
             # get the number of tags for this style from Redis
             self.tag_count = r.scard(self.key + "/tags")
         except redis.exceptions.ResponseError:
             self.tag_count = 0
 
-        self.style["tags"] = r.smembers(self.key + "/tags")
-
+        self._tags = r.smembers(self.key + "/tags")
+        return self._tags
+    
     @property
     def tier(self):
         return int(self.style.get("tier", "2"))
@@ -403,6 +398,26 @@ class Style:
     def negative_prompt(self):
         return self.style.get("negative_prompt", "")
 
+    @property
+    def tags(self):
+        return self.load_tags()
+
+    def remove_tag(self, tag: str):
+        """
+        Remove a tag from this style.
+        """
+        if len(self.tags) <= 1:
+            log.warning("Cannot remove all tags from style %s", self.style_tag)
+            return
+
+        # remove the tag from the style
+        r.srem(self.key + "/tags", tag)
+
+        # and remove the style from the tag
+        r.srem(tag + "/tags", self.key)
+        
+        self.load_tags()
+    
     @classmethod
     def from_image(cls, chapter, image_xml):
         """
@@ -410,10 +425,8 @@ class Style:
         style settings.
         """
         style_tag = chapter.get_image_style(image_xml)
-        style_category = image_xml.get("style_category", "Custom")
 
         return cls(
-            category_name=style_category,
             style_tag=style_tag
         )
 
@@ -447,17 +460,96 @@ class Style:
 
                 with open(fn, "w") as f:
                     json.dump(all_styles, f, indent=4)
-        
+
+    def as_card(self, tag: str="", oob:bool=True):
+        # what shows up on the un-expanded card:
+        style_info = f"<p><b>Style:</b> {self.name}</p>"
+
+        _, icon, variant, cosmetic = tier_cosmetics[self.tier]
+
+        badge = f"""
+        <wa-badge pill class="tier-badge" variant="{variant}">
+            <wa-icon slot="start" name="{icon}"></wa-icon>
+            {cosmetic}
+        </wa-badge>
+        """
+
+        zit_image_url = url_for(
+            "styles.show_sample",
+            filename=f"{self.style_tag}_zit_sampler.png",
+        )
+
+        krea_image_url = url_for(
+            "styles.show_sample",
+            filename=f"{self.style_tag}_krea2_sampler.png",
+        )
+        flux_image_url = url_for(
+            "styles.show_sample",
+            filename=f"{self.style_tag}_flux_sampler.png",
+        )
+        return f"""
+        <div 
+            id="card_{self.style_tag}"
+            {"hx-swap-oob='true'" if oob else ""}
+            class="wa-stack card-overview history-item-{self.style_tag}"
+        >
+            <div class="wa-cluster">
+                <div class="wa-frame:square stylesample">
+                    <img
+                        loading="lazy"
+                        class="image_sample"
+                        src="{zit_image_url}"
+                        alt="Sample Image"
+                    >
+                        {badge}
+                    </img>
+                </div>
+                <div class="wa-frame:square stylesample">
+                    <img
+                        loading="lazy"
+                        class="image_sample"
+                        src="{krea_image_url}"
+                        alt="Sample Image"
+                    >                
+                        {badge}
+                    </img>
+                </div>
+                <div class="wa-frame:square stylesample">
+                    <img
+                        loading="lazy"
+                        class="image_sample"
+                        src="{flux_image_url}"
+                        alt="Sample Image"
+                    >                
+                        {badge}
+                    </img>
+                </div>
+            </div>
+            <wa-details
+                hx-get="style_details"
+                hx-vals='{{"style_tag": "{self.style_tag}", "tag": "{tag}"}}'
+                hx-trigger="intersect once"
+                hx-target="#style_details_{self.style_tag}"
+                hx-on:htmx:after-request="tag_listeners({{style_tag: '{self.style_tag}', tag: '{tag}'}})"
+                icon-placement="start">
+                <span slot="summary">
+                    {style_info}
+                </span>
+                
+                <div id="style_details_{self.style_tag}"></div>
+            </wa-details>
+        </div>
+        """
 
     def __repr__(self):
-        return f"<Style {self.category_name}/{self.style_tag}>"
+        return f"<Style {self.style_tag}>"
 
 
 class StyleLibrary:
     def __init__(self):
-        self.styles = {}
+        self.styles: dict[str, Style] = {}
 
-    def get_ranked_tags(self, force=False, **filters):
+    def get_ranked_tags(self, force=True, **filters):
         check_upgrade()
         none = True
         if not force:
@@ -471,17 +563,23 @@ class StyleLibrary:
             ranking = []
             for tag in r.smembers("tags"):
                 none = False
-                if isinstance(tag, bytes):
-                    tag = tag.decode("utf-8")
 
                 try:
-                    ranking.append((r.scard(tag + "/tags"), tag))
+                    tag_member_count = r.scard(tag + "/tags")
+                    if tag_member_count == 0:
+                        log.warning(
+                            "Tag %s has no associated styles, removing from redis", tag
+                        )
+                        r.srem("tags", tag)
+
+                    ranking.append((tag_member_count, tag))
 
                 except redis.exceptions.ResponseError:
-                    log.warning(
-                        "Error counting tags for %s in redis, skipping", tag
-                    )
-                    raise
+                    if not r.exists(tag + "/tags"):
+                        log.warning(
+                            "Tag %s has no associated styles, removing from redis", tag
+                        )
+                        r.srem("tags", tag)
 
             if none:
                 # iterate every hash in redis
@@ -513,32 +611,44 @@ class StyleLibrary:
             for tag in sorted_ranking:
                 yield tag
             
-
-    def get_style(self, category_name, style_tag):
-        key = as_id(f"{category_name}/{style_tag}")
+    def get_style(self, style_tag):
+        key = as_id(style_tag)
         if key in self.styles:
             return self.styles[key]
         else:
-            style = Style(category_name, style_tag)
+            style = Style(style_tag)
             self.styles[key] = style
             return style
 
     def with_tag(self, tag):
         """
-        Return a list of Style objects that have the given tag.
+        Generator for Style objects that have the given tag.
         """
         check_upgrade()
-        styles = []
         log.info('Retrieving set "%s/tags" from redis', tag)
-        for style_key in r.smembers(tag + "/tags"):
-            if isinstance(style_key, bytes):
-                style_key = style_key.decode("utf-8")
 
-            style = r.hgetall(style_key)
+        for style_tag in r.smembers(tag + "/tags"):
+            yield Style(style_tag)
 
-            styles.append(style)
-        
-        return styles
+    def delete_tag(self, style_tag):
+        """
+        Delete a tag from the library and redis.
+        """
+        key = as_id(style_tag)
+        log.info("Deleting tag %s", key)
+
+        # remove the tag from all associated styles
+        for style_key in r.smembers(key + "/tags"):
+            r.srem(style_key + "/tags", key)
+
+        r.srem("tags", key)  # remove the tag from the global tags set
+
+        # delete the tag hash
+        r.delete(key)
+
+        # delete the tags set
+        r.delete(key + "/tags")
+
 
 
 # def get_style(category_name, style_tag):

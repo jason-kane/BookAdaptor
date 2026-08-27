@@ -35,6 +35,7 @@ from artifact_editor import (
     llm,
     tools,
 )
+from artifact_editor.chapter.chapter import Chapter
 from .styles import as_id, id_to_category
 
 from artifact_editor.author.author import Author
@@ -76,19 +77,33 @@ def get_groupings_count(item_count):
 @bp.route("/show_sample/<path:filename>")
 def show_sample(filename: str):
     filename = unicodedata.normalize("NFC", filename)
-    
+    # solo_krea2_sampler.png
+
+    as_list = filename.split('_')
+
+    engine = as_list.pop(-2)
+    style_tag = "_".join(as_list[:-1])
+
+    log.info('show_sample(%s) => engine=%s, style_tag=%s', filename, engine, style_tag)
+
+    filename = f"{style_tag}_{engine}.png"
+
     sample_pfn = os.path.join(
-        os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
+        os.path.join(const.LIBRARY_DIR, "style_exploration"), 
+        filename
     )
+
     if os.path.exists(sample_pfn):
         return send_from_directory(
-            os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
+            os.path.join(
+                const.LIBRARY_DIR, "style_exploration"), 
+                filename
         )
 
     # generate a new sample image.
-    style_tag = filename.removesuffix(".png")
+    # style_tag = filename.removesuffix(".png")
 
-    sample_pfn = draw_sample(style_tag)
+    sample_pfn = draw_sample(style_tag, engine=engine)
     sample_pfn = unicodedata.normalize("NFC", sample_pfn)
 
     log.info('draw_sample() returned %s', sample_pfn)
@@ -108,30 +123,54 @@ def show_sample(filename: str):
 
 # this is amusing, and tells you how well the model handles
 # potentially "mature" content.
-base_prompt = "stunning woman in a flimsy, sheer lace dress.  Detailed background with something rare and exciting happening."
+base_prompt = "stunning erotic woman in a very revealing, flimsy, sheer lace dress"
 
 
-def draw_sample(style_tag):
-    log.info("draw_sample()", style_tag=style_tag)
-    workflow = comfy.load_workflow_template("api", "t2i", "style_sample")
+def draw_sample(style_tag, engine="zit"):
+    log.info("draw_sample(%s, engine=%s)", style_tag, engine)
 
+    chapter = Chapter(
+        author=Author(""),
+        title="",
+        number=0,
+        language="english",
+    )
+
+    # workflow = comfy.load_workflow_template(
+    #     "api", "t2i", f"{engine}_style_sample",
+    # )
     style = styles.Style(style_tag=style_tag)
     cachebreak = random.randint(0, 999999999)
 
-    template_environment = {
-        "PROMPT": style.prompt.format(prompt=base_prompt),
-        "FILENAME_PREFIX": os.path.join("samples", style.name + f"_{cachebreak}")
-    }
-
-    comfy.run_workflow(
-        workflow,
-        template_environment=template_environment,
+    # this is a UI style workflow
+    workflow_fn = chapter.get_workflow(
+        image_xml=BeautifulSoup('<chapter></chapter>', "xml").find("chapter"),
+        workflow_name=f"{engine}_sampler",
+        video_index=None,
+        template_environment={
+            "HEIGHT": 512,
+            "WIDTH": 512,
+            "PROMPT": style.prompt.format(prompt=base_prompt),
+            "FILENAME_PREFIX": os.path.join(
+                "samples",
+                style_tag + f"_{engine}_{cachebreak}"
+            )
+        },
+        force_name=f"{engine}_sampler_{style_tag}"
     )
+
+    log.info('running workflow %s', workflow_fn)
+    comfy.run_workflow_fn(workflow_fn=workflow_fn)
+
+    # comfy.run_workflow(
+    #     workflow,
+    #     template_environment=template_environment,
+    # )
 
     sample_pfn = os.path.join(
         const.LIBRARY_DIR,
         "style_exploration",
-        f"{style.name}.png",
+        f"{style_tag}_{engine}.png",
     )
 
     # make sure the output directory exists
@@ -142,7 +181,7 @@ def draw_sample(style_tag):
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
             "samples",
-            style.name + "*",
+            f"{style_tag}_{engine}_*",
         )
     ):
         origin = os.path.join(
@@ -159,7 +198,7 @@ def draw_sample(style_tag):
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
             "samples",
-            style.tag + "*",
+            f"{style_tag}_{engine}_*",
         )
     ):
         origin = os.path.join(
@@ -180,30 +219,16 @@ def regenerate_style_image():
     Replace the image for a style with a new one, using the same prompt
     and a random seed.
     """
-    category_name = request.form.get("category")
     style_tag = request.form.get("style_tag")
+    engine = request.form.get("engine", "zit")
 
-    style = styles.Style(
-        category_name=category_name,
-        style_tag=style_tag,
-    )
+    style = styles.Style(style_tag=style_tag,)
+    delete_sample(f"{style.style_tag}_{engine}.png")
 
-    delete_sample(f"{style.name}.png")
-    delete_sample(f"{style.style_tag}.png")
-
-    sample_pfn = draw_sample(category_name, style_tag)
+    sample_pfn = draw_sample(style_tag, engine=engine)
     log.info("draw_sample() returned %s", sample_pfn)
 
-    # details_html, _ = style_details(oob=True)
-    # oob the image too
-    card = Card(
-        style_name=style.name,
-        category_name=category_name
-    )
-
-    # details_html += f'<img src="/style_exploration/{style_tag}.png" />'
-
-    return card.as_html(oob=True), 200
+    return style.as_card(oob=True), 200
 
 
 @bp.route("/draw_sample", methods=["POST"])
@@ -547,6 +572,7 @@ def get_favorite_control_button(style, favorite_styles):
 
 @bp.route("/style_details")
 def style_details(oob=False):
+    tag = request.form.get("tag") or request.args.get("tag")
     style_tag = request.form.get("style_tag") or request.args.get("style_tag")
     log.info("style_details()", style_tag=style_tag)
 
@@ -558,24 +584,25 @@ def style_details(oob=False):
         log.error("Error getting style: %s", e)
         return "", 404
 
-    tag_cloud = """<div id="tag_cloud" class="wa-cluster">"""
+    tag_cloud = """<div id="tag_cloud" class="wa-cluster tags-removable">"""
 
-    for tag in style.tags:
-        log.info("member %s", tag)
-        tag_cloud += f"""
-        <wa-button-group label="Remove tag {tag}">
-            <wa-button appearance="filled" disabled size="s" pill>{tag}</wa-button>
-            <wa-button appearance="filled" size="s" pill>X</wa-button>
-        </wa-button-group>
-        """
-        # tag_cloud += """<wa-button
-        #     hx-delete="remove_tag"
-        #     variant="secondary"
-        #     size="s"
-        #     pill
-        # >X</wa-button>"""
-        # {tag.decode()}
-        # hx-vals="js:{{tag: '{tag.decode()}'}}"
+    found = False
+    for style_tag in style.tags:
+        log.info("member %s", style_tag)
+        if style_tag == tag:
+            found = True
+            tag_cloud += f"""
+            <wa-tag size="m" with-remove pill variant="danger">{style_tag}</wa-tag>
+            """
+        else:
+            tag_cloud += f"""
+            <wa-tag size="m" with-remove pill>{style_tag}</wa-tag>
+            """
+
+    if not found:
+        # there is an inconsistency; this style isn't supposed to be a member of
+        # this tag.
+        style.remove_tag(tag)
 
     tag_cloud += """
             <wa-input
@@ -593,7 +620,7 @@ def style_details(oob=False):
     tooltips = []
     for tier, icon, variant, cosmetic in styles.tier_cosmetics:
         tier_buttons += f"""<wa-button
-                hx-post="{style.tag}/tier"
+                hx-post="{style.style_tag}/tier"
                 hx-vals="js:{{tier: {tier}}}"
                 variant="{variant}"
                 size="s"
@@ -630,6 +657,59 @@ def style_details(oob=False):
     # {favorite_control_button}
 
     out += f"""
+    <div class="wa-cluster">
+        <div class="wa-cluster" style="width: 256px">
+            <wa-button 
+                hx-put="regenerate" 
+                hx-vars="{{engine: 'zit', style_tag: '{style_tag}'}}"
+                variant="brand"
+                hx-swap="none"
+                pill>Regenerate</wa-button>
+            <wa-button 
+                href="regenerate_ui?engine=zit&style_tag={style_tag}"
+                hx-get="regenerate_ui?engine=zit&style_tag={style_tag}"
+                target="_blank"
+                variant="brand" 
+                appearance="accent"
+                pill>
+                <wa-icon src="/static/images/comfyui.svg"></wa-icon>
+            </wa-button>
+        </div>
+        <div class="wa-cluster" style="width: 256px">
+            <wa-button 
+                hx-put="regenerate"
+                hx-vars="{{engine: 'krea2', style_tag: '{style_tag}'}}"
+                variant="brand"
+                hx-swap="none"
+                pill>Regenerate</wa-button>
+            <wa-button 
+                href="regenerate_ui?engine=krea2&style_tag={style_tag}"
+                hx-get="regenerate_ui?engine=krea2&style_tag={style_tag}"
+                target="_blank"
+                variant="brand" 
+                appearance="accent"
+                pill>
+                <wa-icon src="/static/images/comfyui.svg"></wa-icon>
+            </wa-button>
+        </div>
+        <div class="wa-cluster">
+            <wa-button 
+                hx-put="regenerate"
+                hx-vars="{{engine: 'flux', style_tag: '{style_tag}'}}"
+                variant="brand"
+                hx-swap="none"
+                pill>Regenerate</wa-button>
+            <wa-button 
+                href="regenerate_ui?engine=flux&style_tag={style_tag}"
+                hx-get="regenerate_ui?engine=flux&style_tag={style_tag}"
+                target="_blank"
+                variant="brand" 
+                appearance="accent"
+                pill>
+                <wa-icon src="/static/images/comfyui.svg"></wa-icon>
+            </wa-button>
+        </div>
+    </div>
     <div 
         id="style_card_{style_tag}"
         class="wa-stack wa-align-items-left" 
@@ -658,26 +738,12 @@ def style_details(oob=False):
         class="wa-stack"
         {"hx-swap-oob='true'" if oob else ""}>
         <p><wa-textarea label="Prefix" value="{prompt_prefix}"></wa-textarea></p>
-        <p><wa-textarea label="Prompt" placeholder="{clean_prompt}" disabled></wa-textarea></p>
         <p><wa-textarea label="Postfix" value="{prompt_postfix}"></wa-textarea></p>
     </div>
     """
+    # <p><wa-textarea label="Prompt" placeholder="{clean_prompt}" disabled></wa-textarea></p>
 
     out += f"""                    
-        <wa-button 
-            hx-put="regenerate" 
-            variant="brand"
-            hx-swap="none"
-            pill>Regenerate</wa-button>
-        <wa-button 
-            href="regenerate_ui?style_tag={style_tag}"
-            hx-get="regenerate_ui?style_tag={style_tag}"
-            target="_blank"
-            variant="brand" 
-            appearance="accent"
-            pill>
-            <wa-icon src="/static/images/comfyui.svg"></wa-icon>
-        </wa-button>
         <wa-button hx-delete="delete" variant="danger" pill>Delete Style</wa-button>
     """
     # </wa-details>
@@ -695,53 +761,72 @@ def regenerate_ui():
     """
     Create the ComfyUI workflow for regenerating a style image, then redirect to it.
     """
-    category_name = request.args.get("category")
+    engine = request.args.get("engine", "zit")
     style_tag = request.args.get("style_tag")
 
-    style = styles.get_style(category_name=category_name, style_tag=style_tag)
+    style = styles.Style(style_tag=style_tag)
     log.info("style retrieved", style=style)
 
-    # api.t2i.style_sample.json
+    # Chapter stub
     c = chapter.Chapter(
-        author=None,
-        title=None,
+        author=Author(""),
+        title="",
         number=0,
-        language=None,
+        language="english",
     )
 
-    image_xml = BeautifulSoup(
-        "<chapter><paragraph><image></image></paragraph></chapter>", "xml"
-    ).find("image")
-    image_xml.attrs = {
-        "index": 0,
-        "prompt": base_prompt,
-        "seed": str(random.randint(0, 999999999)),
-        "style": style_tag,
-    }
+    # image_xml = BeautifulSoup(
+    #     "<chapter></chapter>", "xml"
+    # ).find("image")
+    # image_xml.attrs = {
+    #     "index": 0,
+    #     "prompt": style["prompt"].format(prompt=base_prompt),
+    #     "seed": str(random.randint(0, 999999999)),
+    #     "style": style_tag,
+    # }
+    cachebreak = random.randint(0, 999999999)
 
-    workflow = c.get_comfy_workflow(
-        image_xml=image_xml,
-        interface="ui",
-        mode="t2i",
-        workflow_template="style_sample",
+    workflow_fn = c.get_workflow(
+        image_xml=BeautifulSoup('<chapter></chapter>', "xml").find("chapter"),
+        workflow_name=f"{engine}_sampler",
+        video_index=None,
         template_environment={
-            "PROMPT": style["prompt"].format(prompt=base_prompt),
-            "FILENAME_PREFIX": os.path.join("samples", style["name"]),
-            "STYLE_CATEGORY": category_name,
+            "HEIGHT": 512,
+            "WIDTH": 512,
+            "PROMPT": style.prompt.format(prompt=base_prompt),
+            "FILENAME_PREFIX": os.path.join(
+                "samples",
+                style_tag + f"_{engine}_{cachebreak}"
+            )
         },
+        force_name=f"{engine}_sampler_{style_tag}"
     )
+
+    # workflow = c.get_workflow(
+    #     image_xml=BeautifulSoup("<chapter></chapter>", "xml").find("chapter"),
+
+    #     image_xml=image_xml,
+    #     interface="ui",
+    #     mode="t2i",
+    #     workflow_template="style_sample",
+    #     template_environment={
+    #         "PROMPT": style["prompt"].format(prompt=base_prompt),
+    #         "FILENAME_PREFIX": os.path.join("samples", style["name"]),
+    #         "STYLE_CATEGORY": category_name,
+    #     },
+    # )
 
     # this is the pisser that will show up in your workflow list.
-    workflow_name = f"style_{style_tag}_sample"
-    workflow_fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-        workflow_name + ".json",
-    )
-    with open(workflow_fn, "w") as h:
-        json.dump(workflow, h)
+    # workflow_name = f"style_{style_tag}_sample"
+    # workflow_fn = os.path.join(
+    #     const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+    #     workflow_name + ".json",
+    # )
+    # with open(workflow_fn, "w") as h:
+    #     json.dump(workflow, h)
 
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_fn}"
 
     return flask.redirect(workflow_url, code=302)
 
@@ -852,6 +937,13 @@ def set_style_tier(category_name, style_tag):
 
 
 class Card:
+    """
+    Obsolete.  Use styles.Style instead. 
+    
+    styles.Style().as_card() is the new way to do this.  This class is only here
+    for backwards compatibility and will be removed.
+    
+    """
     def __init__(self, style_name: str, **meta):
         if style_name is None:
             raise ValueError("style_name is required")
@@ -984,9 +1076,9 @@ class Card:
         </wa-badge>
         """
 
-        image_url = url_for(
+        zit_image_url = url_for(
             "styles.show_sample",
-            filename=self.style_name + ".png",
+            filename=f"{self.style_name}_zit.png",
         )
 
         return f"""
@@ -999,7 +1091,7 @@ class Card:
                 loading="lazy"
                 class="image_sample"
                 slot="media"
-                src="{image_url}"
+                src="{zit_image_url}"
                 alt="Sample Image"
             >
                 {badge}
@@ -1229,158 +1321,37 @@ def choose_tag():
     log.info("Delivering tag %s with filters %s", tag, filters)
 
     response = (
-        f"""<div class="wa-stack" hx-swap-oob="true" id="tag_{tag}">"""
+        f"""<div class="wa-stack" hx-swap-oob="true" id="tag_{tag}">
+        <div class="wa-cluster">
+            <div style="width: 256px"><h3>Z-Image Turbo</h3></div>
+            <div style="width: 256px"><h3>Krea 2</h3></div>
+            <div style="width: 256px"><h3>Flux Schnell</h3></div>
+        </div>
+        """
     )
     log.info('Retrieving styles with tag "%s"', tag)
     styles_in_tag = list(styles.StyleLibrary().with_tag(tag))
     log.info("Found %s styles with tag %s", len(styles_in_tag), tag)
 
+    if len(styles_in_tag) == 0:
+        response += f"<p>No styles found with tag {tag}</p>"
+        response += "</div>"
+        sl = styles.StyleLibrary()
+        # clean up the tag.
+        sl.delete_tag(tag)
+
+        return response, 200
+
     # TODO: apply filters
     for style_index, style in enumerate(styles_in_tag):
         response += "<div class='wa-cluster wa-align-items-start wa-gap-3xs'>"
         
-        log.info("style: %s", style)
-
-        response += Card(
-            style_name=style.get("cosmetic", style.get("name")),
-            prompt=style.get("prompt", ""),
-            name=style.get("name", ""),
-            negative_prompt=style.get("negative_prompt", ""),
-            tier=style.get("tier", default_tier),
-        ).as_html()
-
+        log.info("style: %s", style.name)
+        response += style.as_card(tag=tag, oob=False)
         response += "</div>"
 
     response += """</div>"""
     return response, 200
-
-
-# @bp.route("/grouping", methods=["PUT"])
-# def grouping():
-#     group = request.form.get("group", None)
-
-#     if group == "None":
-#         group = None
-
-#     log.info("Delivering grouping for group=%s", group)
-#     # in theory this will be mostly cached
-#     min_tier = request.form.get("min_tier", 2)  # default to C or better
-#     max_tier = request.form.get("max_tier", 7)  # SSS or worse
-
-#     filters = {
-#         "min_tier": min_tier,
-#         "max_tier": max_tier,
-#         "hide_styles": request.form.get("hide_styles", "off").lower() == "on",
-#         "hide_loras": request.form.get("hide_loras", "off").lower() == "on",
-#         "only_chosen": request.form.get("only_chosen", "off").lower() == "on",
-#         "constraint_toggles": json.loads(request.form.get("constraints", "[]")),
-#         "chosen_styles": styles.all_styles(),
-#     }
-#     log.info("Filters for grouping: %s", filters)
-#     style_history, card_details, count, fcount = history_cards(**filters)
-#     log.info(
-#         "len(card_details)=%s, len(style_history)=%s",
-#         len(card_details),
-#         len(style_history),
-#     )
-
-#     grouper = Grouper(style_history, card_details, count, fcount)
-#     log.info(f"{fcount=}")
-#     total_filtered_results = sum([fcount[g] for g in fcount])
-#     if total_filtered_results:
-#         groupings_count = get_groupings_count(total_filtered_results)
-#         groupings = grouper.groupings(groupings_count)
-#     else:
-#         groupings_count = 0
-#         groupings = []
-
-#     log.info("groupings_count=%s", groupings_count)
-#     log.info("groupings=%s", groupings)
-
-#     if not group:
-#         if groupings:
-#             group = "group_0"
-#         else:
-#             # _no_ results with these filters.  Reset to a clean slate.
-#             return (
-#                 """
-#                 <div hx-swap-oob="true" id="groupings">
-#                     <wa-tab-group
-#                         id="grouping-tag-group"
-#                         hx-put="grouping"
-#                         hx-swap="none"
-#                     >
-#                     </wa-tab-group>
-#                 </div>
-#             """,
-#                 200,
-#             )
-
-#     log.info("invoking grouper.indexof(%r, %r)", groupings_count, group)
-#     category_index = grouper.indexof(groupings_count, group)
-#     log.info("group %s => category_index=%r", group, category_index)
-
-#     # update the "group_{category_index}" part by including all the cards
-#     group_panel_list = []
-#     for card in grouper.members(groupings_count, category_index=category_index):
-#         log.debug("Checking card %s : group %s", card, group)
-#         as_html = card.as_html()
-#         if as_html:
-#             group_panel_list.append(as_html)
-#     group_panel = (
-#         f'<div class="wa-cluster" id="group_{category_index}">'
-#         + "\n".join(group_panel_list)
-#         + "</div>"
-#     )
-
-#     # update the tab group to show the groups for this filtering.
-#     grouping_html = [
-#         '<div id="groupings" hx-swap-oob="true">',
-#         "<wa-tab-group",
-#         'id="grouping-tag-group"',
-#         f'active="{ group }"' if group else "",
-#         ">",
-#     ]
-
-#     for group_dict in groupings:
-#         grouping_html.append(f"""
-#             <wa-tab
-#                 hx-put="grouping"
-#                 hx-trigger="click"
-#                 hx-vals='{{"group": "group_{group_dict["tag"]}"}}'
-#                 hx-swap="none"
-#                 panel="group_{as_id(group_dict["tag"])}">{group_dict["cosmetic"]}</wa-tab>""")
-
-#     for group_dict in groupings:
-#         if int(group_dict["tag"]) == category_index:
-#             grouping_html.append(group_panel)
-#         else:
-#             log.debug(
-#                 f'{group_dict["tag"]} != {category_index}, delivering empty panel'
-#             )
-#             grouping_html += [
-#                 f'<wa-tab-panel name="group_{as_id(group_dict["tag"])}">',
-#                 f'<div id="group_{as_id(group_dict["tag"])}" class="skeleton-paragraphs">',
-#                 '<wa-skeleton class="square" count="2"></wa-skeleton>',
-#                 "</div>",
-#                 "</wa-tab-panel>",
-#             ]
-#     grouping_html.append("</div>")
-
-#     out = "\n".join(grouping_html)
-#     response = flask.make_response(out, 200)
-#     response.headers["HX-Push-Url"] = url_for(
-#         "styles.styles_base",
-#         **{
-#             "max_tier": max_tier,
-#             "min_tier": min_tier,
-#             "hide_styles": request.form.get("hide_styles", "off").lower() == "on",
-#             "hide_loras": request.form.get("hide_loras", "off").lower() == "on",
-#             "only_chosen": request.form.get("only_chosen", "off").lower() == "on",
-#             "group": group,
-#         },
-#     )
-#     return response
 
 
 @cache.cached(timeout=60 * 60 * 24)
@@ -1420,30 +1391,20 @@ def styles_base():
         "constraint_toggles": json.loads(request.args.get("constraints", "[]")),
         "chosen_styles": styles.all_styles(),
     }
-
-    all_categories = []
-    style_dir = const.STYLES_DIR
-    # all_categories, count = get_categories_and_counts(style_dir, default_tier)
+   
     count = defaultdict(int)
 
     # why isn't the value from get_categories_and_counts() being used?
     # Because it is wrong.
     sl = styles.StyleLibrary()
-    all_tags = list(sl.get_ranked_tags(**filters))[:50]
-
-
-    # # category = styles.get_category(all_categories, group)
-    # if group:
-    #     category = styles.get_category(all_categories, group)
-    # else:
-    #     category = all_categories[0]
-
-    # tag = ""
-    # all_categories = []
+    all_tags = list(
+        sl.get_ranked_tags(**filters)
+    )
+    # [:50]
 
     fcount = {}
 
-    # move the image into it
+    # Iterate all the files in comfyui /output/samples
     for fn in glob.glob(
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "samples", "*.png"
@@ -1454,10 +1415,18 @@ def styles_base():
             "samples",
             os.path.basename(fn),
         )
+
+        # none_krea2_874246583_00001_.png
+        target_fn = os.path.basename(fn).replace("_00001_", "")
+        # none_krea2_874246583.png
+        target_fn = "_".join(os.path.splitext(target_fn)[0].split("_")[:-1]) + ".png"
+        # none_krea2.png
+
         target = os.path.join(
             const.LIBRARY_DIR,
             "style_exploration",
-            os.path.basename(fn.replace("_00001_", "")),
+            target_fn,
+            # none_krea2.png
         )
         log.info("Moving sample image to library", origin=origin, target=target)
         shutil.move(origin, target)
@@ -1486,6 +1455,25 @@ def styles_base():
     )
 
     return response
+
+# "DELETE /styles/tag?tag=subject_count_options_reformatted_50_corrected&style_tag=quad
+@bp.route("/tag", methods=["DELETE"])
+def delete_tag():
+    tag = request.args.get("tag", None)
+    style_tag = request.args.get("style_tag", None)
+
+    if not tag or not style_tag:
+        return "Missing 'tag' or 'style_tag' parameter", 400
+
+    log.info("Deleting tag %s from style %s", tag, style_tag)
+
+    style = styles.Style(style_tag=style_tag)
+    if not style:
+        return f"Style {style_tag} not found", 404
+
+    style.remove_tag(tag)
+
+    return "", 200
 
 
 @bp.route("/<image_name>", methods=["DELETE"])

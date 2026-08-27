@@ -398,6 +398,49 @@ def apply_template_environment_old(workflow, template_environment):
     return out
 
 
+def run_workflow_fn(workflow_fn: str):
+    log.info('Running %s with direct API call', workflow_fn)
+    with open(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+            workflow_fn,
+        ), "r"
+    ) as h:
+        workflow = json.load(h)
+
+    json_workflow = {
+        "prompt": ui_to_api_workflow(workflow)
+    }
+
+    client = httpx.Client()
+
+    response = client.post(const.COMFYUI_API_URL + "prompt", json=json_workflow)
+
+    if response.status_code != 200:
+        log.error("Failed to create workflow", response_text=response.text)
+        raise ValueError(f"Failed to create workflow: {response.text}")
+
+    finished = False
+    job_id = response.json().get("prompt_id")
+    # 1 second polling loop
+    while not finished:
+        workflow_response = client.get(const.COMFYUI_API_URL + f"api/jobs/{job_id}")
+        if workflow_response.status_code != 200:
+            log.error("Failed to get workflow", response_text=workflow_response.text)
+            return f"Failed to get workflow: {workflow_response.text}", 500
+
+        job_dict = workflow_response.json()
+        if job_dict.get("status") in ["error", "cancelled", "completed"]:
+            finished = True
+
+        if not finished:
+            time.sleep(1)
+
+    # handle the response?  
+    # The expectation is that the workflow created a file in an expected location with a predicatable name.
+    return None
+
+
 def run_workflow(workflow, template_environment={}):
     """
     our input is a workflow template object.
