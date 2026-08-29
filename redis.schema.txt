@@ -1,0 +1,25 @@
+Hash Key [self.key] to a mapping of the style object with all string values.
+
+Set Key [self.key + "/tags"] to a set of tags for this style, the tags are strings.
+
+
+example key fluxfinish_academic_art
+
+# specific styles
+HASH fluxfinish_academic_art = {
+        negative_prompt
+        prompt
+        name
+}
+
+SET fluxfinish_academic_art/tags
+        fluxfinish
+        FLUX_Finish_Styles2
+
+LIST FLUX_Finish_Styles2
+        [fluxfinish_art_for_children, ... ]
+
+LIST tags
+        [fluxfinish, FLUX_Finish_Styles2, ... ]
+
+STRING styles_version

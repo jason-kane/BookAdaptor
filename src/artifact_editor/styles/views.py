@@ -79,25 +79,22 @@ def show_sample(filename: str):
     filename = unicodedata.normalize("NFC", filename)
     # solo_krea2_sampler.png
 
-    as_list = filename.split('_')
+    as_list = filename.split("_")
 
     engine = as_list.pop(-2)
     style_tag = "_".join(as_list[:-1])
 
-    log.info('show_sample(%s) => engine=%s, style_tag=%s', filename, engine, style_tag)
+    log.info("show_sample(%s) => engine=%s, style_tag=%s", filename, engine, style_tag)
 
     filename = f"{style_tag}_{engine}.png"
 
     sample_pfn = os.path.join(
-        os.path.join(const.LIBRARY_DIR, "style_exploration"), 
-        filename
+        os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
     )
 
     if os.path.exists(sample_pfn):
         return send_from_directory(
-            os.path.join(
-                const.LIBRARY_DIR, "style_exploration"), 
-                filename
+            os.path.join(const.LIBRARY_DIR, "style_exploration"), filename
         )
 
     # generate a new sample image.
@@ -106,9 +103,13 @@ def show_sample(filename: str):
     sample_pfn = draw_sample(style_tag, engine=engine)
     sample_pfn = unicodedata.normalize("NFC", sample_pfn)
 
-    log.info('draw_sample() returned %s', sample_pfn)
-    
-    if not os.path.exists(os.path.join(const.LIBRARY_DIR, "style_exploration", os.path.basename(sample_pfn))):
+    log.info("draw_sample() returned %s", sample_pfn)
+
+    if not os.path.exists(
+        os.path.join(
+            const.LIBRARY_DIR, "style_exploration", os.path.basename(sample_pfn)
+        )
+    ):
         raise FileNotFoundError(f"Sample image not found: {sample_pfn}")
 
     return send_from_directory(
@@ -144,7 +145,7 @@ def draw_sample(style_tag, engine="zit"):
 
     # this is a UI style workflow
     workflow_fn = chapter.get_workflow(
-        image_xml=BeautifulSoup('<chapter></chapter>', "xml").find("chapter"),
+        image_xml=BeautifulSoup("<chapter></chapter>", "xml").find("chapter"),
         workflow_name=f"{engine}_sampler",
         video_index=None,
         template_environment={
@@ -152,14 +153,13 @@ def draw_sample(style_tag, engine="zit"):
             "WIDTH": 512,
             "PROMPT": style.prompt.format(prompt=base_prompt),
             "FILENAME_PREFIX": os.path.join(
-                "samples",
-                style_tag + f"_{engine}_{cachebreak}"
-            )
+                "samples", style_tag + f"_{engine}_{cachebreak}"
+            ),
         },
-        force_name=f"{engine}_sampler_{style_tag}"
+        force_name=f"{engine}_sampler_{style_tag}",
     )
 
-    log.info('running workflow %s', workflow_fn)
+    log.info("running workflow %s", workflow_fn)
     comfy.run_workflow_fn(workflow_fn=workflow_fn)
 
     # comfy.run_workflow(
@@ -222,7 +222,9 @@ def regenerate_style_image():
     style_tag = request.form.get("style_tag")
     engine = request.form.get("engine", "zit")
 
-    style = styles.Style(style_tag=style_tag,)
+    style = styles.Style(
+        style_tag=style_tag,
+    )
     delete_sample(f"{style.style_tag}_{engine}.png")
 
     sample_pfn = draw_sample(style_tag, engine=engine)
@@ -787,7 +789,7 @@ def regenerate_ui():
     cachebreak = random.randint(0, 999999999)
 
     workflow_fn = c.get_workflow(
-        image_xml=BeautifulSoup('<chapter></chapter>', "xml").find("chapter"),
+        image_xml=BeautifulSoup("<chapter></chapter>", "xml").find("chapter"),
         workflow_name=f"{engine}_sampler",
         video_index=None,
         template_environment={
@@ -795,11 +797,10 @@ def regenerate_ui():
             "WIDTH": 512,
             "PROMPT": style.prompt.format(prompt=base_prompt),
             "FILENAME_PREFIX": os.path.join(
-                "samples",
-                style_tag + f"_{engine}_{cachebreak}"
-            )
+                "samples", style_tag + f"_{engine}_{cachebreak}"
+            ),
         },
-        force_name=f"{engine}_sampler_{style_tag}"
+        force_name=f"{engine}_sampler_{style_tag}",
     )
 
     # workflow = c.get_workflow(
@@ -938,18 +939,19 @@ def set_style_tier(category_name, style_tag):
 
 class Card:
     """
-    Obsolete.  Use styles.Style instead. 
-    
+    Obsolete.  Use styles.Style instead.
+
     styles.Style().as_card() is the new way to do this.  This class is only here
     for backwards compatibility and will be removed.
-    
+
     """
+
     def __init__(self, style_name: str, **meta):
         if style_name is None:
             raise ValueError("style_name is required")
 
-        #category_name = meta.pop("category_name", None)
-        log.info('Card.__init__()', style_name=style_name, meta=meta)
+        # category_name = meta.pop("category_name", None)
+        log.info("Card.__init__()", style_name=style_name, meta=meta)
         self.style_name = style_name
 
         # if category_name is None:
@@ -984,7 +986,7 @@ class Card:
         """
         Given a style name, find the first group containing that style.
         """
-        log.error('Obsolete find_category()')
+        log.error("Obsolete find_category()")
         for category in styles.all_categories():
             for group in styles.style_groups_in_category(category["category"]):
                 for style in styles.styles_in_group(category["category"], group):
@@ -993,7 +995,7 @@ class Card:
 
     @classmethod
     def from_style_name(cls, style_name):
-        log.error('Obsolete from_style_name()')
+        log.error("Obsolete from_style_name()")
         # this is rough.  Just having a style name isn't enough unless we've ALREADY
         # done an image, in which case we have metadata cached and it's no problem.
         full_metadata_name = os.path.join(
@@ -1005,11 +1007,7 @@ class Card:
         if os.path.exists(full_metadata_name):
             with open(full_metadata_name, "r") as f:
                 meta = json.loads(f.read())
-            return cls(
-                style_name=style_name, 
-                group_name=meta.get("group_name"),
-                **meta
-            )
+            return cls(style_name=style_name, group_name=meta.get("group_name"), **meta)
         else:
             # we have not done this style before, and we don't know
             # which category it belongs to.
@@ -1320,15 +1318,13 @@ def choose_tag():
 
     log.info("Delivering tag %s with filters %s", tag, filters)
 
-    response = (
-        f"""<div class="wa-stack" hx-swap-oob="true" id="tag_{tag}">
+    response = f"""<div class="wa-stack" hx-swap-oob="true" id="tag_{tag}">
         <div class="wa-cluster">
             <div style="width: 256px"><h3>Z-Image Turbo</h3></div>
             <div style="width: 256px"><h3>Krea 2</h3></div>
             <div style="width: 256px"><h3>Flux Schnell</h3></div>
         </div>
         """
-    )
     log.info('Retrieving styles with tag "%s"', tag)
     styles_in_tag = list(styles.StyleLibrary().with_tag(tag))
     log.info("Found %s styles with tag %s", len(styles_in_tag), tag)
@@ -1342,13 +1338,30 @@ def choose_tag():
 
         return response, 200
 
+
+    missing_images = {}
+    for engine in ['zit', 'krea2', 'flux']:
+        missing_images[engine] = []
+
     # TODO: apply filters
     for style_index, style in enumerate(styles_in_tag):
         response += "<div class='wa-cluster wa-align-items-start wa-gap-3xs'>"
-        
+
         log.info("style: %s", style.name)
         response += style.as_card(tag=tag, oob=False)
         response += "</div>"
+
+        for engine in ['zit', 'krea2', 'flux']:
+            if not os.path.exists(style.get_image_path(engine)):
+                missing_images[engine].append(style.style_tag)
+
+    # drawing all the images for each engine one engine
+    # at a time is massively more efficient. 
+    # (10x faster zit, 2x faster krea2, 10x faster flux)
+    # why isn't krea2 faster?  IDK, why does flux insist lace must be blue?
+    for engine in ['zit', 'krea2', 'flux']:
+        for style_tag in missing_images[engine]:
+            draw_sample(style_tag, engine=engine)
 
     response += """</div>"""
     return response, 200
@@ -1391,15 +1404,13 @@ def styles_base():
         "constraint_toggles": json.loads(request.args.get("constraints", "[]")),
         "chosen_styles": styles.all_styles(),
     }
-   
+
     count = defaultdict(int)
 
     # why isn't the value from get_categories_and_counts() being used?
     # Because it is wrong.
     sl = styles.StyleLibrary()
-    all_tags = list(
-        sl.get_ranked_tags(**filters)
-    )
+    all_tags = list(sl.get_ranked_tags(**filters))
     # [:50]
 
     fcount = {}
@@ -1455,6 +1466,7 @@ def styles_base():
     )
 
     return response
+
 
 # "DELETE /styles/tag?tag=subject_count_options_reformatted_50_corrected&style_tag=quad
 @bp.route("/tag", methods=["DELETE"])

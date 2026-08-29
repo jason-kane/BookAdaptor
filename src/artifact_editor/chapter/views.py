@@ -473,19 +473,48 @@ def import_chapter():
 
             raise ValueError("No phrase break found!")
 
+        # we've identified one "phrase" in the source material.
+        # we typeset each phrase independently.  this is messy.
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
         our_ops = out_ops[index : break_index + 1]
 
         doc = t.ops_to_internal_representation(our_ops)
         as_latex = doc.render_tree(mode='latex')
+
+        # render_tree gets a lot of things right.  It also
+        # makes some mistakes.  Lets fix those.
         as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
 
         # clear any \emph{} that is empty, it adds vertical space.
         as_latex = as_latex.replace(r"\emph{}", "")
+        # ditto for empty textbf{} blocks.
+        as_latex = as_latex.replace(r"\textbf{}", "")
 
-        trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
-        as_latex = as_latex.strip() + trailing_whitespace
+        # how wide should a tab be? 2em looks about right to me.
+        as_latex = as_latex.replace("\t", r"\hspace*{2em}")
 
+        # this one is very puzzling to me, using '' for all " is wrong
+        # latex wants `` for opening quotes and '' for closing quotes.
+        # we can either use " and let luaquotes do the work, or do it ourselves.
+        
+        # these should be right in most cases, but there are likely others I haven't considered.
+        as_latex = as_latex.replace(" ''", " ``")
+        as_latex = as_latex.replace("\n''", "\n``")
+        as_latex = as_latex.replace("(''", "(``")
+
+        if as_latex.startswith("''"):
+            as_latex = "``" + as_latex[2:]
+
+        # this section is buggy
+        # why are we carrying over trailing whitespace from a previous fragment
+        # of this phrase?  Isn't this adding duplicated whitespace?
+        #trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
+
+        # remove the trailing whitespace we've just bumped forward?
+        # our_ops[-1]["insert"] = our_ops[-1]["insert"].rstrip()
+        #as_latex = as_latex.strip() + trailing_whitespace
+
+        # just glue our_ops together, that's plain_phrase.
         plain_phrase = "".join([o["insert"] for o in our_ops])
 
         # for orig_index in range(index, break_index + 2):
@@ -744,9 +773,9 @@ def import_chapter():
                 # there is a non-blank line after a non-blank line.  We need to add a \\
                 all_lines[-1] = all_lines[-1].rstrip() + r"\\" + "\n"
 
-            # escapes
-            if "$" in line:
-                line = line.replace("$", r"\$")
+            # # escapes
+            # if "$" in line:
+            #     line = line.replace("$", r"\$")
 
             all_lines.append(line)
 
@@ -757,8 +786,8 @@ def import_chapter():
                 all_rainbow_lines[-1] = all_rainbow_lines[-1].rstrip() + r"\\" + "\n"
 
             # escapes
-            if "$" in line:
-                line = line.replace("$", r"\$")
+            # if "$" in line:
+            #     line = line.replace("$", r"\$")
 
             all_rainbow_lines.append(line)
 
@@ -774,7 +803,9 @@ def import_chapter():
         as_latex = doc.render_tree(mode='latex')
         as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
         as_latex += "\n\\vspace{3.5em}"
+
         h.write(as_latex)
+        rainbow_h.write(as_latex)
 
         h.write("".join(all_lines))
         rainbow_h.write("".join(all_rainbow_lines))

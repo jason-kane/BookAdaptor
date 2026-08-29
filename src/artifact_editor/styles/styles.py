@@ -2,14 +2,11 @@ import contextlib
 import fcntl
 import json
 import os
-from tokenize import group
 
 from flask import url_for
 import const
 import re
 import redis
-
-# redis.Redis(host="redis").rpush("gpu_tasks", json.dumps(["llm_str_prompt", prompt, system_prompt, outputfile]))
 
 from filelock import FileLock
 
@@ -544,6 +541,21 @@ class Style:
     def __repr__(self):
         return f"<Style {self.style_tag}>"
 
+    def get_image_path(self, sampler: str):
+        """
+        Get the path to the sample image for this style and sampler.
+        """
+        filename = f"{self.style_tag}_{sampler}.png"
+
+        sample_pfn = os.path.join(
+            os.path.join(
+                const.LIBRARY_DIR, 
+                "style_exploration"
+            ), 
+            filename
+        )
+
+        return sample_pfn
 
 class StyleLibrary:
     def __init__(self):
