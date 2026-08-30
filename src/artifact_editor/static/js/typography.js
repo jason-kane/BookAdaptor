@@ -49,7 +49,7 @@ function renderPage(num) {
     });
 
     // Update page counters
-    document.getElementById('page_num').textContent = num;
+    //document.getElementById('page_num').textContent = num;
 }
 
 /**

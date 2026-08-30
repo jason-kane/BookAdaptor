@@ -140,6 +140,7 @@ def chapter_base():
         pretty_title=g.chapter.config.get("title", g.title),
         chapter_title=g.chapter.chapter_title,
         chapter=g.chapter,
+        is_chapter=True,
     )
 
 
@@ -304,11 +305,6 @@ def import_chapter():
     # we're chapter 4 of 20 in a six hour video, we don't want to waste a moment
     # with tedious repetition of the title and author.
     
-    
-    # These confuse the phrase breaking algorithm, so we pop them out.
-    #delta = extract_title(delta, g.chapter, chapter_soup)
-    #delta = extract_author(delta, g.chapter, chapter_soup)
-
     # nltk.download('punkt_tab')
     spacy.prefer_gpu()
     try:
@@ -419,7 +415,6 @@ def import_chapter():
                         pass
 
     index = index_start
-    attributes = {}
     phrases = []
     log.info('Iterating index from %s to %s', index, len(out_ops))
     while index < len(out_ops):
@@ -506,15 +501,13 @@ def import_chapter():
             as_latex = "``" + as_latex[2:]
 
         # this section is buggy
-        # why are we carrying over trailing whitespace from a previous fragment
-        # of this phrase?  Isn't this adding duplicated whitespace?
-        #trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
+        # grab a copy of our end-of-phrase trailing whitespace
+        trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
+       
+        # add a clean copy of our trailing whitespace to the end of our phrase latex
+        as_latex = as_latex.strip() + trailing_whitespace
 
-        # remove the trailing whitespace we've just bumped forward?
-        # our_ops[-1]["insert"] = our_ops[-1]["insert"].rstrip()
-        #as_latex = as_latex.strip() + trailing_whitespace
-
-        # just glue our_ops together, that's plain_phrase.
+        # then glue our_ops together to get plain_phrase (what is spoken)
         plain_phrase = "".join([o["insert"] for o in our_ops])
 
         # for orig_index in range(index, break_index + 2):

@@ -323,8 +323,29 @@
         {% endif %}
 
         {% if chapter %}
-          <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
-            {{chapter.number}}: {{chapter.cosmetic}}
+          
+          {% if is_chapter %}
+            <wa-breadcrumb-item>
+              <wa-input
+                id="chapter_name"
+                name="chapter_name"
+                value="{{chapter.cosmetic}}"
+                hx-put="update_chapter_title"
+                hx-trigger="changed delay:250ms"
+                hx-include="#chapter_name"
+                hx-swap="none"
+                placeholder="Chapter Title"
+                size="small"
+                style="width: 15em;"
+              ></wa-input>
+          {% else %}
+            <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
+              {% if chapter.cosmetic %}
+                {{chapter.number}}: {{chapter.cosmetic}}
+              {% else %}
+                Chapter {{chapter.number}}
+              {% endif %}
+            {% endif %}
           </wa-breadcrumb-item>
         {% endif %}
         {% if section %}
