@@ -25,7 +25,7 @@ from .selector import registry as selector_registry
 log = logger.log(__name__)
 
 
-def gather_candidate_images(image_xml, chapter):
+def gather_candidate_images(image_xml: Tag, chapter):
     image_paths = set()
     paragraph = image_xml.find_parent("paragraph")
     paragraph_dir = chapter.get_paragraph_dir(paragraph.attrs["index"])
@@ -34,7 +34,7 @@ def gather_candidate_images(image_xml, chapter):
     for fn in glob.glob(
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
-            comfy_prefix + "*"
+            comfy_prefix + "*.png"
         )
     ):
         destination = os.path.join(
@@ -66,6 +66,46 @@ def gather_candidate_images(image_xml, chapter):
     )
     
 
+def gather_candidate_videos(image_xml: Tag, chapter):
+    image_paths = set()
+    paragraph = image_xml.find_parent("paragraph")
+    paragraph_dir = chapter.get_paragraph_dir(paragraph.attrs["index"])
+    
+    comfy_prefix = f"{chapter.nice}_img_{image_xml.attrs['index']}"
+    for fn in glob.glob(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
+            comfy_prefix + "*.mp4"
+        )
+    ):
+        destination = os.path.join(
+            const.LIBRARY_DIR,
+            paragraph_dir,
+            os.path.basename(fn).removeprefix(chapter.nice + "_")
+        )
+
+        if not os.path.exists(destination):
+            # copy, not move so it doesn't disappear from comfyui
+            shutil.copy(fn, destination)
+            log.info(f"Copied {fn} to {destination}")
+
+    # if 'index' in image_xml.attrs:
+    image_index = image_xml.attrs["index"]
+
+    #     for image_path in images.all_images_by_image_index(
+    #         paragraph_dir,
+    #         image_index
+    #     ):
+    #         image_paths.add(image_path)
+   
+    # log.info(f"Candidate images: {sorted(list(image_paths))}")
+    return sorted(
+        images.all_videos_by_image_index(
+            paragraph_dir,
+            image_index
+        )
+    )
+    
 
 def get_mode_selector(src, aspect, image_xml):
 
@@ -133,7 +173,7 @@ def image_metadata(chapter: Chapter, image_xml: Tag, src:str):
 
     image_src = image_xml.attrs.get("src")
 
-    if image_src and (os.path.basename(src) == os.path.basename(image_src)):
+    if image_src and src and (os.path.basename(src) == os.path.basename(image_src)):
         log.info(
             "src matches image_xml.attrs['src'], disabling 'use' button", 
             src=src, image_xml_src=image_src

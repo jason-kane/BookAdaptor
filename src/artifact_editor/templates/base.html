@@ -327,12 +327,12 @@
           {% if is_chapter %}
             <wa-breadcrumb-item>
               <wa-input
-                id="chapter_name"
-                name="chapter_name"
+                id="chapter_title"
+                name="chapter_title"
                 value="{{chapter.cosmetic}}"
-                hx-put="update_chapter_title"
-                hx-trigger="changed delay:250ms"
-                hx-include="#chapter_name"
+                hx-put="update_title"
+                hx-trigger="change"
+                hx-include="#chapter_title"
                 hx-swap="none"
                 placeholder="Chapter Title"
                 size="small"
@@ -429,6 +429,8 @@
             <a href="{{ url_for('library.book.chapter.publish.github.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>GitHub</wa-dropdown-item></a>
           </wa-dropdown>
         </wa-breadcrumb-item>
+
+        <a href="textoviva"><wa-button size="medium" appearance="filled">Textoviva</wa-button></a>
         {% endif %}
       </wa-breadcrumb>
       <wa-button id="todo" appearance="outlined" variant="neutral">Dev TODO</wa-button>

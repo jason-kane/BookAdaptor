@@ -3,11 +3,12 @@ import json
 import re
 
 from flask import request, url_for, render_template
-
+from bs4 import Tag
 import logger
 from artifact_editor.characters import characters
 from artifact_editor.tools import generic_button
-from artifact_editor.images import htmx as images_htmx
+from artifact_editor.images import htmx as images_htmx, images
+from artifact_editor.phrases import phrases
 
 log = logger.log(__name__)
 
@@ -334,6 +335,7 @@ def base_text_phrase(chapter, phrase_xml):
             name="text"
             resize="auto"
             rows="1"
+            data-url="{url_for('library.book.chapter.phrases.set_latex', phrase_index=phrase_xml['index'])}"
             value="{escaped}">
         </wa-textarea>
     """
@@ -346,11 +348,31 @@ def base_text_phrase(chapter, phrase_xml):
         # in poetry mode.  Wrap ^ in a cluster and add a checkbox.
         value = "checked" if phrase_xml.attrs.get("no_linebreak") == "true" else ""
 
+        log.info('phrase_xml: %s', phrase_xml)
+        log.info('phrase_xml.attrs: %s', phrase_xml.attrs)
+        # what do we do when attrs doesn't have 'index'? I think we need an
+        # end-to-end image re-index.  If that can be smart about moving /
+        # renaming images correctly; we should have a suitably placed function
+        # anyone can call to do it.
+        if 'index' not in phrase_xml.attrs:
+            log.warning("phrase_xml.attrs does not have 'index': %s.  Reindexing images..", phrase_xml.attrs)
+            images_htmx.reindex_images(chapter)
+            phrases.reindex_phrases(chapter)
+            chapter.load_xml()  # reload the XML after reindexing
+
+            # we're here because we don't have a phrase_xml['index'].
+            # I don't think reindexing the _images_ will do a damn thing to help.
+            phrase_xml = chapter.get_phrase(phrase_xml['index'])
+            
+            if 'index' not in phrase_xml.attrs:
+                log.error("After reindexing, phrase_xml.attrs still does not have 'index': %s", phrase_xml.attrs)
+                raise ValueError("phrase_xml.attrs does not have 'index' after reindexing images.")
+
         phrase = f"""
         <div class="wa-cluster">
             {phrase}
             <wa-checkbox
-                hx-put="{url_for('library.book.chapter.phrases.set_linebreak', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
+                hx-put="{url_for('library.book.chapter.phrases.set_linebreak', phrase_index=phrase_xml['index'])}"
                 hx-vals='{{"no_linebreak": { "false" if value else "true" }}}'
                 hx-swap="outerHTML"
                 hx-target="#phrase-{phrase_xml['index']}"
@@ -364,10 +386,6 @@ def base_text_phrase(chapter, phrase_xml):
 def split_phrase_button(chapter, phrase_xml):
     split_phrase_url = url_for(
         "library.book.chapter.phrases.split_phrase",
-        author=chapter.author.name,
-        title=chapter.title,
-        chapter_number=chapter.number,
-        language=chapter.language
     )
     return f"""<wa-button
         hx-post="{split_phrase_url}"
@@ -626,6 +644,7 @@ def phrase_latex(chapter, phrase_xml):
     <wa-textarea
         class="phrase-latex"
         label="LaTeX"
+        data-url="{url_for('library.book.chapter.phrases.set_latex', phrase_index=phrase_xml['index'])}"
         resize="auto"
         rainbow="false"
         index="{phrase_xml['index']}"
@@ -690,7 +709,7 @@ def get_phrase_latex_image(chapter, phrase_xml):
         </div>
 """
 
-def phrase_editor(chapter, phrase_xml, page, split=None):
+def phrase_editor(chapter, phrase_xml: Tag, page, split=None):
     """
     we are the <div id="phrase-{phrase['index']}" class="wa-card"> block
     for a specific phrase.
@@ -747,7 +766,7 @@ def phrase_editor(chapter, phrase_xml, page, split=None):
     )
 
 
-def split_phrase_text(chapter, phrase_xml, split, page):
+def split_phrase_text(chapter, phrase_xml: Tag, split, page) -> str:
     raw_text = phrase_xml.get_text().strip()
     first_phrase, second_phrase = split
 

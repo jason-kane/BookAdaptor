@@ -121,8 +121,8 @@ services:
   comfyui:
     init: true
     container_name: comfyui-megapak
-    image: "yanwk/comfyui-boot:cu130-megapak-pt211"
-    command: [ "bash", "/runner-scripts/entrypoint.sh", "--listen", "0.0.0.0", "--enable-cors-header", '"*"' ]
+    image: "comfyui-boot:cu130-megapak-pt211"
+    command: [ "bash", "/runner-scripts/entrypoint.sh", "--listen", "0.0.0.0", "--enable-cors-header", '*' ]
     build:
       context: ./comfy/ComfyUI-Docker/cu130-megapak-pt211/
       dockerfile: Dockerfile

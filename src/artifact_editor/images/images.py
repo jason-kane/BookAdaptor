@@ -34,6 +34,7 @@ from artifact_editor.tools import (
 from text_to_image.registry import registry as t2i_registry
 
 from .scene import const as scene_const
+from .scene import scene
 
 log = logger.log(__name__)
 
@@ -315,6 +316,22 @@ def create_cite_image(
     return output_image_pfn
 
 
+def all_videos_by_image_index(paragraph_dir, video_index):
+    log.info(
+        "Looking for videos in paragraph dir: %s with index: %s",
+        paragraph_dir,
+        video_index,
+    )
+    globpath = os.path.join(
+        const.LIBRARY_DIR,
+        paragraph_dir,
+        f"img_{video_index}_*.mp4",
+    )
+    videos = glob.glob(globpath)
+    log.info("videos matching glob", globpath=globpath, videos=videos)
+
+    return videos
+
 def all_images_by_image_index(paragraph_dir, image_index):
     log.info(
         "Looking for images in paragraph dir: %s with index: %s",
@@ -466,7 +483,7 @@ def generate_metadata_setting(image_xml, force=False):
         system_prompt="You are a helpful assistant that generates concise and accurate settings for story illustrations.  You prioritize consistency across images and will reuse previous settings when appropriate.",
         force=force,
     )
-    if len(setting) < MAX_SETTING_LENGTH:
+    if len(setting) > 5 and len(setting) < MAX_SETTING_LENGTH:
         image_xml.attrs["setting"] = setting.strip()
     else:
         condensed_setting = condense_setting_prompt(setting)
@@ -501,69 +518,7 @@ def generate_metadata_setting(image_xml, force=False):
                     f"Unable to condense settings to below {MAX_SETTING_LENGTH} tokens. "
                 )
 
-
-def generate_metadata_tod(image_xml):
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
-
-    text = get_text_to_next(
-        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
-    )
-
-    tod_choices = [c[1] for c in TIME_OF_DAY_CHOICES]
-    prompt = (
-        f"I want to determine the time of day for a portion of a story."
-        f"  The text is: {text}.  "
-        f"The surrounding text is: {surrounding_text}.  "
-        "What is the time of day?  The answer must be one of the following: "
-        f"UNKNOWN, {', '.join(tod_choices)}.  "
-        "Single word response only."
-    )
-
-    tod = llm.str_prompt(prompt)
-    if tod in tod_choices:
-        for c in TIME_OF_DAY_CHOICES:
-            if c[1] == tod:
-                tod = c[0]
-        image_xml.attrs["tod"] = tod
-    elif tod != "UNKNOWN":
-        log.warning(
-            f"Time of day '{tod}' is not in {TIME_OF_DAY_CHOICES} for image {image_xml}"
-        )
-
-
-def generate_metadata_camera(image_xml):
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
-
-    text = get_text_to_next(
-        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
-    )
-
-    choices = []
-    for cam in CAMERA_CHOICES:
-        choices.append(f"{cam[0]}:  {cam[1]}")
-
-    prompt = (
-        f"I want to choose a good camera angle for a portion of a story."
-        f"  The text is: {text}.  "
-        f"The surrounding text is: {surrounding_text}.  "
-        "What is the camera angle?  The answer must be one of the following:\n"
-        f"{'\n'.join(choices)}\n"
-        "Single response only."
-    )
-
-    camera = llm.str_prompt(prompt)
-    valid_camera = [c[0] for c in CAMERA_CHOICES]
-    clean_camera = camera.strip().lower().replace("-", "_").replace(" ", "_")
-    if clean_camera in valid_camera:
-        image_xml.attrs["camera"] = clean_camera
-    else:
-        log.warning(
-            f"Camera angle '{clean_camera}' is not in {CAMERA_CHOICES} for image {image_xml}"
-        )
+    return image_xml.attrs.get("setting")
 
 
 def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=False):
@@ -671,7 +626,7 @@ def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=Fals
             )
 
 
-def generate_metadata_scene_characters(mybook, image_xml, chapterdir, force=False):
+def OBSOLETE_generate_metadata_scene_characters(mybook, image_xml, chapterdir, force=False):
     """
     Which characters are potentially visible in this scene?
     """
@@ -773,58 +728,6 @@ def generate_metadata_scene_characters(mybook, image_xml, chapterdir, force=Fals
         image_xml.attrs["scene_characters"] = ",".join(as_list)
 
 
-def generate_metadata_focus_character(mybook, image_xml, chapterdir):
-    """
-    Which character is the focus of this image?
-    """
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
-
-    all_character_names = characters.get_all_character_names(mybook, chapterdir)
-
-    text = get_text_to_next(
-        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
-    )
-
-    prompt = (
-        f"I want to determine which character is the focus of one small portion of a story."
-        f"  The text is: {text}.  "
-        f"The surrounding text is: {surrounding_text}.  "
-        "Who is the focus character?  Only response with the characters name. "
-        "The answer must be one of the following: "
-        + json.dumps(["UNKNOWN"] + all_character_names)
-    )
-
-    #
-    focus_character = llm.str_prompt(prompt)
-    focus_character = (
-        focus_character.replace("[", "").replace("]", "").strip('"').strip().title()
-    )
-
-    log.info('Focus character: "%s"', focus_character)
-    if focus_character in all_character_names:
-        image_xml.attrs["focus_character"] = characters.name_to_tag(focus_character)
-    elif focus_character.replace(" ", "_") in all_character_names:
-        image_xml.attrs["focus_character"] = characters.name_to_tag(
-            focus_character.replace(" ", "_")
-        )
-    elif focus_character != "UNKNOWN":
-        for character_name in all_character_names:
-            if focus_character.lower() in character_name.lower():
-                log.info(f"Using partial match for focus character: {character_name}")
-                image_xml.attrs["focus_character"] = characters.name_to_tag(
-                    character_name
-                )
-                break
-
-        log.warning(
-            f"Detected Focus character '{focus_character}' is not in {all_character_names} for image {image_xml}"
-        )
-        # if "focus_character" in image_xml.attrs:
-        #     del image_xml.attrs["focus_character"]
-
-
 def generate_metadata_character_pose(character, image_xml, chapter):
     """
     Choose a pose, location, and action for the character in this image.
@@ -845,19 +748,37 @@ def generate_metadata_character_pose(character, image_xml, chapter):
         f"The surrounding text is: {surrounding_text}.  "
         f"The character is named {character['name']} and is described as: {character.get('description', '')}.  "
         "What is the best pose for this character?  The answer must be one of the following:\n"
-        + "\n".join([f"{p[0]}: {p[1]}" for p in scene_const.POSE_OPTIONS])
+        + "\n".join([f"{p[0]}: {p[1]}" for p in scene_const.POSE_CHOICES])
         + "\nSingle JSON string response only."
     )
 
-    pose = llm.str_prompt(prompt)
-    valid_pose = [p[0] for p in scene_const.POSE_OPTIONS]
-    clean_pose = pose.strip().lower().replace("-", "_").replace(" ", "_")
-    if clean_pose in valid_pose:
-        image_xml.attrs[f"{character['tag']}_pose"] = clean_pose
+    pose = llm.json_prompt(prompt)
+    valid_pose = [p[0] for p in scene_const.POSE_CHOICES]
+    if isinstance(pose, dict) and "pose" in pose:
+        clean_pose = pose["pose"].strip().lower().replace("-", "_").replace(" ", "_")
     else:
-        log.warning(
-            f"Pose '{clean_pose}' is not in {scene_const.POSE_OPTIONS} for character {character['name']} in image {image_xml}"
-        )
+        raise ValueError('Unknown pose response: %s' % pose)
+
+    image_xml.attrs[f"{character['tag']}_pose"] = clean_pose
+    return
+
+    # #clean_pose = pose.strip().lower().replace("-", "_").replace(" ", "_")
+    # if clean_pose in valid_pose:
+    #     image_xml.attrs[f"{character['tag']}_pose"] = clean_pose
+    #     return
+    # else:
+    #     for pose, cosmetic in scene_const.POSE_CHOICES:
+
+    #         if clean_pose in pose:
+    #             image_xml.attrs[f"{character['tag']}_pose"] = pose
+    #             log.info(
+    #                 f"Using closest matching pose '{pose}' for character {character['name']} in image {image_xml}"
+    #             )
+    #             return
+
+    # log.warning(
+    #     f"Pose '{clean_pose}' not matched against any of {scene_const.POSE_CHOICES} for character {character['name']} in image {image_xml.attrs['index']}"
+    # )
 
 
 def generate_metadata_character_location(character, image_xml, chapter):
@@ -900,7 +821,7 @@ def _compress_action(
     return action
 
 
-def generate_metadata_character_action(character_dict, image_xml, force=False):
+def generate_metadata_character_action(character_dict, image_xml: Tag, force=False):
     """
     We want to know what this character is _doing_ at the moment in the story
     where image_xml is located.  It's going to inform the prompt used to
@@ -955,7 +876,30 @@ def generate_metadata_character_action(character_dict, image_xml, force=False):
             keys=character_detail.keys(),
         )
 
+    action = None
+    motivation = None
+
+    if isinstance(character_detail, dict):
+        if "action" in character_detail:
+            action = character_detail["action"]
+
+        if "motivation" in character_detail:
+            motivation = character_detail["motivation"]
+        
+    if action:
+        log.info('Saving action', character_tag=character_dict['tag'], action=action)
+        image_xml.attrs[f"{character_dict['tag']}_action"] = action
+    else:
+        log.info('No action generated, skipping save for action', character_tag=character_dict['tag'])
+
+    if motivation:
+        log.info('Saving motivation', character_tag=character_dict['tag'], motivation=motivation)
+        image_xml.attrs[f"{character_dict['tag']}_motivation"] = motivation
+    else:
+        log.info('No motivation generated, skipping save for motivation', character_tag=character_dict['tag'])
+
     return character_detail
+
 
 def generate_metadata_character_action_old(character_dict, image_xml, force=False):
     """
@@ -1041,65 +985,92 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
 
     # determine if we need to do textual analysis.
     textual_analysis = False
-    for tag in ["setting", "tod", "camera", "focus_character", "scene_characters"]:
+    for tag in ["setting", "tod", "camera", "scene_characters", "focus_character"]:
         if tag not in image_xml.attrs:
+            log.warning(
+                f"Missing {tag} for image {image_xml}, will perform textual analysis."
+            )
             textual_analysis = True
+            break
 
-    all_characters = characters.get_all_characters(
-        chapter,
-    )
+    all_characters = characters.get_all_characters(chapter)
 
     if textual_analysis or force_all:
         # we need to do textual analysis.
         # use the text_to_next to determine the setting, tod, camera, # focus_character, and scene_characters.
         if "setting" not in image_xml.attrs or force_all:
-            generate_metadata_setting(image_xml)
+            log.info('Generating setting for image %s', image_xml.attrs['index'])
+            setting = generate_metadata_setting(image_xml)
+            log.info('Setting for image %s: %s', image_xml.attrs['index'], setting)
+            image_xml.attrs["setting"] = setting
+            chapter.save_xml()
 
         if "tod" not in image_xml.attrs or force_all:
             # time of day
-            generate_metadata_tod(image_xml)
+            log.info('Generating TOD for image %s', image_xml.attrs['index'])
+            tod = scene.generate_tod(image_xml)
+            image_xml.attrs["tod"] = tod
+            chapter.save_xml()
 
         if "camera" not in image_xml.attrs or force_all:
             # camera
-            generate_metadata_camera(image_xml)
+            log.info('Generating camera for image %s', image_xml.attrs['index'])
+            camera = scene.generate_camera(image_xml)
+            image_xml.attrs["camera"] = camera
+            chapter.save_xml()
 
         if "scene_characters" not in image_xml.attrs or force_all:
             # scene characters
-            generate_metadata_scene_characters(chapter, image_xml)
+            log.info('Generating scene characters for image %s', image_xml.attrs['index'])
+            scene_characters = scene.generate_scene_characters(chapter, image_xml)
+            image_xml.attrs["scene_characters"] = ",".join(sorted(scene_characters))
+            chapter.save_xml()
 
-        if ("scene_characters" in image_xml.attrs) or force_all:
-            # make sure the scene characters are valid.
-            valid = set()
-            for character_name in image_xml.attrs.get("scene_characters", "").split(
-                ","
-            ):
-                character_name = character_name.strip()
+        if (
+            "lighting_direction" not in image_xml.attrs or
+            "lighting_source" not in image_xml.attrs or
+            "lighting_quality" not in image_xml.attrs or force_all
+        ):
+            log.info('Generating lighting for image %s', image_xml.attrs['index'])
+            scene.generate_lighting(chapter, image_xml)
+            chapter.save_xml()
 
-                if character_name and character_name not in all_characters.keys():
-                    log.warning(
-                        'Unknown character: "%s" in scene characters for image %s',
-                        character_name,
-                        image_xml,
-                    )
-                elif character_name:
-                    valid.add(character_name)
+        # if ("scene_characters" in image_xml.attrs) or force_all:
+        #     # make sure the scene characters are valid.
+        #     valid = set()
+        #     for character_name in image_xml.attrs.get("scene_characters", "").split(
+        #         ","
+        #     ):
+        #         character_name = character_name.strip()
 
-            image_xml.attrs["scene_characters"] = ",".join(sorted(valid))
-            log.info(
-                "Updated scene characters for image %s: %s",
-                image_xml,
-                image_xml.attrs["scene_characters"],
-            )
+        #         if character_name and character_name not in all_characters.keys():
+        #             log.warning(
+        #                 'Unknown character: "%s" in scene characters for image %s',
+        #                 character_name,
+        #                 image_xml,
+        #             )
+        #         elif character_name:
+        #             valid.add(character_name)
+
+        #     image_xml.attrs["scene_characters"] = ",".join(sorted(valid))
+        #     log.info(
+        #         "Updated scene characters for image %s: %s",
+        #         image_xml,
+        #         image_xml.attrs["scene_characters"],
+        #     )
 
         if (
             "scene_characters" in image_xml.attrs
             and "focus_character" not in image_xml.attrs
         ) or force_all:
             # focus character
-            generate_metadata_focus_character(chapter, image_xml)
+            log.info('Generating focus character for image %s', image_xml.attrs['index'])
+            focus_character = scene.generate_focus_character(chapter, image_xml)
+            image_xml.attrs["focus_character"] = focus_character
+            chapter.save_xml()
 
-    # characters may have been created, reload them
-    log.info("Reloading all characters for chapter %s", chapter)
+    # new characters may have been created, reload them
+    # log.info("Reloading all characters for chapter %s", chapter)
     all_characters = characters.get_all_characters(chapter)
     for c in list(all_characters.keys()):
         # index by both name and tag
@@ -1114,50 +1085,62 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
                 clean_scene_characters.add(character_name)
 
         image_xml.attrs["scene_characters"] = ",".join(sorted(clean_scene_characters))
+        chapter.save_xml()
 
         for character_name in image_xml.attrs["scene_characters"].split(","):
             character_name = character_name.strip()
+            if not character_name:
+                continue
 
             character_dict = characters.get_character(chapter, character_name)
             if character_dict:
                 log.info(f"Found character {character_name} in {chapter}")
                 # choose an appropriate pose, location, and action
-                generate_metadata_character_pose(character_dict, image_xml, chapter)
-                generate_metadata_character_location(character_dict, image_xml, chapter)
-                generate_metadata_character_action(character_dict, image_xml)
+                if f"{character_dict['tag']}_pose" not in image_xml.attrs:
+                    log.warning('Missing pose for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
+                    generate_metadata_character_pose(character_dict, image_xml, chapter)
+
+                if f"{character_dict['tag']}_location" not in image_xml.attrs:
+                    log.warning('Missing location for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
+                    generate_metadata_character_location(character_dict, image_xml, chapter)
+
+                if f"{character_dict['tag']}_action" not in image_xml.attrs:
+                    log.warning('Missing action for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
+                    generate_metadata_character_action(character_dict, image_xml)
 
             else:
                 log.warning(f"Character {character_name} not found")
-
-            # what the hell is this for?
-            if character_name == "disabled":
-                # make sure the character exists.
-                if character_name not in all_characters:
-                    log.info(f"Creating character {character_name} in {chapter}")
-                    character_tag = characters.name_to_tag(character_name)
-
-                    chardict = {
-                        "name": character_name,
-                        "tag": character_tag,
-                        "description": "",
-                        "gender": "",
-                        "age": "",
-                    }
-
-                    characters.add_character(
-                        chapter=chapter,
-                        character_name=character_name,
-                        chardict=chardict,
-                    )
-
-                    # avoid dupes all_characters[character_name] = chardict
-                    all_characters[character_tag] = chardict
     else:
         log.info("No scene characters for image %s", image_xml)
 
     # per character: # pose # location # action
 
-    # save per-image # mybook.save_xml()
+    # save per-image # 
+    # chapter.save_xml()
+
+
+def generate_animation_prompt(chapter, image_xml, force=False):
+    """
+    Generate a prompt for the animation model based on the text surrounding this image.
+    """
+    text = get_text_to_next(
+        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
+    )
+
+    surrounding_text = get_surrounding_paragraphs(
+        image_xml.find_parent("paragraph"), context_min=600
+    )
+
+    prompt = (
+        f"I want to generate an animation prompt for a portion of a story."
+        f"  The text is: {text}.  "
+        f"The surrounding text is: {surrounding_text}.  "
+        "Generate a concise animation prompt that captures the essence of the scene."
+    )
+
+    animation_prompt = llm.str_prompt(prompt, force=force)
+    image_xml.attrs["animation_prompt"] = animation_prompt.strip()
+    return animation_prompt.strip()
 
 
 def text_to_image_clip_prompt(text, paragraph_text, t5_prompt, prompt_fn):

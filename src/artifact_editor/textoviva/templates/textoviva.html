@@ -1,0 +1,77 @@
+{% extends "pagebase.html" %}
+
+{% block title %}<title>Textoviva</title>{% endblock %}
+
+{% block styles %}
+<style>
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    //wait for dom to load
+    document.addEventListener("DOMContentLoaded", function() {
+        // get the video element
+        const video = document.getElementById("chapter-video");
+        // listen for the 'pause' event
+        video.addEventListener("pause", function() {
+            console.log("Video paused at: " + video.currentTime + " seconds");
+            video.exitFullscreen();
+            // update the image panel in the upper right
+            // by sending it the pause time, it will figure out which
+            // image we are talking about.
+
+            // update the animation panel in the lower right,
+            // by sending it the pause time, it will figure out which
+            // animation we are talking about.
+
+            // finally, update the phrase panel on the left side.  We want to
+            // popout the phrase that corresponds to the current time in the video.  
+
+            // the big picture is:  play the video.  pause when you see something "wrong"
+            // then fix it.
+            var pauseTime = video.currentTime;
+            // oom_spaw on the responses will update all the widgets
+            // to the the ones that matter for this moment in the video.
+            htmx.ajax('GET', 'pause?pauseTime=' + pauseTime, {
+                swap: 'none'
+            });
+
+        });
+
+        video.addEventListener("play", function() {
+            video.requestFullscreen();
+        });
+
+        
+    });
+</script>
+{% endblock %}
+
+{% block navigation %}
+<div class="wa-stack">
+    <wa-accordion id="phrase_accordion" mode="single-collapsible" style="width: 20em">
+        {% for phrase in g.chapter.phrases() %}
+        <wa-accordion-item id="phrase_{{ phrase.index|string }}">
+            <div slot="label">
+                <span>{{ phrase.text|wordwrap(30, wrapstring="<br/>")|safe }}</span>
+            </div>
+            {{ phrase.text }}
+        </wa-accordion-item>
+        {% endfor %}
+    </wa-accordion>
+</div>
+{% endblock %}
+
+{% block body %}
+    {{ player_stack(chapter, image_xml)|safe }}
+{% endblock %}
+
+{% block aside %}
+    <div id="image-stack" class="wa-stack">
+        <div id="image-base">
+            {{ small_image_workshop|safe }}             
+        </div>
+        <div id="video-base"></div>
+    </div>
+{% endblock %}

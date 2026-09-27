@@ -26,6 +26,22 @@
 {% endblock %}
 
 {% block body %}
+<div class="wa-cluster">
+    <wa-button
+        hx-post="{{ url_for('library.book.chapter.phrases.timeline.inject_image_slots') }}"
+        hx-swap="none"
+        variant="brand"
+    >
+        Inject 8 Second Image Slots
+    </wa-button>
+    <wa-button
+        hx-post="{{ url_for('library.book.chapter.phrases.timeline.generate_scenes') }}"
+        hx-swap="none"
+        variant="brand"
+    >
+        Generate All Scenes
+    </wa-button>
+</div>
 <div class="wa-cluster timeline-block wa-align-items-start">
 {% for paragraph in paragraphs %}
     <fieldset class="paragraph wa-cluster wa-align-items-start">

@@ -96,6 +96,9 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         )
 
         workflow_image_template = image_xml.attrs.get("workflow_image_template", "")
+        if workflow_image_template in [None, ""]:
+            workflow_image_template = const.DEFAULT_IMAGE_TEMPLATE
+        
         if "." in workflow_image_template:
             mode = workflow_image_template.split(".")[0]
             workflow_image_template = workflow_image_template.split(".")[-1]

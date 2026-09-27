@@ -4,6 +4,8 @@ import os
 import re
 import html
 import shutil
+
+import flask
 import roman
 import spacy
 import subprocess
@@ -121,6 +123,16 @@ def set_theme():
 
     return "", 200
 
+@bp.route("/update_phrase", methods=["PUT"])
+def update_phrase():
+    phrase_id = request.args.get("phrase_id")
+    new_text = request.form.get("text")
+
+    phrase = g.chapter.get_phrase(phrase_id)
+    phrase.text = new_text
+    g.chapter.save_phrases()
+
+    return "", 200
 
 @bp.route("")
 @bp.route("/")
@@ -130,6 +142,8 @@ def chapter_base():
         chapter_pdf_url = url_for(
             'library.book.chapter.typography.serve_chapter_pdf',
         ),
+        phrases=g.chapter.phrases(),
+        previous_phrase_index=-1,
         language=g.chapter.language,
         pretty_language=g.chapter.pretty_language,
         import_button=htmx.import_button(g.chapter),
@@ -287,6 +301,109 @@ def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return compressed
 
 
+@bp.route("/phrase_editor/<phrase_index>/", methods=["GET"])
+def phrase_editor(phrase_index: int):
+    """
+    Replace this phrase with a quilljs rich text editor. 
+    """
+    phrase_index = int(phrase_index)
+    phrase = g.chapter.get_phrase(phrase_index)
+    previous_phrase_index = int(request.args.get("previous_phrase_index", -1))
+    previous_phrase = g.chapter.get_phrase(previous_phrase_index)
+
+    if previous_phrase is None:
+        previous_delta = "[]"
+    else:
+        previous_delta = previous_phrase.attrs.get("delta", "[]")
+
+    out = f"""
+        <div 
+            id="phrase_{phrase.attrs['index']}" class="phrase-editor"
+            hx-swap-oob="true"
+        > </div>
+    """
+
+    # replace the previous quilljs-enhanced editor with the 
+    # original vanilla, so we only have one quill running instead of N
+    # _and_ it makes it clear which one is "hot", and we can add other widgets to the 'hot' phrase.
+    
+    if previous_phrase_index >= 0:
+        # we are not the users first choice, they picked previous_phrase_index before they
+        # picked us.  
+
+        value = "[\n"
+        for op in json.loads(previous_delta):
+            value += "    " + json.dumps(op, separators=(", ", ": ")) + ",\n"
+        value += "]"
+
+        value = html.escape(value)
+
+        out += f"""<wa-textarea 
+            id="phrase_{ previous_phrase_index }" 
+            class="phrase-editor"
+            hx-get="{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.attrs['index']) }"
+            hx-vals='js:{{"previous_phrase_index": window.previous_phrase_index}}'
+            hx-trigger="click"
+            hx-swap="none"
+            value="{value}"
+            hx-swap-oob="true"
+        ></wa-textarea>"""
+
+    out += f"""
+        <div id="js-executor" hx-swap-oob="true">
+            <script>
+                // first things first.. remove every child of #phrase-stack that has a role="toolbar"
+                var phraseStack = document.getElementById('phrase-stack');
+                Array.from(phraseStack.children).forEach(child => {{
+                    if (child.getAttribute('role') === 'toolbar') {{
+                        phraseStack.removeChild(child);
+                    }}
+                }});
+                // the new previous.
+                window.previous_phrase_index = '{phrase_index}';
+                var phraseEditor = new Quill('#phrase_{phrase.attrs['index']}',
+                {{
+                    modules: {{
+                        syntax: false, toolbar: {{
+                            container: [
+                                [
+                                    {{ 'font': fontFamilyArr }}, 
+                                    {{ 'size': fontSizeArr }}
+                                ], ['bold', 'italic'], [
+                                    {{ align: ''}}, 
+                                    {{ align: 'center' }}, 
+                                    {{ align: 'justify' }}
+                                ],
+                            ]
+                        }}
+                    }}, theme: 'snow'
+                }}); 
+                phraseEditor.setContents({phrase.attrs['delta']});
+                phraseEditor.on('text-change', function(delta, oldDelta, source)
+                {{
+                    htmx.ajax('POST', 'phrase_delta/{phrase.attrs['index']}/',
+                    {{
+                        headers: {{
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }}, values: {{
+                            delta: JSON.stringify(phraseEditor.getContents()),
+                        }}, swap: 'none', onError: function (err) {{
+                            console.error('Error updating:', err);
+                        }}
+                    }});
+                }});
+            </script>
+        </div>
+        """
+    # flask.make_response(
+    #     out, 200
+    # )
+    # response.headers["HX-Trigger"] = json.dumps({
+    #     "editPhrase": {"phrase_index": phrase_index}
+    # })
+    return out, 200
+
+
 @bp.route("/import_chapter", methods=["POST"])
 def import_chapter():
     """
@@ -410,6 +527,7 @@ def import_chapter():
                             ";": 3,
                             ":": 3,
                             ",": 1,
+                            '"': 5,
                         }[out_ops[-1]["insert"].strip()[-1]]
                     except KeyError:
                         pass
@@ -509,111 +627,8 @@ def import_chapter():
 
         # then glue our_ops together to get plain_phrase (what is spoken)
         plain_phrase = "".join([o["insert"] for o in our_ops])
-
-        # for orig_index in range(index, break_index + 2):
-        #     if orig_index >= len(out_ops):
-        #         close_only = True
-        #         orig = {"insert": "", "attributes": {}}
-        #     else:
-        #         orig = out_ops[orig_index]
-        #         close_only = False
-
-        #     o = orig.copy()
-        #     if not close_only:
-        #         # replacements with latex symbols
-        #         if "—" in o["insert"]:
-        #             log.info("Replacing em dash with -- in phrase: %s", o["insert"])
-        #             o["insert"] = o["insert"].replace("—", "--")
-
-        #         if "œ" in o["insert"]:
-        #             log.info("Replacing œ with oe in phrase: %s", o["insert"])
-        #             o["insert"] = o["insert"].replace("œ", r"\oe")
-
-        #         # simple escapes
-        #         if "&" in o["insert"]:
-        #             log.info("Replacing & with \& in phrase: %s", o["insert"])
-        #             o["insert"] = o["insert"].replace("&", r"\&")
-
-        #         if "\t" in o["insert"]:
-        #             log.info("Replacing tab with \hspace*{2em} in phrase: %s", o["insert"])
-        #             o["insert"] = o["insert"].replace("\t", r"\hspace*{2em}")
-
-        #         if o.get('attributes', {}).get('align') == 'center':
-        #             # the previous line (this is a \n) should be
-        #             # centered.
-        #             typeset_phrase[-1] = r"\begin{center}" + typeset_phrase[-1] + r"\end{center}"
-
-        #         # That I have to treat this as a special edge case means my
-        #         # algorithm is shit.  Adding more features is going to be a
-        #         # nightmare until I redesign to handle arbitrary combinations of
-        #         # attributes.
-        #         if (
-        #             o["attributes"].get("italic")
-        #             and attributes.get("italic") is None
-        #             and o["attributes"].get("bold")
-        #             and attributes.get("bold") is None
-        #         ):
-        #             # bold _and_ italics.
-        #             typeset_phrase.append(r"\textit{\textbf{" + o["insert"])
-        #             attributes["italic"] = True
-        #             attributes["bold"] = True
-        #             continue
-
-        #         if o["attributes"].get("italic") and attributes.get("italic") is None:
-        #             # we are starting an italic block
-        #             typeset_phrase.append(r"\textit{" + o["insert"])
-        #             attributes["italic"] = True
-        #             continue
-
-        #         if o["attributes"].get("bold") and attributes.get("bold") is None:
-        #             # we are starting a bold block
-        #             typeset_phrase.append(r"\textbf{" + o["insert"])
-        #             attributes["bold"] = True
-        #             continue
-
-        #     if o["attributes"].get("italic") is None and attributes.get("italic"):
-        #         # we are ending an italic block
-        #         if typeset_phrase:
-        #             # retain the trailing whitespace, _after_ the close tag.
-        #             stripped = typeset_phrase[-1].rstrip()
-        #             trailing_whitespace = typeset_phrase[-1][len(stripped) :]
-        #             typeset_phrase[-1] = stripped + "}" + trailing_whitespace
-        #         else:
-        #             stripped = phrases[-1]["latex"].rstrip()
-        #             trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
-        #             phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
-
-        #         attributes["italic"] = None
-
-        #     if o["attributes"].get("bold") is None and attributes.get("bold"):
-        #         # how many characters long was the previous line
-        #         # prior to the trailing whitespace?
-        #         if typeset_phrase:
-        #             stripped = typeset_phrase[-1].rstrip()
-        #             trailing_whitespace = typeset_phrase[-1][len(stripped) :]
-        #             # tuck the } close brace between the string and its trailing whitespace.
-        #             typeset_phrase[-1] = stripped + "}" + trailing_whitespace
-        #             # we aren't bold anymore.
-        #         else:
-        #             #  we went bold in a previous phrase.
-        #             stripped = phrases[-1]["latex"].rstrip()
-        #             trailing_whitespace = phrases[-1]["latex"][len(stripped) :]
-        #             phrases[-1]["latex"] = stripped + "}" + trailing_whitespace
-
-        #         attributes["bold"] = None
-
-        #     if not close_only:
-        #         typeset_phrase.append(o["insert"])
-
-        # plain_phrase = ""
-        # for i in range(index, break_index):
-        #     # close.. but we aren't setting the phrase id
-        #     # for the title or author correctly.
-        #     # we know which phrase each word is in.
-        #     # out_ops[i]["attributes"]["phrase"] = 1 + len(phrases)
-        #     plain_phrase += out_ops[i]["insert"]
        
-        phrases.append({"spoken": plain_phrase, "latex": as_latex})
+        phrases.append({"spoken": plain_phrase, "latex": as_latex, 'delta': our_ops})
 
         index = break_index + 1
 
@@ -706,6 +721,7 @@ def import_chapter():
         title_phrase.string = f"{g.chapter.title}\n\nby {g.chapter.author.name}"
         title_phrase.attrs["speaker"] = "Narrator"
         title_phrase.attrs["index"] = "0"
+        title_phrase.attrs["delta"] = json.dumps(compress_ops(g.chapter.load_title_delta()["ops"]))
 
         title_paragraph.append(title_image)
         title_paragraph.append(title_phrase)
@@ -722,6 +738,7 @@ def import_chapter():
             phrase = chapter_soup.new_tag("phrase")
             phrase.string = p["spoken"]
             phrase.attrs["index"] = index
+            phrase.attrs["delta"] = json.dumps(compress_ops(p["delta"]))
 
             # limit to 24 bits, 10 offset to keep us away from pure black
             rainbow_int = (index + 10) % 16777216

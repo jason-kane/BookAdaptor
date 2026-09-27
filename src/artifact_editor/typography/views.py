@@ -35,12 +35,7 @@ from artifact_editor.chapter.chapter import (
 )
 from artifact_editor.characters import characters
 from artifact_editor.frames import frames
-from artifact_editor.masterplan.masterplan import (
-    delete_masterplan,
-    generate_masterplan,
-    get_masterplan,
-    save_masterplan,
-)
+from artifact_editor.masterplan.masterplan import Masterplan
 from artifact_editor.tools import (
     get_bookurl,
     get_chapterdir,
@@ -188,213 +183,30 @@ def draw_missing_text_portrait(author, title, chapter):
     return htmx.draw_missing_text_button_portrait(chapterurl)
 
 
-def draw_missing_text(chapterdir, chapter, aspect="widescreen"):
-    """
-    draw all missing latex highlights
-    """
-    masterplan = get_masterplan(chapterdir)
-    if masterplan is None:
-        masterplan = generate_masterplan(chapterdir)
-        save_masterplan(chapterdir, masterplan)
-
-    chapter = page_segment.Chapter(chapterdir, aspect=aspect)
-
-    for phrase in chapter.phrases():
-        # we're acting under the perhaps incorrect assumption that force=False
-        # will be both correct and fast.
-        page_segment.draw_text_layers(chapter, phrase, force=False)
-
-
-@bp.route("/actions/redraw_all_text_old", methods=["POST"])
-def redraw_all_text_old(author, title, chapter):
-    """
-    Redraw all the latex highlights
-    """
-
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    mybook = booklib.get_book(chapterdir)
-
-    masterplan = get_masterplan(chapterdir)
-    if masterplan is None:
-        masterplan = generate_masterplan(chapterdir)
-        save_masterplan(chapterdir, masterplan)
-
-    xml_to_latex = typography.XmlConverter(
-        chapter=chapter,
-        xml=mybook.soup.find("book"),
-    )
-
-    words = masterplan["words"]
-    for word in words:
-        if "paragraph_dir" in word:
-            fragment = mybook.soup.find(id=word["id"])
-
-            if fragment is None:
-                log.warning("Fragment %s not found in book XML", word["id"])
-                continue
-
-            paragraph_index, fragdex = word["id"].split("_")
-            paragraph_tags = word.get("paragraph_tags", {})
-
-            paragraph_index = int(paragraph_index)
-            fragdex = int(fragdex)
-
-            has_text = paragraph_tags.get("has-text", True)
-
-            paragraph_dir = word["paragraph_dir"]
-
-            # this is what we want, the fully rendered PNG of the text with our
-            # fragment highlighted.
-
-            if has_text:
-                log.info("Wiping text layer for fragment %s", fragdex)
-                xml_to_latex.wipe(
-                    os.path.join(const.LIBRARY_DIR, paragraph_dir.lstrip("/")), fragdex
-                )
-
-                character_dict = characters.get_all_characters(mybook, chapterdir)
-                log.info("Found %d characters in book", len(character_dict))
-
-                # for Plays
-                xml_to_latex.clear_characters()
-                for character_name in character_dict:
-                    xml_to_latex.add_character(character_name)
-
-                xml_to_latex.write_as_latex(
-                    paragraph_dir=paragraph_dir,
-                    highlight_phrase=fragment,
-                )
-
-                _, ct_layers = xml_to_latex.combine_text_layers(paragraph_dir, fragdex)
-                if ("top" not in ct_layers) or ("bottom" not in ct_layers):
-                    log.error("Invalid ct_layers: %s", ct_layers)
-                else:
-                    fragment.attrs["top"] = ct_layers["top"]
-                    fragment.attrs["bottom"] = ct_layers["bottom"]
-
-                mybook.save_xml()
-
-    mybook.save_xml()
-
-    return htmx.redraw_all_text_button_widescreen(chapterurl)
-
-
-@bp.route("/actions/redraw_all_text<aspect>", methods=["POST"])
-def redraw_all_text(author, title, chapter, aspect="_widescreen"):
-    """
-    Redraw all the latex highlights
-    """
-    chapterdir = get_chapterdir(author, title, chapter)
-    chapterurl = get_chapterurl(author, title, chapter)
-    aspect = aspect.lstrip("_")
-
-    masterplan = get_masterplan(chapterdir)
-    if masterplan is None:
-        masterplan = generate_masterplan(chapterdir)
-        save_masterplan(chapterdir, masterplan)
-
-    chapter = page_segment.Chapter(chapterdir, aspect=aspect)
-
-    first = True  # force the first iteration
-    for phrase in chapter.phrases():
-        log.info("Drawing text for phrase %s", phrase.attrs.get("id", "unknown"))
-        page_segment.draw_text_layers(chapter, phrase, force=first, rainbow=False)
-        first = False
-
-    # xml_to_latex = typography.XmlConverter(
-    #     chapterdir=chapterdir,
-    #     xml=mybook.soup.find("book"),
-    # )
-
-    # words = masterplan['words']
-    # for word in words:
-    #     if 'paragraph_dir' in word:
-    #         fragment = mybook.soup.find(id=word['id'])
-
-    #         if fragment is None:
-    #             log.warning('Fragment %s not found in book XML', word['id'])
-    #             continue
-
-    #         paragraph_index, fragdex = word['id'].split("_")
-    #         paragraph_tags = word.get("paragraph_tags", {})
-
-    #         paragraph_index = int(paragraph_index)
-    #         fragdex = int(fragdex)
-
-    #         has_text = paragraph_tags.get("has-text", True)
-
-    #         paragraph_dir = word['paragraph_dir']
-
-    #         # this is what we want, the fully rendered PNG of the text with our
-    #         # fragment highlighted.
-
-    #         if has_text:
-    #             log.info('Wiping text layer for fragment %s', fragdex)
-    #             xml_to_latex.wipe(
-    #                 os.path.join(
-    #                     const.LIBRARY_DIR,
-    #                     paragraph_dir.lstrip("/")
-    #                 ),
-    #                 fragdex
-    #             )
-
-    #             character_dict = characters.get_all_characters(mybook, chapterdir)
-    #             log.info('Found %d characters in book', len(character_dict))
-
-    #             # for Plays
-    #             xml_to_latex.clear_characters()
-    #             for character_name in character_dict:
-    #                 xml_to_latex.add_character(character_name)
-
-    #             xml_to_latex.write_as_latex(
-    #                 paragraph_dir=paragraph_dir,
-    #                 highlight_phrase=fragment,
-    #             )
-
-    #             _, ct_layers = xml_to_latex.combine_text_layers(
-    #                 paragraph_dir,
-    #                 fragdex
-    #             )
-    #             if ('top' not in ct_layers) or ('bottom' not in ct_layers):
-    #                 log.error('Invalid ct_layers: %s', ct_layers)
-    #             else:
-    #                 fragment.attrs['top'] = ct_layers['top']
-    #                 fragment.attrs['bottom'] = ct_layers['bottom']
-
-    #             mybook.save_xml()
-
-    # mybook.save_xml()
-    if aspect == "widescreen":
-        return htmx.redraw_all_text_button_widescreen(chapterurl)
-    else:
-        return htmx.redraw_all_text_button_portrait(chapterurl)
-
-
 # /Aesop/Fables/0025/typography/actions/hyper_redraw_all_text_portrait
-@bp.route("/actions/hyper_redraw_all_text_<aspect>", methods=["POST"])
-def hyper_redraw_all_text(aspect):
-    """
-    Hyper Redraw all the latex highlights
-    """
-    aspect = aspect.lstrip("_")
+# @bp.route("/actions/hyper_redraw_all_text_<aspect>", methods=["POST"])
+# def hyper_redraw_all_text(aspect):
+#     """
+#     Hyper Redraw all the latex highlights
+#     """
+#     aspect = aspect.lstrip("_")
 
-    masterplan = g.chapter.get_masterplan()
-    if masterplan is None:
-        masterplan = generate_masterplan(g.chapter)
-        save_masterplan(g.chapter, masterplan)
+#     masterplan = g.chapter.get_masterplan()
+#     if masterplan is None:
+#         masterplan = generate_masterplan(g.chapter)
+#         save_masterplan(g.chapter, masterplan)
 
-    # draw the entire text with rainbow highlighting
-    # prime the hyper redraw process..
-    page_segment.draw_text_layers(g.chapter, phrase_xml=None, force=True, rainbow=True)
+#     # draw the entire text with rainbow highlighting
+#     # prime the hyper redraw process..
+#     page_segment.draw_text_layers(g.chapter, phrase_xml=None, force=True, rainbow=True)
 
-    # expire cached snippets
-    for phrase_xml in g.chapter.phrases():
-        fn = g.chapter.get_highlighted_text_snippet_fn(phrase_xml)
-        if os.path.exists(fn):
-            os.unlink(fn)
+#     # expire cached snippets
+#     for phrase_xml in g.chapter.phrases():
+#         fn = g.chapter.get_highlighted_text_snippet_fn(phrase_xml)
+#         if os.path.exists(fn):
+#             os.unlink(fn)
 
-    return htmx.hyper_redraw_all_text_button(g.chapter, aspect)
+#     return htmx.hyper_redraw_all_text_button(g.chapter, aspect)
 
 
 @bp.route("/actions/refresh_examples", methods=["POST"])
@@ -456,10 +268,11 @@ def reset_camera():
     """
     aspect = g.chapter.get_aspect()
 
-    delete_masterplan(g.chapter)
+    mp = Masterplan(g.chapter)
+    mp.delete()
     log.info("Regenerate master plan for %s", g.chapter)
-    masterplan = generate_masterplan(g.chapter)
-    save_masterplan(g.chapter, masterplan)
+    mp.get(force=True)
+    mp.save()
 
     phrases.recalculate_paragraph_durations(g.chapter)
 

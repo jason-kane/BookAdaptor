@@ -10,6 +10,7 @@ from flask import (
 
 import const
 import logger
+from artifact_editor.phrases.timeline import timeline
 from artifact_editor import tools
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
@@ -17,7 +18,11 @@ from artifact_editor.chapter.chapter import (
     chapter_url_defaults_helper,
     chapter_url_value_preprocessor,
 )
-from artifact_editor.images import htmx as images_htmx
+from artifact_editor.masterplan import masterplan
+from artifact_editor.images import htmx as images_htmx, scene
+
+from artifact_editor.images import images
+from artifact_editor.images.scene import scene
 
 log = logger.log(__name__)
 
@@ -39,6 +44,54 @@ def my_url_defaults(endpoint, values):
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
     chapter_url_value_preprocessor(endpoint, values) 
+
+@bp.route('/inject_image_slots', methods=['POST'])
+def inject_image_slots():
+    """
+    March through the entire chapter and try to add image tags.
+    They should be balanced, no dramatic swings in duration between images.
+    Each image should be about 8 seconds of audio away from the previous and subsequent images.
+    (because thats how long a video can easily be)
+
+    Returns:
+        flask.Response: A JSON response indicating success or failure of the operation.
+    """
+    # TODO: Implement the logic to inject image slots into the chapter's XML.
+    # for this to work we need audio for all phrases.  So lets verify that first.
+
+    timeline.inject_image_slots(g.chapter)
+    
+    g.chapter.save_xml()
+    return {"status": "success", "message": "Injected 8-second image slots."}
+
+
+@bp.route('/generate_scenes', methods=['POST'])
+def generate_scenes():
+    """
+    Generates scenes for the chapter based on the current timeline and image slots.
+    Returns:
+        flask.Response: A JSON response indicating success or failure of the operation.
+    """
+    for image_xml in g.chapter.images():
+        if image_xml.attrs.get('index', '0') <= '0':
+            # skip image 0, it's the title page and has no scene data.
+            continue
+
+        log.fig(f"Image {image_xml.attrs['index']}")
+        # saves itself to image_xml
+        images.generate_metadata_from_text(
+            g.chapter, 
+            image_xml,
+            force_all=False
+        )
+
+        g.chapter.save_xml()
+
+    return {"status": "success", "message": "Scenes generated for all images."}, 200
+
+    
+
+
 
 @bp.route('/')
 def timeline():

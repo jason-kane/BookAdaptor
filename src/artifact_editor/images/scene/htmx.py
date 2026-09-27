@@ -797,6 +797,7 @@ def character_description(chapter, character, image_xml):
             variant="secondary"
             hx-on::before-request="beforeRequest(this,event)"
             hx-on::after-request="afterRequest(this,event)"
+        >
             Generate Description
         </wa-button>
 

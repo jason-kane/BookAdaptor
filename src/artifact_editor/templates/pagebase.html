@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html
+  class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo"
+>
+
+<head>
+  <link rel="icon" href="/static/images/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/static/images/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/images/apple-touch-icon.png">
+
+  <!-- HTMX -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
+    integrity="sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G"
+    crossorigin="anonymous"></script>
+
+  <!-- Theme + color palette -->
+  <link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/themes/glossy.css"
+  /><link
+    rel="stylesheet"
+    href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/color/palettes/elegant.css"
+  />
+
+  <!-- Native styles/CSS reset -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/native.css" />
+
+  <!-- CSS utilities -->
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/styles/utilities.css" />
+
+  <!-- Fonts -->
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css2?family=Fraunces:ital,wght@0,100..900;1,100..900&display=swap"
+  />
+
+  <!-- Web Awesome autoloader -->
+  <script
+    type="module"
+    src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.9.0/webawesome.loader.js"
+  ></script>
+
+  <!-- custom theme overrides -->
+  <style>
+    :root {
+      --wa-font-family-body: Figtree, sans-serif;
+      --wa-font-family-heading: Figtree, sans-serif;
+      --wa-font-family-code: "Chivo Mono", monospace;
+      --wa-font-family-longform: Fraunces, serif;
+      --wa-font-weight-body: 400;
+      --wa-font-weight-heading: 800;
+      --wa-font-weight-code: 400;
+      --wa-font-weight-longform: 350;
+      --wa-border-radius-scale: 1.33;
+      --wa-border-width-scale: 1;
+      --wa-space-scale: 1.125;
+    }
+  </style>
+
+  <!-- Highlight.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <link href="/static/styles/quill.snow.css" rel="stylesheet" />
+
+  <script type="importmap">
+    {
+      "imports": {
+        "quill-delta": "https://cdn.jsdelivr.net/npm/quill-delta@5.1.0/+esm",
+        "parchment": "https://cdn.jsdelivr.net/npm/parchment@3.0.0/dist/parchment.min.js",
+        "lodash-es": "https://cdn.jsdelivr.net/npm/lodash-es@4.18.1/+esm",
+        "eventemitter3": "https://cdn.jsdelivr.net/npm/eventemitter3@5.0.0/+esm",
+        "clone": "https://cdn.jsdelivr.net/npm/clone@2.1.2/+esm"
+      } 
+    }
+  </script>
+
+  <script type="module">
+    import Quill from "/static/js/quill.js";
+
+    function beforeRequest(obj, event) {
+      obj.setAttribute('loading', '');
+    }
+    function afterRequest(obj, event) {
+      obj.removeAttribute('loading');
+      htmx.process(obj);
+    }
+    function showAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "block";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = hideAdvanced;
+      advanced_button.innerText = "Hide Advanced";
+      advanced_button.appearance = "filled";
+    }
+    function hideAdvanced() {
+      const advanced = document.getElementById("advanced");
+      advanced.style.display = "none";
+
+      advanced_button = document.getElementById("advanced-button");
+      advanced_button.onclick = showAdvanced;
+      advanced_button.innerText = "Advanced";
+      advanced_button.appearance = "outlined";
+    }
+    function get_pixel(axis, obj, event) {
+      if (axis === 'x') {
+        return obj.offsetX;
+      } else if (axis === 'y') {
+        return obj.offsetY;
+      }
+    }
+    // Wait for the DOM to finish loading
+    document.addEventListener('DOMContentLoaded', () => {
+      // Get the drawer and button elements
+      const drawer = document.getElementById("todo-drawer");
+      const openButton = document.getElementById("todo");
+      let quill_editor = null;
+      
+      openButton.addEventListener('click', () => {
+        // Initialize Quill editor when the drawer is opened
+        // but only the first time.
+        if (!quill_editor) {
+          quill_editor = new Quill('#todo-editor', {
+            modules: {
+                syntax: true,
+                toolbar: [
+                    [{'font': []}, {'size': []}],
+                    ['bold', 'italic', 'underline', 'strike'], // toggled buttons
+                    ['color', 'background'], // defaults from theme
+                    ['blockquote', 'code-block'], // blockquote, code block
+                    [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
+                    ['link'], // links
+                    ['blockquote', 'code-block'],
+                ]
+            },
+            theme: 'snow'
+          });
+
+          // Listen for text changes in the Quill editor and auto-save
+          // https://quilljs.com/docs/api#text-change
+          quill_editor.on('text-change', (delta, oldDelta, source) => {
+            // Right now _every_ change is being sent to the server.  
+            // This is a little ridiculous.  If we can soak and bundle
+            // changes for a few seconds, that would be less noisy.
+            htmx.ajax('POST', '/todo/', {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                values: {
+                    delta: JSON.stringify(quill_editor.getContents()),
+                    key: '{{ section }}'
+                },
+                swap: 'none',
+                onError: function (err) {
+                    console.error('Error updating:', err);
+                }
+            });
+          });
+        }
+
+        // Retrieve any existing todo content, we do this every time
+        // because a change may have come from another tab.
+        htmx.ajax('GET', '/todo/', {
+          swap: 'none',
+          values: {
+            key: '{{ section }}'
+          },
+          handler: function(target, info) {
+            if (info.xhr.status === 200) {
+              quill_editor.setContents(JSON.parse(info.xhr.responseText));
+            } else {
+              console.error('Error fetching todo:', info.xhr.statusText);
+            }
+          }
+        });
+
+        drawer.open = true;
+      });
+    });
+  </script>
+
+    <style>
+      .ql-snow * {
+        box-shadow: none;
+        margin-bottom: 0;
+        transition: none;
+        color:rgb(242, 242, 242);
+      }
+      .ql-snow .ql-stroke {
+        stroke: rgb(242, 242, 242);
+      }
+      .ql-snow .ql-picker-options {
+        background-color: #000000;
+      }
+      .ql-snow .ql-picker-options .ql-picker-item {
+        background-color: #000000;
+      }
+      .ql-toolbar.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      .ql-container.ql-snow {
+        border: 1px solid #410f80;
+        background-color: #000000;
+      }
+      #todo-drawer {
+        /* --size: 33vw; */
+        --size: 475px;
+      }
+    </style>
+
+  {% block scripts %}{% endblock %}
+  {% block styles %}{% endblock %}
+
+  {% block title %}
+  <title>Artificer Base</title>
+  {% endblock %}
+</head>
+
+<body>
+  <wa-page>
+
+    <div slot="banner" class="wa-body-s">
+        <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
+          <div id="todo-editor" class="todo-editor" style="height: 300px;"></div>
+        </wa-drawer>    
+    </div>
+
+    <header slot="header" class="wa-split">
+
+      <div class="wa-split">
+        <wa-breadcrumb>
+          <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
+          <wa-breadcrumb-item href="/library/">Library</wa-breadcrumb-item>
+          {% if author %}<wa-breadcrumb-item
+            href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.pretty_name}}
+          {% endif %}
+
+          {% if not author %}
+          <wa-breadcrumb-item>
+          <form id="add_author_form"></form>
+            <div class="wa-cluster wa-gap-xs">
+              <wa-input
+                id="author_name"
+                name="author_name"
+                placeholder="Author Name"
+                size="small"
+                style="width: 10em;"
+              ></wa-input>
+              <wa-button 
+                hx-post="/library/author/add"
+                hx-include="#author_name"
+                hx-swap="none"
+                size="xs"
+                id="add_author"
+                appearance="filled"
+                variant="brand"
+                pill
+              >
+                <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+              </wa-button>
+              <wa-tooltip for="add_author">
+                <div>Add a new author</div>
+              </wa-tooltip>
+            </div>
+          </form>
+          </wa-breadcrumb-item>
+          {% endif %}
+          
+          {% if author %}
+          </wa-breadcrumb-item>
+          {% endif %}        
+
+          {% if title %}
+          <wa-breadcrumb-item
+            href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}">
+              {{title}}
+          {% endif %}
+
+          {% if author and not title %}
+          <wa-breadcrumb-item>
+          <form id="add_book_form"></form>
+            <div class="wa-cluster wa-gap-xs">
+              <wa-input
+                id="book_name"
+                name="book_name"
+                placeholder="Book Name"
+                size="small"
+                style="width: 10em;"
+              ></wa-input>
+              <wa-button 
+                hx-post="/library/{{author.name}}/add"
+                hx-include="#book_name"
+                hx-swap="none"
+                size="xs"
+                id="add_book"
+                appearance="filled"
+                variant="brand"
+                pill
+              >
+                <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+              </wa-button>
+              <wa-tooltip for="add_book">
+                <div>Add a new book</div>
+              </wa-tooltip>
+            </div>
+          </form>
+          </wa-breadcrumb-item>
+          {% endif %}
+          
+          {% if title %}
+          </wa-breadcrumb-item>
+          {% endif %}
+
+          {% if chapter %}
+            
+            {% if is_chapter %}
+              <wa-breadcrumb-item>
+                <wa-input
+                  id="chapter_title"
+                  name="chapter_title"
+                  value="{{chapter.cosmetic}}"
+                  hx-put="update_title"
+                  hx-trigger="change"
+                  hx-include="#chapter_title"
+                  hx-swap="none"
+                  placeholder="Chapter Title"
+                  size="small"
+                  style="width: 15em;"
+                ></wa-input>
+            {% else %}
+              <wa-breadcrumb-item href="{{ url_for('library.book.chapter.chapter_base', author=author.name, title=title, chapter_number=chapter.number, language=chapter.language) }}">
+                {% if chapter.cosmetic %}
+                  {{chapter.number}}: {{chapter.cosmetic}}
+                {% else %}
+                  Chapter {{chapter.number}}
+                {% endif %}
+              {% endif %}
+            </wa-breadcrumb-item>
+          {% endif %}
+          {% if section %}
+          {% endif %}
+
+          {% if title and not chapter %}
+          <wa-breadcrumb-item>
+          <form id="add_chapter_form"></form>
+            <div class="wa-cluster wa-gap-xs">
+              <wa-input
+                id="chapter_name"
+                name="chapter_name"
+                placeholder="Chapter Name or Number"
+                size="small"
+                style="width: 15em;"
+              ></wa-input>
+              <wa-button 
+                hx-post="/library/chapter/add"
+                hx-include="#chapter_name"
+                hx-swap="none"
+                size="xs"
+                id="add_chapter"
+                appearance="filled"
+                variant="brand"
+                pill
+              >
+                <wa-icon style="font-size: 0.75em" name="plus"></wa-icon>
+              </wa-button>
+              <wa-tooltip for="add_chapter">
+                <div>Add a new chapter</div>
+              </wa-tooltip>
+            </div>
+          </form>
+          </wa-breadcrumb-item>        
+          {% endif %}
+
+          {% if chapter and chapter.language != 'english' %}
+          <wa-breadcrumb-item href="">{{pretty_language}}
+          <wa-button size="xs" style="margin-left: 1em" id="add_translation" appearance="filled" variant="brand" pill>
+            <wa-icon name="plus"></wa-icon>
+          </wa-button>
+          <wa-tooltip for="add_translation">
+            <div>Add a new translation</div>
+          </wa-tooltip>        
+          </wa-breadcrumb-item>
+          {% endif %}
+
+          {% if chapter %}
+          <wa-breadcrumb-item>
+            <wa-dropdown>
+              <wa-button slot="trigger" with-caret size="medium" appearance="filled">
+                {{section_cosmetic or 'Workshops'}}
+              </wa-button>
+              <a
+                href="{{ url_for('library.book.chapter.characters.characters_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
+              <wa-dropdown-item>
+                Phrases
+                <wa-dropdown-item slot="submenu"><a
+                    href="{{ url_for('library.book.chapter.phrases.base') }}">Phrase Workshop</a></wa-dropdown-item>
+                <wa-dropdown-item slot="submenu"><a
+                    href="{{ url_for('library.book.chapter.phrases.pronunciation.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Pronunciation Guide</a></wa-dropdown-item>
+                <wa-dropdown-item slot="submenu"><a
+                    href="{{ url_for('library.book.chapter.phrases.timeline.timeline', author=author.name, title=title, chapter_number=chapter.number, language=language) }}">Timeline</a></wa-dropdown-item>
+              </wa-dropdown-item>
+              <a href="{{ url_for('library.book.chapter.images.base', author=author.name, title=title, chapter_number=chapter.number, language=language, image_index=0) }}"><wa-dropdown-item>Images</wa-dropdown-item></a>            
+              <a href="{{ url_for('library.book.chapter.frames.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Frames</wa-dropdown-item></a>
+              <a href="{{ url_for('library.book.chapter.music.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Music</wa-dropdown-item></a>
+              <a href="{{ url_for('library.book.chapter.video.base_video', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Video</wa-dropdown-item></a>
+            </wa-dropdown>
+          </wa-breadcrumb-item>
+          {% endif %}
+          
+          {% if chapter %}
+          <wa-breadcrumb-item>
+            <wa-dropdown>
+              <wa-button slot="trigger" with-caret size="medium" appearance="filled">
+                Publish
+              </wa-button>
+              <a href="{{ url_for('library.book.chapter.publish.youtube.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Youtube</wa-dropdown-item></a>
+              <a href="{{ url_for('library.book.chapter.publish.tiktok.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>TikTok</wa-dropdown-item></a>
+              <a href="{{ url_for('library.book.chapter.publish.github.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>GitHub</wa-dropdown-item></a>
+            </wa-dropdown>
+          </wa-breadcrumb-item>
+          {% endif %}
+        </wa-breadcrumb>
+        <wa-button id="todo" appearance="outlined" variant="neutral">Dev TODO</wa-button>
+      </div>
+
+    </header>
+
+    <nav slot="navigation">
+      {% block navigation %}
+        <a href="#identification">Identification</a>
+        <a href="#range">Range and Habitat</a>
+        <a href="#behavior">Behavior</a>
+        <a href="#conservation">Conservation</a>
+      {% endblock %}
+    </nav>
+
+    <main id="main">
+      <div class="wa-stack">
+        {% block body %}
+        {% endblock %}
+      </div>
+    </main>
+
+    <aside slot="aside">
+      {% block aside %}
+      {% endblock %}
+    </aside>
+  </wa-page>
+
+</body>
+
+</html>

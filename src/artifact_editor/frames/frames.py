@@ -12,7 +12,7 @@ import fnv_hash_fast
 import redis
 from PIL import Image
 
-from artifact_editor.chapter.chapter import Chapter
+# from artifact_editor.chapter.chapter import Chapter
 import const
 import logger
 from artifact_editor import (
@@ -89,6 +89,7 @@ def ImageSafetyDanceOpen(image_pfn):
 
 @wrap_with_full_traceback
 def draw_frame(
+    chapter,
     chapterdir,
     aspect,
     frame_fn,
@@ -139,7 +140,7 @@ def draw_frame(
     log.debug(f"{force=}")
     
     # real chapter object please and thank you.
-    chapter = Chapter.from_chapterdir(chapterdir)
+    # chapter = Chapter.from_chapterdir(chapterdir)
 
     # Failure is not an option.
     success = False
@@ -158,16 +159,16 @@ def draw_frame(
             # image_dict is a grab-bag of metadata
             image_pfn = image_dict["image_pfn"]
 
-            if not os.path.exists(image_pfn):
-                log.info(f'{image_pfn=} does not exist, checking for adjusted version')
-                if os.path.exists(image_pfn + ".adj.png"):
-                    # a little sliver of  backwards compatibility
-                    shutil.copyfile(
-                        image_pfn + ".adj.png",
-                        image_pfn
-                    )
-                else:
-                    log.info(f'No adjusted version found for {image_pfn=}')
+            # if not os.path.exists(image_pfn):
+            #     log.info(f'{image_pfn=} does not exist, checking for adjusted version')
+            #     if os.path.exists(image_pfn + ".adj.png"):
+            #         # a little sliver of  backwards compatibility
+            #         shutil.copyfile(
+            #             image_pfn + ".adj.png",
+            #             image_pfn
+            #         )
+            #     else:
+            #         log.info(f'No adjusted version found for {image_pfn=}')
 
             if not os.path.exists(image_pfn):
                 raise FileNotFoundError(f"Image file {image_pfn} does not exist")
@@ -239,7 +240,7 @@ def draw_frame(
                     transition_frames.remove("done.flag")
 
             animation_frames = []
-            for animation_frame_directory_name in glob.glob(
+            for animation_frame_directory_name in glob(
                 os.path.join(
                     const.LIBRARY_DIR,
                     paragraphdir,

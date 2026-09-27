@@ -126,10 +126,8 @@ def save_mood(image_index=0):
 def generate_camera(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
-    camera = scene.generate_camera(image_xml)
-    if camera:
-        image_xml.attrs["camera"] = camera
-        g.chapter.save_xml()
+    scene.generate_camera(image_xml)
+    g.chapter.save_xml()
 
     return htmx.camera_direction(g.chapter, image_xml)
 
@@ -176,14 +174,9 @@ def set_lighting(image_index, aspect):
 def generate_lighting(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
-    lighting_aspects = scene.generate_lighting(g.chapter, image_xml)
-
-    for aspect, value in lighting_aspects.items():
-        aspect = aspect.lower().replace(" ", "_")
-        log.info('Setting lighting %s to %s', aspect, value)
-        image_xml.attrs[f"lighting_{aspect}"] = value
-
+    scene.generate_lighting(g.chapter, image_xml)
     g.chapter.save_xml()
+
     return htmx.camera_lighting(
         chapter=g.chapter,
         image_xml=image_xml,
@@ -414,34 +407,12 @@ def generate_character_action(image_index):
     if not character_dict:
         return f"Character {character_tag} not found.", 400
 
-    action_dict = images.generate_metadata_character_action(
+    images.generate_metadata_character_action(
         character_dict,
         image_xml,
         force=True,
     )
 
-    motivation = ""
-    if isinstance(action_dict, dict):
-        if "action" in action_dict:
-            action = action_dict["action"]
-
-        if "motivation" in action_dict:
-            motivation = action_dict["motivation"]
-        
-    g.chapter.load_xml(force=True)
-    image_xml = g.chapter.get_image(image_index)
-
-    if action:
-        log.info('Saving action', character_tag=character_tag, action=action)
-        image_xml.attrs[f"{character_tag}_action"] = action
-    else:
-        log.info('No action generated, skipping save for action', character_tag=character_tag)
-
-    if motivation:
-        log.info('Saving motivation', character_tag=character_tag, motivation=motivation)
-        image_xml.attrs[f"{character_tag}_motivation"] = motivation
-    else:
-        log.info('No motivation generated, skipping save for motivation', character_tag=character_tag)
 
     g.chapter.save_xml()
 

@@ -11,7 +11,7 @@ import wave
 
 import eng_to_ipa
 import fnv_hash_fast
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from flask import request
 
 import const
@@ -37,12 +37,21 @@ if TYPE_CHECKING:
 log = logger.log(name=__name__)
 
 class Phrase:
-    def __init__(self, chapter: Chapter, phrase_id: int):
+    def __init__(self, chapter, phrase_id, **kwargs):
         self.chapter = chapter
         self.phrase_id = phrase_id
-        self.phrase_xml = chapter.get_phrase(phrase_id)
+        self.phrase_xml = self.chapter.get_phrase(phrase_id)
+
         self.attrs = self.phrase_xml.attrs
         self.text = self.phrase_xml.text
+
+        self.pronunciation = kwargs.get("pronunciation", None)
+        self.duration = kwargs.get("duration", None)
+        self.speaker = kwargs.get("speaker", None)
+
+    def generate_image(self, prompt: str):
+        # comfyui api call to generate an image from the given prompt.
+        return
 
     def as_delta(self):
         """
@@ -72,6 +81,51 @@ class Phrase:
         })
         latex = doc.render_tree(mode='latex')
         return latex
+
+    def save(self):
+        """
+        Save the phrase back to the chapter XML.
+        """
+        if self.pronunciation is not None:
+            self.phrase_xml.attrs["pronunciation"] = self.pronunciation
+
+        if self.duration is not None:
+            self.phrase_xml.attrs["duration"] = str(self.duration)
+
+        if self.speaker is not None:
+            self.phrase_xml.attrs["speaker"] = self.speaker
+
+        self.chapter.save_xml()
+
+
+def reindex_phrases(chapter: Chapter):
+    """
+    Reindex the phrases in the chapter, ensuring that each phrase has a unique index.
+    """
+    log.info("Reindexing phrases for chapter: %s", chapter)
+    phrase_index = 0
+    for paragraph in chapter.paragraphs():
+        for phrase in paragraph.findAll("phrase"):
+            phrase.attrs["index"] = str(phrase_index)
+            phrase_index += 1
+    chapter.save_xml()
+    log.info("Reindexing complete. Total phrases: %d", phrase_index)
+
+
+def set_latex(chapter: Chapter, phrase_index: int, new_latex: str):
+    """
+    Set the LaTeX content for a specific phrase in the chapter.
+    """
+    log.info("Setting LaTeX for phrase index %d in chapter %s", phrase_index, chapter)
+    phrase_xml = chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        log.error("Phrase with index %d not found in chapter %s", phrase_index, chapter)
+        raise ValueError(f"Phrase with index {phrase_index} not found.")
+
+    # Update the LaTeX attribute
+    phrase_xml.attrs["latex"] = new_latex
+    chapter.save_xml()
+    log.info("LaTeX set successfully for phrase index %d", phrase_index)
 
 
 def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
@@ -589,7 +643,7 @@ def recalculate_paragraph_durations(chapter):
     chapter.save_xml()
 
 
-def get_wavfile_filename(phrase_xml, chapter):
+def get_wavfile_filename(phrase_xml: Tag, chapter: Chapter) -> str:
     """
     Gets the absolute path of the wavfile for a given phrase.
     If the phrase doesn't have a src attribute, we generate one.
@@ -621,7 +675,7 @@ def get_wavfile_filename(phrase_xml, chapter):
     return wavfile
 
 
-def get_wav_duration(wavfile):
+def get_wav_duration(wavfile: str) -> decimal.Decimal:
     try:
         with contextlib.closing(wave.open(wavfile, "rb")) as p:
             frame_count = p.getnframes()
@@ -736,9 +790,9 @@ def fix_jonvert_accents(pronunciation_ipa: str) -> str:
     return out
 
 
-def speak(chapter, phrase_xml, wavfile, workdir, delay: float = 0):
+def speak(chapter: Chapter, phrase_xml: Tag, wavfile: str, workdir: str, delay: float = 0):
     """
-    wavfile is an absolute path/fn
+    wavfile is an absolute path/filename
     """
     log.info(f"speak(... {phrase_xml=} ...):")
 
@@ -1021,7 +1075,7 @@ def repronounce_where_missing(chapter):
     return
 
 
-def wav_pad_to_frame(wavfile):
+def wav_pad_to_frame(wavfile: str) -> None: 
     """
     Add frames of silence to the end of wavfile so it lines up with a video
     frame boundary at the current framerate.
@@ -1038,7 +1092,7 @@ def wav_pad_to_frame(wavfile):
         # desired_duration_frames = int(math.ceil(nframes / wav_per_frame) * wav_per_frame)
         log.info(
             f"We want to know how many audio frames at {framerate}fps of silence we need "
-            "to add to make our total number of frames evenly divisible by const.FPS"
+            "to add to make our audio start/stop on a video frame boundary."
         )
         wav_per_frame = decimal.Decimal(framerate) / decimal.Decimal(const.FPS)
         log.info("Each video frame is %s audio frames", wav_per_frame)

@@ -29,6 +29,30 @@ bp = Blueprint(
     ),
 )
 
+@bp.route("/textoviva")
+def textoviva():
+    authors = []
+    for author_name in sorted(os.listdir(const.LIBRARY_DIR)):
+        if (
+            author_name[0] == "." or
+            author_name in ['home', 'active', 'lost+found', 'global_characters']
+        ):
+            continue
+
+        if not os.path.isdir(os.path.join(const.LIBRARY_DIR, author_name)):
+            # file, not a directory.
+            continue
+
+        author = Author(author_name)
+        author.inventory_books()
+       
+        authors.append(author)
+
+    return render_template(
+        "library.html", 
+        authors=authors,
+        section="textoviva"
+    )
 
 @bp.route("/")
 def library():

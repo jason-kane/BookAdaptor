@@ -47,42 +47,36 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values) 
+    chapter_url_value_preprocessor(endpoint, values)
 
 
 # POST /L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/0002/characters/import
 @bp.route("import", methods=["POST"])
-def import_character():
-    chapterdir = get_chapterdir(author, title, chapter)
-    mybook = get_book(chapterdir)
-    previous_chapter = mybook.get_previous_chapter()
+def import_character():   
+    previous_chapter = g.chapter.previous()
 
     log.info(
-        f'Importing character for author: "{author}", title: "{title}", chapter: "{chapter}"'
+        f'Importing character for author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"'
     )
 
     character_name = request.form.get("character")
     log.info(f'Character to import: "{character_name}"')
 
     previous_characters = characters.get_all_characters(
-        previous_chapter,
-        get_chapterdir(
-            previous_chapter.author,
-            previous_chapter.title,
-            previous_chapter.chapter_number,
-        ),
+        previous_chapter
     )
 
     if character_name in previous_characters:
         characters.save_character(
-            mybook,
-            chapterdir,
+            g.chapter,
             character_tag=character_name,
             character_dict=previous_characters[character_name],
         )
@@ -276,7 +270,11 @@ def remove_voice_weights(character_name):
     return htmx.voice_blender(
         character_dict,
         character_name,
-        get_chapterurl(g.chapter.config["author"], g.chapter.config["title"], g.chapter.config["number"]),
+        get_chapterurl(
+            g.chapter.config["author"],
+            g.chapter.config["title"],
+            g.chapter.config["number"],
+        ),
         gender=character_dict.get("voice_gender", "all"),
         language=character_dict.get("voice_language", "all"),
         accent=character_dict.get("voice_accent", "all"),
@@ -404,7 +402,7 @@ def set_age(character_tag):
 
     if age:
         character_dict["age"] = age
-        characters.save_character(chapter, character_tag, character_dict)
+        characters.save_character(g.chapter, character_tag, character_dict)
 
     return htmx.character_data(g.chapter, character_dict)
 
@@ -453,7 +451,7 @@ def toggle_global_character(character_name):
     return htmx.character_data(chapter, character_dict)
 
 
-@bp.route("", methods=["POST"])
+@bp.route("/", methods=["POST"])
 def add_character():
     """
     Add a new character to the chapter.
@@ -471,7 +469,7 @@ def add_character():
     if character_name in all_characters:
         return f"Character '{character_name}' already exists", 400
 
-    log.info("Creating new character %s in chapter %s", character_name, chapter)
+    log.info("Creating new character %s in chapter %s", character_name, g.chapter)
     character_tag = characters.name_to_tag(character_name)
     all_characters[character_tag] = {
         "name": character_name,
@@ -481,19 +479,13 @@ def add_character():
         "voices": [],
     }
 
-    log.info("Saving updated characters for chapter %s", chapter)
+    log.info("Saving updated characters for chapter %s", g.chapter)
     characters.save_characters(g.chapter, all_characters)
 
-    log.info("Added new character %s to chapter %s", character_name, chapter)
+    log.info("Added new character %s to chapter %s", character_name, g.chapter)
 
     return redirect(
-        url_for(
-            "library.book.chapter.characters.characters_base",
-            author=g.chapter.author.name,
-            title=g.chapter.title,
-            chapter_number=g.chapter.number,
-            language=g.language,
-        )
+        url_for("library.book.chapter.characters.characters_base")
     )
 
 
@@ -647,20 +639,24 @@ def sample_audio(character_tag, filename):
     """
     Serve the sample audio file for the character.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
     # ensure the filename is safe
     safe_filename = os.path.basename(filename)
 
     # serve the file from the characters/sample directory
     # W. W. Jacobs/The Monkeys Paw/chapter/0001/audio_temp_cache/tmp9kktq12s.wav
-    cachedir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "audio_temp_cache")
+    cachedir = os.path.join(
+        const.LIBRARY_DIR, 
+        g.chapter.chapterdir,
+        "audio_temp_cache"
+    )
     log.info(
         "Serving sample audio for %s: %s %s", character_tag, cachedir, safe_filename
     )
     return send_from_directory(
-        cachedir, safe_filename, as_attachment=False, mimetype="audio/wav"
+        cachedir, 
+        safe_filename, 
+        as_attachment=False, 
+        mimetype="audio/wav"
     )
 
 
@@ -832,10 +828,6 @@ def regenerate_headshot(character_tag):
 @bp.route("<character_tag>/headshot.png")
 def headshot(character_tag):
     return send_from_directory(
-        os.path.join(
-            const.LIBRARY_DIR, 
-            g.chapter.chapterdir,
-            "characters"
-        ),
+        os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "characters"),
         f"{character_tag}.png",
     )

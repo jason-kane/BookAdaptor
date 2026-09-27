@@ -34,6 +34,7 @@ from artifact_editor.workflow_templates.views import bp as workflow_templates
 from artifact_editor.todo.views import bp as todo
 from artifact_editor.typography.views import bp as typography
 from artifact_editor.video.views import bp as video
+from artifact_editor.textoviva.views import bp as textoviva
 
 
 if t.TYPE_CHECKING:
@@ -97,6 +98,11 @@ chapter.register_blueprint(
 chapter.register_blueprint(
     publish,
     url_prefix="/publish",
+)
+
+chapter.register_blueprint(
+    textoviva,
+    url_prefix="/textoviva",
 )
 
 book.register_blueprint(

@@ -20,7 +20,7 @@ def onErr(self, *args, **kwargs):
         log.error(s)
 
     log.error(args)
-    raise args
+    raise BaseException(args)
 
 def book_to_video(chapter, aspect="widescreen", force=False):
     """
@@ -113,7 +113,7 @@ def book_to_video(chapter, aspect="widescreen", force=False):
             image_dict["image_pfn"] = os.path.join(
                 const.LIBRARY_DIR,
                 image_dict['paragraph_dir'],
-                image_dict['image'].lstrip("/")
+                os.path.basename(image_dict['image'])
             )
 
             # when the image_dict changes, draw all the frames for that image_dict.
@@ -183,6 +183,7 @@ def book_to_video(chapter, aspect="widescreen", force=False):
                         )
 
                     args = (
+                        chapter,
                         chapter.chapterdir,
                         aspect,
                         frame_fn,

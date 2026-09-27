@@ -1,16 +1,19 @@
-from artifact_editor import llm
-from artifact_editor.tools import (
-    get_surrounding_paragraphs,
-    get_text_to_next
-)
+import json
+
+from bs4.element import Tag
+
 import logger
+from artifact_editor import llm
+from artifact_editor.tools import get_surrounding_paragraphs, get_text_to_next
+
 log = logger.log(__name__)
 
-from . import const as scene_const
 from artifact_editor.characters import characters
 
+from . import const as scene_const
 
-def generate_character_pose(image_xml, character):
+
+def generate_character_pose(image_xml: Tag, character):
     # all the text around us
     context = get_surrounding_paragraphs(
         image_xml.find_parent("paragraph"), 
@@ -49,7 +52,7 @@ def generate_character_pose(image_xml, character):
     return pose
 
 
-def generate_tod(image_xml):
+def generate_tod(image_xml: Tag):
     # all the text around us
     context = get_surrounding_paragraphs(
         image_xml.find_parent("paragraph"), 
@@ -81,10 +84,11 @@ def generate_tod(image_xml):
         )
         tod = f"Odd {tod}"
 
+    image_xml.attrs["tod"] = tod
     return tod
 
 
-def generate_camera(image_xml):
+def generate_camera(image_xml: Tag):
     # all the text around us
     context = get_surrounding_paragraphs(
         image_xml.find_parent("paragraph"), 
@@ -119,10 +123,12 @@ def generate_camera(image_xml):
             f"Chosen camera angle '{camera}' is not in {scene_const.CAMERA_CHOICES} for image {image_xml}"
         )
 
+    log.info('Assigning camera angle: "%s"', camera)
+    image_xml.attrs["camera"] = camera
     return camera
 
 
-def generate_scene_characters(chapter, image_xml):
+def generate_scene_characters(chapter, image_xml: Tag):
     """
     Which characters are in this scene?  Even characters that don't speak.Return a list of character names.
     """
@@ -155,9 +161,73 @@ def generate_scene_characters(chapter, image_xml):
         # to make a "real" character for the narrator.
         scene_characters.remove('Narrator')
 
+     # TODO: validate scene_characters response 
+     
+     # Every character should be a valid character in the story.  If not, log a
+     # warning and remove them from the list.
+
+    image_xml.attrs["scene_characters"] = ",".join(scene_characters)
     return scene_characters
 
-def generate_lighting(chapter, image_xml):
+
+
+def generate_focus_character(chapter, image_xml: Tag):
+    """
+    Which character is the focus of this image?
+    """
+    surrounding_text = get_surrounding_paragraphs(
+        image_xml.find_parent("paragraph"), context_min=600
+    )
+
+    all_character_names = characters.get_all_character_names(chapter)
+
+    text = get_text_to_next(
+        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
+    )
+
+    prompt = (
+        f"I want to determine which character is the focus of one small portion of a story."
+        f"  The text is: {text}.  "
+        f"The surrounding text is: {surrounding_text}.  "
+        "Who is the focus character?  Only response with the characters name. "
+        "The answer must be one of the following: "
+        + json.dumps(["UNKNOWN"] + all_character_names)
+    )
+
+    #
+    focus_character = llm.str_prompt(prompt)
+    focus_character = (
+        focus_character.replace("[", "").replace("]", "").strip('"').strip().title()
+    )
+
+    log.info('Focus character: "%s"', focus_character)
+    if focus_character in all_character_names:
+        image_xml.attrs["focus_character"] = characters.name_to_tag(focus_character)
+    elif focus_character.replace(" ", "_") in all_character_names:
+        image_xml.attrs["focus_character"] = characters.name_to_tag(
+            focus_character.replace(" ", "_")
+        )
+    elif focus_character != "UNKNOWN":
+        for character_name in all_character_names:
+            if focus_character.lower() in character_name.lower():
+                log.info(f"Using partial match for focus character: {character_name}")
+                image_xml.attrs["focus_character"] = characters.name_to_tag(
+                    character_name
+                )
+                break
+
+        log.warning(
+            f"Detected Focus character '{focus_character}' is not in {all_character_names} for image {image_xml}"
+        )
+        # if "focus_character" in image_xml.attrs:
+        #     del image_xml.attrs["focus_character"]
+    
+    return image_xml.attrs.get("focus_character", "")
+
+
+
+
+def generate_lighting(chapter, image_xml: Tag):
     """
     What is the lighting in this scene?  Return one of [UNKNOWN, DARK, DIM, NORMAL, BRIGHT]
     """
@@ -188,5 +258,10 @@ def generate_lighting(chapter, image_xml):
     
     lighting = llm.json_prompt(prompt)
     log.info(f"Raw lighting response: {lighting}")
-    # TODO: validate lighting response
+
+    for aspect, value in lighting.items():
+        aspect = aspect.lower().replace(" ", "_")
+        log.info('Setting lighting %s to %s', aspect, value)
+        image_xml.attrs[f"lighting_{aspect}"] = value
+
     return lighting

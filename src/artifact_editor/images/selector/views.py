@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+from urllib.parse import unquote_plus
 
 from flask import (
     Blueprint,
@@ -62,6 +63,8 @@ def use_image(image_index: int=0):
     selected_image_src = request.form["selectedImage"].split("?")[
         0
     ]  # remove cache buster if present
+    selected_image_src = unquote_plus(selected_image_src)
+    
     image_index = int(request.form["image_index"])
 
     image_xml = g.chapter.get_image(image_index)

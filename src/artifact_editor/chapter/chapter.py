@@ -14,6 +14,7 @@ from flask import url_for, g
 from PIL import Image
 
 import comfy
+import math
 import const
 import logger
 from artifact_editor import (
@@ -29,6 +30,8 @@ from artifact_editor.masterplan import masterplan
 from artifact_editor.styles import styles
 from artifact_editor.tools import tags_to_dict
 from artifact_editor.typography import page_segment
+
+from artifact_editor.textoviva.textoviva import Textoviva
 
 log = logger.log(__name__)
 
@@ -71,7 +74,7 @@ def chapter_url_value_preprocessor(endpoint, values: dict):
         number=g.chapter_number,
         language=g.language,
     )
-    return endpoint, values
+
 
 
 def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:
@@ -87,7 +90,7 @@ def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:
         return
 
     for image in sorted(
-        glob(os.path.join(aspect_dir, f"text_layer_{phrase_index}-*.png"))
+        glob.glob(os.path.join(aspect_dir, f"text_layer_{phrase_index}-*.png"))
     ):
         if "done" in image:
             # just skip it
@@ -230,7 +233,7 @@ class Chapter:
             self.key = str(json.dumps([author.name, title, number, language]))
         self.author = author
         self.title = title
-
+        
         self.number = int(number)
         self.language = language
         if language:
@@ -287,6 +290,8 @@ class Chapter:
 
         self.translator = None
         self.subtitle = ""
+
+        self.textoviva = Textoviva(self)
         log.info("Chapter initialized complete with key", key=self.key)
 
     def mkdirs(self):
@@ -344,9 +349,18 @@ class Chapter:
             f"{paragraph_index:0>6}",
         )
 
-    def phrases(self):
+    def phrases(self) -> list[Tag]:
         self.load_xml()
-        return self.soup.find_all("phrase")
+        previous_phrase = None
+        for phrase in self.soup.find_all("phrase"):
+            phrase.previous_phrase = previous_phrase
+            yield phrase
+
+            previous_phrase = phrase
+
+    def images(self) -> list[Tag]:
+        self.load_xml()
+        return self.soup.find_all("image")
 
     def paragraphs(self) -> Iterable[Tag]:
         self.load_xml()
@@ -356,11 +370,42 @@ class Chapter:
         self.load_xml()
         return self.soup.find("paragraph", attrs={"index": str(paragraph_index)})
 
+    def get_phrase_rainbow(self, phrase_xml: Tag) -> str | None:
+        """
+        Find the portion of rainbow for the given phrase.
+        """
+        r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
+        text_layer_rainbow_fn = os.path.join(
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
+            "chapter.rainbow-1.png",
+        )        
+
+        with open(text_layer_rainbow_fn, "rb") as h:
+            img = Image.open(h)
+            img = img.convert("RGBA")
+
+        data = np.array(img)
+        highlight_mask = (
+            (data[:, :, 0] == r) & (data[:, :, 1] == g) & (data[:, :, 2] == b)
+        )
+        coordinates = np.argwhere(highlight_mask)
+
+        y_min, x_min = coordinates.min(axis=0)
+        y_max, x_max = coordinates.max(axis=0)
+        # bottom, left, top, right
+        return highlight_mask, y_min, x_min, y_max, x_max
+
     def get_bottom_height(self, force=False) -> int:
-        all_phrases = self.phrases()
-        last_phrase = Phrase(self, all_phrases[-1], self.aspect)
-        last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
-        return last_phrase_dimensions["bottom"]
+        all_phrases = list(self.phrases())
+        phrase_xml = all_phrases[-1]
+
+        # open the rainbow text, filter for the color of the last phrase,
+        # determine those dimensions.
+        highlight_mask, y_min, x_min, y_max, x_max = self.get_phrase_rainbow(phrase_xml)
+
+        return y_max
 
     def get_text_height(self, force: bool = False) -> int:
         all_phrases = self.phrases()
@@ -447,57 +492,59 @@ class Chapter:
                 phrase_index=phrase_xml.attrs["index"],
             )
 
-        log.info(
-            "Generating new highlighted text snippet for phrase",
-            phrase_index=phrase_xml.attrs["index"],
-        )
-        r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
+        # log.info(
+        #     "Generating new highlighted text snippet for phrase",
+        #     phrase_index=phrase_xml.attrs["index"],
+        # )
+        # r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
 
-        # TODO: the problem is, this isn't going to work if the highlight spans multiple images.  Which it often does.
-        # open up text_layer_rainbow.png.
-        text_layer_rainbow_fn = os.path.join(
-            const.LIBRARY_DIR,
-            self.chapterdir,
-            self.language,
-            "chapter.rainbow-1.png",
-        )
-        if not os.path.exists(text_layer_rainbow_fn):
-            log.error(
-                "Rainbow text layer not found, cannot generate highlighted text snippet.",
-                file=text_layer_rainbow_fn,
-            )
-            return None
+        # # TODO: the problem is, this isn't going to work if the highlight spans multiple images.  Which it often does.
+        # # open up text_layer_rainbow.png.
+        # text_layer_rainbow_fn = os.path.join(
+        #     const.LIBRARY_DIR,
+        #     self.chapterdir,
+        #     self.language,
+        #     "chapter.rainbow-1.png",
+        # )
+        # if not os.path.exists(text_layer_rainbow_fn):
+        #     log.error(
+        #         "Rainbow text layer not found, cannot generate highlighted text snippet.",
+        #         file=text_layer_rainbow_fn,
+        #     )
+        #     return None
 
-        log.info(
-            "Opening %s to find highlight region for phrase with color (%s, %s, %s)",
-            text_layer_rainbow_fn,
-            r,
-            g,
-            b,
-        )
-        with open(text_layer_rainbow_fn, "rb") as h:
-            img = Image.open(h)
-            img = img.convert("RGBA")
+        # log.info(
+        #     "Opening %s to find highlight region for phrase with color (%s, %s, %s)",
+        #     text_layer_rainbow_fn,
+        #     r,
+        #     g,
+        #     b,
+        # )
+        # with open(text_layer_rainbow_fn, "rb") as h:
+        #     img = Image.open(h)
+        #     img = img.convert("RGBA")
 
-        data = np.array(img)
-        highlight_mask = (
-            (data[:, :, 0] == r) & (data[:, :, 1] == g) & (data[:, :, 2] == b)
-        )
+        # data = np.array(img)
+        # highlight_mask = (
+        #     (data[:, :, 0] == r) & (data[:, :, 1] == g) & (data[:, :, 2] == b)
+        # )
 
-        # get the bounding box of the highlight mask
-        coordinates = np.argwhere(highlight_mask)
-        if coordinates.size == 0:
-            log.warning(
-                "No highlight region found for phrase with color ({r}, {g}, {b})",
-                phrase_index=phrase_xml.attrs["index"],
-                r=r,
-                g=g,
-                b=b,
-            )
-            return None
+        # # get the bounding box of the highlight mask
+        # coordinates = np.argwhere(highlight_mask)
+        # if coordinates.size == 0:
+        #     log.warning(
+        #         "No highlight region found for phrase with color ({r}, {g}, {b})",
+        #         phrase_index=phrase_xml.attrs["index"],
+        #         r=r,
+        #         g=g,
+        #         b=b,
+        #     )
+        #     return None
 
-        y_min, x_min = coordinates.min(axis=0)
-        y_max, x_max = coordinates.max(axis=0)
+        # y_min, x_min = coordinates.min(axis=0)
+        # y_max, x_max = coordinates.max(axis=0)
+
+        highlight_mask, y_min, x_min, y_max, x_max = self.get_phrase_rainbow(phrase_xml)
 
         with open(
             os.path.join(
@@ -601,16 +648,22 @@ class Chapter:
         Get the filename for a given image, if it exists.
         """
         if image_xml is None:
+            log.warning(
+                "get_image_filename() called with None image_xml, returning None.",
+            )
             return None
 
         if not isinstance(image_xml, Tag):
+            log.warning(
+                "get_image_filename() called with non-Tag image_xml, returning None.",
+            )
             return None
 
         base_image = image_xml.attrs.get("src")
         try:
             paragraph = image_xml.find_parent("paragraph")
         except AttributeError as err:
-            log.error(err, image_xml=image_xml)
+            log.error('Parent paragraph not found', image_xml=image_xml)
             return None
 
         if base_image:
@@ -835,13 +888,13 @@ class Chapter:
             template_fn = glob.glob(
                 os.path.join(
                     const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
-                    f"ui.*.{workflow_name}-*.json",
+                    f"ui.*.{workflow_name}*.json",
                 )
             )[0]
         except IndexError:
             log.error(
                 "No workflow template found for workflow_name",
-                workflow_name=workflow_name,
+                workflow_name=f"ui.*.{workflow_name}*.json",
                 templates_dir=const.COMFY_DIRS["artifactserver"][
                     "WORKFLOW_TEMPLATES_DIR"
                 ],
@@ -1074,7 +1127,10 @@ class Chapter:
 
                 elif node.get("title") in ["SOURCE"]:
                     # the portion of the text between this image and the next image.
-                    if image_xml.find_next("phrase") is not None:
+                    if (
+                        image_xml.find_next("phrase") is not None and 
+                        image_xml.find_next("image") is not None
+                    ):
                         our_source = self.get_paragraph_snippet(
                             image_xml,
                             context_before=3,
@@ -1083,8 +1139,7 @@ class Chapter:
                             focus_phrases=list(
                                 range(
                                     int(image_xml.find_next("phrase").attrs["index"]),
-                                    1
-                                    + int(
+                                    1 + int(
                                         image_xml.find_next("image")
                                         .find_previous("phrase")
                                         .attrs["index"]
@@ -1100,9 +1155,11 @@ class Chapter:
 
             elif node.get("type") == "CustomStyler":
                 if node.get("title") in ["STYLE"]:
-                    style = self.get_image_style(image_xml)
-                    node["widgets_values"][2] = [style]
-                    node["widgets_values_named"]["Custom"] = style
+                    style_tag = self.get_image_style(image_xml)
+                    style = styles.Style(style_tag)
+                    log.warning('** Using style %s for image %s', style, image_xml.attrs['index'])
+                    node["widgets_values"][2] = style.name
+                    node["widgets_values_named"]["Custom"] = style.name
             else:
                 log.info("Skipping node type: %s", node.get("type"))
 
@@ -1384,8 +1441,7 @@ class Chapter:
         input_image = os.path.basename(source_image)
 
         style_name = self.get_image_style(image_xml)
-        style_category = template_environment.get("STYLE_CATEGORY", "Custom")
-        style = styles.Style(category_name=style_category, style_tag=style_name)
+        style = styles.Style(style_tag=style_name)
         log.info("style: %s", style)
         #  Using image style: gothic_manuscript_illumination name=artifact_editor.chapter.chapter
 
@@ -1919,7 +1975,7 @@ class Chapter:
         if len(as_split) > 10:
             beginning = as_split[:5]
             ending = as_split[-5:]
-            log.info("pre-samples", beginning=beginning, ending=ending)
+            # log.debug("pre-samples", beginning=beginning, ending=ending)
 
         log.info("Generated XML in bytes", len_pretty=len(pretty), book_fn=book_fn)
         with open(book_fn, "w") as h:
@@ -1931,9 +1987,9 @@ class Chapter:
             if len(as_split) > 10:
                 beginning = as_split[:5]
                 ending = as_split[-5:]
-                log.info("samples", beginning=beginning, ending=ending)
-            else:
-                log.info("samples", lines=as_split)
+                #log.debug("samples", beginning=beginning, ending=ending)
+            # else:
+            #    log.debug("samples", lines=as_split)
 
     def get_txt_fn(self):
         best = os.path.join(
@@ -2023,7 +2079,8 @@ class Chapter:
         """
         Generate a masterplan for the chapter
         """
-        return masterplan.get_masterplan(self, force=force)
+        mp = masterplan.Masterplan(self)
+        return mp.get(force=force)
 
     def build_frame_to_camera(self, aspect="widescreen", force=False):
         """
@@ -2094,6 +2151,12 @@ class Chapter:
         camera.set_frame_to_camera(_frame_to_camera)
         camera.save_camera(self)
         return
+
+    def time_to_frame(self, duration_in_seconds):
+        """
+        Given a time in seconds, return the frame index.
+        """
+        return math.floor(const.FPS * duration_in_seconds)
 
     def frame_to_image(self, mplan, frame_index):
         """
@@ -2476,3 +2539,28 @@ def xml_upgrade(chapter, soup):
         log.info("XML version is up to date (%s), no upgrade needed", version)
 
     return soup
+
+
+
+### NEXT:
+#
+# gotta build the camera.
+#
+# artifactserver-1  |   File "/app/artifact_editor/video/video.py", line 65, in book_to_video
+# artifactserver-1  |     chapter.build_frame_to_camera(
+# artifactserver-1  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+# artifactserver-1  |         aspect=aspect,
+# artifactserver-1  |         ^^^^^^^^^^^^^^
+# artifactserver-1  |         force=force
+# artifactserver-1  |         ^^^^^^^^^^^
+# artifactserver-1  |     )
+# artifactserver-1  |     ^
+# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 2085, in build_frame_to_camera
+# artifactserver-1  |     height = self.get_bottom_height(force=force) - (G["TEXT_HEIGHT"] // 2)
+# artifactserver-1  |              ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 375, in get_bottom_height
+# artifactserver-1  |     last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
+# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 189, in get_highlight_dimensions
+# artifactserver-1  |     "top": int(self.phrase_xml.attrs["top"]),
+# artifactserver-1  |                ~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+# artifactserver-1  | KeyError: 'top'

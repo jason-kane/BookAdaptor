@@ -114,12 +114,9 @@ def render_masterplan_portrait_handler(author, title, chapter_number, language):
 
 
 @bp.route("/<filename>.mp4")
-def deliver_video(author, title, chapter_number, language, filename=""):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+def deliver_video(filename=""):
     return send_file(
-        chapter.get_video_filename(),
+        g.chapter.get_video_filename(),
         mimetype="video/mp4",
         as_attachment=False,
         etag=True

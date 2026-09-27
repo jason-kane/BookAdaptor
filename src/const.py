@@ -53,7 +53,9 @@ TODO_DIR: str = os.path.join(
     "todo"
 )
 
-DEFAULT_IMAGE_TEMPLATE: str = configuration.get("DEFAULT_IMAGE_TEMPLATE", "zit")
+DEFAULT_IMAGE_TEMPLATE: str = configuration.get("DEFAULT_IMAGE_TEMPLATE", "t2i.zit-paragraph")
+DEFAULT_ANIMATION_TEMPLATE: str = configuration.get("DEFAULT_ANIMATION_TEMPLATE", "i2v.minimax_h3")
+
 COMFY_DIRS: dict[str, dict[str, str]] = configuration.get("COMFY_DIRS", {})
 COMFYUI_API_URL: str = configuration.get("COMFYUI_API_URL", "http://comfyui:8188/")
 COMFYUI_UI_URL: str = configuration.get("COMFYUI_UI_URL", "http://localhost:8188/")

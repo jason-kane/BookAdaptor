@@ -363,21 +363,43 @@ def assign_phrase_speaker(author: str, title: str, chapter_number: int, language
     )
 
 
+@bp.route("/actions/set_latex/<int:phrase_index>", methods=["PUT"])
+def set_latex(phrase_index: int):
+    phrase_index = int(phrase_index)
+
+    phrase_xml = g.chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        return "Phrase not found", 404
+
+    new_latex = request.form.get("latex", None)
+    if new_latex is not None:
+        phrase_xml.attrs["latex"] = new_latex
+    else:
+        phrase_xml.attrs["latex"] = ""
+    g.chapter.save_xml()
+
+    # you can't just re-set the latex and run away.
+
+    # re-draw the full chapter pdf and rainbow latex
+    
+
+    g.chapter.get_highlighted_text_snippet(phrase_xml, force=True)
+
+    #//page = request.form.get("page", None)
+    return "", 200
+    #//htmx.phrase_editor(g.chapter, phrase_xml, page), 200
+
 # http://localhost:5000/Ambrose%20Bierce/An%20Occurrence%20at%20Owl%20Creek%20Bridge/0001/audio/actions/set_second_phrase/3_18
 @bp.route("/actions/set_split/<int:phrase_index>", methods=["POST"])
-def set_split(author: str, title: str, chapter_number: int, language: str, phrase_index: int):
+def set_split(phrase_index: int):
     """
     Given form values first_phrase and second_phrase, return a nice UI for
     deciding exactly where to split the phrase using the provided split as the
     current division.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     phrase_index = int(phrase_index)
 
-    phrase_xml = chapter.get_phrase(phrase_index)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
 
     if phrase_xml is None:
         return "Phrase not found", 404
@@ -412,9 +434,10 @@ def set_split(author: str, title: str, chapter_number: int, language: str, phras
         index = len(whole_source_phrase)
 
     return htmx.split_phrase_text(
-        chapter,
+        g.chapter,
         phrase_xml,
         split=(whole_source_phrase[:index], whole_source_phrase[index:]),
+        page=request.form.get("page", None)
     ), 200
 
 
@@ -442,18 +465,14 @@ def set_linebreak(author: str, title: str, chapter_number: int, language: str, p
 
 # hx-post="/{author}/{title}/{chapter}/audio/save_phrase/{phrase['id']}"
 @bp.route("/actions/save_split_phrase/<phrase_index>", methods=["POST"])
-def save_split_phrase(author: str, title: str, chapter_number: int, language: str, phrase_index: int):
+def save_split_phrase(phrase_index: int):
     """
     Commit the currently proposed split to the chapter
     XML.
     """
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
     phrase_index = int(phrase_index)
 
-    phrase_xml = chapter.get_phrase(phrase_index)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
 
     if phrase_xml is None:
         return "Phrase not found", 404
@@ -471,6 +490,17 @@ def save_split_phrase(author: str, title: str, chapter_number: int, language: st
 
     phrase_xml.string = first_phrase.strip()
     new_phrase_xml.string = second_phrase.strip()
+
+    # ok smartass, how about the "latex" attribute?  we need it split correctly too.
+    # usually, second_phrase.strip() will be a substring of phrase_xml.attrs["latex"]
+    if "latex" in phrase_xml.attrs:
+        latex = phrase_xml.attrs["latex"]
+        split_index = latex.find(second_phrase[:8].strip())
+        if split_index != -1:
+            new_phrase_xml.attrs["latex"] = latex[split_index:]
+            phrase_xml.attrs["latex"] = latex[:split_index]
+    
+    # 
     # <phrase duration="3.2325" fragdex="1" frames="81" id="35_1" pronunciation="“ðə fˈɜɹst mˈæn hæd hɪz θɹˈi wˈɪʃᵻz. jˈɛs,”" speaker="The_Sergeant-Major" src="ph_1__The_first_man_had_his_th_a7786732_8656.wav">
     #   “The first man had his three wishes. Yes,”
     # </phrase>
@@ -484,6 +514,9 @@ def save_split_phrase(author: str, title: str, chapter_number: int, language: st
 
     phrase_xml.insert_after(new_phrase_xml)
 
+    phrases.reindex_phrases(g.chapter)
+    g.chapter.load_xml(force=True)
+
     fragdex = 0
     for fragment in paragraph.children:
         if not hasattr(fragment, "attrs"):
@@ -495,36 +528,33 @@ def save_split_phrase(author: str, title: str, chapter_number: int, language: st
 
         fragdex += 1
 
-    chapter.save_xml()
+    g.chapter.save_xml()
 
     # hx-get="phrases?page={page}"
     # return htmx_phrase_editor(chapterurl, chapterdir, phrase_xml), 200
     page = request.form.get("page", None)
-    return phrases.phrase_sequence(chapter, page=page)
+    return phrases.phrase_sequence(g.chapter, page=page)
 
 
 # /Ambrose%20Bierce/An%20Occurrence%20at%20Owl%20Creek%20Bridge/chapter/0001/audio/actions/split_phrase
 @bp.route("/actions/split_phrase", methods=["POST"])
-def split_phrase(author: str, title: str, chapter_number: int, language: str):
+def split_phrase():
     """
     Initiate the phrase split UI.
     """
-    author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
-
     phrase_index = int(request.form["phrase_index"])
     page = request.form.get("page", None)
 
-    phrase_xml = chapter.get_phrase(phrase_index)
+    phrase_xml = g.chapter.get_phrase(phrase_index)
 
     if phrase_xml is None:
-        log.error(f"Phrase with id {phrase_index} not found in book {chapter}")
+        log.error(f"Phrase with id {phrase_index} not found in book {g.chapter}")
         return "Phrase not found", 404
 
     # paragraph = phrase_xml.find_parent("paragraph")
 
     return htmx.phrase_editor(
-        chapter, phrase_xml, page, split=(phrase_xml.get_text().strip(), "")
+        g.chapter, phrase_xml, page, split=(phrase_xml.get_text().strip(), "")
     ), 200
 
 

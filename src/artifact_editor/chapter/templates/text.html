@@ -31,15 +31,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module">
-    import Quill from "/static/js/quill.js";
-    const Parchment = Quill.import('parchment');
-    
-    let Phrase = new Parchment.Attributor('phrase', 'phrase', {
-        scope: Parchment.Scope.INLINE,
-    });
-    Quill.register(Phrase, true);
-
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script>
     const fontFamilyArr = ["Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
     let fonts = Quill.import("attributors/style/font");
     fonts.whitelist = fontFamilyArr;
@@ -49,6 +42,48 @@
     var Size = Quill.import('attributors/style/size');
     Size.whitelist = fontSizeArr;
     Quill.register(Size, true);
+</script>
+
+<script type="module">
+    // import Quill from "/static/js/quill.js";
+    const Parchment = Quill.import('parchment');
+    
+    let Phrase = new Parchment.Attributor('phrase', 'phrase', {
+        scope: Parchment.Scope.INLINE,
+    });
+    Quill.register(Phrase, true);
+
+    window.previous_phrase_index = -1;
+
+    // const fontFamilyArr = ["Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
+    // let fonts = Quill.import("attributors/style/font");
+    // fonts.whitelist = fontFamilyArr;
+    // Quill.register(fonts, true);
+
+    // const fontSizeArr = ['10px', '11px', '12px', '14px', '18px', '24px'];
+    // var Size = Quill.import('attributors/style/size');
+    // Size.whitelist = fontSizeArr;
+    // Quill.register(Size, true);
+
+    //const speakerArr = ['Narrator', 'Mel', 'New Character'];
+    // const speakerConfig = {
+    //     scope: Parchment.Scope.INLINE,
+    //     whitelist: speakerArr
+    // };
+    // let SpeakerStyle = new Parchment.Attributor('speaker', 'speaker', speakerConfig);
+    // let SpeakerWrapper = new Parchment.ClassAttributor('speaker', 'speaker', {
+    //     scope: Parchment.Scope.INLINE,
+    //     whitelist: speakerArr
+    // });
+    // Quill.register(SpeakerWrapper, true);
+    
+    //     scope: Parchment.Scope.INLINE,
+    // });
+    // const SpeakerStyle = new Parchment.Attributor.Style(
+    //     'speaker',  // attribute name
+    //     'speaker', // css property name
+    //     speakerConfig
+    // );
 
     let text_editor = null;
     let text_editor_title = null;
@@ -104,22 +139,41 @@
             text_editor = new Quill('#text_editor', {
                 modules: {
                     syntax: true,
-                    toolbar: [
-                        // only include features supported through to Latex.
-                        [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
-                        ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
-                        [
-                            { align: ''}, 
-                            { align: 'center' }, 
-                            // { align: 'right' },
-                            { align: 'justify' }
-                        ], // text alignment
+                    toolbar: {
+                        container: [
+                            [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
+                            ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
+                            [
+                                { align: ''}, 
+                                { align: 'center' }, 
+                                // { align: 'right' },
+                                { align: 'justify' }
+                            ], // text alignment
+                            //[{'speaker': speakerArr}],
+                        ],
+                        // handlers: {
+                        //     'speaker': function(value) {
+                        //         const range = this.quill.getSelection();
+                                
+                        //         if (range && range.length > 0) {
+                        //             if (value === 'New Character') {
+                        //                 // this.quill.format('speaker', );
+                        //                 // new character model
+                        //             } else {
+                        //                 this.quill.formatText(range.index, range.length, 'speaker', value);
+                        //             }
+                        //             this.quill.insertText(range.index, 'speaker');
+                        //         }
+                        //     }
+                        // }
+                    }                        // only include features supported through to Latex.
+                        
                         // ['color', 'background'], // defaults from theme
                         // ['blockquote', 'code-block'], // blockquote, code block
                         // [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
                         // ['link'], // links
                         // ['blockquote', 'code-block'],
-                    ]
+                    
                 },
                 theme: 'snow'
             });
@@ -143,6 +197,14 @@
                     }
                 });
             });
+
+            // const speakerPickerItems = Array.prototype.slice.call(document.querySelectorAll('.ql-speaker .ql-picker-item'));
+
+            // speakerPickerItems.forEach(item => item.textContent = item.dataset.value);
+
+            // document.querySelector('.ql-speaker .ql-picker-label').innerHTML
+            //     = 'Choose Speaker' + document.querySelector('.ql-speaker .ql-picker-label').innerHTML;            
+
         }
 
         // Retrieve the current chapter content
@@ -193,8 +255,7 @@
 {% block body %}
 
 <div class="wa-cluster wa-align-items-start" style="gap: 32px;">
-    <div class="wa-stack">
-        <h4>Book Header</h4>
+    <div class="wa-stack wa-gap-0">
         <div 
             id="text_editor_title" 
             class="text-editor"
@@ -202,17 +263,6 @@
         </div>
 
         <div>
-            <div>
-                <wa-input 
-                    label="Chapter Title" 
-                    hx-put="{{ url_for('library.book.chapter.update_title') }}"
-                    id="chapter_title_input"
-                    hx-trigger="change"
-                    swap="none"
-                    value="{{ chapter_title }}"
-                    name="chapter_title">
-                </wa-input>
-            </div>
             <div 
                 id="text_editor" 
                 class="text-editor"
@@ -235,6 +285,19 @@
             {{import_button|safe}}
         </div>
     </div>
+    <div id="phrase-stack" class="wa-stack wa-gap-0" style="width: 35%;">
+        {% for phrase in phrases %} 
+            <wa-textarea 
+                id="phrase_{{ phrase.attrs['index'] }}" 
+                class="phrase-editor"
+                hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.attrs['index']) }}"
+                hx-vals='js:{"previous_phrase_index": window.previous_phrase_index }'
+                hx-trigger="click"
+                hx-swap="none"
+                value="{{ phrase.attrs.get('delta') }}"
+            ></wa-textarea>
+        {% endfor %}
+    </div>
     <div class="wa-stack">   
         <div style="width:523px;height:46em;overflow-y:scroll;">
             <canvas id="the-canvas"></canvas>
@@ -243,4 +306,7 @@
 
 </div>
 
+<div id="js-executor">
+    <script></script>
+</div>
 {% endblock %}

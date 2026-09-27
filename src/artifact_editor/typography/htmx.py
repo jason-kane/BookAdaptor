@@ -1,5 +1,4 @@
 from flask import url_for
-from artifact_editor.chapter import Chapter
 from artifact_editor.tools import (
     generic_button,
 )

@@ -38,6 +38,19 @@ CAMERA_CHOICES = scene_const.CAMERA_CHOICES
 # text_to_image.registry.search(gpu=False)
 
 
+def reindex_images(chapter):
+    """
+    Reindex the images in the chapter XML to ensure that they have sequential
+    indices starting from 0. This is useful when images have been added or
+    removed, and we want to maintain a consistent order.
+    """
+    image_elements = chapter.images()
+    for new_index, image_xml in enumerate(image_elements):
+        image_xml.attrs["index"] = str(new_index)   
+
+    chapter.save_xml()
+
+
 def workflow_link_button(chapter, image_xml, video_index=0, animation=False):
     """
     This will be a two-part, the button runs a local to take the template,
@@ -180,41 +193,52 @@ def prompt_panel(chapter, image_xml: Tag, with_class=""):
             style="height: 50%; width: 50%; align-self: center;"
             src="{img_url}"
         ></img>
-
-        {selector}
-        <div style="width: 100%" class="wa-cluster" id="prompt-textareas">
-            {t2i_config}
-        </div>
+        <form>
+            {selector}
+            <div style="width: 100%" class="wa-cluster" id="prompt-textareas">
+                {t2i_config}
+            </div>
+        </form>
     </div>"""
 
 
 def draw_all_missing_images_button(chapter):
-    button_id = "missing-images-button"
+        button_id = "missing-images-button"
+        url = url_for(
+            "library.book.chapter.images.draw_all_missing_images", **chapter.kwargs
+        )
+
+        # <wa-tooltip for="{button_id}">Use original text to create a prompt</wa-tooltip>
+        out = f"""<div>
+    <wa-button
+        id="{button_id}"
+        hx-post="{url}"
+        hx-on::before-request="beforeRequest(this,event)"
+        hx-on::after-request="afterRequest(this,event)"
+        variant="brand"
+        pill
+    >Draw All Missing Images</wa-button></div>"""
+
+        return out
+
+def generate_all_animations_button(chapter):
+    button_id = "all-animations-button"
     url = url_for(
-        "library.book.chapter.images.draw_all_missing_images", **chapter.kwargs
+        "library.book.chapter.images.generate_all_animations", **chapter.kwargs
     )
 
-    # <wa-tooltip for="{button_id}">Use original text to create a prompt</wa-tooltip>
     out = f"""<div>
-<wa-button
-    id="{button_id}"
-    hx-post="{url}"
-    hx-on::before-request="beforeRequest(this,event)"
-    hx-on::after-request="afterRequest(this,event)"
-    variant="brand"
-    pill
->Draw All Missing Images</wa-button></div>"""
+    <wa-button
+        id="{button_id}"
+        hx-post="{url}"
+        hx-on::before-request="beforeRequest(this,event)"
+        hx-on::after-request="afterRequest(this,event)"
+        variant="brand"
+        pill
+    >Generate All Animations</wa-button></div>"""
 
     return out
 
-
-def draw_all_missing_tmi_images_button(chapterurl):
-    return tools.generic_button(
-        chapterurl,
-        category="images",
-        tag="draw_all_missing_tmi_images",
-        cosmetic="Draw All Missing TMI Images",
-    )
 
 
 def generate_missing_image_metadata_button():
@@ -852,6 +876,31 @@ def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
 
             replace_button_label = "Create Animation"
             replace_button_variant = "brand"
+
+        # Rip this whole section out, replace with a comfy.selector(modes)
+        
+        # Each 'video' is a concatenation of sub-videos, 
+
+        # each sub-video is independent with its own action prompt.
+        # Each sub-video can be deleted.
+        # the sequence of sub-videos can be re-ordered
+        # sub-videos can be re-generated
+        
+        # Modes
+        # you can use i2v or fli2v, but fli2v is only available
+        # if the duration you need to span is less than (threshold)
+        
+        # durations are: whole span, half span or 8 second.
+        # whole if <=8, half if <=16, else 8 second.  This lets us
+        # glue together multiple sub-videos to build up arbitrary length animations.
+        # quality will still go to shit if they are too long.
+
+        # TODO: the prompt for the animation itself should be generated.  Blank
+        # isn't total crap, but the quality is poor.
+
+        # the goal is bulk, complete animation.  Not as final product, but as
+        # a baseline.  I want to be able to overnight a whole chapter video,
+        # then watch it and refine strategically.
 
         animation_module_selector = animations.registry.selector(
             get_url=url_for(

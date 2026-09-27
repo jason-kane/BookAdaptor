@@ -1,5 +1,6 @@
 import json
 from os import name
+from typing import Any
 
 import logger
 from artifact_editor.tools import (
@@ -493,10 +494,18 @@ def voice_blender(
     return out
 
 
-def all_character_cards(chapter, characters):
+def all_character_cards(chapter, characters: dict[str, dict[str, Any]]):
     out = ""
     for character_tag, character in characters.items():
-        one_character = character_data(chapter, character)
+        try:
+            one_character = character_data(chapter, character)
+        except TypeError as e:
+            log.error(
+                "Error rendering character %s: Character data: %s",
+                character_tag,
+                character,
+            )
+            raise
         if one_character is not None:
             out += one_character
     return out
@@ -530,7 +539,7 @@ def character_pronunciation_widget(chapterurl, tag, pronunciation):
     """
 
 
-def character_data(chapter, character_dict):
+def character_data(chapter, character_dict: dict[str, Any]):
     """
     Full edit block for a single character.
     None for an invalid character

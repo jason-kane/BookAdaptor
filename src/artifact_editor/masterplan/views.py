@@ -1,12 +1,12 @@
 
 import os
 
-from flask import Blueprint
+from flask import Blueprint, g
 
-from artifact_editor.author.author import Author
-from artifact_editor.chapter.chapter import Chapter
 import logger
 from artifact_editor import tools
+from artifact_editor.author.author import Author
+from artifact_editor.chapter.chapter import Chapter
 
 from . import htmx, masterplan
 
@@ -23,13 +23,11 @@ bp = Blueprint(
 
 # /H.%20P.%20Lovecraft/Cool%20Air/0001/masterplan/actions/regenerate_masterplan
 @bp.route("regenerate", methods=["POST"])
-def regenerate(author, title, chapter_number, language):
-    author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
-    
-    masterplan.delete_masterplan(chapter)
-    log.info("Regenerate master plan for %s", chapter)
-    plan = masterplan.generate_masterplan(chapter)
-    masterplan.save_masterplan(chapter, plan)
+def regenerate():
+    mp = masterplan.Masterplan(g.chapter)
+    mp.delete()
+    log.info("Regenerate master plan for %s", g.chapter)
+    mp.get(force=True)
+    mp.save()
 
-    return htmx.regenerate_masterplan_button(chapter)
+    return htmx.regenerate_masterplan_button(g.chapter)

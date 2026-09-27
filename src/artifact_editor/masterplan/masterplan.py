@@ -12,57 +12,55 @@ from artifact_editor.tools import (
 )
 from artifact_editor.phrases import phrases
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
+
 log = logger.log(__name__)
 
-def get_masterplan_fn(chapter):
-    return os.path.join(
-        const.LIBRARY_DIR,
-        chapter.chapterdir,
-        "masterplan.json"
-    )
- 
-def delete_masterplan(chapter):
-    masterplan_fn = get_masterplan_fn(chapter)
+class Masterplan:
+    def __init__(self, chapter: Chapter):
+        self.chapter = chapter
+        self.masterplan = None
 
-    if os.path.exists(masterplan_fn):
-        os.unlink( masterplan_fn)
+        self.filename = os.path.join(
+            const.LIBRARY_DIR,
+            self.chapter.chapterdir,
+            "masterplan.json"
+        )
 
-    return
+    def delete(self) -> None:
+        if os.path.exists(self.filename):
+            os.unlink(self.filename)       
 
+    def load(self):
+        if os.path.exists(self.filename):
+            with open(self.filename, "r") as h:
+                self.masterplan = json.load(h)
+        else:
+            self.masterplan = None
+        return self.masterplan
 
-def get_masterplan(chapter, force=False):
-    if force:
-        log.info("Generating new masterplan for %s", chapter)
-        masterplan = generate_masterplan(chapter)
-        save_masterplan(chapter, masterplan)
+    def get(self, force=False):
+        self.masterplan = self.load()
 
-    else:
-        masterplan_fn = get_masterplan_fn(chapter)
-        
-        try:
-            with open(masterplan_fn, "r") as h:
-                masterplan = json.load(h)
-        except FileNotFoundError:
-            log.warning("Master plan file not found: %s", masterplan_fn)
-            masterplan = None
+        if force or self.masterplan is None:
+            self.masterplan = generate_masterplan(self.chapter, force=force)
+            self.save()
+
+        return self.masterplan
+
+    def save(self):
+        if self.masterplan is not None:
+            os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+            with open(self.filename, "w") as h:
+                json.dump(self.masterplan, h, indent=4)
+        else:
+            log.warning("No masterplan to save for chapter %s", self.chapter)
     
-    if masterplan is None:
-        log.info('Master plan file not found or invalid.')
-    
-    return masterplan
 
-
-def save_masterplan(chapter, masterplan):
-    masterplan_fn = get_masterplan_fn(chapter)
-    
-    log.info("Saving master plan to %s", masterplan_fn)
-    os.makedirs(os.path.dirname(masterplan_fn), exist_ok=True)
-    with open(masterplan_fn, "w") as h:
-        json.dump(masterplan, h, indent=4)
-    return masterplan
-
-
-def generate_masterplan(chapter):
+def generate_masterplan(chapter: Chapter, force=False) -> list[dict]:
     """
     no pressure.  we're generating video as a two step process.
     The first step is to turn everything we know about this book 
@@ -95,9 +93,9 @@ def generate_masterplan(chapter):
     images = []
     image_index = 0
     
-    masterplan = get_masterplan(chapter)
+    masterplan = Masterplan(chapter)
 
-    if masterplan is None:
+    if force or masterplan.load() is None:
         log.info("Generating new masterplan for %s", chapter)
         
         frame_index = 0
@@ -265,25 +263,32 @@ def generate_masterplan(chapter):
 
         chapter.save_xml()
 
-        masterplan = {
+        masterplan.masterplan = {
             "words": words,
             "images": images
         }
 
-        save_masterplan(chapter, masterplan)
+        masterplan.save()
     
-    return masterplan                            
+    return masterplan.masterplan
 
 
 def frame_to_image(masterplan, frame_index):
 
     for image in masterplan["images"]:
+
         if 'image_pfn' not in image:
-            image['image_pfn'] = os.path.join(
-                const.LIBRARY_DIR,
-                image['paragraph_dir'],
-                image['image']
-            )
+            if image['image'] is not None:
+                try:
+                    image['image_pfn'] = os.path.join(
+                        const.LIBRARY_DIR,
+                        image['paragraph_dir'],
+                        image.get('image', '')
+                    )
+                except TypeError:
+                    log.error("Invalid image (require valid 'paragraph_dir' and 'image')", image=image)
+                    raise
+
         if image["start_frame"] <= frame_index <= image["end_frame"]:
             log.debug('image: %s', image)
             # use a camera effect frame?

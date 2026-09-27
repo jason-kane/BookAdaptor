@@ -16,7 +16,7 @@ COMFYUI_API_URL = "http://comfyui:8188/"
 # when we provide a link to a comfyui workflow
 COMFYUI_UI_URL = "http://localhost:8188/"
 
-DEFAULT_IMAGE_TEMPLATE = "zit"
+DEFAULT_IMAGE_TEMPLATE = "t2i.zit-paragraph"
 
 # global output FPS
 FPS = 25
@@ -24,7 +24,7 @@ FPS = 25
 # for frame generation, disabling can make 
 # debugging massively easier, but it is 
 # many times slower.
-MULTIPROCESS = true
+MULTIPROCESS = false
 
 # Unless you wanna try to make a 4k video, these 
 # are the target dimensions for the images we 

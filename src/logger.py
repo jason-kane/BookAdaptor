@@ -101,7 +101,9 @@ fig = Figlet(font='slant', width=columns)
 
 logger = structlog.get_logger()
 def log(name: str) -> structlog.BoundLogger:
-    return logger.bind(name=name)
+    your_logger = logger.bind(name=name)
+    your_logger.fig = lambda txt: your_logger.info('\n' + fig.renderText(txt))
+    return your_logger
 
     # # logger = logging.getLogger(name)
     # return structlog.wrap_logger(

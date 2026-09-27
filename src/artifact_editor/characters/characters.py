@@ -60,8 +60,8 @@ def save_character(chapter, character_tag, character_dict):
     save_characters(chapter, characters, is_global=is_global)
 
 
-def get_all_character_names(mybook, chapterdir) -> list:
-    characters = get_all_characters(mybook, chapterdir)
+def get_all_character_names(chapter) -> list:
+    characters = get_all_characters(chapter)
     return list(c['name'] for c in characters.values() if 'name' in c)
 
 
@@ -220,7 +220,7 @@ def get_all_characters(chapter, is_global: bool = False) -> dict:
     return valid_characters
 
 
-def name_to_tag(name):
+def name_to_tag(name: str) -> str:
     if not name:
         return ""
     
@@ -435,9 +435,9 @@ def generate_description(chapter, character_tag):
     )
     description = []
 
-    existing_description = character_dict.get("description", "")
-    if existing_description:
-        description.append(existing_description)
+    # existing_description = character_dict.get("description", "")
+    # if existing_description:
+    #     description.append(existing_description)
 
     # prompt = """
     # I will provide you with a portion of a book.  Your job is to extract a
@@ -462,10 +462,37 @@ def generate_description(chapter, character_tag):
             system_prompt="You are a helpful assistant that extracts physical "
                 "descriptions of characters from book excerpts. Focus on details "
                 "like ethnicity, age, hair color, eye color, height, gender, and "
-                "clothing. If no description of the character is found in the "
+                "clothing. If no description of the character is found in the provided "
                 "excerpt, respond with 'No description found'. Always respond with "
-                "either a detailed physical description or 'No description found', "
-                "and nothing else.",
+                "either a detailed physical description or 'No description found'. ",
+            force=True
+        )
+
+        if (
+            "no description found" not in response.lower()
+            and 
+            "I cannot provide" not in response.lower()
+        ):
+            description.append(response)
+
+        facts = json.dumps({
+            'gender': character_dict.get('gender', ''),
+            'age': character_dict.get('age', ''),
+            'accent': character_dict.get('accent', ''),
+        }, indent=2)
+
+        # second pass to get more ephemeral details.
+        name = character_dict.get('name', character_tag)
+        response = llm.str_prompt(
+            prompt=f"""Provided facts: {facts}
+            
+            {p.get_text()}""",
+            system_prompt="You are a helpful assistant that extracts "
+                "descriptions of characters from book excerpts. We want to know "
+                f"if this excerpt tells us anything about who {name} is and what "
+                "they are like. Focus on details like personality, demeanor, "
+                "and character traits like maturity. Do not include any reasoning "
+                "or commentary, only the description.",
             force=True
         )
 
@@ -478,6 +505,22 @@ def generate_description(chapter, character_tag):
 
     description = condense_description(description)
 
+    # one last pass to bring it home.
+    name = character_dict.get('name', character_tag)
+    description = llm.str_prompt(
+        prompt=description,
+        system_prompt=(
+            "You are an expert at predicting the appearance of characters " 
+            "based on minimal and often conflicting and ambiguous information. " 
+            "The description should be highly detailed.  Do not include any "
+            "reasoning or commentary, only the description itself."
+        ),
+        force=True
+    )
+
+    # and condense it again, because damn.
+    description = condense_description(description)
+
     character_dict["description"] = description
     save_character(
         chapter,
@@ -485,8 +528,8 @@ def generate_description(chapter, character_tag):
         character_dict
     )
 
-    # condense it again.
-    description = condense_description(description)
+    # condense it again. (wtf?)
+    # description = condense_description(description)
     return description
 
 

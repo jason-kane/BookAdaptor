@@ -72,16 +72,35 @@ function latex_editor_init() {
         div.classList.add('phrase-latex');
         textarea.replaceWith(div);
 
-        const startState = EditorState.create({
+        const changeListener = EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+                const newValue = update.state.doc.toString();
+                textarea.setAttribute('value', newValue);
+                // dispatch a PUT request to the server with the new value
+                const url = textarea.getAttribute('data-url')
+                
+                if (url) {
+                    htmx.ajax(
+                        'PUT', url, { 
+                            swap: 'none',
+                            values: { latex: newValue } 
+                        }
+                    );
+                }
+            }
+        });
+
+        var startState = EditorState.create({
             doc: textarea.getAttribute('value'),
             extensions: [
                 basicSetup,
                 latex(),
-                themeCompartment.of(oneDark),
-                EditorView.lineWrapping
+                EditorView.lineWrapping,   
+                changeListener,
+                themeCompartment.of(oneDark),                             
             ]
-        });
-
+        });        
+        
         const editor = new EditorView({
             state: startState,
             lineNumbers: true,
@@ -89,6 +108,7 @@ function latex_editor_init() {
             parent: div,
             viewportMargin: Infinity
         });
+        
     });
 }
 

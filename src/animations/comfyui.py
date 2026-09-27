@@ -53,9 +53,93 @@ class ComfyBase(Animation):
         
         return widget    
 
+class ComfyUi_ripple(ComfyBase):
+    """ComfyUI based animation launcher."""
+    cosmetic = "ComfyUI: LTX 2.3 Ripple"
+    key = "comfy_ui_ripple"
+    mode = "i2v"
+    workflow_animation_template = "LTX23_ripple"
+
+    def apply(self, chapter, image_xml, extend=False, prompt_enhance=False):
+        """
+        We're going to use LTX 2.3 to apply the given prompt to the image.
+
+        Then we're going places the frames in frame_directory.  The 
+        only guarantee is that they will be sortable by filename.
+        """
+        done_flag_fn = os.path.join(
+            self.animation_frame_directory,
+            'done.flag'
+        )
+        
+        if os.path.exists(done_flag_fn):
+            os.unlink(done_flag_fn)
+
+        # api.i2v.LTX23_ripple
+        api_workflow = chapter.get_comfy_workflow(
+            image_xml=image_xml,
+            interface="api",
+            mode=self.mode,
+            workflow_template=self.workflow_animation_template,
+            video_index=self.video_index
+        )
+
+        client = httpx.Client()
+
+        json_prompt = {
+            "prompt": api_workflow
+        }
+        
+        with open('/tmp/comfyui_prompt.json', 'w') as h:
+            json.dump(json_prompt, h, indent=2)
+
+        response = client.post(
+            const.COMFYUI_URL + "api/prompt", 
+            json=json_prompt
+        )
+
+        if response.status_code != 200:
+            # log.info(f"POST: {json.dumps(workflow, indent=2)}")
+            log.error(f"Failed to create workflow: {response.text}")
+            raise ValueError(f"Failed to create workflow: {response.text}")
+    
+        finished = False
+        job_id = response.json().get("prompt_id")
+        
+        # 1 second polling loop
+        while not finished:
+            workflow_response = client.get(const.COMFYUI_URL + f"api/jobs/{job_id}")
+            if workflow_response.status_code != 200:
+                log.error(f"Failed to get workflow: {workflow_response.text}")
+                return f"Failed to get workflow: {workflow_response.text}", 500
+            job_dict = workflow_response.json()
+            if job_dict.get("status") in ["error", "cancelled", "completed"]:
+                finished = True
+            
+            if not finished:
+                time.sleep(1)
+
+        # get the image prompt save it to the image_xml
+
+        # The comfyui workflow drops the prompt as a txt file
+        prompt_fn = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+            f"{chapter.nice}_img_{self.video_index:02d}_{self.image_index:06d}_{workflow_template}.prompt.txt"
+        )
+        if os.path.exists(prompt_fn):
+            with open(prompt_fn, "r") as h:
+                prompt = h.read().strip()
+                image_xml.attrs[f"{self.mode}_prompt"] = prompt
+
+
+        chapter.save_xml()
+
+
+registry.add_module(ComfyUi_ripple)
+
 class ComfyUi_i2v(ComfyBase):
     """ComfyUI based animation launcher."""
-    cosmetic = "ComfyUI LTX i2v"
+    cosmetic = "ComfyUI: LTX 2.3 i2v"
     key = "comfy_ui_i2v"
     mode = "i2v"
     workflow_animation_template = "LTX23"
@@ -172,7 +256,7 @@ class ComfyUi_i2v(ComfyBase):
         log.info(f'Breaking {mp4_filename} into frames with ffmpeg')
         subprocess.run([
             "ffmpeg", 
-            "-i", mp4_filename, 
+            "-i", f'"{mp4_filename}"',
             os.path.join(
                 animation_frame_directory, 
                 "output_%04d.png"
