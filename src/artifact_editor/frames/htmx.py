@@ -1,7 +1,6 @@
 import logging
 import os
 import time
-from artifact_editor.author.views import author_base
 import const
 from artifact_editor.tools import (
     generic_button,
@@ -11,7 +10,10 @@ from flask import url_for
 log = logging.getLogger(__name__)
 
 
-def frame_pfn(chapter, aspect, frame_index):
+from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.types import aspect
+
+def frame_pfn(chapter: Chapter, aspect: aspect, frame_index):
     # <div id="image-pfn"><h4>{{frame_pfn}}</h4></div>
     framedir = os.path.join(chapter.chapterdir, "frames", aspect)
     frame_pfn = os.path.join(
@@ -28,44 +30,6 @@ def frame_to_phrase(chapter, frame_index: int):
             return phrase
         frame_count += frames
     return None
-
-
-def frame_to_phrase_old(mybook, chapterdir, frame_index: int):
-    """
-    return the phrase_xml for a specific frame number
-    """
-    phrase_index = None
-    mp = mybook.load_masterplan()
-
-    regenerate = mp is None
-
-    while phrase_index is None:
-        if regenerate:
-            masterplan.delete_masterplan(chapterdir)
-            log.info("Regenerating master plan for %s", chapterdir)
-            plan = masterplan.generate_masterplan(chapterdir)
-            masterplan.save_masterplan(chapterdir, plan)
-            mp = mybook.load_masterplan()
-            regenerate = False
-
-        for mp_phrase in mp.get("words", []):
-            paragraph_index = None
-            start_frame = mp_phrase.get("start_frame", 0)
-            end_frame = mp_phrase.get("end_frame", 0)
-
-            if frame_index >= start_frame and frame_index <= end_frame:
-                paragraph_index = int(mp_phrase.get("id").split("_")[0])
-                log.info(f"Found paragraph {paragraph_index} for frame {frame_index}")
-                assert paragraph_index == int(
-                    mp_phrase.get("paragraph_dir").split("/")[-1]
-                )
-
-                try:
-                    phrase_index = int(mp_phrase["index"])
-                except KeyError:
-                    regenerate = True
-
-                break
 
 
 def frame_navigator(chapter, frame_index: int):

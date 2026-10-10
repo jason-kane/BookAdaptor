@@ -86,7 +86,7 @@ def import_character():
 
 
 @bp.route("/", methods=["GET"])
-def characters_base():
+def base():
     log.info(f'author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"')
 
     all_characters = characters.get_all_characters(g.chapter)
@@ -485,7 +485,7 @@ def add_character():
     log.info("Added new character %s to chapter %s", character_name, g.chapter)
 
     return redirect(
-        url_for("library.book.chapter.characters.characters_base")
+        url_for("library.book.chapter.characters.base")
     )
 
 
@@ -597,32 +597,31 @@ def htmx_update_effect_config(character_name, effect_key):
 
 @bp.route("<character_tag>/audio", methods=["POST"])
 def create_audio_sample(character_tag):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+    chapter = g.chapter
     log.info("Looking for character %s in chapter %s", character_tag, chapter)
 
     sample_sentence = request.form.get("sample_sentence", "").strip()
     character = characters.get_character(chapter, character_tag)
+    if character is None:
+        return "Character not found", 404
     log.info("Character is %s", character)
 
     filename = characters.generate_sample_audio(
         chapter,
         character_tag,
-        sample_sentence,
+        sample_sentence=sample_sentence,
         effects=character.get("effects", {}),
     )
+    if filename is None:
+        return "Character has no configured voices", 400
 
     log.info("Generated audio for %s: %s", character_tag, filename)
-
-    # log.info('Generated audio for %s: %s', character_name, filename)
-    # base_filename = os.path.basename(filename)
 
     audio_src = url_for(
         "library.book.chapter.characters.sample_audio",
         character_tag=character_tag,
         filename=filename,
-        **chapter.kwargs,
+        **g.chapter.kwargs,
     )
 
     return (

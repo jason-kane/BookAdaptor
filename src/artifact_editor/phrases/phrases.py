@@ -137,7 +137,7 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
         try:
             page = int(request.args.get("page", None))
         except (TypeError, ValueError):
-            page = 1
+            page = 0
     else:
         page = int(page)
 
@@ -146,7 +146,7 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
 
     phrase_out = ""
 
-    all_paragraphs = chapter.paragraphs()
+    all_paragraphs = list(chapter.paragraphs())
     total_paragraphs = len(all_paragraphs)
 
     if errors_only:
@@ -173,9 +173,9 @@ def phrase_sequence(chapter: Chapter, page: int | None = 1) -> str:
         # in paragraph mode, page == paragraph
         # use beautiful soup to find the paragraph with index=page-1
 
-        paragraph = chapter.get_paragraph(page - 1)
+        paragraph = chapter.get_paragraph(page)
         # paragraph = paragraphs[page - 1] if page <= len(paragraphs) else None
-        log.info("Processing paragraph: %s", paragraph)
+        log.info("[%s] Processing paragraph: %s", page, paragraph)
 
     # paragraph metadata
     phrase_out += """<wa-details summary="Paragraph Metadata">"""
@@ -591,7 +591,7 @@ def simple_paginator(page: int, errors_only: bool, total_pages: int) -> tuple[st
     return out, " ".join(dv)
 
 
-def recalculate_image_frames(chapter):
+def recalculate_image_frames(chapter: Chapter):
     """
     Recalculate the display duration of each image in the book.
     """
@@ -616,7 +616,8 @@ def recalculate_image_frames(chapter):
                 frames = 0
 
     # the final image doesn't have a next image to trigger the duration save
-    last_image.attrs["frames"] = frames
+    if last_image is not None:
+        last_image.attrs["frames"] = frames
 
     chapter.save_xml()
 
@@ -806,11 +807,9 @@ def speak(chapter: Chapter, phrase_xml: Tag, wavfile: str, workdir: str, delay: 
         log.info("Removing stale pronunciation file: %s", pronunciation_fn)
         os.unlink(pronunciation_fn)
 
-    text_to_speak = clean_latex(phrase_xml.get_text())
-
     llm.text_2_audio(
         chapter,
-        text_to_speak,
+        phrase_xml,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
         force=False,
@@ -1217,20 +1216,6 @@ def generate_audio(chapter):
                         spoken_text = fragment.get_text().strip()
                         speaker = fragment.attrs.get("speaker", "Narrator")
 
-                        # speakers = phrases.soup_to_set_of_characters(
-                        #    fragment
-                        # )
-                        # log.info('This segment of text has speakers: %s', speakers)
-
-                        # if len(speakers) == 0:
-                        #    speaker = fragment.attrs.get(
-                        #        'speaker', 'Narrator'
-                        #    )
-
-                        # if len(speakers) == 1:
-                        #     speaker = speakers.pop()
-                        #     fragment['speaker'] = speaker
-
                         if src is None:
                             tag = get_tag(spoken_text)
 
@@ -1263,8 +1248,6 @@ def generate_audio(chapter):
                                 # for the 0.2s of padding that is added between phrases by the assembler.
                                 # we need this to be accurate or we won't have enough/too many frames.
                                 fragment.attrs["frames"] = int(duration * const.FPS)
-
-                                # src = os.path.join("/", audio_fn)
                                 fragment.attrs["src"] = audio_fn
                                 fragment.attrs["fragdex"] = fragdex
                             else:
@@ -1381,17 +1364,10 @@ def generate_all_audio(chapter, force=True):
                         f"Phrase {phrase_index} already has an audio file: {wavfile}"
                     )
                     continue
-
-            # _, pronunciation = speak(
-            #     chapter=chapter,
-            #     phrase_xml=phrase_xml,
-            #     wavfile=wavfile,
-            #     workdir=os.path.join(os.path.dirname(wavfile).lstrip("/")),
-            #     delay=float(phrase_xml.attrs.get("delay", 0)),
-            # )
+            
             llm.text_2_audio(
                 chapter,
-                phrase_xml.get_text(),
+                phrase_xml,
                 phrase_xml.attrs.get("speaker", "Narrator"),
                 wavfile,
                 force=False,

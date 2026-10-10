@@ -14,6 +14,7 @@ from filelock import FileLock
 from flask import url_for
 
 from bs4 import Tag
+import spacy
 
 from artifact_editor.phrases import phrases
 import const
@@ -47,6 +48,8 @@ class Textoviva:
             log.info("Video file %s already exists, skipping creation", self.videofile)
             return
 
+        base_mode = "narrated_poem"
+
         # create the video.  The algorithm is fill in anything missing with best effort.
         # all the way from 'raw' chapter to video.
 
@@ -76,23 +79,118 @@ class Textoviva:
         all_phrases = list(self.chapter.phrases())
 
         if not all_phrases:
-            # you've got nothing.  Sad.
-            log.error('No phrases found in chapter %s.  This is broken.', self.chapter)
-            title_by_author = Phrase(
-                chapter=self.chapter,
-                phrase_id=0,
-                speaker="narrator",
-            )
-            title_by_author.generate_image(
-                "Elegant book cover for " 
-                + self.chapter.title
-                + " by "
-                + self.chapter.author.pretty_name
-                + " in an environment that represents the themes of the book."
-            )
-            # title_by_author.speak()
-            title_by_author.save()
-            all_phrases.append(title_by_author)
+            # you've got nothing.  Sad.  Build everything.
+            # log.error('No phrases found in chapter %s.  This is broken.', self.chapter)
+        
+            # title_by_author = Phrase(
+            #     chapter=self.chapter,
+            #     phrase_id=0,
+            #     speaker="narrator",
+            # )
+            # title_by_author.generate_image(
+            #     "Elegant book cover for " 
+            #     + self.chapter.title
+            #     + " by "
+            #     + self.chapter.author.pretty_name
+            #     + " in an environment that represents the themes of the book."
+            # )
+            # # title_by_author.speak()
+            # title_by_author.save()
+            # all_phrases.append(title_by_author)
+
+            # The new Phrase algorithm. 
+            # 
+            # try and divide the chapter by quotation
+            # mark style dialog. if that works, ie: multiple speeches detected,
+            # we're good. we will break the phrase up into the largest pieces by
+            # a single speaker that will complete a phrase and still fit into
+            # our TTS engine.
+            
+            # we're going to use spacy
+            try:
+                nlp = spacy.load("en_core_web_sm")
+            except OSError:
+                log.info('Downloading spacy model en_core_web_sm...')
+                import subprocess
+                subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm", "--break-system-packages"])
+                nlp = spacy.load("en_core_web_sm")
+
+            # we will run it on the raw chapter.txt
+            chapter_text = self.chapter.load_txt()
+
+            if base_mode in ["narrated_poem"]:
+                # any work with a single narrator and one extra
+                # newline between paragraphs.
+
+                # since it's a "*_poem" on the latex side we will do everything
+                # we can to preserve the physical presentation.
+                paragraph_index = 0
+                for paragraph in chapter_text.split("\n\n"):
+                    if not paragraph.strip():
+                        continue
+
+                    paragraph_xml = self.chapter.soup.new_tag("paragraph")
+                    paragraph_xml.attrs["index"] = paragraph_index
+                    self.chapter.soup.append(paragraph_xml)
+                    log.info("Paragraph: %s", paragraph_xml)
+                
+                    phrase_index = 0
+                    for sentence_obj in nlp(paragraph).sents:
+                        # process each sentence object here
+                        log.info("Phrase: %s", sentence_obj.text)
+                        phrase_xml = self.chapter.soup.new_tag("phrase")
+                        phrase_xml.attrs["speaker"] = "Narrator"
+                        phrase_xml.attrs["index"] = str(phrase_index)
+                        paragraph_xml.append(phrase_xml)
+
+                        phrase_xml.string = sentence_obj.text
+                        phrase_index += 1
+
+                    paragraph_index += 1
+
+            self.chapter.save_xml()
+
+            # but.. won't that break all the highlighting stuff?
+            # yup.  but we will fix it, and it will be better.
+
+            # 
+            # Images will _no longer be directly tied to phrases.
+            # For the sanity of the world, images are simply tied to frames.
+            # they will not be stored in the chapter xml.
+
+            # Backend is a simple pair, the index file, a list where the index
+            # is the frame number, and we guarantee an entry up to whatever the
+            # largest frame_index we've recieved is.
+
+            # we're in the maybe hundreds of images, so using json for these
+            # is an acceptable solution with good readability benefits.
+            
+            # the frame index:
+            # [ image_unique, ... ]
+
+            # the data file:
+            # {
+            #    image_unique: {all image metadata},
+            # }
+            #
+            
+            # they will be stored to the image API.  It's a black box with a file
+            # in the chapter directory.
+
+            # The API is _very_ easy.
+            # 
+            # GET /<frame_index>.png  Returns the PNG for a specific frame. 
+            # POST /<frame_index>.png  Sets the PNG for a specific frame.
+            # (the chapter identifier is already handled)
+
+            # We start at frame_index 0 and the first ms of audio.
+            # The default image for frame_index 0 is full black.
+            # We advance one frame at a time.
+
+            # If there is a new image, we use it.  If there is not, we continue
+            # using the current image.  Easy.
+
+
 
         # phrases = [
         #     title_by_author
@@ -121,8 +219,12 @@ class Textoviva:
         for phrase_xml in self.chapter.phrases():
 
             # smear some AI shit right here to choose the correct character.
+            
             if not phrase_xml.attrs.get("speaker"):
-                phrase_xml.attrs["speaker"] = "Narrator"
+                if base_mode in ["narrated_poem"]:
+                    phrase_xml.attrs["speaker"] = "Narrator"
+                else:
+                    raise ValueError(f"{base_mode} is too fucking stupid to know who should be talking")
 
             if not phrase_xml.attrs.get("src") or not phrase_xml.attrs.get("pronunciation"):
                 phrase_xml = self.speak(

@@ -403,7 +403,7 @@
                 {{section_cosmetic or 'Workshops'}}
               </wa-button>
               <a
-                href="{{ url_for('library.book.chapter.characters.characters_base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
+                href="{{ url_for('library.book.chapter.characters.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
               <wa-dropdown-item>
                 Phrases
                 <wa-dropdown-item slot="submenu"><a

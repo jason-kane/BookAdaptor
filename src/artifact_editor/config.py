@@ -11,7 +11,7 @@ from functools import lru_cache
 log = logger.log(__name__)
 
 
-def save_config(chapterdir, config):
+def save_config(chapterdir: str, config: dict[str, str]):
     """
     config is the new config.  remember it forever.
     """
@@ -34,7 +34,7 @@ def save_config(chapterdir, config):
     return config
 
 
-def get_config(chapterdir):   
+def get_config(chapterdir: str) -> dict[str, str]:
     # we're being inconsistent somewhere.
     chapterdir = chapterdir.lstrip('/')
 

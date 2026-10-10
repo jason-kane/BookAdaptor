@@ -6,8 +6,11 @@ import const
 
 log = logger.log(__name__)
 
+import typing
+if typing.TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
 
-def get_camera_fn(chapter):
+def get_camera_fn(chapter: Chapter):
     return os.path.join(
         const.LIBRARY_DIR,
         chapter.chapterdir,
@@ -15,7 +18,7 @@ def get_camera_fn(chapter):
     )
 
 
-def delete_camera(chapter):
+def delete_camera(chapter: Chapter):
     """
     Clear the camera cache for the book.
     """
@@ -32,8 +35,9 @@ def delete_camera(chapter):
     return
 
 _frame_loaded = False
-_frame_to_camera = []
-def frame_to_camera(frame_index: int) -> dict:
+_frame_to_camera: list[float | None] = []
+
+def frame_to_camera(frame_index: int) -> float:
     """
     Given a frame index, return the scroll lock for that frame.
     """ 
@@ -44,7 +48,7 @@ def frame_to_camera(frame_index: int) -> dict:
         return _frame_to_camera[frame_index]
     except IndexError:
         log.error(f"Frame index {frame_index} out of range for frame_to_camera ({len(_frame_to_camera)}).")
-        return None
+        raise
 
 
 def set_scrollrate(
@@ -83,7 +87,7 @@ def set_scrollrate(
 def boost_scrollrate(
         frame: int,
         target_height: float,
-    ) -> bool:
+    ) -> None:
     """
     _gently_ alter the camera scroll rate sequence so we reach target_height at frame.
     """   
@@ -99,10 +103,16 @@ def boost_scrollrate(
     if initial_frame == 0:
         log.info('We are up against the beginning of the video, cannot boost scroll rate gradually.')
         log.info('TODO:  figure something out.')
-        return True
+        return
 
     initial_height = _frame_to_camera[initial_frame]
+    if initial_height is None:
+        initial_height = 0.0
+
     previous_height = _frame_to_camera[frame]
+    if previous_height is None:
+        previous_height = initial_height
+
     log.info(f'Initial frame {initial_frame} has height {initial_height}.')
     log.info(f'  Final frame {frame} has height {previous_height} but it should be {target_height}.')
 
@@ -114,7 +124,6 @@ def boost_scrollrate(
     
     total_height_delta = target_height - previous_height
     log.info(f'Traversing {total_height_delta} pixels over {total_frames} frames.')
-    # total_height_delta = target_height - initial_height
 
     if total_frames > 0:
         height_per_frame = total_height_delta / total_frames
@@ -127,10 +136,8 @@ def boost_scrollrate(
 
     else:
         log.error(f"Cannot boost scroll rate at frame {frame}, invalid frame range.")
-        return True
-    
-    #last_frame = initial_frame + total_frames
-
+        return
+   
     log.info(f'Adjusting all subsequent frames [{frame + 1}:{len(_frame_to_camera)}] by {total_height_delta} to maintain scroll rate.')
     if total_height_delta != 0:
         for i in range(frame + 1, len(_frame_to_camera)):
@@ -139,61 +146,13 @@ def boost_scrollrate(
             else:
                 _frame_to_camera[i] += total_height_delta
 
-    return True
 
-
-def boost_scrollrate_old(
-        start_frame: int,
-        distance: int,
-        adjustment_percentage: float
-    ) -> bool:
-    """
-    Nudge the scroll rate for a specific frame.
-    """   
-    start_frame = int(start_frame)
-    distance = int(distance)
-
-    if distance > start_frame:
-        log.error(f"Cannot boost scroll rate at frame {start_frame} by distance {distance}, distance exceeds start frame.")
-        return True
-
-    frame_index = start_frame - distance
-    
-    prior_scroll = _frame_to_camera[frame_index - 1]
-    prechange = _frame_to_camera[frame_index]
-
-    if not prior_scroll or not prechange:
-        log.error(f"Cannot boost scroll rate at frame {frame_index}, missing prior or prechange values.")
-        return True
-
-    old_rate = prechange - prior_scroll
-    new_rate = old_rate * (1 + adjustment_percentage)
-
-    delta = new_rate - old_rate
-        
-    log.info(f"Altering scroll for frame {frame_index} from {prechange} pixels to {prior_scroll + new_rate} pixels, ({adjustment_percentage}%)")
-    _frame_to_camera[frame_index] = prior_scroll + new_rate
-
-    # and everything after that needs to slide linearly with no rate change
-    log.info(f"Adjusting all subsequent frames after frame {frame_index} to maintain scroll rate.")
-    for frame_index in range((start_frame - distance) + 1, len(_frame_to_camera)):
-        # how much of an increment happened at frame_index _before_
-        # we touched it?  we want to retain the increment.
-        #increment = prechange - _frame_to_camera[frame_index]
-        #prechange = _frame_to_camera[frame_index]
-
-        _frame_to_camera[frame_index] += delta
-        # _frame_to_camera[frame_index] + increment
-
-    return True
-
-
-def set_frame_to_camera(frame_to_camera_value):
+def set_frame_to_camera(frame_to_camera_value: list[float | None]):
     global _frame_to_camera
     _frame_to_camera = frame_to_camera_value
 
 
-def load_camera(chapter, aspect='widescreen'):
+def load_camera(chapter: Chapter, aspect='widescreen'):
     """
     Load the camera position from disk
     """
@@ -218,7 +177,7 @@ def load_camera(chapter, aspect='widescreen'):
     return False
 
 
-def save_camera(chapter):
+def save_camera(chapter: Chapter):
     """
     Save the camera position to disk
     """

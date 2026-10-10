@@ -10,7 +10,7 @@ const TOOLBAR_CONFIG = [['bold', 'italic', 'link'], [{
   header: 2
 }, 'blockquote']];
 class BubbleTooltip extends BaseTooltip {
-  static TEMPLATE = ['<span class="ql-tooltip-arrow"></span>', '<div class="ql-tooltip-editor">', '<input type="text" data-formula="e=mc^2" data-link="https://quilljs.com" data-video="Embed URL">', '<a class="ql-close"></a>', '</div>'].join('');
+  static TEMPLATE = ['<span class="ql-tooltip-arrow"></span>', '<div class="ql-tooltip-editor">', '<input type="text" data-formula="e=mc^2" data-video="Embed URL">', '<a class="ql-close"></a>', '</div>'].join('');
   constructor(quill, bounds) {
     super(quill, bounds);
     this.quill.on(Emitter.events.EDITOR_CHANGE, (type, range, oldRange, source) => {

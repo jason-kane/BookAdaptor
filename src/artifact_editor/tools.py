@@ -7,7 +7,7 @@ import random
 import re
 import subprocess
 import time
-
+from typing import Any
 import fnv_hash_fast
 
 import const
@@ -26,7 +26,7 @@ def chapterkey_to_chapterargs(chapter_key):
     return json.loads(chapter_key)
 
 
-def tightstring(s):
+def tightstring(s: str) -> str:
     return " ".join(s.split()).strip()
 
 
@@ -242,7 +242,7 @@ def get_surrounding_paragraphs(
     return "\n".join(bundle)
 
 
-def friendly_location(in_location):
+def friendly_location(in_location: str) -> str:
     """
     Locations are stage-direction abbreviations.  We don't expect text-to-image to comprehend them.
     """
@@ -314,7 +314,6 @@ def requestToChapterKwargs(request_url):
     # unescape %20 and similar
     p = [unquote(part) for part in p]
 
-    # library = p[0]
     author = p[1]
     title = p[2]
     chapter_number = int(p[3])
@@ -565,7 +564,7 @@ def get_tag(in_text, loras: list[str] = [], randomized: bool = True) -> str:
     return tag
 
 
-def tags_to_dict(tags):
+def tags_to_dict(tags: str | None) -> dict[str, str | bool]:
     """
     Paragraph Tags.  ie:
 
@@ -580,12 +579,8 @@ def tags_to_dict(tags):
     if tags is None:
         return {}
 
-    # could be smart oneliner with nested comprehensions.. but hello?  readability.
-    # always.  obviously correct.
-    #
-    tags = tags.split(",")
     out = {}
-    for tag in tags:
+    for tag in tags.split(","):
         if not tag:
             # it has to be a string, the only falsy string is an empty string
             # so this is shorthand for 'if tag == "":'
@@ -602,7 +597,7 @@ def tags_to_dict(tags):
     return out
 
 
-def dict_to_tags(tag_dict) -> str:
+def dict_to_tags(tag_dict: dict[str, str | bool]) -> str:
     """
     Paragraph Tags serialization.
     {
@@ -727,3 +722,27 @@ def assemble_mp4(
     # subprocess.run(cmd)
     log.info(f"DONE assemble_mp4({fps=}, {framedir=}, {wavfile=}, {videofile=})")
     return videofile
+
+
+def as_int(value: str|int|Any) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value.strip())
+    raise ValueError(f"Invalid value for as_int: {value}")
+
+def as_str(value: str|int|Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return str(value)
+    raise ValueError(f"Invalid value for as_str: {value}")
+
+def as_float(value: str|float|Any) -> float:
+    if isinstance(value, float):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.strip())
+    raise ValueError(f"Invalid value for as_float: {value}")

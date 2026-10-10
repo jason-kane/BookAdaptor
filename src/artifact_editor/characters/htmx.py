@@ -3,6 +3,7 @@ from os import name
 from typing import Any
 
 import logger
+import const
 from artifact_editor.tools import (
     generic_button,
 )
@@ -559,6 +560,16 @@ def character_data(chapter, character_dict: dict[str, Any]):
         character_dict = get_global_character(chapter, character_dict["name"])
         tag = character_dict["tag"]
 
+    is_narrator = tag == "Narrator"
+    if is_narrator:
+        # Keep the configured narrator voice as the default when older character
+        # data does not include the voice settings.
+        for key in ("voice_gender", "voice_language", "voice_accent"):
+            if key in const.NARRATOR:
+                character_dict.setdefault(key, const.NARRATOR[key])
+        if not character_dict.get("voices"):
+            character_dict["voices"] = const.NARRATOR.get("voices", [])
+
     if "(" in tag:
         # invalid
         return None
@@ -585,6 +596,32 @@ def character_data(chapter, character_dict: dict[str, Any]):
         chapter.url, tag, pronunciation_filter
     )
 
+    description_editor = "" if is_narrator else f"""
+        {character_description_response(chapter, tag, description)}
+        <div class="wa-cluster">
+            <wa-button
+                hx-post="{url_for('library.book.chapter.characters.generate_description', **chapter.kwargs, character_tag=tag)}"
+                hx-target="#{tag}_description"
+                hx-swap="outerHTML transition:true">Extract Text Description</wa-button>
+
+            <wa-button
+                hx-post="{url_for('library.book.chapter.characters.fanciful_description', **chapter.kwargs, character_tag=tag)}"
+                hx-target="#{tag}_description"
+                hx-swap="outerHTML transition:true">Fanciful Description</wa-button>
+
+            <wa-button
+                hx-post="{url_for('library.book.chapter.characters.condense_description', **chapter.kwargs, character_name=tag)}"
+                hx-target="#{tag}_description"
+                {"disabled" if not description else ""}
+                hx-swap="outerHTML transition:true">Condense Description</wa-button>
+        </div>
+    """
+    headshot_editor = "" if is_narrator else f"""
+        <div class="wa-stack" id="{tag}_right_column">
+            {headshot(character_dict, chapter, tag)}
+        </div>
+    """
+
     has_positive_voice_weights = any(
         voice["strength"] > 0 for voice in character_dict.get("voices", [])
     )
@@ -604,12 +641,6 @@ def character_data(chapter, character_dict: dict[str, Any]):
                     [{visual_appearances}/{audio_appearances} visual/audio]
                 </div>
 
-                <wa-switch
-                    hx-post="{ url_for('library.book.chapter.characters.toggle_global_character', **chapter.kwargs, character_name=tag) }"
-                    hx-target="#character_{tag}"
-                    {"checked" if global_character else ""}
-                >Global Character</wa-switch>
-
                 <wa-input 
                     label="Character Name" 
                     name="name" 
@@ -619,24 +650,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
                     hx-target="#{tag}_scope">
                 </wa-input>
 
-                {character_description_response(chapter, tag, description)}
-                <div class="wa-cluster">
-                    <wa-button 
-                        hx-post="{ url_for('library.book.chapter.characters.generate_description', **chapter.kwargs, character_tag=tag) }"
-                        hx-target="#{tag}_description"
-                        hx-swap="outerHTML transition:true">Extract Text Description</wa-button>
-
-                    <wa-button 
-                        hx-post="{ url_for('library.book.chapter.characters.fanciful_description', **chapter.kwargs, character_tag=tag) }"
-                        hx-target="#{tag}_description"
-                        hx-swap="outerHTML transition:true">Fanciful Description</wa-button>                        
-
-                    <wa-button 
-                        hx-post="{ url_for('library.book.chapter.characters.condense_description', **chapter.kwargs, character_name=tag) }"
-                        hx-target="#{tag}_description"
-                        {"disabled" if not description else ""}
-                        hx-swap="outerHTML transition:true">Condense Description</wa-button>
-                </div>
+                {description_editor}
 
                 <div class="wa-cluster">
                     {gender_selection(chapter, character_dict, tag)}
@@ -657,9 +671,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
 
             </div>
             
-            <div class="wa-stack" id="{tag}_right_column">
-                {headshot(character_dict, chapter, tag)}
-            </div>
+            {headshot_editor}
         </div>
 
         <div class="wa-stack" id="{tag}_after_split">

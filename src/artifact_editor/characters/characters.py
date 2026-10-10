@@ -7,6 +7,8 @@ import textwrap
 import time
 from collections import defaultdict
 
+from bs4 import BeautifulSoup
+
 import const
 import logger
 from artifact_editor import (
@@ -287,8 +289,7 @@ def tag_to_character(chapter, character_tag):
 
 
 def generate_sample_audio(
-    mybook,
-    chapterdir,
+    chapter,
     character_name,
     sample_sentence,
     effects=None,
@@ -296,93 +297,33 @@ def generate_sample_audio(
     """
     Generates a sample audio file for a character.
     """
-    character = get_character(mybook, chapterdir, character_name)
-    voices = character.get("voices", [])
-    
-    if not voices:
+    character = get_character(chapter, character_name)
+    if character is None or not character.get("voices"):
         log.error(f"No voices found for character {character_name}.")
         return None
 
-    audio_fn = os.path.join(
-        const.LIBRARY_DIR,
-        chapterdir,
-        "characters",
-        f"{name_to_tag(character_name)}.wav"
-    )
-
-    if not os.path.exists(os.path.dirname(audio_fn)):
-        os.makedirs(os.path.dirname(audio_fn))
-
-    log.info(f"Generating sample audio for {character_name} with voices {voices}")
-    
-    done_flag_fn = os.path.join(const.LIBRARY_DIR, chapterdir, 'done_flag.txt')
-    if os.path.exists(done_flag_fn):
-        os.unlink(done_flag_fn)
-
-    workdir = os.path.join(const.LIBRARY_DIR, chapterdir)
-    
-    tempdir = os.path.join(workdir, 'audio_temp_cache')
+    workdir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir)
+    tempdir = os.path.join(workdir, "audio_temp_cache")
     os.makedirs(tempdir, exist_ok=True)
 
-    fragdex = 0
-    with open('drawing.fifo', 'a') as fifo:
-        # omg, this is the ungodly state of this orafice.
-        wavfile = tempfile.NamedTemporaryFile(
-            suffix='.wav', 
-            dir=tempdir,
-            delete=False
-        ).name
+    with tempfile.NamedTemporaryFile(suffix=".wav", dir=tempdir, delete=False) as sample_file:
+        wavfile = sample_file.name
 
-        # this needs to comply with xml_to_list_of_wav() conventions.
-        soup = f"<phrase id='0_0' speaker=\"{character_name}\">{sample_sentence}</phrase>"
+    phrase_soup = BeautifulSoup("", "xml")
+    phrase_xml = phrase_soup.new_tag("phrase")
+    phrase_xml["speaker"] = character_name
+    phrase_xml.string = sample_sentence
 
-        # fragdex,
-        fifo.write(
-            json.dumps([
-                'speak', 
-                chapterdir, 
-                soup,  # xml string
-                wavfile, # filename it is going to write to
-                workdir,  
-                done_flag_fn
-            ]) + "\n\n"
-        )
-    
-    start_time = time.time()
-    tools.wait_for(done_flag_fn)
-    elapsed_time = time.time() - start_time
-    log.info(f"Audio generation for {character_name} completed in {elapsed_time:.2f} seconds")
+    # Use the same Comfy workflow path as chapter phrase audio generation.
+    llm.text_2_audio(
+        chapter,
+        phrase_xml,
+        character_name,
+        wavfile,
+        force=True,
+    )
 
-    os.unlink(done_flag_fn)
-
-    while not os.path.exists(wavfile):
-        log.error(f"This should never happen. {wavfile} should already exist.")
-        time.sleep(0.1)
-
-    # if effects:
-    #     log.info(f"Applying effects {effects} to {wavfile}")
-    #     for key, config_dict in effects.items():
-    #         log.info(f"Effect: {key}")
-    #         effect = audio_effects.registry.get_effect(key)
-            
-    #         wavpath = os.path.dirname(wavfile)
-    #         wavname = os.path.basename(wavfile)
-    #         wavbase = os.path.splitext(wavname)[0]
-            
-    #         out_wavfile = os.path.join(
-    #             wavpath,
-    #             wavbase + f".{key}.wav"
-    #         )
-
-    #         effect().apply(
-    #             config_dict,
-    #             input_wav_filename=wavfile,
-    #             output_wav_filename=out_wavfile
-    #         )
-
-    #         wavfile = out_wavfile
-
-    return wavfile
+    return os.path.basename(wavfile)
 
 
 def generate_metadata_character_description(

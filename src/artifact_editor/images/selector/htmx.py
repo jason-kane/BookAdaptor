@@ -10,11 +10,10 @@ from PIL import Image
 import const
 import logger
 from artifact_editor.images import (
-    htmx,
     images,
 )
 from artifact_editor.tools import (
-    generic_button,
+    as_int,
 )
 
 if TYPE_CHECKING:
@@ -25,12 +24,12 @@ from .selector import registry as selector_registry
 log = logger.log(__name__)
 
 
-def gather_candidate_images(image_xml: Tag, chapter):
+def gather_candidate_images(image_xml: Tag, chapter: Chapter):
     image_paths = set()
     paragraph = image_xml.find_parent("paragraph")
     paragraph_dir = chapter.get_paragraph_dir(paragraph.attrs["index"])
     
-    comfy_prefix = f"{chapter.nice}_img_{image_xml.attrs['index']}"
+    comfy_prefix = f"{chapter.nice}_img_{as_int(image_xml.attrs['index'])}"
     for fn in glob.glob(
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
@@ -49,7 +48,7 @@ def gather_candidate_images(image_xml: Tag, chapter):
             log.info(f"Copied {fn} to {destination}")
 
     # if 'index' in image_xml.attrs:
-    image_index = image_xml.attrs["index"]
+    image_index = as_int(image_xml.attrs["index"])
 
     #     for image_path in images.all_images_by_image_index(
     #         paragraph_dir,
@@ -66,12 +65,12 @@ def gather_candidate_images(image_xml: Tag, chapter):
     )
     
 
-def gather_candidate_videos(image_xml: Tag, chapter):
+def gather_candidate_videos(image_xml: Tag, chapter: Chapter):
     image_paths = set()
     paragraph = image_xml.find_parent("paragraph")
     paragraph_dir = chapter.get_paragraph_dir(paragraph.attrs["index"])
     
-    comfy_prefix = f"{chapter.nice}_img_{image_xml.attrs['index']}"
+    comfy_prefix = f"{chapter.nice}_img_{as_int(image_xml.attrs['index'])}"
     for fn in glob.glob(
         os.path.join(
             const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
@@ -90,7 +89,7 @@ def gather_candidate_videos(image_xml: Tag, chapter):
             log.info(f"Copied {fn} to {destination}")
 
     # if 'index' in image_xml.attrs:
-    image_index = image_xml.attrs["index"]
+    image_index = as_int(image_xml.attrs["index"])
 
     #     for image_path in images.all_images_by_image_index(
     #         paragraph_dir,
@@ -134,34 +133,6 @@ def get_mode_selector(src, aspect, image_xml):
     </form>
     """
     return mode_selector
-
-    # <wa-button
-    #     hx-post="selector/apply_transformation"
-    #     hx-target="#strip-centerpiece"
-    #     hx-swap="outerHTML transition:true"
-    #     hx-trigger="click"
-    #     name="button">Apply Transformation</wa-button>
-
-# def verify_button(imageurl, image_index, verify_variant="neutral"):
-
-
-
-# def use_image_button(imageurl, image_index):
-#     return generic_button(
-#         imageurl,
-#         category=None,
-#         tag="use_image",
-#         cosmetic="Use",
-#         target=None,
-#         vals=f"index: {image_index}, selectedImage: getSelectedImageSrc()",
-#         tooltip="Choose this image",
-#     )
-
-# def image_metadata_buttons(image_index, imageurl, verify_variant="neutral"):
-
-
-
-#     return buttons
 
 
 def image_metadata(chapter: Chapter, image_xml: Tag, src:str):   
@@ -328,8 +299,6 @@ def image_selector(
     
     paragraph = image_xml.find_parent("paragraph")
     fullscreen = paragraph.attrs.get("fullscreen", "false").lower() == "true"
-
-    # buttons = image_metadata_buttons(image_index, imageurl, verify_variant)
 
     # this file ought to exist, it's the currently selected image for this image
     # slot.

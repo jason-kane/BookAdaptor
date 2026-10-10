@@ -2,7 +2,6 @@ import glob
 import multiprocessing
 import os
 import time
-import webbrowser
 
 import PIL
 from flask import (
@@ -20,12 +19,10 @@ import const
 import logger
 from artifact_editor import (
     camera,
-    config,
 )
 from artifact_editor.phrases.phrases import recalculate_image_frames
-from artifact_editor.author.author import Author
+
 from artifact_editor.chapter.chapter import (
-    Chapter,
     chapter_url_defaults_helper,
     chapter_url_value_preprocessor,
 )
@@ -44,6 +41,10 @@ from . import (
     htmx,
 )
 
+import typing as type
+if type.TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 log = logger.log(__name__)
 
 bp = Blueprint(
@@ -55,19 +56,18 @@ bp = Blueprint(
     ),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values) 
+    chapter_url_value_preprocessor(endpoint, values)
 
 
-
-@bp.route(
-    "/actions/image_durations", methods=["POST"]
-)
+@bp.route("/actions/image_durations", methods=["POST"])
 def image_durations():
     """
     Go through the book.xml, sum the durations of phrases and assign that as the duration for the image.
@@ -112,7 +112,11 @@ def set_fragment_id():
     methods=["POST"],
 )
 def clear_broken_frames():
-    framedir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "frames",)
+    framedir = os.path.join(
+        const.LIBRARY_DIR,
+        g.chapter.chapterdir,
+        "frames",
+    )
     for framefn in glob.glob(os.path.join(framedir, "frame_*.png")):
         try:
             img = PIL.Image.open(framefn)
@@ -133,9 +137,7 @@ def clear_broken_frames():
 
 
 # POST /Anton%20Chekhov/The%20Lady%20with%20the%20Dog/chapter/0001/frames/regenerate_w_tmi
-@bp.route(
-    "/regenerate_w_tmi", methods=["POST"]
-)
+@bp.route("/regenerate_w_tmi", methods=["POST"])
 def regenerate_w_tmi():
     """
     Regenerate the imaginative image used in this frame using TMI (Text->Metadata->Image).
@@ -217,10 +219,7 @@ def regenerate_w_tmi():
 @bp.route("/<aspect>/<int:frame_index>")
 def base(aspect="widescreen", frame_index=0):
     frame_index = int(frame_index)
-    phrase_xml = htmx.frame_to_phrase(
-        g.chapter,
-        frame_index
-    )
+    phrase_xml = htmx.frame_to_phrase(g.chapter, frame_index)
 
     if phrase_xml is None:
         if frame_index == 0:
@@ -301,6 +300,7 @@ def base(aspect="widescreen", frame_index=0):
         section_cosmetic="Frames",
     )
 
+
 @bp.route("/open_directory")
 def open_directory(author, title, chapter_number, language):
     from showinfm import show_in_file_manager
@@ -316,6 +316,7 @@ def open_directory(author, title, chapter_number, language):
     # webbrowser.open(framedir)
     return "", 200
 
+
 # http://localhost:5000/L.%20Frank%20Baum/The%20Marvelous%20Land%20of%20Oz/1/frames/1220.hx
 @bp.route("/<aspect>/<int:frame_index>.hx")
 @bp.route("/<int:frame_index>.hx")
@@ -324,7 +325,7 @@ def htmx_frame(aspect=None, frame_index=None):
     frame_display = htmx.frame_display(g.chapter, frame_index)
 
     frame_pfn = htmx.frame_pfn(g.chapter, aspect, frame_index)
-    
+
     return f"""
 <div id="frame-display" hx-swap-oob="true" class="wa-stack">
     {frame_display}
@@ -341,17 +342,15 @@ def htmx_frame(aspect=None, frame_index=None):
 
 def camera_frame_override(image_dict, frame_index):
     image = image_dict["image"]
-    
+
     camera_frame = os.path.join(
         "image_frames",
         "image_%06d" % image_dict["index"],
-        f"frame_{frame_index:06}.png"
+        f"frame_{frame_index:06}.png",
     )
 
     camera_frame_pfn = os.path.join(
-        const.LIBRARY_DIR,
-        image_dict["paragraph_dir"],
-        camera_frame
+        const.LIBRARY_DIR, image_dict["paragraph_dir"], camera_frame
     )
 
     if os.path.exists(camera_frame_pfn):
@@ -385,41 +384,31 @@ def redraw_frame(aspect="_widescreen"):
     masterplan.delete_masterplan(chapter)
     mp = masterplan.generate_masterplan(chapter)
 
-    framedir = os.path.join(
-        const.LIBRARY_DIR,
-        chapter.chapterdir,
-        "frames",
-        aspect
-    )
+    framedir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "frames", aspect)
     os.makedirs(framedir, exist_ok=True)
 
-    frame_fn = os.path.join(
-        framedir, f"frame_{frame_index:06}.png"
-    )
+    frame_fn = os.path.join(framedir, f"frame_{frame_index:06}.png")
 
     # "camera", in a bad name. this is the translation layer between the nice sequential frame count
     # with the scrolling rate of the text side, which attempts the illusion of linear with subtlety.
-    
+
     # thats all abstracted into 'give me a frame index, I'll quickly tell you
     # exactly how many pixels to offset the image of the text you have correctly for this exact
     # moment. ie: we display it, camera is responsible for appropriate positioning in the timeline.
 
     camera.load_camera(chapter, aspect)
     scroll_lock = camera.frame_to_camera(frame_index)
-    
+
     # a bunch of metadata about the text for this frame and the image currently displayed.
     word_dict, image_dict = masterplan.from_frame(mp, frame_index)
-    
+
     # so damn lazy.
     paragraph_tags = word_dict.get("paragraph_tags", {})
     image_dict["paragraph_tags"] = paragraph_tags
 
     # override the image due to a camera configuration?  This would be something
     # like a slow pan over an image, wobble or zoom.
-    image_dict["image"] = camera_frame_override(
-        image_dict,
-        frame_index
-    )
+    image_dict["image"] = camera_frame_override(image_dict, frame_index)
 
     # how do you make it behave like the real thing?
     # use the real thing.  But this is so clean now.. umm.
@@ -429,20 +418,24 @@ def redraw_frame(aspect="_widescreen"):
         # Multiple frames
         with multiprocessing.Pool() as pool:
             for frame_index in range(start_frame, end_frame + 1):
-                pool.apply(frames.draw_frame, args=(
-                    chapter.chapterdir,
-                    chapter.get_aspect(),
-                    frame_fn,
-                    scroll_lock,
-                    frame_index,
-                    frame_index,
-                    frame_index,
-                    image_dict,
-                    {},
-                    animate_lock,
-                    word_dict['paragraph_index'],
-                    word_dict['index'],
-                ), kwds={"force": force})
+                pool.apply(
+                    frames.draw_frame,
+                    args=(
+                        chapter.chapterdir,
+                        chapter.get_aspect(),
+                        frame_fn,
+                        scroll_lock,
+                        frame_index,
+                        frame_index,
+                        frame_index,
+                        image_dict,
+                        {},
+                        animate_lock,
+                        word_dict["paragraph_index"],
+                        word_dict["index"],
+                    ),
+                    kwds={"force": force},
+                )
     else:
         # single frame
         # No need for all that fancy pants, it messes up the logging.  Same call, less overhead.
@@ -451,15 +444,15 @@ def redraw_frame(aspect="_widescreen"):
             chapter.get_aspect(),
             frame_fn,
             scroll_lock,
-            first_frame_index=image_dict['start_frame'],
+            first_frame_index=image_dict["start_frame"],
             frame_index=frame_index,
-            max_frame_index=image_dict['end_frame'],
+            max_frame_index=image_dict["end_frame"],
             image_dict=image_dict,
             previous_image_dict={},
             animate_lock=animate_lock,
-            paragraph_index=word_dict['paragraph_index'],
-            phrase_id=word_dict['index'],
-            force=force
+            paragraph_index=word_dict["paragraph_index"],
+            phrase_id=word_dict["index"],
+            force=force,
         )
 
     # mybook = chapter.get_book(chapter.chapterdir)
@@ -500,10 +493,8 @@ def redraw_frame(aspect="_widescreen"):
     return response
 
 
-@bp.route(
-    "/<aspect>/<int:frame_index>.png"
-)
-def frame_image(aspect:str, frame_index:int=0):
+@bp.route("/<aspect>/<int:frame_index>.png")
+def frame_image(aspect: str, frame_index: int = 0):
     return send_from_directory(
         os.path.join(
             const.LIBRARY_DIR,
@@ -516,9 +507,7 @@ def frame_image(aspect:str, frame_index:int=0):
 
 
 # POST /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/chapter/0001/frames/actions/clear_cache
-@bp.route(
-    "/actions/clear_cache", methods=["POST"]
-)
+@bp.route("/actions/clear_cache", methods=["POST"])
 def clear_cache():
     """
     Clear the page_segment cache for this chapter.

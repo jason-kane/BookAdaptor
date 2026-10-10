@@ -56,10 +56,10 @@ from artifact_editor.images import (
 from artifact_editor.styles import styles
 from artifact_editor.tools import (
     get_bookdir,
-    get_chapterdir,
-    get_chapterurl,
     get_surrounding_paragraphs,
     get_text_to_next,
+    as_int,
+    as_str,
 )
 from artifact_editor.video import video
 from text_to_image.registry import registry as t2i_registry
@@ -156,11 +156,7 @@ def comfyui_workflow_choose(image_index: int = 0):
     workflow_image_template = request.form.get("workflow_image_template", "")
     log.info("Selected workflow image template: %s", workflow_image_template)
 
-    # image_mode, workflow_image_template = workflow_image_template.split('.')
-    # log.info('Trimmed workflow image template: %s', workflow_image_template)
-
     image_xml.attrs["workflow_image_template"] = workflow_image_template
-    # image_xml.attrs["image_mode"] = image_mode
 
     g.chapter.save_xml()
     return "", 200
@@ -168,7 +164,6 @@ def comfyui_workflow_choose(image_index: int = 0):
 
 @bp.route("/<int:image_index>/workflow_run", methods=["POST"])
 def comfyui_workflow_run(image_index: int = 0):
-    #client = httpx.Client()
     image_xml = g.chapter.get_image(image_index)
     image_index = int(image_index)
 
@@ -181,7 +176,6 @@ def comfyui_workflow_run(image_index: int = 0):
 
     # mode.workflow_template
     if "." in workflow_template:
-        #mode = workflow_template.split(".")[0]
         workflow_template = workflow_template.split(".")[-1]
         image_xml.attrs["workflow_image_template"] = workflow_template
 
@@ -202,103 +196,9 @@ def comfyui_workflow_run(image_index: int = 0):
         log.info('Workflow file for image %s: %s', image_index, workflow_fn)
 
         comfy.run_workflow_fn(workflow_fn)
-        
-        # with open(os.path.join(
-        #     const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-        #     workflow_fn
-        # ), "r") as h:
-        #     workflow = json.load(h)
     else:
         log.error("No workflow_image_template post parameter found!")
-    # if not workflow_template or workflow is None:
-    #     log.error("No workflow found for image['workflow_image_template']: '%s'", workflow_template)
-    #     return f"No workflow found for image['workflow_image_template']: '{workflow_template}'", 404
     
-    # # then _convert_ it to the api workflow right at the
-    # # edge.
-    # json_workflow = {
-    #     "prompt": comfy.ui_to_api_workflow(workflow)
-    # }
-
-    # # start the comfyui workflow
-    # with open('/tmp/debug.json', 'w') as f:
-    #     f.write(json.dumps(json_workflow, indent=2))
-        
-    # response = client.post(
-    #     const.COMFYUI_API_URL + "api/prompt",
-    #     json=json_workflow,
-    # )
-
-    # # this generally means we did something wrong.
-    # if response.status_code != 200:
-    #     # log.info(f"POST: {json.dumps(workflow, indent=2)}")
-    #     log.error(f"Failed to create workflow: {response.text}")
-    #     return f"Failed to create workflow: {response.text}", 500
-
-    # finished = False
-    # job_id = response.json().get("prompt_id")
-    # # 1 second polling loop
-    # while not finished:
-    #     workflow_response = client.get(const.COMFYUI_API_URL + f"api/jobs/{job_id}")
-    #     if workflow_response.status_code != 200:
-    #         log.error(f"Failed to get workflow: {workflow_response.text}")
-    #         return f"Failed to get workflow: {workflow_response.text}", 500
-    #     job_dict = workflow_response.json()
-    #     if job_dict.get("status") in ["error", "cancelled", "completed"]:
-    #         finished = True
-
-    #     if not finished:
-    #         time.sleep(1)
-
-    # get the image prompt save it to the image_xml
-    # output/baum-marv-001-bhgv_img_10_zit-paragraph.prompt.txt
-
-    # workflow_template = image_xml.attrs.get("workflow_template", "")
-    # prompt_fn = os.path.join(
-    #     const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-    #     f"{g.chapter.nice}_img_{image_xml.attrs['index']}_{workflow_template}.prompt.txt",
-    # )
-
-    # prompt = ""
-    # if os.path.exists(prompt_fn):
-    #     with open(prompt_fn, "r") as h:
-    #         prompt = h.read().strip()
-    #         image_xml.attrs["prompt"] = prompt
-    # else:
-    #     log.error(f"Prompt file {prompt_fn} not found after workflow completion.")
-    #     image_xml.attrs["prompt"] = ""
-    # g.chapter.save_xml()
-
-    # the workflow has finished, the "final" job_dict should reflect the
-    # finished state.  Gather the output image and copy it to the expected
-    # location in the library, then update the image_xml to point to the new
-    # image.
-
-    # for nodeId in job_dict.get("outputs", {}):
-    #     for image in job_dict["outputs"][nodeId].get("images", []):
-    #         if "filename" in image:
-    #             filename = image["filename"]
-    #             pfn = images.get_image_fn(
-    #                 prompt=prompt + "_comfyui",
-    #                 loras=[],
-    #                 paragraph_dir=g.chapter.get_paragraph_dir(
-    #                     image_xml.find_parent("paragraph").attrs["index"]
-    #                 ),
-    #                 image_index=image_xml.attrs["index"],
-    #                 randomized=False,
-    #             )
-
-    #             shutil.copy(
-    #                 os.path.join(
-    #                     const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], filename
-    #                 ),
-    #                 os.path.join(const.LIBRARY_DIR, pfn),
-    #             )
-
-    #             image_xml.attrs["src"] = os.path.basename(pfn)
-    #             g.chapter.save_xml()
-    #             return "", 200
-
     if image_xml.attrs.get("src") in [None, ""]:
         # make this the current image.
         candidates = selector_htmx.gather_candidate_images(image_xml, g.chapter)
@@ -531,12 +431,7 @@ def create_clip_prompt(image_index=0):
             "",  # meta_prompt
             prompt_fn,  # prompt_fn
         )
-        # t5_prompt = text._text_to_image_prompt(
-        #     text=text_to_next,
-        #     paragraph_text=paragraph_text,
-        #     meta_prompt="",  # doesn't do anything right now.
-        #     prompt_fn=prompt_fn,
-        # )
+
         image_xml.attrs["t5_prompt"] = t5_prompt
 
     text_to_next = get_text_to_next(
@@ -624,14 +519,6 @@ def condense_prompt(image_index=0):
             )
         )
 
-    # clip_prompt = image_xml.attrs.get("clip_prompt", "")
-
-    # with open(prompt_fn, "w") as h:
-    #     h.write(json.dumps({
-    #         "t5_prompt": t5_prompt,
-    #         "clip_prompt": clip_prompt,
-    #     }))
-
     image_xml.attrs["prompt"] = prompt
     g.chapter.save_xml()
 
@@ -714,31 +601,18 @@ def _apply_zmi(chapter, image_xml: Tag) -> None:
     prompt = image_xml.attrs["prompt"]
     image_xml.attrs["raw_prompt"] = prompt
 
-    # then apply the chapter style
-    # style = chapter.config.get("style", "wizardofoz")
-    # image_xml.attrs["style"] = style
-
-    # style = styles.Style.from_image(chapter, image_xml)
-
-    # if style.prompt:
-    #     prompt = style.prompt.format(prompt=image_xml.attrs.get("raw_prompt", ""))
-    #     image_xml.attrs["prompt"] = prompt
-
-    #     if style.negative_prompt:
-    #         image_xml.attrs["negative_prompt"] = style.negative_prompt
-    #     log.info(f"Updated prompt to {prompt}")
-
 
 # /{{chapterurl}}/images/action/apply_zmi_here_to_end
 @bp.route("/<int:image_index>/actions/apply_zmi_here_to_end", methods=["POST"])
 def apply_zmi_here_to_end(image_index=0):
     log.info(f"{request.form}")
 
-    all_images = g.chapter.get_xml().findAll("image")
-    image_xml = all_images[image_index]
-    for image_index, image_xml in enumerate(all_images[image_index:]):
-        if (image_xml.attrs.get("t2i") != "tsqn.zimageturbo") and (
-            image_xml.attrs.get("src") in [None, ""]
+    for image_xml in g.chapter.images():
+        if as_int(image_xml.attrs.get("index")) < image_index:
+            continue
+
+        if (as_str(image_xml.attrs.get("t2i")) != "tsqn.zimageturbo") and (
+            as_str(image_xml.attrs.get("src")) in [None, ""]
         ):
             _apply_zmi(g.chapter, image_xml)
             g.chapter.save_xml()
@@ -780,8 +654,6 @@ def create_fanciful_prompt(image_index=0):
     set_fancyprompt(g.chapter, image_xml)
 
     g.chapter.save_xml()
-
-    # return "", 200
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -835,8 +707,6 @@ def create_t5_prompt(image_index=0):
 
     g.chapter.save_xml()
 
-    # return "", 200
-
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
 
@@ -847,7 +717,6 @@ def enhance_prompt(image_index=0):
     image_xml = g.chapter.get_image(image_index)
     paragraph = image_xml.find_parent("paragraph")
 
-    # image.attrs["t5_prompt"] = request.form["prompt"]
     t5_prompt = image_xml.attrs["t5_prompt"]
 
     # use meta_prompt combined with the text to try and generate an image prompt.
@@ -1415,9 +1284,7 @@ def surrounding_text(image_index: int):
     post_highlight.append("</paragraph>")
 
     lexer = HtmlLexer()
-    # lexer.add_filter(SafeAttrsOnly(), safe_attrs=safe_attrs)
-
-    # text_with_highlight = get_surrounding_paragraphs(paragraph, with_tags=True)
+    
     muted_formatter = HtmlFormatter(
         full=False, style="material", cssclass="muted", classprefix="m"
     )
@@ -1621,6 +1488,8 @@ def base(image_index: int, override=None):
     image_index = int(image_index)
 
     image_xml = g.chapter.get_image(image_index)
+    if image_xml is None:
+        raise ValueError(f"Image with index {image_index} not found")
 
     if "/" in image_xml.attrs.get("src", ""):
         log.warning(f"Image src contains a path: {image_xml.attrs['src']}")
@@ -2044,7 +1913,7 @@ def show_image_by_index(height=0, image_index=0):
 
     if image_fn.endswith(".png"):
         mimetype = "image/png"
-    elif image_fn.endswith(".jpg") or image_fn.endswith(".jpeg"):
+    elif image_fn.endswith((".jpg", ".jpeg")):
         mimetype = "image/jpeg"
     else:
         log.error("Unknown image type for src: %s", os.path.basename(image_fn))
@@ -2202,169 +2071,6 @@ def draw_all_missing_images():
             log.info(f"Image {image_index} already has a source file, skipping.")
     
     return htmx.draw_all_missing_images_button(g.chapter), 200
-
-
-    # #image_index = 0
-    # #all_images = g.chapter.get_xml().findAll("image")
-
-    # style = g.chapter.config.get("default_style", "")
-
-    # prompt_filter = None
-    # negative_prompt = None
-    # if style:
-    #     # the currently selected style, applied to the current prompt.
-    #     log.info(f"Looking up style {style} for chapter {g.chapter}")
-    #     prompt_filter, negative_prompt = styles.get_style(style)
-    # else:
-    #     log.warning(
-    #         f"No style found for chapter {g.chapter}, skipping style application."
-    #     )
-
-    # for image_index, image_xml in enumerate(all_images):
-    #     if (
-    #         "src" in image_xml.attrs
-    #         and image_xml.attrs["src"]
-    #         and os.path.exists(
-    #             os.path.join(
-    #                 const.LIBRARY_DIR,
-    #                 g.chapter.get_paragraphdir(
-    #                     image_xml.find_parent("paragraph").attrs["index"]
-    #                 ),
-    #                 os.path.basename(image_xml.attrs["src"]),
-    #             )
-    #         )
-    #     ):
-    #         log.info(f"Image {image_index} already has a source file, skipping.")
-    #         continue
-
-    #     paragraph = image_xml.find_parent("paragraph")
-    #     paragraph_dir = g.chapter.get_paragraphdir(paragraph.attrs["index"])
-
-    #     t2i_engine = image_xml.attrs.get("t2i", "tsqn.zimageturbo")
-
-    #     if t2i_engine == "flux.schnell":
-    #         # first the t5 prompt
-    #         if not image_xml.attrs.get("t5_prompt", ""):
-    #             log.info("No t5_prompt found, generating a new one.")
-
-    #             try:
-    #                 next_image = all_images[image_index + 1]
-
-    #                 # aggregate all the text between this image and the next image
-    #                 text_to_next = get_text_to_next(
-    #                     image_xml=image_xml, next_image_xml=next_image
-    #                 )
-
-    #             except IndexError:
-    #                 text_to_next = get_text_to_next(
-    #                     image_xml=image_xml, next_image_xml=None
-    #                 )
-
-    #             t5_prompt = images.text_to_prompt(
-    #                 image=image_xml, paragraph=paragraph, text_to_next=text_to_next
-    #             )
-    #             log.info("Using prompt: %s", t5_prompt)
-    #             image_xml.attrs["t5_prompt"] = t5_prompt
-    #         t5_prompt = image_xml.attrs["t5_prompt"]
-
-    #         # and the clip prompt
-    #         if not image_xml.attrs.get("clip_prompt", ""):
-    #             log.info("No clip_prompt found, generating a new one.")
-
-    #             try:
-    #                 next_image = all_images[image_index + 1]
-
-    #                 # aggregate all the text between this image and the next image
-    #                 text_to_next = get_text_to_next(
-    #                     image_xml=image, next_image_xml=next_image
-    #                 )
-
-    #             except IndexError:
-    #                 text_to_next = get_text_to_next(
-    #                     image_xml=image, next_image_xml=None
-    #                 )
-
-    #             clip_prompt = images.text_to_clip_prompt(
-    #                 image=image,
-    #                 paragraph=paragraph,
-    #                 text_to_next=text_to_next,
-    #                 t5_prompt=t5_prompt,
-    #             )
-    #             log.info("Using prompt: %s", clip_prompt)
-    #             image.attrs["clip_prompt"] = clip_prompt
-    #         clip_prompt = image_xml.attrs["clip_prompt"]
-
-    #         src = image_xml.attrs.get("src", "")
-    #         if not src or not os.path.exists(
-    #             os.path.join(const.LIBRARY_DIR, paragraph_dir, src)
-    #         ):
-    #             # there isn't a src image file, or there is but the image doesn't exist.  Either way
-    #             # this is a good opportunity to give the image the most correct name we can.
-    #             image_fn = images.get_image_fn(
-    #                 prompt=f"{clip_prompt}_{t5_prompt}",
-    #                 loras=[],
-    #                 paragraph_dir=paragraph_dir,
-    #                 image_index=image.attrs["index"],
-    #             )
-    #             src = os.path.basename(image_fn)
-    #             image_xml.attrs["src"] = src
-
-    #         log.info(f"Invoking get_flux_image({src=}, {clip_prompt=}, {t5_prompt=})")
-    #         chapter.save_xml()
-
-    #         # retrieve, or build, the image.
-    #         r = images.get_flux_image(
-    #             image_fn=os.path.join(
-    #                 const.LIBRARY_DIR, paragraph_dir, src.split("/")[-1]
-    #             ),
-    #             clip_prompt=clip_prompt,
-    #             t5_prompt=t5_prompt,
-    #             force=False,
-    #         )
-
-    #         log.info(f"Finished with {src}: {r}")
-
-    #     elif t2i_engine in ["tongyi.zimageturbo", "tsqn.zimageturbo"]:
-    #         if not image_xml.attrs.get("prompt", ""):
-    #             log.info("No prompt found")
-
-    #             # Use fancyprompt to generate the image prompt
-    #             set_fancyprompt(chapter, image_xml)
-    #             g.chapter.save_xml()
-
-    #         # style?
-    #         prompt = image_xml.attrs.get("prompt", "")
-
-    #         if prompt_filter and "styled_prompt" not in image_xml.attrs:
-    #             styled_prompt = prompt_filter.format(prompt=prompt)
-    #             image_xml.attrs["styled_prompt"] = styled_prompt
-    #             g.chapter.save_xml()
-
-    #         # draw the image
-    #         image_module = t2i_registry.get(t2i_engine)
-    #         image_module().generate_image(image_xml, force=True)
-    #         g.chapter.save_xml()
-
-    #     # is this a fullscreen?
-    #     if paragraph.attrs.get("fullscreen", "false").lower() == "true":
-    #         log.info("Image is fullscreen.  We need to outpaint.")
-
-    #         aspect = g.chapter.get_aspect()  # portrait or widescreen
-    #         transformation_type = "crop_100_outpaint_" + aspect
-    #         image_pil, image_fn = selector.apply_image_adjustments(
-    #             g.chapter,
-    #             image_xml,
-    #             transformation_type,
-    #             image_xml.attrs["src"],
-    #             force=True,
-    #         )
-
-    #         # finally, make this our new image src
-    #         image_xml.attrs["src"] = os.path.basename(image_fn)
-    #         g.chapter.save_xml()
-    #         continue
-
-    #return htmx.draw_all_missing_images_button(g.chapter)
 
 
 @bp.route("/actions/generate_all_animations", methods=["POST"])

@@ -1,20 +1,21 @@
 import base64
 import glob
 import json
+import math
 import os
 import re
 import shutil
+import subprocess
 from hashlib import md5
-from typing import Iterable
+from typing import Any, Generator, Iterable
+import uuid
 
 import numpy as np
-from bs4 import BeautifulSoup
-from bs4.element import Tag
-from flask import url_for, g
+from bs4 import BeautifulSoup, ResultSet, Tag
+from flask import g, url_for
 from PIL import Image
 
 import comfy
-import math
 import const
 import logger
 from artifact_editor import (
@@ -22,21 +23,23 @@ from artifact_editor import (
     config,
     tools,
 )
+from artifact_editor.author.author import Author
+from artifact_editor.masterplan import masterplan
 from artifact_editor.phrases.pronunciation.pronunciation import (
     get_global_pronunciations,
 )
-from artifact_editor.author.author import Author
-from artifact_editor.masterplan import masterplan
 from artifact_editor.styles import styles
-from artifact_editor.tools import tags_to_dict
+from artifact_editor.textoviva.textoviva import Textoviva
+from artifact_editor.tools import as_float, as_int, as_str, tags_to_dict
+from artifact_editor.types import aspect
 from artifact_editor.typography import page_segment
 
-from artifact_editor.textoviva.textoviva import Textoviva
+from artifact_editor.characters import characters
 
 log = logger.log(__name__)
 
 
-def chapter_url_defaults_helper(endpoint, values):
+def chapter_url_defaults_helper(endpoint: str, values: dict[str, str | int]):
     """
     Automatically add author, title, chapter_number, and language to the URL
     if they are not already present.
@@ -54,14 +57,14 @@ def chapter_url_defaults_helper(endpoint, values):
     return endpoint, values
 
 
-def chapter_url_value_preprocessor(endpoint, values: dict):
+def chapter_url_value_preprocessor(endpoint: str, values: dict[str, str | int]):
     """
     Extract author, title, chapter_number, and language from the URL and store
     them in the Flask global context (g).
     """
     log.info("Pulling higher nesting values", endpoint=endpoint, values=values)
     if "author" in values:
-        g.author = Author(values.pop("author"))
+        g.author = Author(str(values.pop("author")))
     if "title" in values:
         g.title = str(values.pop("title"))
     if "chapter_number" in values:
@@ -76,8 +79,9 @@ def chapter_url_value_preprocessor(endpoint, values: dict):
     )
 
 
-
-def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:
+def phrase_images(
+    paragraph_dir: str, aspect: str, phrase_index: int
+) -> Generator[Any, Any, Any]:
     """
     Generator that yields back all the text_layer image filenames [first...last]
     with this phrase_id highlighted.  Not doing any real work, this bit is fast.
@@ -110,15 +114,28 @@ def phrase_images(paragraph_dir: str, aspect: str, phrase_index: int) -> str:
 
 
 class Phrase:
-    def __init__(self, chapter, phrase_xml, aspect):
-        log.info("NEW Phrase(%s, %s)", phrase_xml, aspect)
+    def __init__(self, chapter: "Chapter", phrase_xml: Tag):
+        log.info("NEW Phrase(chapter, %s)", phrase_xml)
+        self.attrs = []
+        for attr in phrase_xml.attrs:
+            self.attrs.append(attr)
+            setattr(self, attr, phrase_xml.attrs[attr])
 
         self.chapter = chapter
         self.phrase_xml = phrase_xml
-        self.phrase_index = int(self.phrase_xml.attrs["index"])
-        self.aspect = aspect
+        phrase_index = self.phrase_xml.attrs.get("index", "-1")
+        # strong
+        self.index = as_int(phrase_index)
 
-    def get_highlight_dimensions(self, force):
+        # wimpy
+        self.phrase_index = self.index
+
+    def simple_text(self) -> str:
+        text = self.phrase_xml.text or ""
+        # text = text.replace('\n', '\\n')
+        return text
+
+    def get_highlight_dimensions(self, aspect: str, force: bool) -> dict[str, int]:
         """
         Iterate chapter images accumulating height until we find the highlighted
         phrase.  Return a ct_layer dictionary with top/right/bottom/left pixel
@@ -127,29 +144,31 @@ class Phrase:
         if not force:
             try:
                 return {
-                    "top": int(self.phrase_xml.attrs["top"]),
-                    "bottom": int(self.phrase_xml.attrs["bottom"]),
-                    "left": int(self.phrase_xml.attrs["left"]),
-                    "right": int(self.phrase_xml.attrs["right"]),
+                    "top": as_int(self.phrase_xml.attrs["top"]),
+                    "bottom": as_int(self.phrase_xml.attrs["bottom"]),
+                    "left": as_int(self.phrase_xml.attrs["left"]),
+                    "right": as_int(self.phrase_xml.attrs["right"]),
                 }
             except KeyError:
                 log.info("No highlight dimensions cached, calculating from images...")
 
         paragraph = self.phrase_xml.find_parent("paragraph")
-        paragraph_dir = self.chapter.get_paragraph_dir(paragraph.attrs["index"])
+        if paragraph is None:
+            raise ValueError("Phrase is not inside a paragraph.")
+        paragraph_dir = self.chapter.get_paragraph_dir(as_int(paragraph.attrs["index"]))
         total_height = 0
 
         all_phrase_images = list(
             phrase_images(
                 paragraph_dir,
-                self.aspect,
+                aspect,
                 self.phrase_index,
             )
         )
         log.info(f"{all_phrase_images=}")
 
         if not all_phrase_images:
-            fn = f"{paragraph_dir}/{self.aspect}/text_layer_{self.phrase_index}*.png"
+            fn = f"{paragraph_dir}/{aspect}/text_layer_{self.phrase_index}*.png"
             log.warning(f"No phrase images found matching glob: {fn}")
 
         for fn in all_phrase_images:
@@ -175,65 +194,238 @@ class Phrase:
                 # no, this is shit.
 
                 topstrip = img.crop((hleft, htop, hright, htop + 1))
-                left, _, _, _ = topstrip.getchannel("R").getbbox()
+                topstrip_bb = topstrip.getchannel("R").getbbox()
+                if topstrip_bb is None:
+                    raise ValueError(f"Top strip has no highlighted region in {fn}")
+
+                left, _, _, _ = topstrip_bb
 
                 bottomstrip = img.crop((hleft, hbottom - 1, hright, hbottom))
-                _, _, right, _ = bottomstrip.getchannel("R").getbbox()
+                bottomstrip_bb = bottomstrip.getchannel("R").getbbox()
+                if bottomstrip_bb is None:
+                    raise ValueError(f"Bottom strip has no highlighted region in {fn}")
+                _, _, right, _ = bottomstrip_bb
 
-                self.phrase_xml.attrs["top"] = total_height + htop
-                self.phrase_xml.attrs["bottom"] = total_height + hbottom
-                self.phrase_xml.attrs["left"] = left
-                self.phrase_xml.attrs["right"] = right
+                self.phrase_xml.attrs["top"] = str(total_height + htop)
+                self.phrase_xml.attrs["bottom"] = str(total_height + hbottom)
+                self.phrase_xml.attrs["left"] = str(left)
+                self.phrase_xml.attrs["right"] = str(right)
                 break
 
         return {
-            "top": int(self.phrase_xml.attrs["top"]),
-            "bottom": int(self.phrase_xml.attrs["bottom"]),
-            "left": int(self.phrase_xml.attrs["left"]),
-            "right": int(self.phrase_xml.attrs["right"]),
+            "top": as_int(self.phrase_xml.attrs["top"]),
+            "bottom": as_int(self.phrase_xml.attrs["bottom"]),
+            "left": as_int(self.phrase_xml.attrs["left"]),
+            "right": as_int(self.phrase_xml.attrs["right"]),
         }
 
 
+class Speaker:
+    def __init__(self, **kwargs: str):
+        # Sinner!
+        self.args = []
+        for arg in kwargs:
+            self.args.append(arg)
+            setattr(self, arg, kwargs[arg])
+
+    def __repr__(self) -> str:
+        return f"Speaker({', '.join([f'{arg}={getattr(self, arg)}' for arg in self.args])})"
+
 # override if you want something other than .title()
 # for the "pretty" version of the language name.
-PRETTY_LANGUAGE = {}
+PRETTY_LANGUAGE: dict[str, str] = {}
+
+
+def get_prompt_workflow_by_filename(
+    workflow_filename: str,
+    system_prompt: str | None,
+    prompt: str,
+    outputfile: str,
+):
+
+    common_string_nodes = {
+        "PrimitiveString": "value", 
+        "BetterString": "string"
+    }
+
+    with open(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+            os.path.basename(workflow_filename)
+        ),
+        "r"
+    ) as f:
+        workflow = json.load(f)
+
+    # we've got a _lot_ of variables to fill in.
+    out_nodes = []
+    for node in workflow.get("nodes", []):
+        if node.get("type") in common_string_nodes:
+            if node.get("title") in ["PROMPT", "Prompt"]:
+                node["widgets_values"] = [ prompt ]
+                node["widgets_values_named"] = {
+                    common_string_nodes[node.get("type")]: prompt
+                }
+            elif node.get("title") in ["Output Filename"]:
+                node["widgets_values"] = [ outputfile ]
+                node["widgets_values_named"] = {
+                    common_string_nodes[node.get("type")]: outputfile
+                }
+            elif node.get("title") in ["OUTPUT_DIR"]:
+                node["widgets_values"] = [
+                    const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
+                ]
+                node["widgets_values_named"] = {
+                    common_string_nodes[node.get("type")]: const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]
+                }
+
+            elif node.get("title") in ["PROMPT_FN"]:
+                if "index" in image_xml.attrs:
+                    prompt_fn = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.prompt"
+                else:
+                    prompt_fn = f"{self.nice}_{workflow_name}.prompt"
+
+                node["widgets_values"] = [prompt_fn]
+                node["widgets_values_named"] = {common_string_nodes[node.get("type")]: prompt_fn}
+
+            elif node.get("title") in ["SCENE_DESCRIPTION_FN"]:
+                if "index" in image_xml.attrs:
+                    scene_description_fn = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.txt"
+                else:
+                    scene_description_fn = f"{self.nice}_{workflow_name}.txt"
+                node["widgets_values"] = [scene_description_fn]
+                node["widgets_values_named"] = {common_string_nodes[node.get("type")]: scene_description_fn}
+
+            elif node.get("title") in ["LAST_FRAME"]:
+                if last_frame:
+                    node["widgets_values"] = [last_frame]
+                    node["widgets_values_named"] = {common_string_nodes[node.get("type")]: last_frame}
+                else:
+                    log.warning(
+                        "No last frame found for node %s", node.get("title")
+                    )
+
+        elif node.get("type") == "PrimitiveInt":
+            if node.get("title") == "HEIGHT":
+                node["widgets_values"] = [height, "fixed"]
+                node["widgets_values_named"] = {"value": height, "fixed": "fixed"}
+            elif node.get("title") == "WIDTH":
+                node["widgets_values"] = [width, "fixed"]
+                node["widgets_values_named"] = {"value": width, "fixed": "fixed"}
+
+        elif node.get("type") == "PrimitiveFloat":
+            if node.get("title") in ["DURATION"]:
+                node["widgets_values"] = [min(0.5, float(duration_in_seconds))]
+                node["widgets_values_named"] = {
+                    "value": min(0.5, float(duration_in_seconds))
+                }
+
+        elif node.get("type") == "PrimitiveStringMultiline":
+            if node.get("title") in ["META"]:
+                value = json.dumps(self.get_meta_dict(), indent=2).replace(
+                    "\n", r"\n"
+                )
+                node["widgets_values"] = [value]
+                node["widgets_values_named"] = {"value": value}
+
+            elif node.get("title") in ["NEGATIVE_PROMPT"]:
+                negative_prompt = (
+                    "pc game, console game, video game, cartoon, childish, ugly"
+                )
+                node["widgets_values"] = [negative_prompt]
+                node["widgets_values_named"] = {"value": negative_prompt}
+
+            elif node.get("title") in ["SYSTEM_PROMPT"]:
+                system_prompt = (
+                    "You are a helpful assistant for generating images based on the text of a book.  You are given a snippet of text from the book, and you use that snippet to generate an image that captures the essence of that text.  You have access to the full text of the book, but you should focus on the snippet provided.  You can also use the scene description and meta information to inform your image generation.  Your goal is to create an image that is faithful to the source material and captures the mood and details of the scene.",
+                )
+                node["widgets_values"] = [system_prompt]
+                node["widgets_values_named"] = {"value": system_prompt}
+
+            elif node.get("title") in ["PROMPT"]:
+                prompt = template_environment.get(
+                    "PROMPT",
+                    self.get_prompt(image_xml),
+                )
+                node["widgets_values"] = [prompt]
+                node["widgets_values_named"] = {"value": prompt}
+
+            elif node.get("title") in ["SCENE"]:
+                value = json.dumps(self.get_scene(image_xml), indent=2).replace(
+                    "\n", r"\n"
+                )
+                node["widgets_values"] = [value]
+                node["widgets_values_named"] = {"value": value}
+
+            elif node.get("title") in ["SOURCE"]:
+                # the portion of the text between this image and the next image.
+                next_phrase = image_xml.find_next("phrase")
+                next_image = image_xml.find_next("image")
+
+                phrase_before_next_image = None
+                if next_image:
+                    phrase_before_next_image = next_image.find_previous("phrase")
+
+                if (
+                    next_phrase is not None
+                    and next_image is not None
+                    and phrase_before_next_image is not None
+                ):
+                    our_source = self.get_paragraph_snippet(
+                        image_xml,
+                        context_before=3,
+                        context_after=0,
+                        focus_marker="FOCUS_PARAGRAPH",
+                        focus_phrases=list(
+                            range(
+                                as_int(next_phrase.attrs["index"]),
+                                1 + as_int(phrase_before_next_image.attrs["index"]),
+                            )
+                        ),
+                    )
+                else:
+                    our_source = ""
+                value = json.dumps(our_source, indent=2).replace("\n", r"\n")
+                node["widgets_values"] = [value]
+                node["widgets_values_named"] = {"value": value}
+
+        elif node.get("type") == "CustomStyler":
+            if node.get("title") in ["STYLE"]:
+                style_tag = self.get_image_style(image_xml)
+                style = styles.Style(style_tag)
+                log.warning(
+                    "** Using style %s for image %s",
+                    style,
+                    image_xml.attrs["index"],
+                )
+                node["widgets_values"][2] = style.name
+                node["widgets_values_named"]["Custom"] = style.name
+        
+        out_nodes.append(node)
+
+    workflow["nodes"] = out_nodes
+
+    # one shot workflow      
+    workflow_fn = os.path.join(
+        const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+        "prompt_workflow.json"
+    )
+    with open(workflow_fn, "w") as f:
+        json.dump(workflow, f, indent=2)
+
+    return os.path.basename(workflow_fn)
 
 
 class Chapter:
-    @classmethod
-    def door(cls, key):
-        log.info("Opening chapter.door(%s)", key)
-        # just serializing the constructor args to a string so we can
-        # pass it through a redis queue.
-        try:
-            author, title, number, language = json.loads(key)
-        except Exception as e:
-            log.error(f"Invalid chapter key: {key}")
-            raise
-
-        author = Author(author)
-        log.info(f"cls({author}, {title}, {number}, {language})")
-        return cls(author, title, number, language)
-
     def __init__(
         self, author: Author, title: str, number: int, language: str = "english"
     ):
-        # log = log.bind(
-        #     author=author.name,
-        #     title=title,
-        #     number=number,
-        #     language=language
-        # )
-
         log.info("Initializing Chapter")
         # unique key used for redis, doorway for reconstructing this chapter from a redis task.
-        if author is None:
-            self.key = "invalid"
-        else:
-            self.key = str(json.dumps([author.name, title, number, language]))
+        self.key = str(json.dumps([author.name, title, number, language]))
         self.author = author
         self.title = title
-        
+
         self.number = int(number)
         self.language = language
         if language:
@@ -248,8 +440,6 @@ class Chapter:
         if self.author:
             ## backwards compatability
             self.bookdir = os.path.join(self.author.name, self.title)
-            # self.chapterdir = tools.get_chapterdir(author.name, title, number)
-            # self.url = tools.get_chapterurl(author.name, title, number)
             self.languagedir = os.path.join(self.chapterdir, self.language)
 
             self.config = self.get_config()
@@ -282,11 +472,10 @@ class Chapter:
             # )
             # text structure used for this text.
             self.structure = self.config.get("TEXT_STRUCTURE", "novel")
-            self.STUB = False
+            self.stub = False
         else:
-            self.STUB = True
+            self.stub = True
             self.author = Author("invalid")
-            self.chapterdir = ""
 
         self.translator = None
         self.subtitle = ""
@@ -301,10 +490,12 @@ class Chapter:
 
     def make_it_nice(self):
         # make a nice string for filenames and such.
-        nice = []
+        nice: list[str] = []
         # first four characters of the authors last name
         if self.author.name:
-            nice.append(self.author.name.split()[-1][:4])
+            last_name: str = self.author.name.split()[-1]
+            if last_name:
+                nice.append(last_name[:4])
 
         # first four characters of the title skipping "the" if it's there.
         title = self.title
@@ -334,53 +525,76 @@ class Chapter:
         return get_global_pronunciations(chapter=self)
 
     @classmethod
-    def from_chapterdir(cls, chapterdir):
+    def from_chapterdir(cls, chapterdir: str):
+        log.warning("Obsolete do not use from_chapterdir")
         # /Aesop/Fables/chapter/0001
         parts = chapterdir.strip("/").split("/")
         if len(parts) < 4:
             raise ValueError(f"Invalid chapterdir: {chapterdir}")
         author, title, _, number = parts[-4:]
+        number = int(number)
         return cls(Author(author), title, number, "english")
 
-    def get_paragraphdir(self, paragraph_index):
+    def get_paragraphdir(self, paragraph_index: int) -> str:
         return os.path.join(
             self.chapterdir,
             "paragraphs",
             f"{paragraph_index:0>6}",
         )
 
-    def phrases(self) -> list[Tag]:
+    def find_all_tag(self, tag_name: str) -> Iterable[Tag]:
         self.load_xml()
-        previous_phrase = None
-        for phrase in self.soup.find_all("phrase"):
-            phrase.previous_phrase = previous_phrase
-            yield phrase
+        if self.soup:
+            all_tags: ResultSet[Tag] = self.soup.find_all(tag_name)
+            for tag in all_tags:
+                yield tag
 
-            previous_phrase = phrase
+    def phrases(self) -> Iterable[Phrase]:
+        return [
+            Phrase(
+                chapter=self,
+                phrase_xml=phrase_xml
+            ) for phrase_xml in self.find_all_tag("phrase")
+        ]
 
-    def images(self) -> list[Tag]:
-        self.load_xml()
-        return self.soup.find_all("image")
+
+    def images(self) -> Iterable[Tag]:
+        return self.find_all_tag("image")
+
+    def speakers(self) -> list[Speaker]:
+        """
+        Get the list of speaker uniques for this chapter.
+        """
+        all_characters = characters.get_all_characters(self)
+
+        speakers = []
+        for character in all_characters:
+            speakers.append(Speaker(**all_characters[character]))
+        return speakers
 
     def paragraphs(self) -> Iterable[Tag]:
-        self.load_xml()
-        return self.soup.find_all("paragraph")
+        return self.find_all_tag("paragraph")
 
     def get_paragraph(self, paragraph_index: int) -> Tag | None:
         self.load_xml()
+        if self.soup is None:
+            return None
+
         return self.soup.find("paragraph", attrs={"index": str(paragraph_index)})
 
-    def get_phrase_rainbow(self, phrase_xml: Tag) -> str | None:
+    def get_phrase_rainbow(
+        self, phrase_xml: Tag
+    ) -> tuple[np.ndarray, int, int, int, int]:
         """
         Find the portion of rainbow for the given phrase.
         """
-        r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
+        r, g, b = self.index_to_highlight_color(as_int(phrase_xml.attrs["index"]))
         text_layer_rainbow_fn = os.path.join(
             const.LIBRARY_DIR,
             self.chapterdir,
             self.language,
             "chapter.rainbow-1.png",
-        )        
+        )
 
         with open(text_layer_rainbow_fn, "rb") as h:
             img = Image.open(h)
@@ -397,28 +611,27 @@ class Chapter:
         # bottom, left, top, right
         return highlight_mask, y_min, x_min, y_max, x_max
 
-    def get_bottom_height(self, force=False) -> int:
+    def get_bottom_height(self, force: bool = False) -> int:
         all_phrases = list(self.phrases())
         phrase_xml = all_phrases[-1]
 
         # open the rainbow text, filter for the color of the last phrase,
         # determine those dimensions.
-        highlight_mask, y_min, x_min, y_max, x_max = self.get_phrase_rainbow(phrase_xml)
+        _, _, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
 
         return y_max
 
     def get_text_height(self, force: bool = False) -> int:
-        all_phrases = self.phrases()
-
-        # first_phrase = Phrase(all_phrases[0])
+        all_phrases = list(self.phrases())
         last_phrase = Phrase(self, all_phrases[-1], self.aspect)
-
         total_height = 0
 
         # find the top of the first phrase _with_ text.
         for phrase in all_phrases:
             paragraph = phrase.find_parent("paragraph")
-            paragraph_tags = tags_to_dict(paragraph.attrs.get("tags", ""))
+            if paragraph is None:
+                continue
+            paragraph_tags = tags_to_dict(as_str(paragraph.attrs.get("tags", "")))
             if not paragraph_tags.get("has-text", True):
                 log.info(
                     "Skipping paragraph with no text highlight...",
@@ -429,7 +642,11 @@ class Chapter:
 
             first_phrase = Phrase(self, phrase, self.aspect)
             break
+        else:
+            first_phrase = None
 
+        if not first_phrase:
+            raise ValueError("No phrase with text found.")
         first_phrase_dimensions = first_phrase.get_highlight_dimensions(force=force)
         last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
 
@@ -446,14 +663,17 @@ class Chapter:
 
     def get_highlighted_text_snippet_fn(self, phrase_xml: Tag) -> str:
         paragraph_xml = phrase_xml.find_parent("paragraph")
-        paragraph_index = paragraph_xml["index"]
+        if not paragraph_xml:
+            raise ValueError("Phrase is not inside a paragraph.")
+
+        paragraph_index = as_int(paragraph_xml.get("index", "-1"))
         return os.path.join(
             const.LIBRARY_DIR,
             self.get_paragraph_dir(paragraph_index),
-            f"phrase_{phrase_xml.attrs['index']}.png",
+            f"phrase_{as_int(phrase_xml.attrs['index'])}.png",
         )
 
-    def index_to_highlight_color(self, index):
+    def index_to_highlight_color(self, index: int) -> tuple[int, int, int]:
         index += 10  # stay away from the black end
         rainbow_int = index % 16777216  # limit to 24 bits
 
@@ -461,7 +681,9 @@ class Chapter:
         r, g, b = rainbow_bytes
         return r, g, b
 
-    def get_highlighted_text_image(self, phrase_xml, scroll_lock, force=False):
+    def get_highlighted_text_image(
+        self, phrase_xml: Tag, scroll_lock: int, force: bool = False
+    ):
         """
         Not the snippet, the real-deal.  That means we need to obey scroll_lock.
         That is exactly how many pixels the text should be scrolled at this
@@ -471,80 +693,21 @@ class Chapter:
             chapter=self, phrase_xml=phrase_xml, top_index=scroll_lock, force=force
         )
 
-    def get_highlighted_text_snippet(self, phrase_xml, force=False):
+    def get_highlighted_text_snippet(self, phrase_xml: Tag, force: bool = False):
         """ """
-        # log = logger.bind(
-        #     chapter=self.key,
-        #     phrase_xml=phrase_xml.attrs['index'],
-        #     force=force
-        # )
-
         fn = self.get_highlighted_text_snippet_fn(phrase_xml)
 
         if not force and os.path.exists(fn):
             log.info(
                 "Highlighted text snippet already exists for phrase, returning existing file.",
-                phrase_index=phrase_xml.attrs["index"],
+                phrase_index=as_int(phrase_xml.attrs["index"]),
             )
             return url_for(
                 "library.book.chapter.phrases.text_snippet",
-                **self.kwargs,
-                phrase_index=phrase_xml.attrs["index"],
+                phrase_index=as_int(phrase_xml.attrs["index"]),
             )
 
-        # log.info(
-        #     "Generating new highlighted text snippet for phrase",
-        #     phrase_index=phrase_xml.attrs["index"],
-        # )
-        # r, g, b = self.index_to_highlight_color(int(phrase_xml.attrs["index"]))
-
-        # # TODO: the problem is, this isn't going to work if the highlight spans multiple images.  Which it often does.
-        # # open up text_layer_rainbow.png.
-        # text_layer_rainbow_fn = os.path.join(
-        #     const.LIBRARY_DIR,
-        #     self.chapterdir,
-        #     self.language,
-        #     "chapter.rainbow-1.png",
-        # )
-        # if not os.path.exists(text_layer_rainbow_fn):
-        #     log.error(
-        #         "Rainbow text layer not found, cannot generate highlighted text snippet.",
-        #         file=text_layer_rainbow_fn,
-        #     )
-        #     return None
-
-        # log.info(
-        #     "Opening %s to find highlight region for phrase with color (%s, %s, %s)",
-        #     text_layer_rainbow_fn,
-        #     r,
-        #     g,
-        #     b,
-        # )
-        # with open(text_layer_rainbow_fn, "rb") as h:
-        #     img = Image.open(h)
-        #     img = img.convert("RGBA")
-
-        # data = np.array(img)
-        # highlight_mask = (
-        #     (data[:, :, 0] == r) & (data[:, :, 1] == g) & (data[:, :, 2] == b)
-        # )
-
-        # # get the bounding box of the highlight mask
-        # coordinates = np.argwhere(highlight_mask)
-        # if coordinates.size == 0:
-        #     log.warning(
-        #         "No highlight region found for phrase with color ({r}, {g}, {b})",
-        #         phrase_index=phrase_xml.attrs["index"],
-        #         r=r,
-        #         g=g,
-        #         b=b,
-        #     )
-        #     return None
-
-        # y_min, x_min = coordinates.min(axis=0)
-        # y_max, x_max = coordinates.max(axis=0)
-
-        highlight_mask, y_min, x_min, y_max, x_max = self.get_phrase_rainbow(phrase_xml)
+        highlight_mask, y_min, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
 
         with open(
             os.path.join(
@@ -578,17 +741,21 @@ class Chapter:
 
         return url_for(
             "library.book.chapter.phrases.text_snippet",
-            **self.kwargs,
             phrase_index=phrase_xml.attrs["index"],
         )
 
-    def get_image_citation_filename(self, index):
+    def get_image_citation_filename(self, index: int):
         """
         Citation images live next door to the image described.
         """
         image_xml = self.get_image(index)
-        base_image = image_xml.attrs.get("src")
+        if image_xml is None:
+            raise ValueError(f"No image found with index {index}")
+
+        base_image = as_str(image_xml.attrs.get("src"))
         paragraph = image_xml.find_parent("paragraph")
+        if paragraph is None:
+            raise ValueError(f"No paragraph found for image with index {index}")
 
         if base_image:
             citation_image_fn = (
@@ -596,18 +763,23 @@ class Chapter:
             )
 
             return os.path.join(
-                self.get_paragraphdir(paragraph.attrs["index"]), citation_image_fn
+                self.get_paragraphdir(as_int(paragraph.attrs["index"])),
+                citation_image_fn,
             )
 
         return None
 
-    def get_image_prompt_filename(self, image_xml):
+    def get_image_prompt_filename(self, image_xml: Tag):
         """
         Prompt images live next door to the image described.
         No guarantee the file or directory exist.
         """
-        base_image = image_xml.attrs.get("src")
+        base_image = as_str(image_xml.attrs.get("src"))
         paragraph = image_xml.find_parent("paragraph")
+        if paragraph is None:
+            raise ValueError(
+                f"No paragraph found for image with index {image_xml.attrs['index']}"
+            )
 
         if base_image:
             prompt_image_fn = (
@@ -615,14 +787,15 @@ class Chapter:
             )
 
             return os.path.join(
-                self.get_paragraphdir(paragraph.attrs["index"]), prompt_image_fn
+                self.get_paragraphdir(as_int(paragraph.attrs["index"])),
+                prompt_image_fn,
             )
         else:
             # we don't have a src, so the question
             # becomes.. what might it be?
             return os.path.join(
-                self.get_paragraphdir(paragraph.attrs["index"]),
-                f"image_{int(image_xml.attrs['index']):06d}.prompt",
+                self.get_paragraphdir(as_int(paragraph.attrs["index"])),
+                f"image_{as_int(image_xml.attrs['index']):06d}.prompt",
             )
 
     def get_image(self, index: int) -> Tag | None:
@@ -630,74 +803,102 @@ class Chapter:
         Get a specific image by index
         """
         self.load_xml()
+        if self.soup is None:
+            raise ValueError("XML not loaded properly.")
+
         image = self.soup.find("image", attrs={"index": str(index)})
         if image is None:
             log.warning(
                 f"No image found with attr index={index} in {self.kwargs}",
             )
+            return None
+
         return image
 
     def get_image_frames(self, image_xml: Tag):
         """
         How many frames of duration will we display this image?
         """
-        return int(image_xml.attrs.get("frames", 1))
+        return as_int(image_xml.attrs.get("frames", 1))
 
     def get_image_filename(self, image_xml: Tag) -> str | None:
         """
         Get the filename for a given image, if it exists.
         """
-        if image_xml is None:
-            log.warning(
-                "get_image_filename() called with None image_xml, returning None.",
-            )
-            return None
-
-        if not isinstance(image_xml, Tag):
-            log.warning(
-                "get_image_filename() called with non-Tag image_xml, returning None.",
-            )
-            return None
-
-        base_image = image_xml.attrs.get("src")
         try:
-            paragraph = image_xml.find_parent("paragraph")
-        except AttributeError as err:
-            log.error('Parent paragraph not found', image_xml=image_xml)
-            return None
+            base_image = as_str(image_xml.attrs.get("src"))
+        except ValueError:
+            base_image = None
+            
+        paragraph = image_xml.find_parent("paragraph")
+
+        if paragraph is None:
+            raise ValueError("Parent paragraph not found (%s)" % image_xml)
 
         if base_image:
             return os.path.join(
                 const.LIBRARY_DIR,
-                self.get_paragraphdir(paragraph.attrs["index"]),
+                self.get_paragraphdir(as_int(paragraph.attrs["index"])),
                 base_image,
             )
         else:
             return None
 
-    def get_chapter_style(self):
+    def get_chapter_style(self) -> str | None:
         """
         Get the style for this chapter, if it exists.
         """
         self.load_xml()
-        return self.soup.find("chapter").attrs.get("style", None)
+        if self.soup is None:
+            raise ValueError("XML not loaded properly.")
 
-    def set_chapter_style(self, style):
+        chapter = self.soup.find("chapter")
+        if chapter is None:
+            raise ValueError("Chapter not found in XML.")
+
+        return as_str(chapter.attrs.get("style", None))
+
+    def set_chapter_style(self, style: str | None):
         """
         Set the style for this chapter.
+
+        style is ultimately from get_chapter_style()
         """
         self.load_xml()
-        self.soup.find("chapter").attrs["style"] = style
+        if self.soup is None:
+            raise ValueError("XML not loaded properly.")
+        chapter = self.soup.find("chapter")
+        if chapter is None:
+            raise ValueError("Chapter not found in XML.")
+
+        if style:
+            chapter.attrs["style"] = style
+        else:
+            del chapter.attrs["style"]
+
         self.save_xml()
 
-    def get_image_style(self, image_xml) -> str:
-        style = image_xml.attrs.get("style")
+    def get_image_style(self, image_xml: Tag) -> str:
+
+        try:
+            style = as_str(image_xml.attrs.get("style", ''))
+        except ValueError:
+            style = None
+
         if not style:
             # otherwise, use the chapter style if there is one.
-            style = self.get_chapter_style()
+            try:
+                style = as_str(self.get_chapter_style())
+            except ValueError:
+                style = None
+
             if not style:
                 # otherwise, use the book style if there is one.
-                style = self.config.get("default_style")
+                try:
+                    style = as_str(self.config.get("default_style"))
+                except ValueError:
+                    style = None
+
                 if not style:
                     log.warning("No style found for image, chapter, or book.")
                 else:
@@ -709,40 +910,18 @@ class Chapter:
 
         return style
 
-    def get_prompt(self, image_xml):
+    def get_prompt(self, image_xml: Tag) -> str:
         """
         Get the prompt for a given image, if it exists.
         """
-        return image_xml.attrs.get("prompt")
-
-        # styling here is dumb.
-        change = False
-        prompt = image_xml.attrs.get("prompt")
-        style = image_xml.attrs.get("style", self.config.get("default_style"))
-
-        if not style:
-            style = self.get_chapter_style()
-
-            if not style:
-                # is there a book style?
-                style = self.config.get("default_style")
-
-            if style:
-                image_xml.attrs["style"] = style
-                change = True
-
-        if not style:
-            log.error(
-                "No style specified for image and no default style in chapter or book config, cannot get styled prompt."
-            )
-
-        if change:
-            self.save_xml()
-
-        return prompt
+        return as_str(image_xml.attrs.get("prompt", ""))
 
     def get_last_frame(
-        self, image_xml, frame_index=None, recursed=False, video_index=None
+        self,
+        image_xml: Tag,
+        frame_index: int | None = None,
+        recursed: bool = False,
+        video_index: int | None = None,
     ) -> str | None:
         """
         If this image is part of a video, get the filename of the last frame.
@@ -753,17 +932,20 @@ class Chapter:
             frame_index=frame_index,
         )
 
+        paragraph_xml = image_xml.find_parent("paragraph")
+        if paragraph_xml is None:
+            log.error("Image does not have a parent paragraph.")
+            return None
+
         if video_index is None:
             # all animation dirs for this image, regardless of video_index, we're going to start looking
             # for last frame in the highest sorted dirname.
             all_animation_dirs = glob.glob(
                 os.path.join(
                     const.LIBRARY_DIR,
-                    self.get_paragraphdir(
-                        image_xml.find_parent("paragraph").attrs["index"]
-                    ),
+                    self.get_paragraphdir(as_int(paragraph_xml.attrs["index"])),
                     "animation",
-                    f"image_{int(image_xml.attrs['index']):06d}_*",
+                    f"image_{as_int(image_xml.attrs['index']):06d}_*",
                 )
             )
         else:
@@ -772,17 +954,15 @@ class Chapter:
             all_animation_dirs = glob.glob(
                 os.path.join(
                     const.LIBRARY_DIR,
-                    self.get_paragraphdir(
-                        image_xml.find_parent("paragraph").attrs["index"]
-                    ),
+                    self.get_paragraphdir(as_int(paragraph_xml.attrs["index"])),
                     "animation",
-                    f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}",
+                    f"image_{as_int(image_xml.attrs['index']):06d}_{video_index:02d}",
                 )
             )
 
         if frame_index:
             # Absolute frame_index across all video_index values.
-            index_to_fn = []
+            index_to_fn: list[str] = []
             for animation_dir in sorted(all_animation_dirs):
                 for frame in sorted(os.listdir(animation_dir)):
                     index_to_fn.append(os.path.join(animation_dir, frame))
@@ -815,13 +995,13 @@ class Chapter:
         # fallback to the image.src
         return self.get_image_filename(image_xml)
 
-    def video_to_frames(self, image_xml):
+    def video_to_frames(self, image_xml: Tag):
         """
         Convert a video into frames, and return the list of frame filenames.
         Dupe of tools.extract_frames() (oops)
         """
         video_fn = None
-        for video_index in range(image_xml.attrs.get("animation_count", 1)):
+        for video_index in range(as_int(image_xml.attrs.get("animation_count", 1))):
             image_fn = self.get_image_filename(image_xml)
 
             if image_fn is None:
@@ -836,13 +1016,15 @@ class Chapter:
             else:
                 video_fn = image_fn.replace(".png", f"_{video_index:02d}.mp4")
 
+            paragraph = image_xml.find_parent("paragraph")
+            if paragraph is None:
+                raise ValueError("Image not inside a paragraph in XML.")
+
             output_dir = os.path.join(
                 const.LIBRARY_DIR,
-                self.get_paragraphdir(
-                    image_xml.find_parent("paragraph").attrs["index"]
-                ),
+                self.get_paragraphdir(as_int(paragraph.attrs["index"])),
                 "animation",
-                f"image_{int(image_xml.attrs['index']):06d}_{video_index:02d}",
+                f"image_{as_int(image_xml.attrs['index']):06d}_{video_index:02d}",
             )
 
             os.makedirs(output_dir, exist_ok=True)
@@ -852,10 +1034,185 @@ class Chapter:
                 f"ffmpeg -i {video_fn} -vf fps={const.FPS} {output_dir}/frame_%04d.png"
             )
             log.info("Extracting frames from video", command=command)
-            os.system(command)
+            subprocess.run(command, shell=True, check=True)
 
         if not video_fn or not os.path.exists(video_fn):
             log.error("Video file does not exist", video_fn=video_fn)
+
+    def get_phrase_workflow(
+        self,
+        phrase_xml: Tag | None,
+        workflow_name: str,
+        template_environment: dict[str, str | int | float] | None,
+    ) -> str:
+        """
+        Get the workflow for a given phrase XML element and workflow name.
+        If a template environment is provided, it will be used to provide variables
+        to the workflow template during its generation.
+
+        Returns the filename of the generated workflow JSON file.
+        """
+        if template_environment is None:
+            template_environment = {}
+
+        try:
+            glob_path = os.path.join(
+                const.COMFY_DIRS["artifactserver"]["WORKFLOW_TEMPLATES_DIR"],
+                f"phrase.{workflow_name}.*.json",
+            )
+            log.info("Looking for template", glob_path=glob_path)
+            template_fn = glob.glob(glob_path)[0]
+        except IndexError:
+            log.error(
+                "No workflow template found for workflow_name",
+                workflow_name=f"phrase.{workflow_name}.*.json",
+                templates_dir=const.COMFY_DIRS["artifactserver"][
+                    "WORKFLOW_TEMPLATES_DIR"
+                ],
+            )
+            raise FileNotFoundError(
+                f"No workflow template found for workflow_name: phrase.{workflow_name}.*.json"
+            )
+
+        return self.get_phrase_workflow_by_filename(
+            phrase_xml=phrase_xml,
+            workflow_filename=template_fn,
+            template_environment=template_environment,
+        )
+
+    def get_phrase_workflow_by_filename(
+        self,
+        phrase_xml: Tag | None,
+        workflow_filename: str,
+        template_environment: dict[str, str | int | float] | None,
+    ):
+        """
+        Returns the filename of a workflow JSON file
+        created inside your workflow directory.
+        """
+
+        if template_environment is None:
+            template_environment = {}
+
+        with open(workflow_filename, "r") as f:
+            workflow: dict[str, Any] = json.load(f)
+
+        # Set helpful variables we want to have available to the workflow
+        out_nodes = []
+        for node in workflow.get("nodes", []):
+            # apply any transformations based on template_environment
+            # voice index valid 0-10 for blending kokoro voices
+
+            # template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = voice_dict["id"]
+            # template_environment[f"SPEAKER_{voice_index:02d}_WEIGHT"] = int(voice_dict["strength"]) / 100
+            # template_environment["TEXT"] = spoken_text.strip().replace("\n", " ")
+            # template_environment["FILENAME_PREFIX"] = os.path.join("audio", os.path.basename(outputfile))
+            # template_environment["PRONUNCIATION_DIR"] = os.path.join(
+            # template_environment["PRONUNCIATION_FILENAME"] = os.path.basename(outputfile).replace(".wav", ".pronunciation")
+
+            # Actual
+            # "TEXT": "THE MOUSE, THE CAT, AND THE COCK",
+            # "FILENAME_PREFIX": "audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav",
+            # "PRONUNCIATION_DIR": "/root/ComfyUI/output/audio",
+            # "PRONUNCIATION_FILENAME": "ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.pronunciation"
+
+            # Actual output (thats right):
+            # /output/audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav.wav_00001.flac  
+
+            if node["type"] == "KokoroGenerator":
+                text_value = template_environment.get(
+                    "TEXT", phrase_xml.get_text() if phrase_xml is not None else ""
+                )
+                language_value = template_environment.get(
+                    "LANGUAGE",
+                    node.get("widgets_values_named", {}).get(
+                        "lang", "English (American)"
+                    ),
+                )
+                widget_values = list(node.get("widgets_values", []))
+                while len(widget_values) < 3:
+                    widget_values.append(None)
+                widget_values[0] = text_value
+                widget_values[2] = language_value
+                node["widgets_values"] = widget_values
+                node.setdefault("widgets_values_named", {}).update(
+                    {"text": text_value, "lang": language_value}
+                )
+
+            elif node["type"] == "KokoroWeightedSpeaker":
+                if node["title"] == "Required Voice Selection":
+                    # the one required voice
+                    node["widgets_values"] = [
+                        template_environment.get("SPEAKER_00_NAME", ""),
+                        template_environment.get("SPEAKER_00_WEIGHT", ""),
+                    ]
+                else:
+                    # any other voice layers with the weights
+                    voice_layer_index = int(node["title"].split()[-1])
+                    node["widgets_values"] = [
+                        template_environment.get(
+                            f"SPEAKER_{voice_layer_index:02d}_NAME", ""
+                        ),
+                        template_environment.get(
+                            f"SPEAKER_{voice_layer_index:02d}_WEIGHT", ""
+                        ),
+                    ]
+
+            elif node["type"] == "SaveAudio" and template_environment:
+                outputfile = (
+                    as_str(template_environment.get("FILENAME_PREFIX", "sample"))
+                    + ".wav"
+                )
+                node["widgets_values"] = [outputfile]
+                node["widgets_values_named"]["filename"] = outputfile
+
+            elif node["type"] == "saveText":
+                node["widgets_values"] = [
+                    template_environment["FILENAME_PREFIX"],
+                    "txt",
+                ]
+                node["widgets_values_named"] = {
+                    "filename_prefix": template_environment["FILENAME_PREFIX"],
+                    "file_extension": "txt",
+                }
+            elif node["type"] == "easy saveText":
+                node["widgets_values"] = [
+                    template_environment["PRONUNCIATION_DIR"],
+                    template_environment["PRONUNCIATION_FILENAME"],
+                    "txt",
+                    True,
+                ]
+                node["widgets_values_named"] = {
+                    "output_file_path": template_environment["PRONUNCIATION_DIR"],
+                    "file_name": template_environment["PRONUNCIATION_FILENAME"],
+                    "file_extension": "txt",
+                    "overwrite": True,
+                }
+
+            out_nodes.append(node)
+
+        workflow["nodes"] = out_nodes
+        workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
+        phrase_identifier = None
+        if phrase_xml is not None:
+            phrase_identifier = phrase_xml.get("index") or phrase_xml.get("id")
+        if not phrase_identifier:
+            output_prefix = template_environment.get("FILENAME_PREFIX")
+            phrase_identifier = (
+                os.path.splitext(os.path.basename(as_str(output_prefix)))[0]
+                if output_prefix
+                else "unlinked"
+            )
+        phrase_identifier = re.sub(r"[^A-Za-z0-9_-]+", "_", as_str(phrase_identifier))
+        workflow_fn = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+            f"{self.nice}_phrase_{phrase_identifier}_{workflow_name}.json",
+        )
+
+        with open(workflow_fn, "w") as f:
+            json.dump(workflow, f, indent=2)
+
+        return os.path.basename(workflow_fn)
 
     def get_workflow(
         self,
@@ -906,7 +1263,7 @@ class Chapter:
             workflow_filename=template_fn,
             video_index=video_index,
             template_environment=template_environment,
-            force_name=force_name
+            force_name=force_name,
         )
 
     def get_workflow_by_filename(
@@ -942,6 +1299,9 @@ class Chapter:
         except IndexError:
             workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
 
+        if template_environment is None:
+            template_environment = {}
+
         height = int(template_environment.get("HEIGHT", 1024))
         width = int(template_environment.get("WIDTH", 1024))
 
@@ -957,12 +1317,13 @@ class Chapter:
             source_image = self.get_last_frame(image_xml, video_index=video_index)
 
         # our last frame generally the _next_ image.
+        last_frame = None
         try:
-            last_frame = os.path.basename(
-                self.get_image_filename(
-                    self.get_image(int(image_xml.attrs["index"]) + 1)
-                )
-            )
+            next_image_xml = self.get_image(as_int(image_xml.attrs["index"]) + 1)
+            if next_image_xml:
+                next_image_filename = self.get_image_filename(next_image_xml)
+                if next_image_filename:
+                    last_frame = os.path.basename(next_image_filename)
         except TypeError:
             last_frame = None
         except KeyError:
@@ -972,12 +1333,13 @@ class Chapter:
             last_frame = source_image
 
         # reasonable default
+        prior_frame = None
         try:
-            prior_frame = os.path.basename(
-                self.get_image_filename(
-                    self.get_image(int(image_xml.attrs["index"]) - 1)
-                )
-            )
+            prior_image_xml = self.get_image(as_int(image_xml.attrs["index"]) - 1)
+            if prior_image_xml:
+                prior_image_filename = self.get_image_filename(prior_image_xml)
+                if prior_image_filename:
+                    prior_frame = os.path.basename(prior_image_filename)
         except TypeError:
             prior_frame = None
         except KeyError:
@@ -988,34 +1350,36 @@ class Chapter:
         for node in workflow.get("nodes", []):
             if node.get("type") == "LoadImage":
                 if node.get("title") in ["INPUT_IMAGE", "FIRST_FRAME"]:
-                    target = os.path.join(
-                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
-                        os.path.basename(source_image),
-                    )
+                    if source_image:
+                        target = os.path.join(
+                            const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
+                            os.path.basename(source_image),
+                        )
 
-                    log.info("Copying %s to %s", source_image, target)
+                        log.info("Copying %s to %s", source_image, target)
 
-                    shutil.copyfile(source_image, target)
-                    node["widgets_values"] = [os.path.basename(target), "image"]
-                    node["widgets_values_named"] = {
-                        "image": os.path.basename(target),
-                        "upload": "image",
-                    }
+                        shutil.copyfile(source_image, target)
+                        node["widgets_values"] = [os.path.basename(target), "image"]
+                        node["widgets_values_named"] = {
+                            "image": os.path.basename(target),
+                            "upload": "image",
+                        }
 
                 if node.get("title") in ["LAST_FRAME"]:
-                    target = os.path.join(
-                        const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
-                        os.path.basename(last_frame),
-                    )
+                    if last_frame:
+                        target = os.path.join(
+                            const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
+                            os.path.basename(last_frame),
+                        )
 
-                    log.info("Copying %s to %s", last_frame, target)
+                        log.info("Copying %s to %s", last_frame, target)
 
-                    shutil.copyfile(last_frame, target)
-                    node["widgets_values"] = [os.path.basename(target), "image"]
-                    node["widgets_values_named"] = {
-                        "image": os.path.basename(target),
-                        "upload": "image",
-                    }
+                        shutil.copyfile(last_frame, target)
+                        node["widgets_values"] = [os.path.basename(target), "image"]
+                        node["widgets_values_named"] = {
+                            "image": os.path.basename(target),
+                            "upload": "image",
+                        }
 
             elif node.get("type") == "PrimitiveString":
                 if node.get("title") in ["FILE_NAME", "FILENAME_PREFIX"]:
@@ -1127,9 +1491,17 @@ class Chapter:
 
                 elif node.get("title") in ["SOURCE"]:
                     # the portion of the text between this image and the next image.
+                    next_phrase = image_xml.find_next("phrase")
+                    next_image = image_xml.find_next("image")
+
+                    phrase_before_next_image = None
+                    if next_image:
+                        phrase_before_next_image = next_image.find_previous("phrase")
+
                     if (
-                        image_xml.find_next("phrase") is not None and 
-                        image_xml.find_next("image") is not None
+                        next_phrase is not None
+                        and next_image is not None
+                        and phrase_before_next_image is not None
                     ):
                         our_source = self.get_paragraph_snippet(
                             image_xml,
@@ -1138,12 +1510,8 @@ class Chapter:
                             focus_marker="FOCUS_PARAGRAPH",
                             focus_phrases=list(
                                 range(
-                                    int(image_xml.find_next("phrase").attrs["index"]),
-                                    1 + int(
-                                        image_xml.find_next("image")
-                                        .find_previous("phrase")
-                                        .attrs["index"]
-                                    ),
+                                    as_int(next_phrase.attrs["index"]),
+                                    1 + as_int(phrase_before_next_image.attrs["index"]),
                                 )
                             ),
                         )
@@ -1157,7 +1525,11 @@ class Chapter:
                 if node.get("title") in ["STYLE"]:
                     style_tag = self.get_image_style(image_xml)
                     style = styles.Style(style_tag)
-                    log.warning('** Using style %s for image %s', style, image_xml.attrs['index'])
+                    log.warning(
+                        "** Using style %s for image %s",
+                        style,
+                        image_xml.attrs["index"],
+                    )
                     node["widgets_values"][2] = style.name
                     node["widgets_values_named"]["Custom"] = style.name
             else:
@@ -1169,7 +1541,7 @@ class Chapter:
 
         if force_name:
             workflow_fn = os.path.join(
-                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], 
+                const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
                 force_name,
             )
         else:
@@ -1184,19 +1556,40 @@ class Chapter:
 
         return os.path.basename(workflow_fn)
 
+    get_image_workflow = get_workflow
+    get_image_workflow_by_filename = get_workflow_by_filename
+
+
+    def get_prompt_workflow_by_filename(
+        self,
+        workflow_filename: str,
+        system_prompt: str,
+        prompt: str,
+        outputfile: str,
+    ) -> str:
+        return get_prompt_workflow_by_filename(
+            workflow_filename=workflow_filename,
+            system_prompt=system_prompt,
+            prompt=prompt,
+            outputfile=outputfile
+        )
+
     def get_comfy_workflow(
         self,
         image_xml: Tag,
         interface: str = "ui",
         mode: str = "*",
-        workflow_template: str | None = None,
+        workflow_name: str = "",
         video_index: int | None = None,
-        template_environment: dict | None = None,
+        template_environment: dict[str, str | int | float] | None = None,
     ):
         """
         The problem is we don't know if this is an animation or an image gen (or
         text gen);
         """
+        log.warning(
+            "Obsolete get_comfy_workflow() called.  Rewrite for get_workflow() and comfy.run_workflow_fn()"
+        )
         if template_environment is None:
             template_environment = {}
 
@@ -1207,13 +1600,14 @@ class Chapter:
             )
 
         log.info(
-            "get_comfy_workflow(image_xml=%s, interface=%s, workflow_template=%s, video_index=%s)",
+            "get_comfy_workflow(image_xml=%s, interface=%s, workflow_name=%s, video_index=%s)",
             image_xml.attrs["index"],
             interface,
-            workflow_template,
+            workflow_name,
             video_index,
         )
 
+        video_tag = ""
         if video_index not in [None, ""]:
             video_tag = f"_{video_index:02d}"
 
@@ -1222,11 +1616,14 @@ class Chapter:
 
         # is an image an input to this workflow?  If so we need to copy it to the comfyUI input directory.
 
-        previous_image_xml = self.get_image(int(image_xml.attrs["index"]) - 1)
+        previous_image_xml = self.get_image(as_int(image_xml.attrs["index"]) - 1)
+        prior_frame = None
 
         # reasonable default
         if previous_image_xml:
-            prior_frame = os.path.basename(self.get_image_filename(previous_image_xml))
+            prior_image_filename = self.get_image_filename(previous_image_xml)
+            if prior_image_filename:
+                prior_frame = os.path.basename(prior_image_filename)
 
         # copy the current version of "this" image as an input image
         source_image = self.get_image_filename(image_xml) or "image.png"
@@ -1241,15 +1638,15 @@ class Chapter:
                 # for this kind of work, we can use the masterplan.
                 mplan = self.get_masterplan()
                 try:
-                    image_plan = mplan["images"][int(previous_image_xml.attrs["index"])]
+                    image_plan = mplan.images[as_int(previous_image_xml.attrs["index"])]
                 except IndexError:
                     # try again with a new masterplan
                     # TODO: why is this such shit when the video->"regenerate master plan"
                     # appears to be doing it correctly?
                     mplan = self.get_masterplan(force=True)
-                    image_plan = mplan["images"][int(previous_image_xml.attrs["index"])]
+                    image_plan = mplan.images[as_int(previous_image_xml.attrs["index"])]
 
-                frame_index = image_plan["frames"]
+                frame_index = image_plan.frames
                 prior_frame = self.get_last_frame(
                     previous_image_xml, frame_index=frame_index
                 )
@@ -1261,12 +1658,12 @@ class Chapter:
             # (the critical -1 is buried in here)
 
             # get_comfy_workflow(image_xml=6, interface=ui, workflow_template=LTX23, video_index=1)
-            image_index = int(image_xml.attrs["index"])
+            image_index = as_int(image_xml.attrs["index"])
 
             source_dir = os.path.join(
                 const.LIBRARY_DIR,
                 self.get_paragraphdir(
-                    image_xml.find_parent("paragraph").attrs["index"]
+                    as_int(image_xml.find_parent("paragraph").attrs["index"])
                 ),
                 "animation",
                 f"image_{image_index:06d}_{video_index - 1:02d}",
@@ -1275,19 +1672,19 @@ class Chapter:
             source_image = os.path.join(source_dir, max(os.listdir(source_dir)))
             log.info("Source image for video_index %s is %s", video_index, source_image)
 
-        next_image_xml = self.get_image(int(image_xml.attrs["index"]) + 1)
+        next_image_xml = self.get_image(as_int(image_xml.attrs["index"]) + 1)
         next_image_src = ""
 
         if next_image_xml is not None:
-            next_image_src = os.path.join(
-                const.LIBRARY_DIR,
-                self.get_paragraphdir(
-                    next_image_xml.find_parent("paragraph").attrs["index"]
-                ),
-                next_image_xml.attrs.get("src", "")
-                if next_image_xml is not None
-                else "",
-            )
+            paragraph_xml = next_image_xml.find_parent("paragraph")
+            if paragraph_xml is None:
+                log.warning("Next image does not have a parent paragraph.")
+            else:
+                next_image_src = os.path.join(
+                    const.LIBRARY_DIR,
+                    self.get_paragraphdir(as_int(paragraph_xml.attrs["index"])),
+                    as_str(next_image_xml.attrs["src"]),
+                )
 
         if prior_frame is None:
             # we need to survive an os.path.join, even if the result is discarded.
@@ -1333,19 +1730,9 @@ class Chapter:
             else:
                 log.info("Input Image file does not exist", image_fn=source)
 
-        log.info("Using workflow template", workflow_template=workflow_template)
+        log.info("Using workflow template", workflow_name=workflow_name)
 
-        workflow = comfy.load_workflow_template(interface, mode, workflow_template)
-
-        # if interface == "ui" and "nodes" not in workflow:
-        #     raise ValueError(
-        #         f'Invalid UI Workflow Template {workflow_template} -- For a UI template you must use plain "Export" in ComfyUI'
-        #     )
-
-        # if interface == "api" and "nodes" in workflow:
-        #     raise ValueError(
-        #         f'Invalid API Workflow Template {workflow_template} -- For an API template you must use "Export API" in ComfyUI'
-        #     )
+        workflow = comfy.load_workflow_template(interface, mode, workflow_name)
 
         ####
         # Useful variables for workflow construction.  These get substituted
@@ -1353,8 +1740,11 @@ class Chapter:
         ####
         log.info("Gathering Text and Image metadata for workflow construction...")
 
+        animation_prompt = ""
         if video_index not in [None, ""]:
-            animation_prompt = image_xml.attrs.get(f"animation_prompt{video_tag}", "")
+            animation_prompt = as_str(
+                image_xml.attrs.get(f"animation_prompt{video_tag}", "")
+            )
             log.info(
                 "Using animation prompt: %s (from %s)",
                 animation_prompt,
@@ -1368,9 +1758,7 @@ class Chapter:
         duration_in_seconds = duration_in_frames / const.FPS
 
         # so we can wildcard to pull output images into the right place.
-        filename_prefix = (
-            f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}"
-        )
+        filename_prefix = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}"
 
         if video_index not in [None, ""]:
             filename_prefix += video_tag
@@ -1380,7 +1768,7 @@ class Chapter:
         # LLM to manipulate it.
         # next_image_xml = image_xml
         # if "ti2i" in modes:
-        next_image_xml = self.get_image(int(image_xml.attrs["index"]) + 1)
+        next_image_xml = self.get_image(as_int(image_xml.attrs["index"]) + 1)
 
         next_phrase = image_xml.find_next("phrase")
 
@@ -1409,17 +1797,15 @@ class Chapter:
                 context_after=0,
                 focus_marker="FOCUS_PARAGRAPH",
                 focus_phrases=list(
-                    range(int(first_phrase_index), int(last_phrase_index) + 1)
+                    range(as_int(first_phrase_index), as_int(last_phrase_index) + 1)
                 ),
             )
 
         meta = self.get_meta_dict()
-        prompt_fn = (
-            f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}.prompt"
-        )
+        prompt_fn = f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.prompt"
         # previous_image = image_xml.find_previous_sibling("image")
         scene_description_fn = (
-            f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_template}.txt"
+            f"{self.nice}_img_{image_xml.attrs['index']}_{workflow_name}.txt"
         )
 
         # for first frame/last frame interpolation
@@ -1448,7 +1834,7 @@ class Chapter:
         # the funky "blah:int" syntax is what lets us
         # have a valid json template with {"cow": "{{blah:int}}"} in it
         # and get {"cow": 5} instead of {"cow": "5"} in the final workflow.
-        base_template_environment = {
+        base_template_environment: dict[str, str | int | float] = {
             "WIDTH": str(width),
             "HEIGHT": str(height),
             "DURATION": str(duration_in_seconds),  # float
@@ -1479,7 +1865,7 @@ class Chapter:
             # this is a video.
             base_template_environment["ANIMATION_PROMPT"] = animation_prompt
 
-            if video_index > 0:
+            if video_index and video_index > 0:
                 # our first frame is the last frame of the previous video, not
                 # the source image.
                 base_template_environment["FIRST_FRAME"] = os.path.join(
@@ -1512,29 +1898,20 @@ class Chapter:
         # overwrite template environment settings from template_envionment arg
         base_template_environment.update(template_environment)
 
-        workflow = comfy.apply_template_environment(
-            workflow=workflow, template_environment=base_template_environment
-        )
+        # workflow = comfy.apply_template_environment(
+        #     workflow=workflow,
+        #     template_environment=base_template_environment
+        # )
         return workflow
 
     def get_paragraph_snippet(
         self,
-        image_xml,
-        context_before=2,
-        context_after=1,
-        focus_marker="FOCUS PARAGRAPH",
-        focus_phrases=None,
-    ):
-        # log = logger.bind(
-        #     chapter=self.key,
-        #     image_index=image_xml.attrs['index'],
-        #     context_before=context_before,
-        #     context_after=context_after,
-        #     focus_marker=focus_marker,
-        #     focus_phrases=focus_phrases
-        # )
-        # context prior paragraphs
-
+        image_xml: Tag,
+        context_before: int = 2,
+        context_after: int = 1,
+        focus_marker: str = "FOCUS PARAGRAPH",
+        focus_phrases: list[int] | None = None,
+    ) -> str:
         # point 'previous' at the paragraph <context> paragraphs before the one
         # containing this image.
         if focus_phrases is None:
@@ -1547,23 +1924,28 @@ class Chapter:
 
         # back 'previous_paragraph' up to the Nth paragraph before the current one
         previous_paragraph = parent_paragraph
-        for x in range(context_before):
+        for _ in range(context_before):
             if previous_paragraph is not None:
                 previous_paragraph = previous_paragraph.find_previous_sibling(
                     "paragraph"
                 )
 
-        for x in range(context_before):
+        for _ in range(context_before):
             if previous_paragraph is not None:
                 previous_paragraph = previous_paragraph.find_next_sibling("paragraph")
-                out.append(previous_paragraph.get_text().replace("\n", "") + "\n\n")
+                if previous_paragraph is not None:
+                    out.append(
+                        as_str(previous_paragraph.get_text()).replace("\n", "") + "\n\n"
+                    )
 
         out.append("#" + focus_marker)
         # should be the same as previous_paragraph
         parent_paragraph = image_xml.find_parent("paragraph")
+        if parent_paragraph is None:
+            raise ValueError("Image does not have a parent paragraph")
 
         for phrase in parent_paragraph.find_all("phrase"):
-            if int(phrase.attrs["index"]) in focus_phrases:
+            if as_int(phrase.attrs["index"]) in focus_phrases:
                 out.append("<PHRASE>" + phrase.get_text() + "</PHRASE>\n")
             else:
                 # log.info("Nope", phrase_index=int(phrase.attrs['index']), focus_phrases=focus_phrases)
@@ -1574,12 +1956,14 @@ class Chapter:
 
         # keep rolling with previous paragraph so even if we bork it up
         # we keep continuity.
-        for x in range(context_after):
+        for _ in range(context_after):
             if previous_paragraph is not None:
                 previous_paragraph = previous_paragraph.find_next_sibling("paragraph")
 
             if previous_paragraph:
-                out.append(previous_paragraph.get_text().replace("\n", "") + "\n\n")
+                out.append(
+                    as_str(previous_paragraph.get_text()).replace("\n", "") + "\n\n"
+                )
 
         out = "\n".join(out)
         while "  " in out:
@@ -1597,47 +1981,51 @@ class Chapter:
         )
         return out
 
-    def is_first_image(self, image_xml):
+    def is_first_image(self, image_xml: Tag):
         """
         is this the first image in the paragraph?
         """
         return image_xml.find_previous_sibling("image") is None
 
-    def is_last_image(self, image_xml):
+    def is_last_image(self, image_xml: Tag):
         """
         is this the last image in the paragraph?
         """
         return image_xml.find_next_sibling("image") is None
 
-    def get_scene(self, image_xml) -> dict:
+    def get_scene(self, image_xml: Tag) -> dict[str, Any]:
         ch = {}
-        characters = image_xml.attrs.get("scene_characters", "").split(",")
+        characters = as_str(image_xml.attrs.get("scene_characters", "")).split(",")
         for character_name in characters:
             if character_name:
                 ch[character_name] = {
-                    "pose": image_xml.attrs.get(f"{character_name}_pose", ""),
-                    "action": image_xml.attrs.get(f"{character_name}_action", ""),
-                    "location": image_xml.attrs.get(f"{character_name}_location", ""),
-                    "description": image_xml.attrs.get(
-                        f"{character_name}_description", ""
+                    "pose": as_str(image_xml.attrs.get(f"{character_name}_pose", "")),
+                    "action": as_str(
+                        image_xml.attrs.get(f"{character_name}_action", "")
+                    ),
+                    "location": as_str(
+                        image_xml.attrs.get(f"{character_name}_location", "")
+                    ),
+                    "description": as_str(
+                        image_xml.attrs.get(f"{character_name}_description", "")
                     ),
                 }
 
         out = {
-            "setting": image_xml.attrs.get("setting", ""),
-            "tod": image_xml.attrs.get("tod", ""),
-            "camera": image_xml.attrs.get("camera", ""),
+            "setting": as_str(image_xml.attrs.get("setting", "")),
+            "tod": as_str(image_xml.attrs.get("tod", "")),
+            "camera": as_str(image_xml.attrs.get("camera", "")),
             "lighting": {
-                "direction": image_xml.attrs.get("lighting_direction", ""),
-                "quality": image_xml.attrs.get("lighting_quality", ""),
-                "source": image_xml.attrs.get("lighting_source", ""),
+                "direction": as_str(image_xml.attrs.get("lighting_direction", "")),
+                "quality": as_str(image_xml.attrs.get("lighting_quality", "")),
+                "source": as_str(image_xml.attrs.get("lighting_source", "")),
             },
             # easy way to put your thumb on the scale.
             # [PARAGRAPH META] is the LAW!!
-            "description": image_xml.attrs.get("description", ""),
+            "description": as_str(image_xml.attrs.get("description", "")),
         }
 
-        focus_character = image_xml.attrs.get("focus_character", "")
+        focus_character = as_str(image_xml.attrs.get("focus_character", ""))
         if focus_character and focus_character in ch:
             out["character_focus"] = focus_character
 
@@ -1646,7 +2034,7 @@ class Chapter:
 
         # deep-remove every key with an empty value,
         # we want to descent into dicts inside 'out' and remove empty values there too.
-        def deep_clean(d):
+        def deep_clean(d: Any) -> Any:
             if isinstance(d, dict):
                 return {k: deep_clean(v) for k, v in d.items() if v}
             return d
@@ -1679,7 +2067,7 @@ class Chapter:
         self.load_xml()  # cached load
         return self.soup.find("sound", index=str(sound_index))
 
-    def get_aspect(self) -> str:
+    def get_aspect(self) -> aspect:
         """
         What is the aspect ratio for this chapter?
         valid outputs are "widescreen" and "portrait"
@@ -1900,7 +2288,7 @@ class Chapter:
 
         returns true if we got contents
         """
-        if self.STUB:
+        if self.stub:
             self.soup = BeautifulSoup("<chapter></chapter>", "xml")
             return self.soup
 
@@ -1924,13 +2312,10 @@ class Chapter:
             if chapter_xml is None:
                 chapter_xml = self.soup.new_tag("chapter")
 
-                if chapter_xml is None:
-                    raise ValueError("Invalid XML: No <chapter> tag found in XML file")
-
-            old_version = float(chapter_xml.attrs.get("version", "0.0"))
+            old_version = as_float(chapter_xml.attrs.get("version", "0.0"))
             self.soup = xml_upgrade(self, self.soup)
 
-            new_version = float(chapter_xml.attrs.get("version", "0.0"))
+            new_version = as_float(chapter_xml.attrs.get("version", "0.0"))
             if f"{old_version}" != f"{new_version}":
                 self.save_xml()
                 log.info(
@@ -1982,14 +2367,6 @@ class Chapter:
             h.write(pretty)
 
         log.info("Finished saving book as XML")
-        with open(book_fn, "r") as h:
-            as_split = h.read().splitlines()
-            if len(as_split) > 10:
-                beginning = as_split[:5]
-                ending = as_split[-5:]
-                #log.debug("samples", beginning=beginning, ending=ending)
-            # else:
-            #    log.debug("samples", lines=as_split)
 
     def get_txt_fn(self):
         best = os.path.join(
@@ -2026,7 +2403,7 @@ class Chapter:
             self.config,
         )
 
-    def get_config(self, force=False):
+    def get_config(self, force: bool = False) -> dict[str, str]:
         if hasattr(self, "config") and self.config and not force:
             return self.config
 
@@ -2075,9 +2452,9 @@ class Chapter:
 
         return unified_config
 
-    def get_masterplan(self, force=False):
+    def get_masterplan(self, force: bool = False) -> masterplan.Plan:
         """
-        Generate a masterplan for the chapter
+        Generate a plan for the chapter
         """
         mp = masterplan.Masterplan(self)
         return mp.get(force=force)
@@ -2097,19 +2474,15 @@ class Chapter:
             log.info("Camera loaded from disk, skipping build_frame_to_camera")
             return
 
-        last_frame = mplan["words"][-1]["end_frame"]
+        last_frame = mplan.words[-1].end_frame
         # slots for every frame, we want the scroll_lock value for each frame.
-        _frame_to_camera = [None] * (last_frame + 1)
+        _frame_to_camera: list[float|None] = [None] * (last_frame + 1)
 
         current_frame = 0
 
         self.scrolling_rate = None
         # set scrolling rate to the average required to place the bottom of the last
         # line in the center of the screen when the audio finishes.
-
-        # chapter = typography.page_segment.Chapter(
-        #     chapterdir=self.chapterdir, aspect=aspect
-        # )
 
         # adjusted because we start half way down the screen
         # ^ ballpark, we hate ballpark.
@@ -2123,25 +2496,28 @@ class Chapter:
         for current_frame in range(last_frame + 1):
             word = self.frame_to_word(mplan, current_frame)
             # log.info(f'[{current_frame}] {word=}')
-            if word["fullscreen"]:
+            if word.fullscreen:
                 continue
             scrolled_frames += 1
 
         self.scrolling_rate = height / float(scrolled_frames)
         log.info(
-            f"In order to traverse {height} pixels of text height in {scrolled_frames} frames"
+            "In order to traverse %s pixels of text height in %s frames",
+            height,
+            scrolled_frames,
         )
         log.info(
-            f"Setting initial scrolling rate to {self.scrolling_rate} pixels per frame"
+            "Setting initial scrolling rate to %s pixels per frame",
+            self.scrolling_rate,
         )
 
-        scroll_lock = 0
+        scroll_lock: float = 0.0
         for current_frame in range(last_frame + 1):
             word = self.frame_to_word(mplan, current_frame)
 
             # skip over any fullscreen frames, they will fall-through to None
             # and we don't want to advance scroll lock.
-            if word["fullscreen"]:
+            if word.fullscreen:
                 continue
 
             _frame_to_camera[current_frame] = scroll_lock
@@ -2162,33 +2538,33 @@ class Chapter:
         """
         Given a frame index, return the image dict for that frame.
         """
-        return masterplan.frame_to_image(mplan, frame_index)
+        return mplan.frame_to_image(mplan, frame_index)
 
-    def frame_to_word(self, mplan, frame_index):
+    def frame_to_word(self, mplan: masterplan.Plan, frame_index: int):
         """
         Based on the 'words' section of masterplan, determine which 'word'
         object governs the given frame_index.
         """
         # quick access to get the last word.
         if frame_index == -1:
-            return mplan["words"][-1]
+            return mplan.words[-1]
 
-        for word in mplan["words"]:
-            if (word["start_frame"] <= frame_index) and (
-                word["end_frame"] >= frame_index
-            ):
+        for word in mplan.words:
+            if (word.start_frame <= frame_index) and (word.end_frame >= frame_index):
                 return word
 
         log.error("No word found for frame index %s", frame_index)
         return None
 
-    def get_all_audio_tracks(self):
+    def get_all_audio_tracks(self) -> list[str]:
         mplan = self.get_masterplan()
         audio_tracks = []
-        for word in mplan["words"]:
+        for word in mplan.words:
             audio_tracks.append(
                 os.path.join(
-                    const.LIBRARY_DIR, word["paragraph_dir"], word["src"].lstrip("/")
+                    const.LIBRARY_DIR,
+                    word.paragraph_dir,
+                    word.src.lstrip("/"),
                 )
             )
 
@@ -2230,7 +2606,7 @@ class Chapter:
         return int(last_index)
 
 
-def xml_upgrade(chapter, soup):
+def xml_upgrade(chapter: Chapter, soup: Tag) -> Tag:
     """
     Upgrade the XML to the latest version.
     """
@@ -2242,7 +2618,6 @@ def xml_upgrade(chapter, soup):
         chapter_xml.name = "chapter"
 
     version = float(chapter_xml.attrs.get("version", "0.0"))
-    # version = 0
 
     if version < 1.0:
         log.warning("Upgrading XML from version %s to 1.0", version)
@@ -2539,28 +2914,3 @@ def xml_upgrade(chapter, soup):
         log.info("XML version is up to date (%s), no upgrade needed", version)
 
     return soup
-
-
-
-### NEXT:
-#
-# gotta build the camera.
-#
-# artifactserver-1  |   File "/app/artifact_editor/video/video.py", line 65, in book_to_video
-# artifactserver-1  |     chapter.build_frame_to_camera(
-# artifactserver-1  |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-# artifactserver-1  |         aspect=aspect,
-# artifactserver-1  |         ^^^^^^^^^^^^^^
-# artifactserver-1  |         force=force
-# artifactserver-1  |         ^^^^^^^^^^^
-# artifactserver-1  |     )
-# artifactserver-1  |     ^
-# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 2085, in build_frame_to_camera
-# artifactserver-1  |     height = self.get_bottom_height(force=force) - (G["TEXT_HEIGHT"] // 2)
-# artifactserver-1  |              ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
-# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 375, in get_bottom_height
-# artifactserver-1  |     last_phrase_dimensions = last_phrase.get_highlight_dimensions(force=force)
-# artifactserver-1  |   File "/app/artifact_editor/chapter/chapter.py", line 189, in get_highlight_dimensions
-# artifactserver-1  |     "top": int(self.phrase_xml.attrs["top"]),
-# artifactserver-1  |                ~~~~~~~~~~~~~~~~~~~~~^^^^^^^
-# artifactserver-1  | KeyError: 'top'

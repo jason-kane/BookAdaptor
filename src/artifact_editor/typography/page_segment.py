@@ -12,6 +12,11 @@ from artifact_editor.chapter import chapter as chapter_lib
 from artifact_editor.tools import tags_to_dict
 from artifact_editor.typography import typography
 
+from bs4 import Tag
+import typing as t
+if t.TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 log = logger.log(__name__)
 
 
@@ -73,10 +78,10 @@ SEGMENT_HEIGHT = 2048  # pixels
 
 
 def draw_text_layers(
-    chapter, 
-    phrase_xml,
-    force=False,
-    rainbow=False,
+    chapter: Chapter,
+    phrase_xml: Tag,
+    force: bool =False,
+    rainbow: bool =False,
 ):
     """
     Xml -> Latex -> PNG for each highlighted phrase in the chapter
@@ -833,11 +838,11 @@ def retrieve_segment_from_book(
 
 
 def from_offset(
-    chapter,
-    phrase_xml,
+    chapter: Chapter,
+    phrase_xml: Tag,
     top_index: int,   # scroll_lock
-    force=False,
-    no_background=False,
+    force: bool = False,
+    no_background: bool = False,
 ) -> Image.Image:
     """
     retrieve a finished page segment.  A page segment is a black on transparent

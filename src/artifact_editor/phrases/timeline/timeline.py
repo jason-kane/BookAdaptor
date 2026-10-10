@@ -5,16 +5,13 @@ def inject_image_slots(chapter):
 
     phrases = list(chapter.phrases())
 
+    if not phrases:
+        raise ValueError("No phrases found in chapter.  Upstream problem.")
+
     for phrase in phrases:
         if 'duration' not in phrase.attrs:
             return {"status": "error", "message": f"Phrase {phrase['index']} is missing duration."}
 
-    # we're going to ignore the 0 phrase; it's the title/author/etc..
-    # wipe out any existing image tags, because we are going to regenerate them.
-    # keep the 0 image, it's outside our scope
-    for image in chapter.images()[1:]:
-        image.extract()
-    
     # we do NOT want a whole new image exactly every 8 seconds _exactly_.  That ends of feeling
     # very mechanical. Not what we want.  So.. first try, consume phrases until
     # we first exceed 8 seconds, drop an image, repeat.  Easy.
@@ -22,6 +19,7 @@ def inject_image_slots(chapter):
     new_image = chapter.soup.new_tag("image")
     new_image.attrs['index'] = "1"
     new_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+    
     phrases[1].insert_before(new_image)
 
     accumulated_time = 0

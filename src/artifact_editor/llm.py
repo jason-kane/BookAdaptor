@@ -1,21 +1,60 @@
 import glob
 import json
 import os
+from pathlib import Path
 import re
 import tempfile
 import subprocess
 import shutil
 import fnv_hash_fast
 import redis
+from bs4 import Tag
 
+from artifact_editor.chapter.chapter import get_prompt_workflow_by_filename
+from artifact_editor.phrases.phrases import clean_latex
 import comfy
 import const
 import logger
 from artifact_editor import tools
 from artifact_editor.characters import characters
+from artifact_editor.characters.voices import KOKORO_VOICES
+
+import typing as t
+
+if t.TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 log = logger.log(__name__)
 
+
+
 FIFO_FN = os.path.join(os.path.dirname(__file__), "..", "drawing.fifo")
+
+
+def _kokoro_language(character_dict: dict) -> str:
+    """Return the Kokoro language label for the character's active voice."""
+    voice_language = {
+        "english": "English",
+        "french": "French",
+        "japanese": "Japanese",
+        "indian": "Hindi",
+        "chinese": "Mandarin Chinese",
+        "spanish": "Spanish",
+        "portuguese": "Brazilian Portuguese",
+        "italian": "Italian",
+    }
+    voices = character_dict.get("voices", [])
+    active_voices = [
+        voice for voice in voices if float(voice.get("strength", 0)) > 0
+    ]
+    voice = active_voices[0] if active_voices else (voices[0] if voices else {})
+    voice_info = KOKORO_VOICES.get(voice.get("id"), {})
+    language = voice.get("language", voice_info.get("language", "english"))
+    accent = voice.get("accent", voice_info.get("accent"))
+
+    if language == "english":
+        return "English (British)" if accent == "british" else "English (American)"
+    return voice_language.get(language, "All")
 
 LLM_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "LLM_CACHE")
 os.makedirs(LLM_CACHE_DIR, exist_ok=True)
@@ -24,8 +63,8 @@ os.makedirs(LLM_CACHE_DIR, exist_ok=True)
 def cache_tag(prompt):
     text = "_".join(prompt.split()[:6])[:25]
     tag = re.sub(r"[^a-z_A-Z0-9]", "_", text)
-    hash = fnv_hash_fast.fnv1a_32(prompt.encode("utf-8"))
-    tag += f"_{hash:08x}"
+    taghash = fnv_hash_fast.fnv1a_32(prompt.encode("utf-8"))
+    tag += f"_{taghash:08x}"
     return tag
 
 
@@ -79,16 +118,35 @@ def str_prompt_old(prompt, system_prompt="You are a helpful assistant.", force=F
     return content
 
 
-def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
+def text_2_audio(
+    chapter: Chapter,
+    phrase_xml: Tag,
+    character_name: str,
+    wavfile: str,
+    force: bool=False
+) -> str:
     """
     Submit a new ComfyUI api job to generate audio from this text.
+
+    Args:
+        chapter (Chapter): The chapter object containing context for the audio generation.
+        phrase_xml (Tag): The XML tag containing the text to be converted to audio.
+        character_name (str): The name of the character whose voice will be used.
+        wavfile (str): The path to the output WAV file.
+        force (bool, optional): Whether to force regeneration of the audio file if it already exists. Defaults to False.
+
+    Returns:
+        str: The path to the generated WAV file.
+
+    Raises:
+        ValueError: If the specified character has no voice defined.
     """
+    spoken_text = clean_latex(phrase_xml.get_text())
+
     character_dict = characters.get_character(chapter, character_name)
     if "voices" not in character_dict:
         log.error(f"Character {character_name} has no voice defined")
         raise ValueError(f"Character {character_name} has no voice defined")
-
-    workflow = comfy.load_workflow_template("api", "t2a", "kokoro")
 
     outputfile = os.path.join(
         const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
@@ -116,7 +174,8 @@ def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
     with open(pronunciation_dict_fn, "w") as f:
         json.dump(pronunciation, f)
 
-    template_environment = {}
+    template_environment: dict[str, str|int|float] = {}
+    template_environment["LANGUAGE"] = _kokoro_language(character_dict)
     # anything inside a template gets the "comfyui" version of the
     # COMFY_DIRS.
     log.info('Including %s layers of voice data', len(character_dict["voices"]))
@@ -133,28 +192,56 @@ def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
     template_environment["FILENAME_PREFIX"] = os.path.join("audio", os.path.basename(outputfile))
 
     template_environment["PRONUNCIATION_DIR"] = os.path.join(
-        const.COMFY_DIRS['comfyui']['OUTPUT_DIR'], 
+        const.COMFY_DIRS['comfyui']['OUTPUT_DIR'],
         "audio"
     )
     template_environment["PRONUNCIATION_FILENAME"] = os.path.basename(outputfile).replace(".wav", ".pronunciation")
 
     #const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"]
     log.info("Running LLM workflow with template_environment: %s", json.dumps(template_environment, indent=2))
-    response = comfy.run_workflow(
-        workflow,
+    # The problem is chapter.get_workflow() which is the modern flow, is
+    # really more of a chapter.get_image_workflow(); it assumes and expects
+    # to be working with image_xml data.
+
+    # the smart move is to add chapter.get_phrase_workflow() and let it assume
+    # it is working with single phrase_xml data.
+
+    # TODO: rewrite to use comfy.run_workflow_fn
+    # response = comfy.run_workflow_fn(
+    #     workflow,
+    #     template_environment=template_environment
+    # )
+    # workflow = comfy.load_workflow_template("api", "t2a", "kokoro")
+    # f"phrase.{workflow_name}.*.json",
+    workflow_name = "kokoro"
+
+    workflow_filename = chapter.get_phrase_workflow(
+        phrase_xml=phrase_xml,
+        workflow_name=workflow_name,
         template_environment=template_environment
     )
-
-    log.info(f"LLM workflow response: {response}")
+    
+    comfy.run_workflow_fn(workflow_filename)
 
     # convert flac to wav while we copy it into place.
-    newest_flac = max(glob.glob(
-        os.path.join(
-            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
-            "audio",
-            os.path.basename(outputfile) + "_*.flac"
-    )))
+    glob_filename = os.path.join(
+        const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+        "audio",
+        os.path.basename(outputfile) + "*.flac"
+    )
     
+    log.info('Expected output to match glob: %s', glob_filename)
+    newest_flac = max(glob.glob(
+        glob_filename
+    ))
+
+    # artifactserver-1  |   "TEXT": "THE MOUSE, THE CAT, AND THE COCK",
+    # artifactserver-1  |   "FILENAME_PREFIX": "audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav",
+    # artifactserver-1  |   "PRONUNCIATION_DIR": "/root/ComfyUI/output/audio",
+    # artifactserver-1  |   "PRONUNCIATION_FILENAME": "ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.pronunciation"
+
+    #expected: /output/audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav_*.flac
+    #          /output/audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav.wav_00001.flac
     # make sure the output directory exists
     os.makedirs(os.path.dirname(wavfile), exist_ok=True)
 
@@ -189,37 +276,39 @@ def text_2_audio(chapter, spoken_text, character_name, wavfile, force=False):
     return wavfile
 
 
-def str_prompt(prompt, system_prompt="You are a helpful assistant.", force=False):
+def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", force:bool=False):
     content = None
+    filename = "llm_str.txt"
     if not (content := get_cached_prompt(prompt, format="txt", force=force)):
 
-        workflow = comfy.load_workflow_template(
-            "api", "t2t", "qwen35-json_Qwen 3.5 STR"
+        workflow_filename = get_prompt_workflow_by_filename(
+            workflow_filename="chat.qwen35-json.Qwen 3.5 4b bf16.json",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            outputfile=filename,
         )
 
-        outputfile = os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "llm_str.txt")
-        if os.path.exists(outputfile):
-            os.remove(outputfile)
-        
-        log.info("Running LLM workflow", prompt=prompt)
-            
-        # anything inside a template gets the "comfyui" version of the
-        # COMFY_DIRS.
-        response = comfy.run_workflow(
-            workflow,
-            template_environment={
-                "SYSTEM_PROMPT": system_prompt,
-                "PROMPT": prompt,
-                "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-                "FILE_NAME": os.path.basename(outputfile) # file will be blah.txt.txt, but the extra .txt gets stripped later
-        })
+        comfy.run_workflow_fn(workflow_filename)
 
-        log.info(f"LLM workflow response: {response}")
-        content = response
+        # and find the output..
+        glob_name = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
+            filename + "*"
+        )
+        
+        outputfile = glob.glob(glob_name)
+
+        if outputfile and os.path.exists(outputfile[0]):
+            log.info('Reading output file: %s', outputfile[0])
+            content = Path(outputfile[0]).read_text()
+            os.remove(outputfile[0])
+        else:
+            log.error('Output file not found: %s', glob_name)
+            raise ValueError("Output file not found")
 
         set_cached_prompt(prompt, content, format="txt")
 
-    log.info("LLM responce is: %s", content)
+    log.info("LLM response is: %s", content)
     return content
 
 
@@ -228,44 +317,42 @@ def str_fast_prompt(prompt, system_prompt="You are a helpful assistant.", force=
     Llama 3.2 1B instruct via vllm, this is very quick but not very smart.
     """
     content = None
-    #if not (content := get_cached_prompt(prompt, format="txt", force=force)):
-    if True:
-        workflow = comfy.load_workflow_template(
-            "api", "t2t", 
-            "vllm.llama-3.2-1b"
-        )
+    workflow = comfy.load_workflow_template(
+        "api", "t2t", 
+        "vllm.llama-3.2-1b"
+    )
 
-        outputfile = os.path.join(
-            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
-            "llm_str.txt"
-        )
+    outputfile = os.path.join(
+        const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
+        "llm_str.txt"
+    )
 
-        if os.path.exists(outputfile):
-            os.remove(outputfile)
+    if os.path.exists(outputfile):
+        os.remove(outputfile)
+    
+    log.info("Running LLM workflow", prompt=prompt)
         
-        log.info("Running LLM workflow", prompt=prompt)
-            
-        # anything inside a template gets the "comfyui" version of the
-        # COMFY_DIRS.
-        response = comfy.run_workflow(
-            workflow,
-            template_environment={
-                "FREQUENCY_PENALTY": 0.0,
-                "PRESENCE_PENALTY": 0.0,
-                "TEMPERATURE": 1.0,
-                "TOP_P": 1.0,
-                "MAX_TOKENS": 56000,
-                "SYSTEM_PROMPT": system_prompt,
-                "PROMPT": prompt,
-                "OUTPUT_FILE_PATH": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-                "FILE_NAME": os.path.basename(outputfile)
-            }
-        )
+    # anything inside a template gets the "comfyui" version of the
+    # COMFY_DIRS.
+    response = comfy.run_workflow(
+        workflow,
+        template_environment={
+            "FREQUENCY_PENALTY": 0.0,
+            "PRESENCE_PENALTY": 0.0,
+            "TEMPERATURE": 1.0,
+            "TOP_P": 1.0,
+            "MAX_TOKENS": 56000,
+            "SYSTEM_PROMPT": system_prompt,
+            "PROMPT": prompt,
+            "OUTPUT_FILE_PATH": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
+            "FILE_NAME": os.path.basename(outputfile)
+        }
+    )
 
-        log.info(f"LLM workflow response: {response}")
-        content = response
+    log.info(f"LLM workflow response: {response}")
+    content = response
 
-        set_cached_prompt(prompt, content, format="txt")
+    set_cached_prompt(prompt, content, format="txt")
 
     log.info("LLM responce is: %s", content)
     return content

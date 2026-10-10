@@ -184,31 +184,33 @@ def pretty_duration(phrase_xml):
     return f"{start_minute}:{start_second} to {end_minute}:{end_second}"
 
 
-def soundslike(phrase_xml, soundslike_url):
+def soundslike(phrase_xml, soundslike_url, key=None):
+    key_values = f' hx-vals=\'{{"key": "{key}"}}\'' if key is not None else ""
     out = f"""
     <div class="wa-cluster">
         <wa-input
             class="soundslike-input"
             label="SoundsLike"
-            hint="Use an english word to help find the right IPA symbols."
+            hint="Enter an english word containing the desired syllable"
             hx-post="{soundslike_url}"
                 hx-target="#soundslike_{phrase_xml['index']}"
                 hx-swap="outerHTML"
+                {key_values}
                 name="soundslike"
                 hx-include="#pronounce_{phrase_xml['index']}"
                 value=""
                 hx-trigger="change delay:125ms">
-            </wa-input>
+        </wa-input>
 
-            <wa-textarea 
-                class="soundslike-output"
-                id="soundslike_{phrase_xml['index']}"
-                placeholder="International Phonetic Alphabet (IPA)"
-                resize="auto"
-                rows="1"
-                disabled>
-            </wa-textarea>
-        </div>"""
+        <wa-textarea 
+            class="soundslike-output"
+            id="soundslike_{phrase_xml['index']}"
+            placeholder="International Phonetic Alphabet (IPA)"
+            resize="auto"
+            rows="1"
+            disabled>
+        </wa-textarea>
+    </div>"""
     return out
 
 
@@ -290,7 +292,7 @@ def audio_player(chapter, phrase_xml):
                 <source src="{audio_src}" type="audio/wav">
             </audio>"""
 
-def generate_audio_button(chapter, phrase_xml):
+def generate_audio_button(chapter, phrase_xml, target=None):
     generate_audio_url = url_for(
         "library.book.chapter.phrases.regenerate_phrase",
         author=chapter.author.name,
@@ -300,12 +302,30 @@ def generate_audio_button(chapter, phrase_xml):
         phrase_index=phrase_xml['index'],
     )
 
+    target = target or f"#phrase-{phrase_xml['index']}"
+
     return f"""<wa-button
         hx-post="{generate_audio_url}"
         hx-vals='{{"page": "{request.args.get("page", 1)}" }}'
-        hx-target="#phrase-{phrase_xml['index']}"
+        hx-target="{target}"
         hx-swap="outerHTML"
         hx-trigger="click">(Re)generate Audio</wa-button>"""
+
+
+def chapter_audio_controls(chapter, phrase_xml, oob=False):
+    """Audio and pronunciation controls for a phrase in the chapter text view."""
+    target = f"#chapter-audio-controls-{phrase_xml['index']}"
+    oob_attribute = ' hx-swap-oob="true"' if oob else ""
+    soundslike_url = url_for(
+        "library.book.chapter.phrases.pronunciation.soundslike",
+        **chapter.kwargs,
+    )
+    return f"""<div id="chapter-audio-controls-{phrase_xml['index']}" class="wa-stack wa-gap-xs"{oob_attribute}>
+        {pronunciation_textarea(chapter, phrase_xml)}
+        {soundslike(phrase_xml, soundslike_url, key=phrase_xml['index'])}
+        {audio_player(chapter, phrase_xml)}
+        {generate_audio_button(chapter, phrase_xml, target=target)}
+    </div>"""
 
 
 def pronunciation_textarea(chapter, phrase_xml):

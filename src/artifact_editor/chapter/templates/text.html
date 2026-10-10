@@ -6,8 +6,49 @@
 
 {% block styles %}
 <style>
+    .chapter-layout {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: clamp(1rem, 2vw, 2rem);
+    }
+    .chapter-editor-column,
+    .chapter-phrase-column {
+        flex: 1 1 18rem;
+        min-width: min(100%, 16rem);
+    }
+    .chapter-editor-column {
+        flex-basis: 16rem;
+        max-width: 27rem;
+    }
+    .chapter-phrase-column {
+        flex-basis: 18rem;
+        min-width: min(100%, 18rem);
+    }
+    .chapter-rendered-column {
+        flex: 0 1 32.6875rem;
+        min-width: min(100%, 20rem);
+    }
+    .chapter-rendered-scroll {
+        width: min(100%, 523px);
+        height: 46em;
+        overflow-y: scroll;
+    }
+    .phrase-container {
+        border: 1px solid #5c5b5b;
+        margin-bottom: 0.5em;
+        margin-top: 0.5em;
+    }
+    .phrase-container:hover {
+        border: 1px solid #613737;
+    }
+    .phrase-container.selected {
+        border: 3px solid #410f80;
+    }
     #text_editor {
-        width: 27em;
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
     }
     .ql-editor {
         font-size: 16px;
@@ -27,6 +68,12 @@
         width: 150px !important;
         white-space: nowrap;
     }
+    .soundslike-input {
+        width: 40%;
+    }
+    .soundslike-output {
+        width: 40%;
+    }
 </style>
 {% endblock %}
 
@@ -42,6 +89,26 @@
     var Size = Quill.import('attributors/style/size');
     Size.whitelist = fontSizeArr;
     Quill.register(Size, true);
+
+    function fixPreviousEditor(previous_simple_text) {
+        const previous_editor = document.getElementById(`phrase_${window.previous_phrase_index}_ta`);
+        if (previous_editor) {
+            previous_editor.value = previous_simple_text;
+            //phraseEditor.setContents(previous_delta);
+        }
+    }
+
+    function clearToolbars(phraseStack_id='phrase-stack') {
+        var phraseStack = document.getElementById(phraseStack_id);
+        Array.from(phraseStack.children).forEach(child => {
+            // are any of by children toolbars?
+            Array.from(child.children).forEach(quillComponent => {
+                if (quillComponent.getAttribute('role') === 'toolbar') {
+                    quillComponent.remove();
+                }
+            });
+        });        
+    }    
 </script>
 
 <script type="module">
@@ -84,57 +151,10 @@
     //     'speaker', // css property name
     //     speakerConfig
     // );
-
     let text_editor = null;
-    let text_editor_title = null;
 
     // Wait for the DOM to finish loading
     document.addEventListener('DOMContentLoaded', () => {
-        if (!text_editor_title) {
-            text_editor_title = new Quill('#text_editor_title', {
-                modules: {
-                    syntax: true,
-                    toolbar: [
-                        // only include features supported through to Latex.
-                        [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
-                        ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
-                        [
-                            { align: ''}, 
-                            { align: 'center' }, 
-                            // { align: 'right' },
-                            { align: 'justify' }
-                        ], // text alignment
-                        // ['color', 'background'], // defaults from theme
-                        // ['blockquote', 'code-block'], // blockquote, code block
-                        // [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
-                        // ['link'], // links
-                        // ['blockquote', 'code-block'],
-                    ]
-                },
-                theme: 'snow'
-            });
-
-            // Listen for text changes in the Quill editor and auto-save
-            // https://quilljs.com/docs/api#text-change
-            text_editor_title.on('text-change', (delta, oldDelta, source) => {
-                // Right now _every_ change is being sent to the server.  
-                // This is a little ridiculous.  If we can soak and bundle
-                // changes for a few seconds, that would be less noisy.
-                htmx.ajax('POST', 'title_delta', {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    values: {
-                        delta: JSON.stringify(text_editor_title.getContents()),
-                    },
-                    swap: 'none',
-                    onError: function (err) {
-                        console.error('Error updating:', err);
-                    }
-                });
-            });
-        }
-
         if (!text_editor) {
             text_editor = new Quill('#text_editor', {
                 modules: {
@@ -178,6 +198,17 @@
                 theme: 'snow'
             });
 
+            //wish I was kidding
+            // 1. Get a reference to Quill's internal tooltip input element
+            const tooltipInput = text_editor.theme.tooltip.root.querySelector('input[data-link]');
+
+            // 2. Overwrite the default strings with whatever you want!
+            if (tooltipInput) {
+                tooltipInput.dataset.link = 'https://localhost/tooltips';
+                tooltipInput.dataset.video = ''; // 'Paste video URL here...';
+                tooltipInput.dataset.formula = 'e = mc^2';
+            }
+
             // Listen for text changes in the Quill editor and auto-save
             // https://quilljs.com/docs/api#text-change
             text_editor.on('text-change', (delta, oldDelta, source) => {
@@ -219,20 +250,6 @@
             }
           }
         });
-
-        // Retrieve the current chapter title content
-        htmx.ajax('GET', 'title_delta', {
-          source: '#text_editor_title',
-          swap: 'none',
-          handler: function(target, info) {
-            if (info.xhr.status === 200) {
-              text_editor_title.setContents(JSON.parse(info.xhr.responseText));
-            } else {
-              console.error('Error fetching todo:', info.xhr.statusText);
-            }
-          }
-        });
-
     });
 </script>
 <script src="/static/js/pdf.mjs" type="module"></script>
@@ -254,14 +271,8 @@
 
 {% block body %}
 
-<div class="wa-cluster wa-align-items-start" style="gap: 32px;">
-    <div class="wa-stack wa-gap-0">
-        <div 
-            id="text_editor_title" 
-            class="text-editor"
-            style="height: 13em;">
-        </div>
-
+<div class="chapter-layout">
+    <div class="wa-stack wa-gap-0 chapter-editor-column">
         <div>
             <div 
                 id="text_editor" 
@@ -285,21 +296,46 @@
             {{import_button|safe}}
         </div>
     </div>
-    <div id="phrase-stack" class="wa-stack wa-gap-0" style="width: 35%;">
+    <div id="phrase-stack" class="wa-stack wa-gap-0 chapter-phrase-column">
+        <div class="wa-cluster" style="justify-content: space-between; align-items: center;">
+            <h2>Phrases</h2>
+            <wa-button
+                size="small"
+                href="{{ url_for('library.book.chapter.characters.base', **chapter.kwargs) }}"
+            >Characters</wa-button>
+            <wa-button
+                size="small"
+                href="{{ url_for('library.book.chapter.phrases.pronunciation.base', **chapter.kwargs) }}"
+            >Pronunciation Guide</wa-button>
+        </div>
         {% for phrase in phrases %} 
+        <div id="phrase_{{ phrase.index }}" class="phrase-container">
             <wa-textarea 
-                id="phrase_{{ phrase.attrs['index'] }}" 
+                id="phrase_{{ phrase.index }}_ta" 
                 class="phrase-editor"
-                hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.attrs['index']) }}"
+                hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}"
                 hx-vals='js:{"previous_phrase_index": window.previous_phrase_index }'
                 hx-trigger="click"
                 hx-swap="none"
-                value="{{ phrase.attrs.get('delta') }}"
+                value="{{ phrase.simple_text() }}"
+                
             ></wa-textarea>
+            <div class="wa-cluster">
+                <wa-icon></wa-icon>
+                <wa-select 
+                    name="phrase_{{ phrase.index }}_speaker"
+                >
+                    {% for speaker in speakers %}
+                        <wa-option value="{{ speaker.tag }}"{% if phrase.speaker == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
+                    {% endfor %}
+                </wa-select>
+            </div>
+            <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs"></div>
+        </div>
         {% endfor %}
     </div>
-    <div class="wa-stack">   
-        <div style="width:523px;height:46em;overflow-y:scroll;">
+    <div class="wa-stack chapter-rendered-column">
+        <div class="chapter-rendered-scroll">
             <canvas id="the-canvas"></canvas>
         </div>
     </div>

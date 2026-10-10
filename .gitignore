@@ -12,3 +12,4 @@ src/.coverage
 templates/obsolete/*
 src_backup/**/*
 
+venv/*

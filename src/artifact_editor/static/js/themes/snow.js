@@ -13,7 +13,7 @@ const TOOLBAR_CONFIG = [[{
   list: 'bullet'
 }], ['clean']];
 class SnowTooltip extends BaseTooltip {
-  static TEMPLATE = ['<a class="ql-preview" rel="noopener noreferrer" target="_blank" href="about:blank"></a>', '<input type="text" data-formula="e=mc^2" data-link="https://quilljs.com" data-video="Embed URL">', '<a class="ql-action"></a>', '<a class="ql-remove"></a>'].join('');
+  static TEMPLATE = ['<a class="ql-preview" rel="noopener noreferrer" target="_blank" href="about:blank"></a>', '<input type="text" data-formula="e=mc^2" data-video="Embed URL">', '<a class="ql-action"></a>', '<a class="ql-remove"></a>'].join('');
   preview = this.root.querySelector('a.ql-preview');
   listen() {
     super.listen();

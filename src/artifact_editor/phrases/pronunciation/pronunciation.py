@@ -9,10 +9,15 @@ from more_itertools import first
 
 import const
 import logger
+
+import typing as t
+if t.TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
+
 log = logger.log(__name__)
 
 
-def apply_global_pronunciations(chapter, text):
+def apply_global_pronunciations(chapter: Chapter, text: str) -> str:
     """
     Apply the global pronunciations to the given text.
 
@@ -50,7 +55,7 @@ def apply_global_pronunciations(chapter, text):
     return text
 
  
-def word_to_key(word):
+def word_to_key(word: str) -> str:
     for (old, new) in [
         ("=", "-equals-"),
         ("?", "_"),
@@ -63,7 +68,7 @@ def word_to_key(word):
 
     return word.strip()
 
-def add_word_pronunciation(chapter, word, pronunciation=""):
+def add_word_pronunciation(chapter: Chapter, word: str, pronunciation: str=""):
     """
     Add a word pronunciation in the book's global_pronunciations.json file.
 
@@ -91,7 +96,7 @@ def add_word_pronunciation(chapter, word, pronunciation=""):
     save_global_pronunciations(chapter, pronunciations)
 
 
-def global_pronunciation_list(chapter: 'Chapter'):
+def global_pronunciation_list(chapter: Chapter) -> list[dict[str, str]]:
     """
     returns a list of dict containing:
     {
@@ -139,7 +144,7 @@ def global_pronunciation_list(chapter: 'Chapter'):
     return with_complete_pronunciation + missing_pronunciation
 
 
-def get_global_pronunciations(chapter):
+def get_global_pronunciations(chapter: Chapter) -> dict[str, dict[str, str]]:
     """
     Load the global pronunciations from the book's global_pronunciations.json file.
     """
@@ -214,7 +219,7 @@ def get_global_pronunciations(chapter):
     return global_pronunciations
 
 
-def save_global_pronunciations(chapter, pronunciations):
+def save_global_pronunciations(chapter: Chapter, pronunciations: dict[str, dict[str, str]]):
     """
     Save the global pronunciations to the book's global_pronunciations.json file.
     """

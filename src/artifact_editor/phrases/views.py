@@ -43,13 +43,16 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values)    
+    chapter_url_value_preprocessor(endpoint, values)
+
 
 bp.register_blueprint(sound_bp, url_prefix="/sound")
 bp.register_blueprint(pronunciation_bp, url_prefix="/pronunciation")
@@ -57,6 +60,7 @@ bp.register_blueprint(timeline_bp, url_prefix="/timeline")
 
 # @bp gives us "/<author>/<path:title>/<chapter>/audio")
 # so all of these are (author, title, chapter) at least.
+
 
 # POST /Bible/Old%20Testament/0001/audio/actions/try_cmu_dict
 @bp.route("/actions/try_cmu_dict", methods=["POST"])
@@ -98,7 +102,6 @@ def add_image_slot(phrase_index: str, after: str | bool = True):
     g.chapter.save_xml()
 
     return htmx.image_placeholder(g.chapter, new_image_xml), 200
-
 
 
 # /Grimm/Fairy%20Tales/1/english/audio/actions/add_delay/3
@@ -208,8 +211,7 @@ def audio_phrases(page: int | None = None):
 
     if pretty_mode:
         payload = BeautifulSoup(
-            phrases.phrase_sequence(g.chapter, page=page),
-            "xml"
+            phrases.phrase_sequence(g.chapter, page=page), "xml"
         ).prettify()
     else:
         payload = phrases.phrase_sequence(g.chapter, page=page)
@@ -256,6 +258,7 @@ def text_snippet(phrase_index: int):
 
     return send_file(fn, mimetype="image/png")
 
+
 @bp.route("/text_snippet/redraw/<phrase_index>.png", methods=["GET"])
 def redraw_text_snippet(phrase_index: int):
     phrase_xml = g.chapter.get_phrase(phrase_index)
@@ -264,6 +267,7 @@ def redraw_text_snippet(phrase_index: int):
     g.chapter.get_highlighted_text_snippet(phrase_xml, force=True)
     # send back the updated widget
     return htmx.get_phrase_latex_image(g.chapter, phrase_xml), 200
+
 
 @bp.route("/", methods=["GET"])
 def base():
@@ -293,13 +297,13 @@ def base():
         generate_all_missing_audio_button=htmx.generate_all_missing_audio_button(
             g.chapter
         ),
-        repronounce_where_missing_button=htmx.repronounce_where_missing_button(g.chapter),
+        repronounce_where_missing_button=htmx.repronounce_where_missing_button(
+            g.chapter
+        ),
         reset_audio_cache_json_button=htmx.reset_audio_cache_json_button(g.chapter),
-        # set_phrase_speaker_button=htmx_set_phrase_speaker_button(g.chapter.url),
         recalculate_all_phrase_frames_button=htmx.recalculate_all_phrase_frames_button(
             g.chapter
         ),
-        # htmx_single_clip_card=htmx_single_clip_card,
         section="phrase.workshop",
         section_cosmetic="Phrases › Workshop",
     )
@@ -307,7 +311,6 @@ def base():
 
 @bp.route("/actions/recalculate_all_phrase_frames", methods=["POST"])
 def recalculate_all_phrase_frames():
-
     for phrase_xml in g.chapter.get_xml().find_all("phrase"):
         wavfile = phrases.get_wavfile_filename(phrase_xml, g.chapter)
         if wavfile and os.path.exists(wavfile):
@@ -346,7 +349,9 @@ def delete_image_slot(image_index: int):
 
 
 @bp.route("/actions/set_speaker/<phrase_index>", methods=["POST"])
-def assign_phrase_speaker(author: str, title: str, chapter_number: int, language: str, phrase_index: int):
+def assign_phrase_speaker(
+    author: str, title: str, chapter_number: int, language: str, phrase_index: int
+):
     phrase_index = int(phrase_index)
 
     author = Author(author)
@@ -381,13 +386,13 @@ def set_latex(phrase_index: int):
     # you can't just re-set the latex and run away.
 
     # re-draw the full chapter pdf and rainbow latex
-    
 
     g.chapter.get_highlighted_text_snippet(phrase_xml, force=True)
 
-    #//page = request.form.get("page", None)
+    # //page = request.form.get("page", None)
     return "", 200
-    #//htmx.phrase_editor(g.chapter, phrase_xml, page), 200
+    # //htmx.phrase_editor(g.chapter, phrase_xml, page), 200
+
 
 # http://localhost:5000/Ambrose%20Bierce/An%20Occurrence%20at%20Owl%20Creek%20Bridge/0001/audio/actions/set_second_phrase/3_18
 @bp.route("/actions/set_split/<int:phrase_index>", methods=["POST"])
@@ -437,13 +442,15 @@ def set_split(phrase_index: int):
         g.chapter,
         phrase_xml,
         split=(whole_source_phrase[:index], whole_source_phrase[index:]),
-        page=request.form.get("page", None)
+        page=request.form.get("page", None),
     ), 200
 
 
 # set_linebreak
 @bp.route("/actions/set_linebreak/<phrase_index>", methods=["PUT"])
-def set_linebreak(author: str, title: str, chapter_number: int, language: str, phrase_index: int):
+def set_linebreak(
+    author: str, title: str, chapter_number: int, language: str, phrase_index: int
+):
     phrase_index = int(phrase_index)
     author = Author(author)
     chapter = Chapter(
@@ -463,7 +470,6 @@ def set_linebreak(author: str, title: str, chapter_number: int, language: str, p
     return htmx.phrase_editor(chapter, phrase_xml, page), 200
 
 
-# hx-post="/{author}/{title}/{chapter}/audio/save_phrase/{phrase['id']}"
 @bp.route("/actions/save_split_phrase/<phrase_index>", methods=["POST"])
 def save_split_phrase(phrase_index: int):
     """
@@ -499,8 +505,8 @@ def save_split_phrase(phrase_index: int):
         if split_index != -1:
             new_phrase_xml.attrs["latex"] = latex[split_index:]
             phrase_xml.attrs["latex"] = latex[:split_index]
-    
-    # 
+
+    #
     # <phrase duration="3.2325" fragdex="1" frames="81" id="35_1" pronunciation="“ðə fˈɜɹst mˈæn hæd hɪz θɹˈi wˈɪʃᵻz. jˈɛs,”" speaker="The_Sergeant-Major" src="ph_1__The_first_man_had_his_th_a7786732_8656.wav">
     #   “The first man had his three wishes. Yes,”
     # </phrase>
@@ -530,8 +536,6 @@ def save_split_phrase(phrase_index: int):
 
     g.chapter.save_xml()
 
-    # hx-get="phrases?page={page}"
-    # return htmx_phrase_editor(chapterurl, chapterdir, phrase_xml), 200
     page = request.form.get("page", None)
     return phrases.phrase_sequence(g.chapter, page=page)
 
@@ -551,8 +555,6 @@ def split_phrase():
         log.error(f"Phrase with id {phrase_index} not found in book {g.chapter}")
         return "Phrase not found", 404
 
-    # paragraph = phrase_xml.find_parent("paragraph")
-
     return htmx.phrase_editor(
         g.chapter, phrase_xml, page, split=(phrase_xml.get_text().strip(), "")
     ), 200
@@ -567,6 +569,10 @@ def regenerate_phrase(phrase_index: int, force=True):
     phrase_index = int(phrase_index)
 
     page = request.form.get("page", None)
+    chapter_audio_target = (
+        request.headers.get("HX-Target")
+        == f"chapter-audio-controls-{phrase_index}"
+    )
     g.chapter.load_xml()
 
     phrase_xml = g.chapter.get_phrase(phrase_index)
@@ -578,7 +584,7 @@ def regenerate_phrase(phrase_index: int, force=True):
     wavfile = phrases.get_wavfile_filename(phrase_xml, g.chapter)
 
     log.warning("Beta", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
-    
+
     # should do NOTHING.
     phrase_xml = g.chapter.get_phrase(phrase_index)
     log.warning("Gamma", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
@@ -591,21 +597,23 @@ def regenerate_phrase(phrase_index: int, force=True):
         if force:
             # _regenerate_ phrase
             log.info(f"Deleted existing wav file: {wavfile}")
-            os.remove(wavfile)            
+            os.remove(wavfile)
         else:
             log.info(f"Phrase {phrase_index} already has an audio file: {wavfile}")
+            if chapter_audio_target:
+                return htmx.chapter_audio_controls(g.chapter, phrase_xml), 200
             return htmx.phrase_editor(g.chapter, phrase_xml, page), 200
 
-    text_to_speak = phrases.clean_latex(phrase_xml.get_text())
-    log.info(f"Submitting {text_to_speak} to TTS for phrase {phrase_index}")
+    # text_to_speak = phrases.clean_latex(phrase_xml.get_text())
+    # log.info(f"Submitting {phrase_xml.get_text()} to TTS for phrase {phrase_index}")
 
     # regenerate the wav for this phrase
     llm.text_2_audio(
         g.chapter,
-        text_to_speak,
+        phrase_xml,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
-        force=False
+        force=False,
     )
 
     # do we already have a pronunciation file for this phrase?
@@ -618,12 +626,12 @@ def regenerate_phrase(phrase_index: int, force=True):
         try:
             # /root/ComfyUI/output/audio/ph_0_Fables_6020c8ae_0a40.pronunciation.txt
             pronunciation_filename = os.path.join(
-                const.COMFY_DIRS["artifactserver"]['OUTPUT_DIR'],
+                const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
                 "audio",
                 os.path.basename(wavfile).replace(".wav", ".pronunciation.txt"),
             )
 
-            with open(pronunciation_filename, 'r') as f:
+            with open(pronunciation_filename, "r") as f:
                 # wavfile.replace(".wav", ".pronunciation") + ".txt", "r") as f:
                 new_pronunciation = f.read().strip()
                 log.info(f"Found pronunciation file: {pronunciation_filename}")
@@ -643,7 +651,7 @@ def regenerate_phrase(phrase_index: int, force=True):
     phrase_xml.attrs["duration"] = str(duration)
     phrase_xml.attrs["frames"] = int(duration * const.FPS)
 
-    if new_pronunciation and not phrase_xml.attrs.get("pronunciation", False):
+    if new_pronunciation:
         log.info(
             f"Updating pronunciation for phrase {phrase_index} to {new_pronunciation}"
         )
@@ -654,10 +662,10 @@ def regenerate_phrase(phrase_index: int, force=True):
 
     test_phrase = g.chapter.get_phrase(phrase_index)
     log.warning(f"Test phrase after regeneration: {test_phrase}")
-    
+
     log.info(f"Before: {phrase_xml.attrs=}")
     g.chapter.save_xml()
-    
+
     log.info(f"After 1: {phrase_xml.attrs=}")
     phrase_xml = g.chapter.get_phrase(phrase_index)
     log.info(f"After 2: {phrase_xml.attrs=}")
@@ -665,6 +673,8 @@ def regenerate_phrase(phrase_index: int, force=True):
     phrases.recalculate_image_frames(g.chapter)
 
     g.chapter.save_xml()
+    if chapter_audio_target:
+        return htmx.chapter_audio_controls(g.chapter, phrase_xml), 200
     return htmx.phrase_editor(g.chapter, phrase_xml, page), 200
 
 
@@ -724,7 +734,9 @@ def recognize_neurolang_ipa_whisper_medium(
 
 
 @bp.route("/actions/record_audio/<int:phrase_index>", methods=["POST"])
-def record_audio(author: str, title: str, chapter_number: int, language: str, phrase_index: int):
+def record_audio(
+    author: str, title: str, chapter_number: int, language: str, phrase_index: int
+):
     """
     ** THIS IS GOING TO LISTEN ON YOUR MICROPHONE. **
     """
@@ -812,7 +824,7 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
 
         previous_phrase.clear()
         new_phrase = NavigableString(new_phrase_text)
-        previous_phrase.append(new_phrase)        
+        previous_phrase.append(new_phrase)
     else:
         # append our text to the previous phrase
         previous_phrase_text = previous_phrase.get_text().strip()
@@ -873,19 +885,14 @@ def reset_audio_cache_json(author: str, title: str, chapter_number: int, languag
 
     chapter.save_xml()
 
-    # audio_cache.delete_audio_cache(chapterdir)
-    # generate_audio(chapterdir)
-
-    # create a new audo_cache.json
-    # generate_audio(chapterdir)
-    # recalculate_image_frames(chapterdir)
-
     return htmx.reset_audio_cache_json_button(chapter)
 
 
 # http://localhost:5000/Aesop/Fables/0026/audio/actions/set_dinkus_style/8_0
 @bp.route("/actions/set_dinkus_style/<phrase_id>", methods=["POST"])
-def set_dinkus_style(author: str, title: str, chapter_number: int, language: str, phrase_id: str):
+def set_dinkus_style(
+    author: str, title: str, chapter_number: int, language: str, phrase_id: str
+):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -910,7 +917,9 @@ def set_dinkus_style(author: str, title: str, chapter_number: int, language: str
 
 # /Aesop/Fables/chapter/0026/audio/actions/set_dinkus_duration/8_0
 @bp.route("/actions/set_dinkus_duration/<int:phrase_id>", methods=["POST"])
-def set_dinkus_duration(author: str, title: str, chapter_number: int, language: str, phrase_id: int):
+def set_dinkus_duration(
+    author: str, title: str, chapter_number: int, language: str, phrase_id: int
+):
     author = Author(author)
     chapter = Chapter(author, title, chapter_number, language)
 
@@ -933,11 +942,10 @@ def set_dinkus_duration(author: str, title: str, chapter_number: int, language: 
     return phrase_out, 200
 
 
-
 # goal: level of assistance needed to generate 15 minutes of content per week.
 # That is one typical book chapter.
- 
-# daily effort required is 
+
+# daily effort required is
 # two minutes of good quality content.
 
 # the automation need to be strong enough
@@ -956,7 +964,7 @@ def set_dinkus_duration(author: str, title: str, chapter_number: int, language: 
 # 10 minutes to make 20 seconds
 # 5 minutes per 10 second clip
 
-# I'm not even close to that, more like 
+# I'm not even close to that, more like
 # 30 minutes per 5 second clip
 # 90 hours for 15 minutes
 # call it two months per chapter.
