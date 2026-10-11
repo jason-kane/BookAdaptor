@@ -613,7 +613,7 @@ class Chapter:
 
     def get_bottom_height(self, force: bool = False) -> int:
         all_phrases = list(self.phrases())
-        phrase_xml = all_phrases[-1]
+        phrase_xml = all_phrases[-1].phrase_xml
 
         # open the rainbow text, filter for the color of the last phrase,
         # determine those dimensions.
@@ -893,14 +893,16 @@ class Chapter:
                 style = None
 
             if not style:
-                # otherwise, use the book style if there is one.
+                # otherwise, use the book's default style if there is one.
                 try:
-                    style = as_str(self.config.get("default_style"))
+                    book_config = config.get_config(self.bookdir)
+                    style = as_str(book_config.get("default_style"))
                 except ValueError:
                     style = None
 
                 if not style:
-                    log.warning("No style found for image, chapter, or book.")
+                    style = "none"
+                    log.info("No image, chapter, or book style found; using 'none'.")
                 else:
                     log.info("Using book style: %s", style)
             else:
@@ -1015,6 +1017,13 @@ class Chapter:
                 video_fn = image_fn.replace(".png", ".mp4")
             else:
                 video_fn = image_fn.replace(".png", f"_{video_index:02d}.mp4")
+
+            # A missing animation output is common while a workflow is being
+            # generated (or after it fails). Don't invoke ffmpeg with a path
+            # that cannot exist; get_last_frame() will fall back to the still.
+            if not os.path.isfile(video_fn):
+                log.warning("Animation video does not exist; skipping frame extraction", video_fn=video_fn)
+                continue
 
             paragraph = image_xml.find_parent("paragraph")
             if paragraph is None:
@@ -2538,7 +2547,8 @@ class Chapter:
         """
         Given a frame index, return the image dict for that frame.
         """
-        return mplan.frame_to_image(mplan, frame_index)
+        image = masterplan.frame_to_image(mplan, frame_index)
+        return image.as_dict() if image is not None else None
 
     def frame_to_word(self, mplan: masterplan.Plan, frame_index: int):
         """

@@ -245,7 +245,7 @@ def draw_frame(
                     const.LIBRARY_DIR,
                     paragraphdir,
                     "animation",
-                    f"image_*_{int(image_dict['index']):06d}",
+                    f"image_{int(image_dict['index']):06d}_*",
                 )
             ):
                 log.info(f"Found animation frame directory: {animation_frame_directory_name}")

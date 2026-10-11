@@ -186,6 +186,16 @@ def get_all_characters(chapter, is_global: bool = False) -> dict:
         with open(characters_fn, "w") as f:
             json.dump(characters, f, indent=2)
 
+    # Older catalog data used an invalid Comfy speaker ID for Bella.
+    migrated_voice_id = False
+    for character in characters.values():
+        for voice in character.get("voices", []):
+            if voice.get("id") == "af_betta":
+                voice["id"] = "af_bella"
+                migrated_voice_id = True
+    if migrated_voice_id:
+        save_characters(chapter, characters, is_global=is_global)
+
     # TODO:
     # Fix this.  I liked it.
     #
@@ -475,58 +485,120 @@ def generate_description(chapter, character_tag):
 
 
 def condense_description(existing_description):
-    
-    if isinstance(existing_description, list):
-        # now refine
-        if existing_description:
-            # and if you can't, then do it anyway.
-            # filter out negative responses
-            existing_description = "\n\n".join(
-                [
-                    d for d in existing_description
-                    if \
-                        "no description found" not in d.lower() 
-                    and \
-                        "i'm sorry" not in d.lower()
-                ]
-            )
-
-        
-        # I will provide you with several excerpts from a book that may describe a
-        # character named "{character_dict.get('name', character_tag)}".  Some excerpts may not have any
-        # description of the character, while others may have conflicting
-        # information. Your job is to combine these excerpts into a single,
-        # coherent physical description of the character. If the excerpts
-        # contradict each other, use your best judgement to create a consistent
-        # description of the appearance of this character. Include details such as
-        # ethnicity, eye color, hair, height, age, gender and clothing.
-
-        # If you are unable to condense the descriptions then return them as one
-        # paragraph with duplicates removed.
-        
-        prompt = textwrap.dedent(f"""                                 
-        Here are the excerpts:
-        
-        {existing_description}
-        
-        Combined description:
-        """)
-
-        description = llm.str_prompt(
-            prompt=prompt, 
-            system_prompt="You are a helpful assistant that combines multiple excerpts"
-            " into a single, coherent physical description of a character. Focus on "
-            "details like ethnicity, age, hair color, eye color, height, gender, and "
-            "clothing. If the excerpts contradict each other, use your best judgement "
-            "to create a consistent description. Always respond with either a detailed "
-            "physical description or 'No description found', and nothing else.",
-            force=True
-        )
+    """Combine candidate descriptions or refine one into a concise description."""
+    if isinstance(existing_description, (list, tuple)):
+        candidates = existing_description
     else:
-        description = "No description found."
+        candidates = [existing_description]
 
-    return description
+    candidates = [
+        str(candidate).strip()
+        for candidate in candidates
+        if candidate and "no description found" not in str(candidate).lower()
+        and "i'm sorry" not in str(candidate).lower()
+    ]
+    if not candidates:
+        return "No description found."
 
+    source_descriptions = "\n\n".join(candidates)
+    prompt = textwrap.dedent(f"""\
+        Combine and refine the following candidate descriptions into one concise,
+        coherent physical description of the character. Remove repetition. Keep
+        details that are supported by the candidates, and do not invent details
+        to resolve contradictions. If the candidates provide no usable description,
+        respond with exactly: No description found. Return only the description
+        itself. Start directly with the character's appearance; do not add an
+        introduction, label, or framing such as "Based on the text" or "Here is".
+
+        Candidate descriptions:
+        {source_descriptions}
+    """)
+
+    return llm.str_prompt(
+        prompt=prompt,
+        system_prompt=(
+            "You combine character description notes into a clear, concise physical "
+            "description. Return only the description itself, without an introduction, "
+            "label, or commentary. Begin directly with the character's appearance."
+        ),
+        force=True,
+    )
+
+
+
+def generate_gender_and_age(chapter, character_tag):
+    """Infer a character's gender and broad age category from the chapter."""
+    character_dict = get_character(chapter, character_tag)
+    if not character_dict:
+        return None
+
+    paragraphs = [
+        paragraph.get_text(" ", strip=True)
+        for paragraph in chapter.get_xml().find_all("paragraph")
+    ]
+    name = character_dict.get("name", character_tag)
+    name_lower = name.casefold()
+    relevant = [
+        paragraph
+        for index, paragraph in enumerate(paragraphs)
+        if name_lower in paragraph.casefold()
+        for paragraph in paragraphs[max(0, index - 1):index + 2]
+    ]
+    # Include the surrounding paragraph for context and remove duplicates.
+    story_excerpt = "\n\n".join(dict.fromkeys(relevant or paragraphs))
+
+    evidence = llm.str_prompt(
+        prompt=textwrap.dedent(f"""\
+            Character: {name}
+            Existing description, if any: {character_dict.get('description', '')}
+
+            Story excerpts:
+            {story_excerpt}
+        """),
+        system_prompt=(
+            "Find evidence in the story about this character's gender and age. "
+            "Use pronouns and events as evidence, but do not guess when unsupported. "
+            "Return brief evidence notes for gender and age."
+        ),
+        force=True,
+    )
+    normalized = llm.str_prompt(
+        prompt=textwrap.dedent(f"""\
+            Character: {name}
+            Evidence notes:
+            {evidence}
+
+            Return JSON only, with exactly these keys. For example:
+            {{"gender": "female", "age": "young"}}
+            Gender must be male, female, other, or an empty string. Age must be
+            child, young, middle_aged, old, or an empty string.
+            Use an empty string when evidence is insufficient. Use child for a child,
+            young for a young adult, middle_aged for an adult who is neither young
+            nor old, and old for an elderly character.
+        """),
+        system_prompt=(
+            "Normalize the evidence into the requested JSON fields. Do not add "
+            "unsupported inferences. Return valid JSON only."
+        ),
+        force=True,
+    )
+    try:
+        fields = json.loads(normalized)
+    except (TypeError, json.JSONDecodeError):
+        try:
+            fields = json.loads(normalized[normalized.index("{"):normalized.rindex("}") + 1])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            log.warning("Could not parse generated gender and age for %s: %s", character_tag, normalized)
+            return character_dict
+
+    gender = str(fields.get("gender", "")).strip().lower()
+    age = str(fields.get("age", "")).strip().lower().replace(" ", "_")
+    if gender in {"male", "female", "other"}:
+        character_dict["gender"] = gender
+    if age in {"child", "young", "middle_aged", "old"}:
+        character_dict["age"] = age
+    save_character(chapter, character_tag, character_dict)
+    return character_dict
 
 
 def fanciful_description(chapter, character_tag):
@@ -571,18 +643,3 @@ def fanciful_description(chapter, character_tag):
     # description = condense_description(description)
     return description
 
-
-
-def condense_description(existing_description):
-    
-    prompt = f"""   
-    {existing_description}
-    """
-
-    description = llm.str_prompt(
-        prompt=prompt,
-        system_prompt="You are a helpful assistant that condenses physical descriptions of characters into concise, detailed descriptions.",
-        force=True
-    )
-    return description
-    

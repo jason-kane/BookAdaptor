@@ -372,6 +372,15 @@ def set_gender(character_tag: str):
     return htmx.character_data(g.chapter, character_dict)
 
 
+@bp.route("<character_tag>/actions/generate_gender_and_age", methods=["POST"])
+def generate_gender_and_age(character_tag: str):
+    """Infer and save the character's gender and age from the chapter text."""
+    character_dict = characters.generate_gender_and_age(g.chapter, character_tag)
+    if character_dict is None:
+        return "Character not found", 404
+    return htmx.character_data(g.chapter, character_dict)
+
+
 # http://localhost:5000/Aesop/Fables/0020/characters/The_Frog/actions/update_tts_engine
 @bp.route("<character_tag>/actions/update_tts_engine", methods=["POST"])
 def update_tts_engine(character_tag: str):
@@ -494,8 +503,7 @@ def add_voice_to_blend(character_tag):
     """
     Add a new voice to the character voice blender.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     log.info("Looking for character %s in chapter %s", character_tag, chapter)
     character_dict = characters.get_character(chapter, character_tag)
@@ -503,33 +511,34 @@ def add_voice_to_blend(character_tag):
     log.info("Character is %s", character_dict)
     # get the voice from the form
     voice_id = request.form.get("voice", "").strip()
-    # {character_name}_voice_selector
-
+    voices_by_id = {
+        voice["id"]: voice for voice in voices.KOKORO_VOICES.values()
+    }
     if not voice_id:
         return "Voice ID is required", 400
 
-    if voice_id not in voices.KOKORO_VOICES:
+    if voice_id == "all":
+        voice_ids = htmx.matching_voice_ids(chapter, character_dict)
+    elif voice_id in voices_by_id:
+        voice_ids = [voice_id]
+    else:
         return f"Voice '{voice_id}' not found", 400
 
-    voice = voices.KOKORO_VOICES[voice_id]
-
-    log.info("Adding voice %s to character %s", voice_id, character_tag)
-    # add the voice to the character's voices
-    character_dict.setdefault("voices", []).append(
-        {
-            "id": voice["id"],
-            "name": voice["name"],
-            "strength": 50,
-        }
-    )
+    for voice_id in voice_ids:
+        voice = voices_by_id[voice_id]
+        log.info("Adding voice %s to character %s", voice_id, character_tag)
+        character_dict.setdefault("voices", []).append(
+            {
+                "id": voice["id"],
+                "name": voice["name"],
+                "strength": 50,
+            }
+        )
     characters.save_character(chapter, character_tag, character_dict)
 
-    # carry through the filters so the UX is not annoying.
-    return htmx.voice_blender(
-        chapter,
-        character_dict,
-        character_tag,
-    )
+    # Refresh the whole character card so controls outside the voice panel
+    # reflect the newly populated blend without a page reload.
+    return htmx.character_data(chapter, character_dict)
 
 
 # /Aesop/Fables/0018/characters/The_Woman/add_effect
@@ -556,9 +565,20 @@ def htmx_add_effect_to_character(character_tag):
         # when we request the config widgets.
         character_dict["effects"][effect_key] = {}
 
-    # defaults to 'all'
-    character_dict["voice_gender"] = character_dict.get("voice_gender", "all")
-    character_dict["voice_language"] = character_dict.get("voice_language", "all")
+    # Default the voice filter to the character's gender when it is known.
+    default_voice_gender = character_dict.get("gender")
+    if default_voice_gender not in {"male", "female"}:
+        default_voice_gender = "all"
+    character_dict["voice_gender"] = character_dict.get("voice_gender", default_voice_gender)
+    default_voice_language = str(chapter.language).lower()
+    available_languages = {
+        voice["language"] for voice in voices.KOKORO_VOICES.values()
+    }
+    if default_voice_language not in available_languages:
+        default_voice_language = "all"
+    character_dict["voice_language"] = character_dict.get(
+        "voice_language", default_voice_language
+    )
     character_dict["voice_accent"] = character_dict.get("voice_accent", "all")
 
     log.info(f"Saving as {character_dict=}")

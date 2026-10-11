@@ -308,6 +308,9 @@
                 href="{{ url_for('library.book.chapter.phrases.pronunciation.base', **chapter.kwargs) }}"
             >Pronunciation Guide</wa-button>
         </div>
+        <div class="wa-cluster">
+            {{ generate_missing_audio_button|safe }}
+        </div>
         {% for phrase in phrases %} 
         <div id="phrase_{{ phrase.index }}" class="phrase-container">
             <wa-textarea 
@@ -323,7 +326,10 @@
             <div class="wa-cluster">
                 <wa-icon></wa-icon>
                 <wa-select 
-                    name="phrase_{{ phrase.index }}_speaker"
+                    name="speaker"
+                    hx-post="{{ url_for('library.book.chapter.phrases.assign_phrase_speaker', phrase_index=phrase.index, **chapter.kwargs) }}"
+                    hx-trigger="change"
+                    hx-swap="none"
                 >
                     {% for speaker in speakers %}
                         <wa-option value="{{ speaker.tag }}"{% if phrase.speaker == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>

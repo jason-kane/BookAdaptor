@@ -10,7 +10,7 @@ def inject_image_slots(chapter):
 
     for phrase in phrases:
         if 'duration' not in phrase.attrs:
-            return {"status": "error", "message": f"Phrase {phrase['index']} is missing duration."}
+            return {"status": "error", "message": f"Phrase {phrase.index} is missing duration."}
 
     # we do NOT want a whole new image exactly every 8 seconds _exactly_.  That ends of feeling
     # very mechanical. Not what we want.  So.. first try, consume phrases until
@@ -20,7 +20,7 @@ def inject_image_slots(chapter):
     new_image.attrs['index'] = "1"
     new_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
     
-    phrases[1].insert_before(new_image)
+    phrases[1].phrase_xml.insert_before(new_image)
 
     accumulated_time = 0
     image_index = 2
@@ -28,7 +28,7 @@ def inject_image_slots(chapter):
         if phrase_index < 2:
             continue  # skip the 0 phrase, it's the title/author/etc..
 
-        accumulated_time += float(phrase.attrs['duration'])
+        accumulated_time += float(phrase.duration)
 
         if accumulated_time >= 8.0:
             # drop an image here.
@@ -36,7 +36,7 @@ def inject_image_slots(chapter):
             new_image.attrs['index'] = str(image_index)
 
             if phrase_index + 1 < len(phrases):
-                phrases[phrase_index + 1].insert_before(new_image)
+                phrases[phrase_index + 1].phrase_xml.insert_before(new_image)
                 image_index += 1
             # else just ignore it, let the last image run longer.
             accumulated_time = 0

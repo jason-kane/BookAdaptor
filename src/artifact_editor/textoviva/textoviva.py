@@ -216,7 +216,11 @@ class Textoviva:
         # generated one.
         # Start with Audio to establish our base timeline.
         total_duration = 0
-        for phrase_xml in self.chapter.phrases():
+        for phrase in self.chapter.phrases():
+            # Chapter.phrases() yields Phrase wrappers; video generation needs
+            # the underlying BeautifulSoup tag so it can read and update XML
+            # attributes.
+            phrase_xml = phrase.phrase_xml
 
             # smear some AI shit right here to choose the correct character.
             
@@ -304,12 +308,11 @@ class Textoviva:
                 next_image_xml = image_xml.find_next("image")
                 # iterate all the <phrase> Tags between image_xml and next_image_xml
                 duration = 0.0
-                point = image_xml
-                for point in point.next_element:
+                for point in image_xml.next_elements:
                     if point == next_image_xml:
                         break
 
-                    if point.name == "phrase":
+                    if isinstance(point, Tag) and point.name == "phrase":
                         if 'duration' not in point.attrs or point.attrs.get('duration', "0") == "0":
                             log.warning("Phrase %s has no duration, measuring...", point)
                             if 'src' in point.attrs:

@@ -119,20 +119,28 @@ def load_workflow_template(interface: str, mode: str, workflow_name: str) -> Wor
     return Workflow(workflow)
 
 
-def run_workflow_fn(workflow_fn: str):
-    log.info('Running %s with direct API call', workflow_fn)
-    with open(
-        os.path.join(
-            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-            workflow_fn,
-        ), "r"
-    ) as h:
-        workflow = json.load(h)
+def run_workflow(workflow: Workflow | dict[Any, Any], template_environment: dict[str, Any] | None = None):
+    """Submit a UI or API-format workflow to ComfyUI and wait for completion."""
+    workflow_data = workflow.serialize() if isinstance(workflow, Workflow) else workflow
+    if template_environment:
+        def render(value):
+            if isinstance(value, str):
+                for key, replacement in template_environment.items():
+                    value = value.replace("{{" + key + "}}", str(replacement))
+                return value
+            if isinstance(value, list):
+                return [render(item) for item in value]
+            if isinstance(value, dict):
+                return {key: render(item) for key, item in value.items()}
+            return value
+        workflow_data = render(workflow_data)
 
-    json_workflow = {
-        "prompt": ui_to_api_workflow(Workflow(workflow)).serialize()
-    }
-
+    wrapped_workflow = Workflow(workflow_data)
+    if workflow_type(wrapped_workflow) == "ui":
+        prompt = ui_to_api_workflow(wrapped_workflow).serialize()
+    else:
+        prompt = workflow_data
+    json_workflow = {"prompt": prompt}
     client = httpx.Client()
 
     response = client.post(const.COMFYUI_API_URL + "prompt", json=json_workflow)
@@ -154,8 +162,13 @@ def run_workflow_fn(workflow_fn: str):
             return f"Failed to get workflow: {workflow_response.text}", 500
 
         job_dict = workflow_response.json()
-        if job_dict.get("status") in ["error", "cancelled", "completed"]:
+        job_status = job_dict.get("status")
+        if job_status in ["error", "cancelled", "completed"]:
             finished = True
+
+        if job_status in ["error", "cancelled"]:
+            log.error("ComfyUI workflow did not complete", job_id=job_id, status=job_status, job=job_dict)
+            raise RuntimeError(f"ComfyUI workflow {job_id} {job_status}")
 
         if not finished:
             time.sleep(1)
@@ -163,3 +176,15 @@ def run_workflow_fn(workflow_fn: str):
     # handle the response?  
     # The expectation is that the workflow created a file in an expected location with a predicatable name.
     return None
+
+
+def run_workflow_fn(workflow_fn: str):
+    log.info('Running %s with direct API call', workflow_fn)
+    with open(
+        os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
+            workflow_fn,
+        ), "r"
+    ) as h:
+        workflow = json.load(h)
+    return run_workflow(workflow)

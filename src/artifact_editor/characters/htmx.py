@@ -20,6 +20,45 @@ from .characters import (
 log = logger.log(__name__)
 
 
+def _voice_gender(character):
+    """Use the character's gender as the voice filter's default when possible."""
+    voice_gender = character.get("voice_gender")
+    if voice_gender is not None:
+        return voice_gender
+    character_gender = character.get("gender")
+    return character_gender if character_gender in {"male", "female"} else "all"
+
+
+def _voice_language(chapter, character):
+    """Use the chapter language as the voice filter default when supported."""
+    voice_language = character.get("voice_language")
+    if voice_language is not None:
+        return voice_language
+    story_language = str(chapter.language).lower()
+    available_languages = {voice["language"] for voice in KOKORO_VOICES.values()}
+    return story_language if story_language in available_languages else "all"
+
+
+def matching_voice_ids(chapter, character):
+    """Return voices that match the character's active voice filters."""
+    gender = _voice_gender(character)
+    language = _voice_language(chapter, character)
+    accent = character.get("voice_accent", "all")
+    existing_ids = {voice.get("id") for voice in character.get("voices", [])}
+    return [
+        voice["id"]
+        for voice in KOKORO_VOICES.values()
+        if voice["id"] not in existing_ids
+        and (gender == "all" or gender == voice["gender"])
+        and (language == "all" or language == voice["language"])
+        and (
+            accent == "all"
+            or accent == voice["accent"]
+            or voice["accent"] is None
+        )
+    ]
+
+
 def age_selection(chapter, character_dict, tag):
     update_age_url = url_for(
         "library.book.chapter.characters.set_age", **chapter.kwargs, character_tag=tag
@@ -152,34 +191,12 @@ def voice_selector(chapter, character, character_name):
         label="Voice"
         name="voice">"""
 
-    character_voice_ids = [c["id"] for c in character.get("voices", [])]
+    matching_ids = set(matching_voice_ids(chapter, character))
+    for voice in KOKORO_VOICES.values():
+        if voice["id"] in matching_ids:
+            out += f'<wa-option value="{voice["id"]}">{voice["name"]}</wa-option>'
 
-    gender = character.get("voice_gender", "all")
-    language = character.get("voice_language", "all")
-    accent = character.get("voice_accent", "all")
-
-    for voice_name in KOKORO_VOICES:
-        # we already have this voice in the blend
-        if voice_name in character_voice_ids:
-            continue
-
-        voice = KOKORO_VOICES[voice_name]
-        if gender == "all" or gender == voice["gender"]:
-            if language == "all" or language == voice["language"]:
-                if (
-                    accent == "all"
-                    or accent == voice["accent"]
-                    or voice["accent"] is None
-                ):
-                    out += (
-                        f'<wa-option value="{voice["id"]}">{voice["name"]}</wa-option>'
-                    )
-                else:
-                    log.info("Accent mismatch: %s != %s", accent, voice["accent"])
-            else:
-                log.info("Language mismatch: %s != %s", language, voice["language"])
-        else:
-            log.info("Gender mismatch: %s != %s", gender, voice["gender"])
+    out += '<wa-option value="all">All</wa-option>'
 
     out += "</wa-select>"
     return out
@@ -188,8 +205,8 @@ def voice_selector(chapter, character, character_name):
 def accent_selector(
     chapter, character, character_tag, gender="all", language="all", accent="all"
 ):
-    gender = character.get("voice_gender", gender)
-    language = character.get("voice_language", language)
+    gender = character.get("voice_gender", _voice_gender(character))
+    language = character.get("voice_language", _voice_language(chapter, character))
     accent = character.get("voice_accent", accent)
 
     set_accent_url = url_for(
@@ -234,8 +251,8 @@ def language_selector(chapter, character, character_tag, gender="all", language=
         character_tag=character_tag,
     )
 
-    gender = character.get("voice_gender", gender)
-    language = character.get("voice_language", language)
+    gender = character.get("voice_gender", _voice_gender(character))
+    language = character.get("voice_language", _voice_language(chapter, character))
 
     out = f"""<wa-select 
         label="Language"
@@ -267,7 +284,7 @@ def gender_selector(chapter, character, character_tag):
         character_tag=character_tag,
     )
 
-    gender = character.get("voice_gender", "all")
+    gender = _voice_gender(character)
 
     return f"""<wa-select 
         label="Gender" 
@@ -361,8 +378,8 @@ def voice_blender(
     if not character_tag:
         log.error("voice_blender invoked with no character name!")
 
-    gender = character.get("voice_gender", "all")
-    language = character.get("voice_language", "all")
+    gender = _voice_gender(character)
+    language = _voice_language(chapter, character)
     accent = character.get("voice_accent", "all")
 
     all_voices = character.get("voices", [])
@@ -475,8 +492,7 @@ def voice_blender(
                     <wa-button 
                         hx-post="{add_voice_url}"
                         hx-include="#{character_tag}_voice_selector"
-                        hx-target="#{character_tag}_engine"
-                        hx-on::after-request="if (event.detail.successful) character_has_voice('{character_tag}')"
+                        hx-target="#character_{character_tag}"
                         hx-swap="outerHTML">
                         <wa-icon src="/static/fontawesome7/svgs/solid/plus.svg" label="Add"></wa-icon>
                     </wa-button>
@@ -655,6 +671,10 @@ def character_data(chapter, character_dict: dict[str, Any]):
                 <div class="wa-cluster">
                     {gender_selection(chapter, character_dict, tag)}
                     {age_selection(chapter, character_dict, tag)}
+                    <wa-button
+                        hx-post="{url_for('library.book.chapter.characters.generate_gender_and_age', **chapter.kwargs, character_tag=tag)}"
+                        hx-target="#character_{tag}"
+                        hx-swap="outerHTML transition:true">Generate</wa-button>
                 </div>
 
                 <wa-select

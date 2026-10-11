@@ -516,6 +516,10 @@ def retrieve_segment_from_book(
     r, g, b = chapter.index_to_highlight_color(phrase_index)
     text_layer_rainbow_fn = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "text_layer_rainbow.png")
 
+    if not os.path.exists(text_layer_rainbow_fn):
+        log.info("Rainbow text layer is missing; generating it", filename=text_layer_rainbow_fn)
+        draw_text_layers(chapter, phrase_xml=None, rainbow=True)
+
     # Load the rainbow file
     with open(text_layer_rainbow_fn, "rb") as h:
         rainbow_img = Image.open(h)

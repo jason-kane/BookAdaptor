@@ -349,15 +349,9 @@ def delete_image_slot(image_index: int):
 
 
 @bp.route("/actions/set_speaker/<phrase_index>", methods=["POST"])
-def assign_phrase_speaker(
-    author: str, title: str, chapter_number: int, language: str, phrase_index: int
-):
+def assign_phrase_speaker(phrase_index: int):
     phrase_index = int(phrase_index)
-
-    author = Author(author)
-    chapter = Chapter(
-        author=author, title=title, number=chapter_number, language=language
-    )
+    chapter = g.chapter
 
     speaker = request.form.get("speaker", None)
 

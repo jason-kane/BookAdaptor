@@ -126,7 +126,10 @@ def player_stack(chapter: Chapter, image_xml: Tag) -> str:
 </div>"""
 
 
-def small_image_workshop(image_xml: Tag) -> str:
+def small_image_workshop(image_xml: Tag | None) -> str:
+    if image_xml is None:
+        return '<div id="image_base_img" hx-swap-oob="true"></div>'
+
     return f"""<img 
     id="image_base_img"
     hx-swap-oob="true"
@@ -214,7 +217,7 @@ def base():
         g.chapter.textoviva.create_video()
 
     g.chapter.load_xml(force=True)
-    image_xml = g.chapter.get_image(index=0)
+    image_xml = next(iter(g.chapter.images()), None)
 
     return render_template(
         "textoviva.html",

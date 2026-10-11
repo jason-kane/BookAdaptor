@@ -138,6 +138,8 @@ def update_phrase():
 @bp.route("")
 @bp.route("/")
 def chapter_base():
+    from artifact_editor.phrases import htmx as phrases_htmx
+
     phrases = g.chapter.phrases()
 
     return render_template(
@@ -151,6 +153,9 @@ def chapter_base():
         language=g.chapter.language,
         pretty_language=g.chapter.pretty_language,
         import_button=htmx.import_button(g.chapter),
+        generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
+            g.chapter, label="Generate Missing Audio"
+        ),
         chapterurl=g.chapter.url,
         author=g.author,
         pretty_author=g.chapter.config.get("author", g.author),

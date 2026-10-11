@@ -54,9 +54,9 @@
         {% for phrase in g.chapter.phrases() %}
         <wa-accordion-item id="phrase_{{ phrase.index|string }}">
             <div slot="label">
-                <span>{{ phrase.text|wordwrap(30, wrapstring="<br/>")|safe }}</span>
+                <span>{{ phrase.simple_text()|wordwrap(30, wrapstring="<br/>")|safe }}</span>
             </div>
-            {{ phrase.text }}
+            {{ phrase.simple_text() }}
         </wa-accordion-item>
         {% endfor %}
     </wa-accordion>

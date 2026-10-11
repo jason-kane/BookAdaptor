@@ -2,7 +2,7 @@ KOKORO_VOICES = {
     "af_heart": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_heart', 'name': 'Heart'},
     "af_alloy": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_alloy', 'name': 'Alloy'},
     "af_aoede": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_aoede', 'name': 'Aeode'},
-    "af_bella": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_betta', 'name': 'Bella'},
+    "af_bella": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_bella', 'name': 'Bella'},
     "af_jessica": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_jessica', 'name': 'Jessica'},
     "af_kore": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_kore', 'name': 'Kore'},
     "af_nicole": {'gender': 'female', 'language': 'english', 'accent': 'american', 'id': 'af_nicole', 'name': 'Nicole'},

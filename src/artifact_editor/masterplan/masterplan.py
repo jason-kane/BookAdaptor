@@ -38,6 +38,7 @@ class ImagePlan:
         fullscreen: bool = True,
         tags: dict[str, bool] | None = None,
         mode: str = "scale", 
+        **extra,
     ):
         self.index = index
         self.start_frame = start_frame
@@ -55,6 +56,7 @@ class ImagePlan:
             }
         self.tags = tags
         self.mode = mode
+        self.extra = extra
 
     def as_dict(self) -> dict[str, str|int|bool|None|dict[str, bool]]:
         return {
@@ -69,6 +71,7 @@ class ImagePlan:
             "fullscreen": self.fullscreen,
             "tags": self.tags,
             "mode": self.mode,
+            **self.extra,
         }
 
 class WordPlan:
@@ -104,7 +107,8 @@ class WordPlan:
         index: int = 0,
         id: str | None = None,
         speaker: str = '',
-        src: str = ''
+        src: str = '',
+        **extra,
     ):
         self.start_frame = start_frame
         self.frames = frames
@@ -123,6 +127,7 @@ class WordPlan:
         self.id = id
         self.speaker = speaker
         self.src = src
+        self.extra = extra
 
     def as_dict(self) -> dict[str, str|int|bool|None|dict[str, bool]]:
         return {
@@ -137,7 +142,8 @@ class WordPlan:
             "index": self.index,
             "id": self.id,
             "speaker": self.speaker,
-            "src": self.src
+            "src": self.src,
+            **self.extra,
         }
 
 class Plan:
@@ -170,10 +176,34 @@ class Masterplan:
         self.plan = Plan()
 
         if os.path.exists(self.filename):
-            with open(self.filename, "r") as h:        
-                plan_data = json.load(h)
+            try:
+                with open(self.filename, "r") as h:
+                    plan_data = json.load(h)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                log.warning(
+                    "Masterplan file is unreadable; treating it as empty",
+                    filename=self.filename,
+                    error=str(e),
+                )
+                return self.plan
+
+            if not isinstance(plan_data, dict):
+                log.warning(
+                    "Masterplan file has an invalid structure; treating it as empty",
+                    filename=self.filename,
+                )
+                return self.plan
+
+            try:
                 self.plan.words = [WordPlan(**word) for word in plan_data.get("words", [])]
                 self.plan.images = [ImagePlan(**img) for img in plan_data.get("images", [])]
+            except (TypeError, ValueError) as e:
+                log.warning(
+                    "Masterplan entries are invalid; treating it as empty",
+                    filename=self.filename,
+                    error=str(e),
+                )
+                self.plan = Plan()
 
         return self.plan
 
@@ -314,7 +344,7 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                         #     images[-1]['end_frame'] = frame_index - 1
                         if frame_duration > 0:
 
-                            tags = tags_to_dict(as_str(paragraph.attrs.get('tags')))
+                            tags = tags_to_dict(paragraph.attrs.get('tags'))
 
                             image_config = {
                                 "index": image_index,
@@ -325,8 +355,8 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                                 "paragraph_dir": chapter.get_paragraph_dir(
                                     as_int(paragraph.attrs.get("index"))
                                 ),
-                                "clip_prompt": as_str(fragment.attrs.get("clip_prompt")),
-                                "prompt": as_str(fragment.attrs.get("prompt")),
+                                "clip_prompt": as_str(fragment.attrs.get("clip_prompt", "")),
+                                "prompt": as_str(fragment.attrs.get("prompt", "")),
                                 "fullscreen": as_str(fragment.attrs.get("fullscreen", "false")).lower() == "true" or not tags.get('has-text', True),
                                 "tags": tags,
                                 "mode": "scale"
@@ -351,7 +381,7 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                                 transition_config["type"] = as_str(fragment.attrs.get("transition_type", "cut"))
                                 image_config["transition"] = transition_config
 
-                            images.append(image_config)
+                            images.append(ImagePlan(**image_config))
                             image_index += 1
                         else:
                             log.warning(f"Invalid frame duration: {frame_duration}.  Image {src} will be skipped.")
@@ -372,7 +402,7 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                         # that should be in the exact center of the screen on
                         # the first frame when this text is spoken.
 
-                        tags = tags_to_dict(as_str(paragraph.attrs.get('tags')))
+                        tags = tags_to_dict(paragraph.attrs.get('tags'))
                         our_words = {
                             "start_frame": frame_index,
                             "frames": frame_duration,  
@@ -385,7 +415,12 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                                 fragment.attrs.get("fullscreen", "false")
                             ).lower() == "true" or not tags.get('has-text', True),
                             "index": as_int(fragment.attrs.get("index", phrase_index)),
-                            "id": as_int(fragment.attrs.get("id")),
+                            # Phrase IDs are often composite strings (for
+                            # example "35_1"), and older XML may omit them.
+                            "id": as_str(
+                                fragment.attrs.get("id")
+                                or fragment.attrs.get("index", phrase_index)
+                            ),
                             "speaker": "narrator",
                             "src": as_str(fragment.attrs.get("src")),
                         }
@@ -396,7 +431,7 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                         if "pixelrate" in fragment.attrs:
                             our_words['text_pixelrate'] = as_float(fragment.attrs.get('pixelrate'))
                                                             
-                        words.append(our_words)                   
+                        words.append(WordPlan(**our_words))
                         frame_index += frame_duration 
                         phrase_index += 1
 
@@ -410,9 +445,11 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
     return masterplan.plan
 
 
-def frame_to_image(masterplan: Masterplan, frame_index: int) -> ImagePlan | None:
+def frame_to_image(masterplan: Masterplan | Plan, frame_index: int) -> ImagePlan | None:
 
-    for image in masterplan.plan.images:
+    plan = masterplan.plan if isinstance(masterplan, Masterplan) else masterplan
+
+    for image in plan.images:
         if image.start_frame <= frame_index <= image.end_frame:
             log.debug('image: %s', image)
             # use a camera effect frame?
@@ -442,7 +479,9 @@ def frame_to_image(masterplan: Masterplan, frame_index: int) -> ImagePlan | None
             # the frame we're looking for, we can stop.
             return image
 
-    return None
+    # The final image persists through the end of the chapter timeline even
+    # when its recorded duration ends before the final phrase does.
+    return plan.images[-1] if plan.images else None
 
 
 def frame_to_word(masterplan: Masterplan, frame_index: int) -> WordPlan| None:

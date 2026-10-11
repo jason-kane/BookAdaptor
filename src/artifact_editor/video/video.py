@@ -22,11 +22,17 @@ def onErr(self, *args, **kwargs):
     log.error(args)
     raise BaseException(args)
 
-def book_to_video(chapter, aspect="widescreen", force=False):
+def book_to_video(chapter, aspect=None, force=False):
     """
     Turn the whole book into one mp4
     """
     global shared_text_image
+
+    # Typography and frame assets are generated for the chapter's configured
+    # aspect. Keep video rendering on that same aspect unless a caller
+    # explicitly requests a different output.
+    if aspect is None:
+        aspect = chapter.get_aspect()
 
     log.info(f"=== Book to {aspect.capitalize()} Video ===")
     framedir = os.path.join(
@@ -59,7 +65,7 @@ def book_to_video(chapter, aspect="widescreen", force=False):
     current_paragraph_index = -1
 
     mplan = chapter.get_masterplan()
-    max_frame_index = mplan["words"][-1]["end_frame"]
+    max_frame_index = mplan.words[-1].end_frame
 
     # first sync pass to link a specific camera location to every frame
     chapter.build_frame_to_camera(
@@ -80,8 +86,6 @@ def book_to_video(chapter, aspect="widescreen", force=False):
         
         # throw a redraw task for every frame at the multiprocessing pool.
         while current_frame <= max_frame_index:
-            log.info("drawing frame: [%s/%s] (%s)", current_frame, max_frame_index, aspect)
-
             # word is a word dict from masterplan:
             # {
             #     "start_frame": 0,
@@ -99,7 +103,10 @@ def book_to_video(chapter, aspect="widescreen", force=False):
             # },
 
             image_dict = chapter.frame_to_image(mplan, current_frame)
-            log.debug("image_dict: %s", image_dict)
+            if image_dict is None:
+                raise ValueError(
+                    f"Masterplan has no image for frame {current_frame}; cannot render video"
+                )
 
             # # absolute path to the source image
             # # "image" can either be a simple filename relative to the paragraph_dir,
@@ -116,12 +123,22 @@ def book_to_video(chapter, aspect="widescreen", force=False):
                 os.path.basename(image_dict['image'])
             )
 
+            # The last image remains on screen after its explicit image
+            # duration ends, through the end of the audio timeline.
+            if image_dict["end_frame"] < current_frame:
+                image_dict["start_frame"] = current_frame
+                image_dict["end_frame"] = max_frame_index
+
             # when the image_dict changes, draw all the frames for that image_dict.
             if image_dict != previous_image:
                 for current_frame in range(
                     image_dict["start_frame"], image_dict["end_frame"] + 1
                 ):
-                    word = chapter.frame_to_word(mplan, current_frame)
+                    word_plan = chapter.frame_to_word(mplan, current_frame)
+                    if word_plan is None:
+                        log.error("No word found for frame %s", current_frame)
+                        continue
+                    word = word_plan.as_dict()
                     phrase_id = int(word['index'])
                     paragraph_index = int(word['paragraph_index'])
                     # paragraph_index, phrase_id = word["id"].split("_")
@@ -151,7 +168,6 @@ def book_to_video(chapter, aspect="widescreen", force=False):
                         framedir, f"frame_{current_frame:06}.png"
                     )
                     if os.path.exists(frame_fn):
-                        log.debug("Frame %s already exists, skipping", frame_fn)
                         continue
 
                     image_dict["paragraph_tags"] = paragraph_tags
@@ -167,7 +183,6 @@ def book_to_video(chapter, aspect="widescreen", force=False):
                     )
 
                     if os.path.exists(camera_frame):
-                        log.info(f'[{current_frame:06}] Using camera image_frame')
                         image_dict["image"] = os.path.join(
                             image_dict["paragraph_dir"],
                             "image_frames",
@@ -211,7 +226,13 @@ def book_to_video(chapter, aspect="widescreen", force=False):
                     else:
                         frames.draw_frame(*args)
 
-                current_frame += 1
+            # Always advance, including when this image matches the previous
+            # one. Without this, a persisted final image can leave the outer
+            # loop repeatedly selecting the same plan entry forever.
+            current_frame = max(
+                current_frame + 1,
+                image_dict["end_frame"] + 1,
+            )
 
         if const.MULTIPROCESS:
             log.info("Closing pool...")
@@ -287,7 +308,7 @@ def render_masterplan_widescreen(chapter):
     os.makedirs(framedir, exist_ok=True)
 
     log.info('Triggering book_to_video()...')
-    book_to_video(chapter, "widescreen", force=False)
+    book_to_video(chapter, force=False)
 
 
 def render_masterplan_portrait(chapter):
@@ -303,6 +324,6 @@ def render_masterplan_portrait(chapter):
     os.makedirs(framedir, exist_ok=True)
 
     log.info('Triggering book_to_video()...')
-    book_to_video(chapter, "portrait", force=False)
+    book_to_video(chapter, force=False)
 
 assemble_mp4 = tools.assemble_mp4

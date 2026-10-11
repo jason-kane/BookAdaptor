@@ -960,7 +960,7 @@ def page_button(chosen_page, button_page, errors_only=False):
         return clickable_page_button(button_page, errors_only=errors_only)
 
 
-def generate_all_missing_audio_button(chapter):
+def generate_all_missing_audio_button(chapter, label="Generate All Missing Audio"):
     log.info(f"Generating all missing audio for chapter kwargs: {chapter.kwargs}")
     # {'author': 'L. Frank Baum', 'title': 'The Marvelous Land of Oz', 'chapter_number': 2, 'language': 'english'}
 
@@ -972,7 +972,7 @@ def generate_all_missing_audio_button(chapter):
     variant="neutral"
     appearance="accent"
     size="m"
-    class="">Generate All Missing Audio</wa-button>
+    class="">{label}</wa-button>
     """
 
 

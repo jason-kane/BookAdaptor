@@ -364,23 +364,22 @@ def json_prompt(prompt, force=False):
 
         workflow = comfy.load_workflow_template("api", "t2json", "qwen35-json_Qwen 3.5 JSON")
 
-        outputfile = os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "llm_json")
+        output_filename = "llm_json.txt"
+        outputfile = os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], output_filename)
         if os.path.exists(outputfile):
             os.remove(outputfile)
         
         log.info("Running LLM workflow", prompt=prompt)
-            
-        # anything inside a template gets the "comfyui" version of the
-        # COMFY_DIRS.
-        response = comfy.run_workflow(
-            workflow,
-            template_environment={
-                "PROMPT": prompt,
-                "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-                "FILE_NAME": os.path.basename(outputfile)
-        })
 
-        log.info(f"LLM workflow response: {response}")
+        # The template uses placeholders in its API-format workflow inputs.
+        template_environment = {
+            "PROMPT": prompt,
+            "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
+            "FILE_NAME": os.path.splitext(output_filename)[0],
+        }
+
+        response = comfy.run_workflow(workflow, template_environment=template_environment)
+        log.info("LLM workflow response: %s", response)
 
         with open(outputfile, "r") as f:
             content = json.load(f)
