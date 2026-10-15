@@ -1,10 +1,6 @@
 
 
-window.onload = function() {
-    document.body.addEventListener("newCarouselReady", addCarouselListeners, false);
-
-    
-};
+document.body.addEventListener("newCarouselReady", addCarouselListeners, false);
 
 function removeCarouselListeners() {
     const scroller = document.querySelector('.scroller');
@@ -64,7 +60,7 @@ function listener(event) {
         // update the .image_metadata div with the metadata
         htmx.ajax(
             'GET',
-            "selector/get_image_metadata?src=" + target.src.split("/").pop(),
+            target.dataset.metadataUrl + "?src=" + encodeURIComponent(target.src.split("/").pop()),
             {
                 target: "#image_metadata",
                 swap: "outerHTML transition:true"
@@ -83,8 +79,16 @@ function addCarouselListeners() {
 
     // add event listeners
     // clicking on the thumbnail image
-    if (scroller && scroller.addEventListener) {
+    if (scroller && scroller.addEventListener && !scroller.dataset.carouselReady) {
         scroller.addEventListener('click', listener);
+        scroller.dataset.carouselReady = 'true';
     }
 }
+
+// Textoviva loads the selector asynchronously after the page's initial load.
+htmx.onLoad(function(content) {
+    if (content.querySelector && content.querySelector('.scroller')) {
+        addCarouselListeners();
+    }
+});
 

@@ -28,6 +28,9 @@ RUN apt update && apt install -y \
     python3-wheel \
     && apt clean
 
+# we need typing-extensions 4.16, apt gives us 4.15
+# this uninstall is brutal and is going to break stuff.
+RUN apt update && apt remove -y python3-typing-extensions && apt clean
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 # and a model for spacy, which we're using for linguistics, which is

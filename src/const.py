@@ -59,6 +59,9 @@ DEFAULT_ANIMATION_TEMPLATE: str = configuration.get("DEFAULT_ANIMATION_TEMPLATE"
 COMFY_DIRS: dict[str, dict[str, str]] = configuration.get("COMFY_DIRS", {})
 COMFYUI_API_URL: str = configuration.get("COMFYUI_API_URL", "http://comfyui:8188/")
 COMFYUI_UI_URL: str = configuration.get("COMFYUI_UI_URL", "http://localhost:8188/")
+COMFYUI_JOB_TIMEOUT_SECONDS: float = float(
+    configuration.get("COMFYUI_JOB_TIMEOUT_SECONDS", 1800)
+)
 
 FPS: int = configuration.get("FPS", 8)
 

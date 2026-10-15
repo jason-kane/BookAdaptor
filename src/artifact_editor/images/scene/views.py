@@ -260,7 +260,7 @@ def set_character_description(image_index):
     log.info(f"{request.form}")
 
     character_tag = request.form.get("character")
-    description = request.form.get("description", "")
+    description = request.form.get(f"{character_tag}_description", "")
 
     if description == "":
         log.info(f"No description provided, using default for {character_tag}")
@@ -318,7 +318,7 @@ def set_character_pose(image_index):
     chapter = g.chapter
 
     character = request.form.get("character")
-    pose = request.form.get("pose")
+    pose = request.form.get(f"{character}_pose", "")
     log.info(f"Setting pose for {character} to {pose}")
 
     image = g.chapter.get_xml().findAll("image")[image_index]
@@ -426,7 +426,7 @@ def set_character_action(image_index=0):
 
     image_xml = g.chapter.get_image(image_index)
     character_tag = request.form["character"]
-    action = request.form["action"]
+    action = request.form.get(f"{character_tag}_action", "")
 
     image_xml.attrs[f"{character_tag}_action"] = action
     g.chapter.save_xml()
@@ -442,7 +442,7 @@ def set_character_motivation(image_index=0):
 
     image_xml = g.chapter.get_image(image_index)
     character_tag = request.form["character"]
-    motivation = request.form["motivation"]
+    motivation = request.form.get(f"{character_tag}_motivation", "")
 
     image_xml.attrs[f"{character_tag}_motivation"] = motivation
     g.chapter.save_xml()

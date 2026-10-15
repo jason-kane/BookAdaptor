@@ -22,7 +22,7 @@ def onErr(self, *args, **kwargs):
     log.error(args)
     raise BaseException(args)
 
-def book_to_video(chapter, aspect=None, force=False):
+def book_to_video(chapter, aspect=None, force=False, progress=None):
     """
     Turn the whole book into one mp4
     """
@@ -66,6 +66,16 @@ def book_to_video(chapter, aspect=None, force=False):
 
     mplan = chapter.get_masterplan()
     max_frame_index = mplan.words[-1].end_frame
+    total_frames = max(1, max_frame_index + 1)
+    completed_frames = 0
+
+    def report_frames(completed):
+        if progress:
+            percent = 10 + int(65 * min(completed, total_frames) / total_frames)
+            progress(percent, f"Rendering frames ({min(completed, total_frames)}/{total_frames})")
+
+    if progress:
+        progress(5, "Preparing frame timeline")
 
     # first sync pass to link a specific camera location to every frame
     chapter.build_frame_to_camera(
@@ -225,6 +235,8 @@ def book_to_video(chapter, aspect=None, force=False):
                         )
                     else:
                         frames.draw_frame(*args)
+                        completed_frames += 1
+                        report_frames(completed_frames)
 
             # Always advance, including when this image matches the previous
             # one. Without this, a persisted final image can leave the outer
@@ -237,29 +249,24 @@ def book_to_video(chapter, aspect=None, force=False):
         if const.MULTIPROCESS:
             log.info("Closing pool...")
             if jobs:
-                count = 0
+                last_reported = -1
                 while True:
-                    if count % 30 == 0:
-                        log.info("Waiting for jobs to finish... (%s jobs)", len(jobs))
-
-                    if count % 60 == 0:
-                        log.info('Sample job: %s', jobs[0])
-
-                    time.sleep(1)
-                    passing = all([job.ready() for job in jobs])
-
-                    if passing:
+                    completed = sum(job.ready() for job in jobs)
+                    if completed != last_reported:
+                        report_frames(completed)
+                        last_reported = completed
+                    if completed == len(jobs):
                         log.info("All jobs are ready, closing pool...")
                         break
-
-                    count += 1
+                    time.sleep(0.5)
 
                 for job in jobs:
                     try:
                         result = job.get(timeout=30)
                         log.debug(result)
                     except Exception as e:
-                        log.error(f"Job {job} failed: {e}")
+                        log.exception("Frame job failed")
+                        raise RuntimeError(f"Video frame render failed: {e}") from e
 
 
             pool.close()
@@ -269,6 +276,8 @@ def book_to_video(chapter, aspect=None, force=False):
     chapter.save_xml()
 
     audio_tracks = chapter.get_all_audio_tracks()
+    if progress:
+        progress(78, "Assembling audio")
 
     # glue all the wav files in [audio_tracks] together.
     if not audio_tracks:
@@ -292,6 +301,8 @@ def book_to_video(chapter, aspect=None, force=False):
             videofile=video_pfn,
             image_match="frame_%06d.png",
         )
+        if progress:
+            progress(96, "Encoding MP4")
 
 
 
@@ -300,6 +311,11 @@ def render_masterplan_widescreen(chapter):
     Render the masterplan for the book in bookdir, output is the mp4.
     Thin wrapper around Book().book_to_video()
     """       
+    video_filename = chapter.get_video_filename()
+    if os.path.exists(video_filename):
+        log.info("Video file already exists, skipping render: %s", video_filename)
+        return
+
     framedir = os.path.join(
         const.LIBRARY_DIR,
         chapter.bookdir,
@@ -316,6 +332,11 @@ def render_masterplan_portrait(chapter):
     Render the masterplan for the book in bookdir, output is the mp4.
     Thin wrapper around Book().book_to_video()
     """
+    video_filename = chapter.get_video_filename()
+    if os.path.exists(video_filename):
+        log.info("Video file already exists, skipping render: %s", video_filename)
+        return
+
     framedir = os.path.join(
         const.LIBRARY_DIR,
         chapter.bookdir,

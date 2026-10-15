@@ -52,7 +52,7 @@ def outpaint_to_aspect(chapter, image_xml, aspect, outpaint_description=None):
         image_xml=image_xml,
         interface="ui",
         mode="ti2i",
-        workflow_template="flux_fill_outpaint",
+        workflow_name="flux_fill_outpaint",
         template_environment={
             "PROMPT": prompt,
             "LEFT": left,

@@ -4,10 +4,84 @@
 
 {% block styles %}
 <style>
+    #image_selection_widget .carousel-big-picture {
+        display: block;
+        width: min(400px, 100%);
+        height: min(400px, 50vh);
+        object-fit: contain;
+    }
+    #image_selection_widget cropper-canvas {
+        width: min(400px, 100%);
+        height: min(400px, 50vh);
+    }
+    .thumbnails {
+        display: flex;
+        justify-content: center;
+        max-width: 100%;
+    }
+    .thumbnails .scroller {
+        display: flex;
+        gap: var(--wa-space-s, 0.5rem);
+        max-width: 100%;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+    .thumbnails .image {
+        box-sizing: border-box;
+        flex: 0 0 64px;
+        width: 64px;
+        height: 64px;
+        object-fit: cover;
+        border: 2px solid black;
+        opacity: 0.55;
+        cursor: pointer;
+    }
+    .thumbnails .image:hover {
+        border-color: rgb(226, 116, 226);
+        opacity: 0.8;
+    }
+    .thumbnails .image.active {
+        border-color: gold;
+        opacity: 1;
+    }
 </style>
 {% endblock %}
 
 {% block scripts %}
+<script>
+    // The image editor page normally provides this helper through images.js;
+    // Textoviva uses the same selector without loading that page's scripts.
+    function getSelectedImageSrc() {
+        const image = document.querySelector('main .carousel-big-picture');
+        return image ? image.src : '';
+    }
+
+    // This block is rendered in the document head, so delegate from document
+    // instead of body (which does not exist yet when this script runs).
+    document.addEventListener('click', function(event) {
+        const thumbnail = event.target.closest('.thumbnails .image');
+        if (!thumbnail) return;
+
+        // The selector renders .thumbnails as a sibling of
+        // #image_selection_widget, so they do not share that ancestor.
+        const workshop = thumbnail.closest('main');
+        const bigPicture = workshop && workshop.querySelector('.carousel-big-picture');
+        if (!bigPicture) return;
+
+        bigPicture.src = thumbnail.src;
+        workshop.querySelectorAll('.thumbnails .image').forEach((image) => {
+            image.classList.toggle('active', image === thumbnail);
+        });
+
+        const metadataUrl = thumbnail.dataset.metadataUrl;
+        if (metadataUrl) {
+            htmx.ajax('GET', metadataUrl + '?src=' + encodeURIComponent(thumbnail.src.split('/').pop()), {
+                target: '#image_metadata',
+                swap: 'outerHTML transition:true'
+            });
+        }
+    });
+</script>
 <script>
     //wait for dom to load
     document.addEventListener("DOMContentLoaded", function() {
@@ -69,6 +143,18 @@
 
 {% block aside %}
     <div id="image-stack" class="wa-stack">
+        <div class="wa-cluster">
+            <wa-button
+                hx-post="{{ rerender_url }}"
+                hx-target="#rerender-status"
+                hx-swap="innerHTML"
+                hx-on::before-request="beforeRequest(this,event)"
+                hx-on::after-request="afterRequest(this,event)"
+                variant="brand"
+                appearance="accent"
+            >Re-render</wa-button>
+            <span id="rerender-status" role="status"></span>
+        </div>
         <div id="image-base">
             {{ small_image_workshop|safe }}             
         </div>

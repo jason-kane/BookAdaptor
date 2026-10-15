@@ -183,8 +183,7 @@ def get_all_characters(chapter, is_global: bool = False) -> dict:
         characters = {
            'Narrator': const.NARRATOR
         }
-        with open(characters_fn, "w") as f:
-            json.dump(characters, f, indent=2)
+        save_characters(chapter, characters, is_global=is_global)
 
     # Older catalog data used an invalid Comfy speaker ID for Bella.
     migrated_voice_id = False

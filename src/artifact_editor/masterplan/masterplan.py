@@ -347,7 +347,10 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                             tags = tags_to_dict(paragraph.attrs.get('tags'))
 
                             image_config = {
-                                "index": image_index,
+                                # Keep the chapter XML image index. `image_index`
+                                # counts only images with a valid duration, so it
+                                # can drift when an earlier image is skipped.
+                                "index": as_int(fragment.attrs.get("index", image_index)),
                                 "start_frame": image_frame_index,
                                 "frames": frame_duration,
                                 "end_frame": (image_frame_index + frame_duration) - 1,

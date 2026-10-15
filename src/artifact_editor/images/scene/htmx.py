@@ -722,7 +722,7 @@ def character_pose_selector(chapter, character, image_xml) -> str:
             hx-target="#character_{character['tag']}_pose"
             hx-swap="outerHTML transition:true"
             hx-trigger="change"
-            name="pose">"""
+            name="{character['tag']}_pose">"""
     for key, cosmetic in scene_const.POSE_CHOICES:
         out += f"""<wa-option value="{key}">{cosmetic}</wa-option>"""
     out += "    </wa-select>"
@@ -750,9 +750,10 @@ def character_description(chapter, character, image_xml):
     log.info('Generating character description UI for character %s', character)
     character_tag = character["tag"]
 
-    html_escaped_description = image_xml.attrs.get(
-        character_tag + "_description", ""
-    ).replace('"', "&quot;")
+    description = image_xml.attrs.get(character_tag + "_description")
+    if not description:
+        description = character.get("description", "")
+    html_escaped_description = html.escape(description or "", quote=True)
 
     set_character_description_url = url_for(
         "library.book.chapter.images.scene.set_character_description",
@@ -775,7 +776,7 @@ def character_description(chapter, character, image_xml):
     return f"""<div class="wa-cluster" id="{character_tag}_description">
     <wa-textarea
         label="Description"
-        name="description"
+        name="{character_tag}_description"
         hx-vals='{{"character": "{character_tag}"}}'
         hx-post="{set_character_description_url}"
         hx-target="#{character_tag}_description"
@@ -854,7 +855,7 @@ def character_action(chapter, character, image_xml):
     return f"""<div class="wa-cluster" id="{character_tag}_action">
         <div class="wa-stack">
             <wa-textarea 
-                name="action" 
+                name="{character_tag}_action" 
                 label="Action" 
                 hx-post="{set_character_actions_url}" 
                 hx-vals='{{"character": "{character_tag}"}}'
@@ -866,7 +867,7 @@ def character_action(chapter, character, image_xml):
             </wa-textarea>
             
             <wa-textarea 
-                name="motivation" 
+                name="{character_tag}_motivation" 
                 label="Motivation" 
                 hx-post="{set_character_motivation_url}" 
                 hx-vals='{{"character": "{character_tag}"}}'

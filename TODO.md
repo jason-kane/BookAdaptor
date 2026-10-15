@@ -16,3 +16,7 @@ Chapter Page
 Multi-language support is .. well, it is shit.
 
 Include the chapter text here?  If only to make it easy to copy-paste the chapter title if there is one.
+
+Comfy
+=====
+Each chapter should have its own directory in comfy for input/output.

@@ -13,6 +13,7 @@ import httpx
 from bs4 import Tag
 from flask import (
     Blueprint,
+    abort,
     g,
     make_response,
     redirect,
@@ -302,29 +303,23 @@ def comfyui_workflow_open(
 
     # enough to determine which worflow we want, this is also what does the
     # customization from template -> instance.
-    # workflow is the json-ready dict representing a workflow.
+    # get_workflow() applies node values and writes the customized UI workflow.
     log.warning("Generating workflow", workflow_template=workflow_template)
-    workflow = g.chapter.get_comfy_workflow(
+    images.generate_metadata_from_text(g.chapter, image_xml)
+    workflow_name = f"{workflow_template}_{g.chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
+    workflow_fn = g.chapter.get_workflow(
         image_xml,
-        interface="ui",
-        mode=mode,
-        workflow_template=workflow_template,
-        video_index=video_index,
+        workflow_name=workflow_template,
+        video_index=video_index if is_animation else None,
+        template_environment={},
+        force_name=workflow_name + ".json",
     )
 
-    if not workflow:
+    if not workflow_fn:
         return "No workflow available for this image.", 400
 
-    # this is the pisser that will show up in your workflow list.
-    workflow_name = f"{workflow_template}_{g.chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
-    workflow_fn = os.path.join(
-        const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_name + ".json"
-    )
-    with open(workflow_fn, "w") as h:
-        json.dump(workflow, h)
-
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_name}.json"
+    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_fn}"
 
     # 3. This workflow needs to become the one we use from now on for this image.
     # image_xml.attrs["workflow_name"] = workflow_name
@@ -1453,6 +1448,22 @@ def tab_pre_selector(image_index):
     return base(image_index=image_index, override="selector")
 
 
+@bp.route("/", methods=["GET"])
+def first_image():
+    image_xml = next(iter(g.chapter.images()), None)
+    if image_xml is None:
+        abort(404, description="This chapter has no images")
+
+    return redirect(
+        url_for(
+            ".base",
+            **g.chapter.kwargs,
+            image_index=int(image_xml.attrs["index"]),
+        ),
+        code=302,
+    )
+
+
 @bp.route("/<int:image_index>/editor", methods=["GET"])
 def tab_pre_editor(image_index: int):
     return base(image_index=image_index, override="editor")
@@ -1489,7 +1500,7 @@ def base(image_index: int, override=None):
 
     image_xml = g.chapter.get_image(image_index)
     if image_xml is None:
-        raise ValueError(f"Image with index {image_index} not found")
+        abort(404, description=f"Image with index {image_index} not found")
 
     if "/" in image_xml.attrs.get("src", ""):
         log.warning(f"Image src contains a path: {image_xml.attrs['src']}")

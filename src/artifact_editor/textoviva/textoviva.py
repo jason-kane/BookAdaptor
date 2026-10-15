@@ -36,15 +36,15 @@ if TYPE_CHECKING:
 class Textoviva:
     def __init__(self, chapter: Chapter):
         self.chapter = chapter
-        self.videofile = os.path.join(chapter.chapterdir, "textoviva.mp4")
+        self.videofile = chapter.get_video_filename()
 
-    def create_video(self):
+    def create_video(self, force: bool = False):
         """
         Create a video from the chapter's phrases.
         """
         log.info("Creating textoviva video for chapter %s", self.chapter)
         # check if the video already exists
-        if os.path.exists(self.videofile):
+        if os.path.exists(self.videofile) and not force:
             log.info("Video file %s already exists, skipping creation", self.videofile)
             return
 
@@ -236,14 +236,16 @@ class Textoviva:
                     phrase_xml=phrase_xml,
                 )
 
-            if float(phrase_xml.attrs.get('duration', '0')) == 0:
+            phrase_duration = float(phrase_xml.attrs.get('duration', '0') or 0)
+            if phrase_duration <= 0:
                 log.info('Measuring duration...')
                 audio_filename = phrase_xml.attrs['src']
-                duration = phrases.get_wav_duration(audio_filename)
-                phrase_xml.attrs['duration'] = str(duration)
-                total_duration += duration
-                log.info('Saving duration: %s', duration)
-                log.info('Total duration so far: %s', total_duration)
+                phrase_duration = phrases.get_wav_duration(audio_filename)
+                phrase_xml.attrs['duration'] = str(phrase_duration)
+                log.info('Saving duration: %s', phrase_duration)
+
+            total_duration += phrase_duration
+            log.info('Total duration so far: %s', total_duration)
 
             self.chapter.save_xml()
 
@@ -253,6 +255,41 @@ class Textoviva:
         if total_images == 0 or total_duration / total_images > 16:
             # Add image slots every 8-ish seconds
             timeline.inject_image_slots(self.chapter)
+
+        self.chapter.save_xml()
+
+        # Derive each image slot's duration from the audio phrases it covers.
+        # Stored frame counts can be stale, so recalculate them unconditionally.
+        for image_xml in self.chapter.images():
+            duration_frames = 0
+            next_image_xml = image_xml.find_next("image")
+            for point in image_xml.next_elements:
+                if point == next_image_xml:
+                    break
+                if not isinstance(point, Tag) or point.name != "phrase":
+                    continue
+
+                duration = float(point.attrs.get("duration", "0") or 0)
+                if duration <= 0:
+                    if point.attrs.get("src"):
+                        duration = phrases.get_wav_duration(point.attrs["src"])
+                        point.attrs["duration"] = str(duration)
+                    else:
+                        self.speak(self.chapter, point)
+                        duration = float(point.attrs.get("duration", "0") or 0)
+
+                phrase_frames = round(duration * const.FPS)
+                point.attrs["frames"] = str(phrase_frames)
+                duration_frames += phrase_frames
+
+            image_xml.attrs["frames"] = str(duration_frames)
+            image_xml.attrs["duration"] = str(duration_frames / const.FPS)
+            log.info(
+                "Set image duration from covered phrase audio",
+                image_index=image_xml.attrs["index"],
+                frames=duration_frames,
+                seconds=duration_frames / const.FPS,
+            )
 
         self.chapter.save_xml()
 
@@ -268,6 +305,14 @@ class Textoviva:
         # second pass is massively more efficent so we don't have to
         # toggle between models.
         for image_index, image_xml in enumerate(self.chapter.images()):
+            # Keep the prompt tab's workflow selector populated, including for
+            # images whose files already exist and therefore skip generation.
+            if not image_xml.attrs.get("workflow_image_template"):
+                workflow_template = const.DEFAULT_IMAGE_TEMPLATE
+                if "." in workflow_template:
+                    workflow_template = workflow_template.split(".")[-1]
+                image_xml.attrs["workflow_image_template"] = workflow_template
+
             image_fn = self.chapter.get_image_filename(image_xml)
             if image_fn:
                 if os.path.exists(image_fn):
@@ -300,40 +345,6 @@ class Textoviva:
             candidates = selector_htmx.gather_candidate_images(image_xml, self.chapter)
             image_xml.attrs['src'] = candidates[0] if candidates else ""
 
-            if image_xml.attrs.get("frames", '0') == '0':
-                log.warning("Image %s has no frame duration, calculating from phrases", image_xml)
-                # the duration of the image is the sum of the durations of the
-                # phrases between this image and the next image, or the end of
-                # the chapter.
-                next_image_xml = image_xml.find_next("image")
-                # iterate all the <phrase> Tags between image_xml and next_image_xml
-                duration = 0.0
-                for point in image_xml.next_elements:
-                    if point == next_image_xml:
-                        break
-
-                    if isinstance(point, Tag) and point.name == "phrase":
-                        if 'duration' not in point.attrs or point.attrs.get('duration', "0") == "0":
-                            log.warning("Phrase %s has no duration, measuring...", point)
-                            if 'src' in point.attrs:
-                                point.attrs['duration'] = str(phrases.get_wav_duration(point.attrs['src']))
-
-                            if point.attrs.get('duration') in [None, "0"]:
-                                # lets make some magic here people.  We have a phrase with no audio.
-                                # we make the audio.
-                                audio = self.speak(
-                                    self.chapter,
-                                    point
-                                )
-
-                                continue
-
-                            duration += float(point.attrs['duration'])
-                            
-
-                image_xml.attrs["duration"] = str(duration)
-                image_xml.attrs["frames"] = str(int(duration * const.FPS))
-
         self.chapter.save_xml()
 
         for image_xml in self.chapter.images():
@@ -351,20 +362,6 @@ class Textoviva:
 
         # and finally draw the animations
         for image_xml in self.chapter.images():
-            if int(image_xml.attrs.get("frames", 0)) < 1:
-                log.error('Missing image frame duration for image %s', image_xml)
-                # how many seconds of audio between this image and the next?
-                for phrase_xml in image_xml.find_all_next("phrase"):
-                    if phrase_xml.find_previous("image") == image_xml:
-                        log.info('Phrase %s is between this image and the next', phrase_xml)
-                        if float(phrase_xml.attrs.get("duration", 0.0)) > 0.0:
-                            log.info('Adding %s seconds to image duration', phrase_xml.attrs.get("duration", 0.0))
-                            image_xml.attrs["duration"] = str(float(image_xml.attrs.get("duration", 0.0)) + float(phrase_xml.attrs.get("duration", 0.0)))
-                            image_xml.attrs["frames"] = str(int(float(image_xml.attrs.get("duration", 0.0)) * const.FPS))
-                        else:
-                            log.error('Phrase %s has no duration, skipping', phrase_xml)
-
-                self.chapter.save_xml()
             
             if "animated_src" in image_xml.attrs and image_xml.attrs["animated_src"] not in ["", None]:
                 animated_src = image_xml.attrs["animated_src"]
@@ -372,11 +369,59 @@ class Textoviva:
                 animated_src = self.chapter.get_image_filename(image_xml).replace('.png', '.mp4')
 
             # src="/active/Ed Nather/The Story of Mel/chapter/0001/paragraphs/000000/img_0_straight-zit-Straight_00_00001_.png"
+            if force:
+                if os.path.exists(animated_src):
+                    log.info("Removing existing animation for forced re-render: %s", animated_src)
+                    os.remove(animated_src)
+                image_fn = self.chapter.get_image_filename(image_xml)
+                if image_fn:
+                    paragraph = image_xml.find_parent("paragraph")
+                    image_index = int(image_xml.attrs["index"])
+                    paragraph_dir = self.chapter.get_paragraph_dir(paragraph.attrs["index"])
+
+                    # Remove cached ComfyUI outputs and chapter-side variants;
+                    # otherwise gather_candidate_videos can select an old MP4
+                    # and silently restore the animation we just invalidated.
+                    comfy_prefix = f"{self.chapter.nice}_img_{image_index}"
+                    comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+                    for stale_video in glob.glob(os.path.join(comfy_output_dir, comfy_prefix + "*.mp4")):
+                        os.remove(stale_video)
+                    for stale_video in images.all_videos_by_image_index(paragraph_dir, image_index):
+                        os.remove(stale_video)
+
+                    animation_dir = os.path.join(
+                        const.LIBRARY_DIR,
+                        self.chapter.get_paragraphdir(int(paragraph.attrs["index"])),
+                        "animation",
+                        f"image_{image_index:06d}_00",
+                    )
+                    shutil.rmtree(animation_dir, ignore_errors=True)
+
             if os.path.exists(animated_src):
                 log.info("Animation %s already exists, skipping generation", animated_src)
                 continue
             else:
                 log.info('Animation %s does not exist, generating', animated_src)
+                image_fn = self.chapter.get_image_filename(image_xml)
+                extraction_video_fn = (
+                    image_fn.replace(".png", ".mp4") if image_fn else None
+                )
+                if force and extraction_video_fn and os.path.isfile(extraction_video_fn):
+                    log.info(
+                        "Removing stale animation source video before forced rerender",
+                        video_filename=extraction_video_fn,
+                    )
+                    os.remove(extraction_video_fn)
+                log.info(
+                    "Upcoming animation frame extraction source after cleanup",
+                    video_filename=extraction_video_fn,
+                    force=force,
+                    exists=(
+                        os.path.isfile(extraction_video_fn)
+                        if extraction_video_fn
+                        else False
+                    ),
+                )
 
             workflow_template = const.DEFAULT_ANIMATION_TEMPLATE
             # mode.workflow_template
@@ -385,23 +430,166 @@ class Textoviva:
 
             image_xml.attrs["workflow_image_template"] = workflow_template
 
-            workflow_fn = self.chapter.get_workflow(
-                image_xml,
-                workflow_name=workflow_template,
-                video_index=0,
-                template_environment={}
+            audio_frames = int(image_xml.attrs.get("frames", 0))
+            workflow_video_index = 0
+
+            def build_animation_workflow(frame_count: int):
+                saved_frames = image_xml.attrs.get("frames")
+                image_xml.attrs["frames"] = str(frame_count)
+                try:
+                    return self.chapter.get_workflow(
+                        image_xml,
+                        workflow_name=workflow_template,
+                        video_index=workflow_video_index,
+                        template_environment={},
+                        # Keep animation prompt and frame inputs, but force the
+                        # first frame to come from the selected still image.
+                        use_image_source=force,
+                    )
+                finally:
+                    if saved_frames is None:
+                        image_xml.attrs.pop("frames", None)
+                    else:
+                        image_xml.attrs["frames"] = saved_frames
+
+            bounds_audio_frames = int(
+                image_xml.attrs.get("animation_oom_audio_frames", "0") or 0
             )
-            log.info('Running workflow %s for image %s', workflow_fn, image_xml)
-            comfy.run_workflow_fn(workflow_fn)
+            if bounds_audio_frames != audio_frames:
+                image_xml.attrs.pop("animation_oom_audio_frames", None)
+                image_xml.attrs.pop("animation_oom_success_frames", None)
+                image_xml.attrs.pop("animation_oom_failure_frames", None)
+
+            lower_bound = int(
+                image_xml.attrs.get("animation_oom_success_frames", "0") or 0
+            )
+            upper_bound = int(
+                image_xml.attrs.get("animation_oom_failure_frames", "0") or 0
+            )
+            if force and 0 < lower_bound < upper_bound:
+                attempted_frames = (lower_bound + upper_bound + 1) // 2
+            else:
+                attempted_frames = max(1, audio_frames)
+            workflow_fn = build_animation_workflow(attempted_frames)
+            if not workflow_fn:
+                raise RuntimeError(
+                    f"Could not build animation workflow {workflow_template} "
+                    f"for image {image_xml.attrs['index']}"
+                )
+            attempted_duration = attempted_frames / const.FPS
+            log.info(
+                "Attempting animation generation",
+                image_index=image_xml.attrs["index"],
+                frames=attempted_frames,
+                duration_seconds=attempted_duration,
+            )
+            try:
+                comfy.run_workflow_fn(
+                    workflow_fn,
+                    duration_seconds=attempted_duration,
+                )
+            except RuntimeError as error:
+                error_text = str(error).lower()
+                if "out of memory" not in error_text and "outofmemoryerror" not in error_text:
+                    raise
+
+                # The first failed full-duration run follows a half-duration
+                # trial; use their midpoint. Later trials bisect the saved
+                # successful/failed frame bounds for this image.
+                if force:
+                    if not lower_bound and attempted_frames == audio_frames:
+                        lower_bound = max(0, audio_frames // 2)
+                    upper_bound = min(
+                        upper_bound or attempted_frames,
+                        attempted_frames,
+                    )
+                    image_xml.attrs["animation_oom_audio_frames"] = str(audio_frames)
+                    image_xml.attrs["animation_oom_success_frames"] = str(lower_bound)
+                    image_xml.attrs["animation_oom_failure_frames"] = str(upper_bound)
+                    self.chapter.save_xml()
+                    retry_frames = (lower_bound + upper_bound + 1) // 2
+                else:
+                    retry_frames = max(1, attempted_frames // 2)
+                if retry_frames >= attempted_frames:
+                    raise
+
+                log.warning(
+                    "Retrying animation after CUDA out-of-memory at binary-search midpoint",
+                    image_index=image_xml.attrs["index"],
+                    failed_duration_seconds=attempted_duration,
+                    lower_bound_duration_seconds=lower_bound / const.FPS,
+                    retry_duration_seconds=retry_frames / const.FPS,
+                    retry_frames=retry_frames,
+                )
+                comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+                output_prefix = f"{self.chapter.nice}_img_{image_xml.attrs['index']}"
+                for partial_output in glob.glob(
+                    os.path.join(comfy_output_dir, output_prefix + "*.mp4")
+                ):
+                    os.remove(partial_output)
+
+                workflow_fn = build_animation_workflow(retry_frames)
+                if not workflow_fn:
+                    raise RuntimeError(
+                        f"Could not build half-duration animation workflow for image "
+                        f"{image_xml.attrs['index']}"
+                    ) from error
+                attempted_frames = retry_frames
+                attempted_duration = attempted_frames / const.FPS
+                log.info(
+                    "Attempting animation generation after OOM",
+                    image_index=image_xml.attrs["index"],
+                    frames=attempted_frames,
+                    duration_seconds=attempted_duration,
+                )
+                try:
+                    comfy.run_workflow_fn(
+                        workflow_fn,
+                        duration_seconds=attempted_duration,
+                    )
+                except RuntimeError as retry_error:
+                    retry_error_text = str(retry_error).lower()
+                    if force and (
+                        "out of memory" in retry_error_text
+                        or "outofmemoryerror" in retry_error_text
+                    ):
+                        image_xml.attrs["animation_oom_failure_frames"] = str(retry_frames)
+                        self.chapter.save_xml()
+                    raise
+            log.info(
+                "Animation workflow completed; collecting generated videos",
+                image_index=image_xml.attrs["index"],
+                workflow=workflow_fn,
+            )
+            if force and image_xml.attrs.get("animation_oom_failure_frames"):
+                previous_success = int(
+                    image_xml.attrs.get("animation_oom_success_frames", "0") or 0
+                )
+                image_xml.attrs["animation_oom_audio_frames"] = str(audio_frames)
+                image_xml.attrs["animation_oom_success_frames"] = str(
+                    max(previous_success, attempted_frames)
+                )
+                self.chapter.save_xml()
 
             # find the video file
             # put it in os.path.exists(os.path.join(const.LIBRARY_DIR, animated_src))
 
             candidates = selector_htmx.gather_candidate_videos(image_xml, self.chapter)
             if candidates:
+                log.info(
+                    "Using newly generated animation candidate",
+                    image_index=image_xml.attrs["index"],
+                    candidate=candidates[0],
+                )
                 shutil.move(candidates[0], os.path.join(const.LIBRARY_DIR, animated_src))
                 image_xml['animated_src'] = animated_src
                 self.chapter.save_xml()    
+            else:
+                raise RuntimeError(
+                    f"Animation workflow completed for image {image_xml.attrs['index']} "
+                    "but produced no matching MP4. Check the ComfyUI output directory "
+                    f"{const.COMFY_DIRS['artifactserver']['OUTPUT_DIR']}"
+                )
 
         self.chapter.save_xml()
 

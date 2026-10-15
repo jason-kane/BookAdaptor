@@ -80,7 +80,7 @@ class ComfyUi_ripple(ComfyBase):
             image_xml=image_xml,
             interface="api",
             mode=self.mode,
-            workflow_template=self.workflow_animation_template,
+            workflow_name=self.workflow_animation_template,
             video_index=self.video_index
         )
 
@@ -164,7 +164,7 @@ class ComfyUi_i2v(ComfyBase):
             image_xml=image_xml,
             interface="api",
             mode=self.mode,
-            workflow_template=self.workflow_template,
+            workflow_name=self.workflow_template,
             video_index=video_index
         )
 
@@ -298,7 +298,7 @@ class ComfyUi_flf2v(ComfyBase):
             image_xml=image_xml,
             interface="api",
             mode=self.mode,
-            workflow_template=self.workflow_animation_template,
+            workflow_name=self.workflow_animation_template,
             video_index=self.video_index
         )
 

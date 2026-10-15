@@ -315,9 +315,9 @@ def get_prompt_workflow_by_filename(
 
         elif node.get("type") == "PrimitiveFloat":
             if node.get("title") in ["DURATION"]:
-                node["widgets_values"] = [min(0.5, float(duration_in_seconds))]
+                node["widgets_values"] = [float(duration_in_seconds)]
                 node["widgets_values_named"] = {
-                    "value": min(0.5, float(duration_in_seconds))
+                    "value": float(duration_in_seconds)
                 }
 
         elif node.get("type") == "PrimitiveStringMultiline":
@@ -1230,6 +1230,7 @@ class Chapter:
         video_index: int | None = None,
         template_environment: dict[str, str] | None = None,
         force_name: str | None = None,
+        use_image_source: bool = False,
     ):
         """
         We want the indicated workflow, with variables based on
@@ -1273,6 +1274,7 @@ class Chapter:
             video_index=video_index,
             template_environment=template_environment,
             force_name=force_name,
+            use_image_source=use_image_source,
         )
 
     def get_workflow_by_filename(
@@ -1282,6 +1284,7 @@ class Chapter:
         video_index: int | None = None,
         template_environment: dict[str, str] | None = None,
         force_name: str | None = None,
+        use_image_source: bool = False,
     ) -> str:
         """
         Returns the filename of a workflow JSON file
@@ -1322,7 +1325,7 @@ class Chapter:
         duration_in_seconds = duration_in_frames / const.FPS
 
         source_image = self.get_image_filename(image_xml)
-        if video_index not in [None, ""]:
+        if video_index not in [None, ""] and not use_image_source:
             source_image = self.get_last_frame(image_xml, video_index=video_index)
 
         # our last frame generally the _next_ image.
@@ -1456,9 +1459,9 @@ class Chapter:
 
             elif node.get("type") == "PrimitiveFloat":
                 if node.get("title") in ["DURATION"]:
-                    node["widgets_values"] = [min(0.5, float(duration_in_seconds))]
+                    node["widgets_values"] = [float(duration_in_seconds)]
                     node["widgets_values_named"] = {
-                        "value": min(0.5, float(duration_in_seconds))
+                        "value": float(duration_in_seconds)
                     }
 
             elif node.get("type") == "PrimitiveStringMultiline":
@@ -2049,6 +2052,17 @@ class Chapter:
             return d
 
         out = deep_clean(out)
+
+        # These fields define the core scene context and should remain present
+        # in SCENE even when the source metadata is empty.
+        out["setting"] = as_str(image_xml.attrs.get("setting", ""))
+        out["tod"] = as_str(image_xml.attrs.get("tod", ""))
+        out["camera"] = as_str(image_xml.attrs.get("camera", ""))
+        out["lighting"] = {
+            "direction": as_str(image_xml.attrs.get("lighting_direction", "")),
+            "quality": as_str(image_xml.attrs.get("lighting_quality", "")),
+            "source": as_str(image_xml.attrs.get("lighting_source", "")),
+        }
 
         return out
 

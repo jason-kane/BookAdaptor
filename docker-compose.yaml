@@ -3,7 +3,12 @@ services:
     image: redis:8.8
     ports:
       - "6379:6379"
-    command: [ "redis-server", "--bind", "0.0.0.0" ]
+    command: [ "redis-server", "--bind", "0.0.0.0", "--port", "6379" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 2s
+      timeout: 1s
+      retries: 30
     networks:
       - home-network
 
@@ -170,6 +175,36 @@ services:
     volumes:
       - ./src/:/app
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
+    networks:
+      - home-network
+
+  video_worker:
+    build:
+      context: ./src/
+      dockerfile: Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    entrypoint: [ "python", "-m", "websocket.server", "worker" ]
+    volumes:
+      - ./src:/app
+      - ./active:/active
+      - ./assets:/assets
+      - ./comfy/ComfyUI/input:/input
+      - ./comfy/ComfyUI/output:/output
+      - ./comfy/ComfyUI/user/default/workflows:/workflows
+      - ./templates:/templates
+      - ./comfy/ComfyUI/custom_nodes:/custom_nodes
+      - ./configuration.toml:/app/configuration.toml
+    environment:
+      - CONTAINER_MODE=1
+      - COMFYUI_WORKFLOWS_DIR=/workflows
+      - COMFYUI_WORKFLOW_TEMPLATES_DIR=/templates
+      - COMFYUI_INPUT_DIR=/root/ComfyUI/input
+      - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
+      - COMFYUI_API_URL=http://comfyui:8188/
+      - COMFYUI_UI_URL=http://localhost:8188/
     networks:
       - home-network
 

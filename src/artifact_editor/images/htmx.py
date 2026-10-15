@@ -1131,24 +1131,6 @@ def image_workshop(image_xml: Tag, chapter) -> str:
             </div>
         </wa-tab-panel>""")
 
-        # Scene
-        tabs.append(f"""
-        <wa-tab
-            hx-post="{image_tab_selector_url}"
-            hx-vals='js:{{"group": "scene"}}'
-            hx-swap="none"
-            panel="scene">Scene</wa-tab>""")
-
-        panels.append("""<wa-tab-panel name="scene">
-            <div id="scene" class="skeleton-paragraphs">
-                <wa-skeleton></wa-skeleton>
-                <wa-skeleton></wa-skeleton>
-                <wa-skeleton></wa-skeleton>
-                <wa-skeleton></wa-skeleton>
-                <wa-skeleton></wa-skeleton>
-            </div>
-        </wa-tab-panel>""")
-
         tabs.append(f"""
         <wa-tab
             hx-post="{image_tab_selector_url}"

@@ -119,7 +119,11 @@ def load_workflow_template(interface: str, mode: str, workflow_name: str) -> Wor
     return Workflow(workflow)
 
 
-def run_workflow(workflow: Workflow | dict[Any, Any], template_environment: dict[str, Any] | None = None):
+def run_workflow(
+    workflow: Workflow | dict[Any, Any],
+    template_environment: dict[str, Any] | None = None,
+    duration_seconds: float | None = None,
+):
     """Submit a UI or API-format workflow to ComfyUI and wait for completion."""
     workflow_data = workflow.serialize() if isinstance(workflow, Workflow) else workflow
     if template_environment:
@@ -141,44 +145,88 @@ def run_workflow(workflow: Workflow | dict[Any, Any], template_environment: dict
     else:
         prompt = workflow_data
     json_workflow = {"prompt": prompt}
-    client = httpx.Client()
+    timeout_seconds = const.COMFYUI_JOB_TIMEOUT_SECONDS
+    deadline = time.monotonic() + timeout_seconds
+    client_timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+    with httpx.Client(timeout=client_timeout) as client:
+        response = client.post(const.COMFYUI_API_URL + "prompt", json=json_workflow)
 
-    response = client.post(const.COMFYUI_API_URL + "prompt", json=json_workflow)
+        if response.status_code != 200:
+            log.error("Failed to create workflow", response_text=response.text)
+            raise ValueError(f"Failed to create workflow: {response.text}")
 
-    if response.status_code != 200:
-        log.error("Failed to create workflow", response_text=response.text)
-        raise ValueError(f"Failed to create workflow: {response.text}")
+        job_id = response.json().get("prompt_id")
+        if not job_id:
+            raise RuntimeError(
+                f"ComfyUI accepted workflow without returning a prompt_id: {response.text}"
+            )
 
-    finished = False
-    job_id = response.json().get("prompt_id")
-    
-    # TODO: don't poll.  Setup the websocket so we get a push when
-    # tasks are finished.
-    # 1 second polling loop
-    while not finished:
-        workflow_response = client.get(const.COMFYUI_API_URL + f"api/jobs/{job_id}")
-        if workflow_response.status_code != 200:
-            log.error("Failed to get workflow", response_text=workflow_response.text)
-            return f"Failed to get workflow: {workflow_response.text}", 500
+        log.info(
+            "Polling ComfyUI workflow",
+            job_id=job_id,
+            timeout_seconds=timeout_seconds,
+        )
+        last_status = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                log.error(
+                    "ComfyUI workflow timed out",
+                    job_id=job_id,
+                    timeout_seconds=timeout_seconds,
+                    last_status=last_status,
+                )
+                raise TimeoutError(
+                    f"ComfyUI workflow {job_id} exceeded its {timeout_seconds:g}s "
+                    f"timeout (last status: {last_status!r})"
+                )
 
-        job_dict = workflow_response.json()
-        job_status = job_dict.get("status")
-        if job_status in ["error", "cancelled", "completed"]:
-            finished = True
+            workflow_response = client.get(
+                const.COMFYUI_API_URL + f"api/jobs/{job_id}",
+                timeout=min(30.0, remaining),
+            )
+            if workflow_response.status_code != 200:
+                raise RuntimeError(
+                    f"Failed to get ComfyUI workflow {job_id}: "
+                    f"HTTP {workflow_response.status_code}: {workflow_response.text}"
+                )
 
-        if job_status in ["error", "cancelled"]:
-            log.error("ComfyUI workflow did not complete", job_id=job_id, status=job_status, job=job_dict)
-            raise RuntimeError(f"ComfyUI workflow {job_id} {job_status}")
+            job_dict = workflow_response.json()
+            job_status = str(job_dict.get("status", "")).lower()
+            if job_status != last_status:
+                log.info(
+                    "ComfyUI workflow status changed",
+                    job_id=job_id,
+                    status=job_status or "unknown",
+                )
+                last_status = job_status
 
-        if not finished:
-            time.sleep(1)
+            if job_status in {"completed", "success", "succeeded"}:
+                break
+            if job_status in {
+                "error", "failed", "failure", "cancelled", "canceled", "interrupted"
+            }:
+                log.error(
+                    "ComfyUI workflow attempted duration",
+                    job_id=job_id,
+                    duration_seconds=duration_seconds,
+                )
+                log.error(
+                    "ComfyUI workflow did not complete",
+                    job_id=job_id,
+                    status=job_status,
+                    job=job_dict,
+                )
+                raise RuntimeError(f"ComfyUI workflow {job_id} {job_status}: {job_dict}")
+
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
     # handle the response?  
     # The expectation is that the workflow created a file in an expected location with a predicatable name.
     return None
 
 
-def run_workflow_fn(workflow_fn: str):
+def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None):
     log.info('Running %s with direct API call', workflow_fn)
     with open(
         os.path.join(
@@ -187,4 +235,4 @@ def run_workflow_fn(workflow_fn: str):
         ), "r"
     ) as h:
         workflow = json.load(h)
-    return run_workflow(workflow)
+    return run_workflow(workflow, duration_seconds=duration_seconds)

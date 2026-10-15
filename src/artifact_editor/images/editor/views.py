@@ -105,7 +105,7 @@ def outpaint_to_fullscreen_ui(author, title, chapter_number, language, image_ind
         image_xml=image_xml,
         interface="ui",
         mode="ti2i",
-        workflow_template=workflow_template,
+        workflow_name=workflow_template,
         template_environment={
             "PROMPT": prompt,
             "LEFT": left,

@@ -34,6 +34,7 @@ def inject_image_slots(chapter):
             # drop an image here.
             new_image = chapter.soup.new_tag("image")
             new_image.attrs['index'] = str(image_index)
+            new_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
 
             if phrase_index + 1 < len(phrases):
                 phrases[phrase_index + 1].phrase_xml.insert_before(new_image)

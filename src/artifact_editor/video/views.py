@@ -1,4 +1,6 @@
 import os
+import json
+import uuid
 
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
@@ -12,6 +14,8 @@ from flask import (
     send_file,
     g,
 )
+import redis
+from redis.maint_notifications import MaintNotificationsConfig
 
 import const
 import logger
@@ -26,7 +30,6 @@ from artifact_editor.tools import (
 
 from . import (
     htmx,
-    video,
 )
 
 log = logger.log(__name__)
@@ -96,21 +99,45 @@ def calculate_paragraph_durations(author, title, chapter):
 @bp.route("/actions/render_masterplan_widescreen", methods=["POST"])
 def render_masterplan_widescreen_handler(author, title, chapter_number, language):
     author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number)
-
-    video.render_masterplan_widescreen(chapter)
-
-    return htmx.render_masterplan_widescreen_button(chapter)
+    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
+    return enqueue_video_render(chapter, "widescreen")
 
 
 @bp.route("/actions/render_masterplan_portrait", methods=["POST"])
 def render_masterplan_portrait_handler(author, title, chapter_number, language):
     author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number)
+    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
+    return enqueue_video_render(chapter, "portrait")
 
-    video.render_masterplan_portrait(chapter)
 
-    return htmx.render_masterplan_portrait_button(chapter)
+def enqueue_video_render(chapter, aspect):
+    job_id = uuid.uuid4().hex
+    task = {
+        "job_id": job_id,
+        "author": chapter.author.name,
+        "title": chapter.title,
+        "chapter_number": chapter.number,
+        "language": chapter.language,
+        "aspect": aspect,
+    }
+    client = redis.Redis(
+        host=os.environ.get("REDIS_HOST", "redis"),
+        port=6379,
+        protocol=3,
+        decode_responses=True,
+        maint_notifications_config=MaintNotificationsConfig(enabled=False),
+    )
+    client.hset(f"video_job:{job_id}", mapping={
+        "job_id": job_id, "percent": 0, "message": "Queued", "state": "queued"
+    })
+    client.expire(f"video_job:{job_id}", 86400)
+    client.lpush("video_render_jobs", json.dumps(task))
+    return (
+        f'<div id="video-progress-{job_id}" class="wa-stack">'
+        '<wa-progress-bar value="0"></wa-progress-bar>'
+        '<div>Queued for video rendering</div></div>',
+        202,
+    )
 
 
 @bp.route("/<filename>.mp4")

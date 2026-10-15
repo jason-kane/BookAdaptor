@@ -7,9 +7,9 @@
 * Linux
 * Docker
 * Docker Compose
-* NVidia 3060 12GB or better.
+* NVidia 3060 12GB (or better).
 
-Windows or OSX might work.  I have not tried.
+Windows or OSX might work.  Less VRAM might work.  I have not tried.
 
 ## Purpose
 

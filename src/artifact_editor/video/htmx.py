@@ -15,7 +15,8 @@ def render_masterplan_widescreen_button(chapter):
         hx-post="{render_url}" 
         hx-on::before-request="beforeRequest(this,event)" 
         hx-on::after-request="afterRequest(this,event)" 
-        hx-swap="outerHTML" 
+        hx-target="#video-render-status"
+        hx-swap="innerHTML"
         variant="brand" 
         appearance="accent" 
         size="medium" 
@@ -35,7 +36,8 @@ def render_masterplan_portrait_button(chapter):
         hx-post="{render_url}" 
         hx-on::before-request="beforeRequest(this,event)" 
         hx-on::after-request="afterRequest(this,event)" 
-        hx-swap="outerHTML" 
+        hx-target="#video-render-status"
+        hx-swap="innerHTML"
         variant="brand" 
         appearance="accent" 
         size="medium" 
@@ -80,13 +82,6 @@ def clear_all_frames_button(chapter):
         class=""
         >Clear All Frames</wa-button>
     """    
-    return generic_button(
-        chapter.url,
-        category="frames",
-        tag="clear_all_frames",
-        cosmetic="Clear All Frames",
-        variant="danger",
-    )
 
 
 def clear_all_transitions_button(chapter):

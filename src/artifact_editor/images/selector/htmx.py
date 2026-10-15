@@ -142,6 +142,17 @@ def image_metadata(chapter: Chapter, image_xml: Tag, src:str):
     image_index = image_xml.attrs["index"]
     paragraph_xml = image_xml.find_parent("paragraph")
 
+    use_image_url = url_for(
+        "library.book.chapter.images.selector.use_image",
+        **chapter.kwargs,
+        image_index=image_index,
+    )
+    verify_image_url = url_for(
+        "library.book.chapter.images.selector.verify_image",
+        **chapter.kwargs,
+        image_index=image_index,
+    )
+
     image_src = image_xml.attrs.get("src")
 
     if image_src and src and (os.path.basename(src) == os.path.basename(image_src)):
@@ -161,7 +172,7 @@ def image_metadata(chapter: Chapter, image_xml: Tag, src:str):
 
     use_button = f"""
         <wa-button 
-            hx-post="selector/actions/use_image" 
+            hx-post="{use_image_url}" 
             hx-on::before-request="beforeRequest(this,event)" 
             hx-on::after-request="afterRequest(this,event)" 
             hx-vals="js:{{image_index: {image_index}, selectedImage: getSelectedImageSrc()}}" 
@@ -173,7 +184,7 @@ def image_metadata(chapter: Chapter, image_xml: Tag, src:str):
     
     verify_button = f"""
         <wa-button 
-            hx-post="selector/actions/verify" 
+            hx-post="{verify_image_url}" 
             hx-on::before-request="beforeRequest(this,event)" 
             hx-on::after-request="afterRequest(this,event)" 
             hx-vals="js:{{image_index: {image_index}, selectedImage: getSelectedImageSrc()}}" 
@@ -232,7 +243,17 @@ def image_metadata(chapter: Chapter, image_xml: Tag, src:str):
             """
         else:
             log.warning(f"Image file {image_pfn} not found.")
-            out = ""
+            out = f"""
+            <div id="image_metadata" style="max-width: 50em;">
+                <div><b>{os.path.basename(src)}</b></div>
+                <div>Image details are unavailable for this file.</div>
+                <div class="wa-cluster wa-gap-3xs">
+                    {use_button}
+                    {verify_button}
+                    {delete_button}
+                </div>
+            </div>
+            """
     else:
         log.info("No src provided, cannot display image metadata.")
         out = """
@@ -404,11 +425,19 @@ def image_selector(
             image_index=image_index,
             filename=imagefile
         )
+        metadata_url = url_for(
+            'library.book.chapter.images.selector.get_image_metadata',
+            author=chapter.author.name,
+            title=chapter.title,
+            chapter_number=chapter.number,
+            language=chapter.language,
+            image_index=image_index,
+        )
 
         if src and imagefile == os.path.basename(src):
-            out += f'<img class="image active" src="{iurl}"></img>\n'
+            out += f'<img class="image active" src="{iurl}" data-metadata-url="{metadata_url}"></img>\n'
         else:
-            out += f'<img class="image" src="{iurl}"></img>\n'
+            out += f'<img class="image" src="{iurl}" data-metadata-url="{metadata_url}"></img>\n'
 
     out += """
         </div>

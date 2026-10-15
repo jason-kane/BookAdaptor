@@ -32,6 +32,7 @@ from flask import (
 )
 
 import artifact_editor.styles.htmx as htmx
+import artifact_editor.images.htmx as images_htmx
 import const
 import logger
 from artifact_editor import (
@@ -103,17 +104,15 @@ def pause():
 
 
 def player_stack(chapter: Chapter, image_xml: Tag) -> str:
-    if not os.path.exists(chapter.get_video_filename()):
-        # this is a problem.  We want a video.  We 
-        # do not have a video. We should create one.
-        
-        # did g.chapter.textoviva.create_video() fail?
-        # g.chapter.textoviva.create_video()
+    video_missing = not os.path.exists(chapter.get_video_filename())
+    notice = (
+        '<p id="video-generation-notice">No rendered video yet. Use Re-render to create it.</p>'
+        if video_missing
+        else ""
+    )
 
-        if not os.path.exists(chapter.get_video_filename()):
-            log.critical(f"Failed to create video for chapter {chapter.title}")
-
-    return f"""<div id="player-stack" class="wa-stack">   
+    return f"""<div id="player-stack" class="wa-stack">
+    {notice}
     <wa-video
         id="chapter-video"
         title="Chapter {chapter.title} Video"
@@ -133,7 +132,7 @@ def small_image_workshop(image_xml: Tag | None) -> str:
     return f"""<img 
     id="image_base_img"
     hx-swap-oob="true"
-    hx-get="expand_image_workshop?image_index={image_xml.attrs['index']}"
+    hx-get="{url_for('library.book.chapter.textoviva.expand_image_workshop', image_index=image_xml.attrs['index'])}"
     style="height: 100%; width: 100%"
     src="{ url_for('library.book.chapter.images.show_image_by_index', height=256, image_index=image_xml.attrs['index'])}"
     alt="Chapter Cover Image" 
@@ -165,14 +164,23 @@ def shrink_image_workshop():
     return out
 
 
-def large_image_workshop(image_xml: Tag) -> str:
+def large_image_workshop(image_xml: Tag, chapter: Chapter) -> str:
     # take over main
+
+            # <img
+            #     src="{url_for('library.book.chapter.images.show_image_by_index', height=512, image_index=image_xml.attrs['index'])}"
+            #     alt="Chapter image {image_xml.attrs['index']}"
+            #     style="max-height: 50vh; max-width: 100%; object-fit: contain"
+            # />
+    
     return f"""
     <main
         id="main"
         hx-swap-oob="true"
     >
         <div class="wa-stack">
+            {images_htmx.image_workshop(image_xml=image_xml, chapter=chapter)}
+        </div>
     </main>
     
     <aside
@@ -182,7 +190,7 @@ def large_image_workshop(image_xml: Tag) -> str:
         <img 
         id="image_base_img"
         hx-swap-oob="true"
-        hx-get="shrink_image_workshop?image_index={image_xml.attrs['index']}"
+        hx-get="{url_for('library.book.chapter.textoviva.shrink_image_workshop', image_index=image_xml.attrs['index'])}"
         style="height: 100%; width: 100%"
         src="{ url_for('library.book.chapter.images.show_image_by_index', height=256, image_index=image_xml.attrs['index'])}"
         alt="Chapter Cover Image" 
@@ -199,23 +207,48 @@ def expand_image_workshop():
     # in this case:
 
     # switch to the large image workshop
-    out = large_image_workshop(image_xml)
+    out = large_image_workshop(image_xml, g.chapter)
     return out, 200
+
+
+@bp.route("/rerender", methods=["POST"])
+def rerender():
+    """Regenerate image animations and rebuild the chapter video frames."""
+    chapter = g.chapter
+    frames_dir = os.path.join(
+        const.LIBRARY_DIR,
+        chapter.chapterdir.lstrip("/"),
+        "frames",
+    )
+
+    # Remove rendered frame images so the video renderer redraws them from the
+    # updated image and animation assets.
+    for aspect in ("portrait", "widescreen"):
+        aspect_dir = os.path.join(frames_dir, aspect)
+        if not os.path.isdir(aspect_dir):
+            continue
+        for filename in os.listdir(aspect_dir):
+            if filename.startswith("frame_") and filename.endswith(".png"):
+                os.remove(os.path.join(aspect_dir, filename))
+
+    # The renderer skips an existing output video, so clear its output before rebuilding.
+    videofile = chapter.get_video_filename()
+    if os.path.isfile(videofile):
+        os.remove(videofile)
+
+    chapter.load_xml(force=True)
+    log.info(
+        "Starting Textoviva re-render from button",
+        video_filename=chapter.get_video_filename(),
+    )
+    chapter.textoviva.create_video(force=True)
+    return '<span>Re-render complete.</span>', 200
 
 
 @bp.route("/")
 def base():
-    # the first critical issue. Does the video exist? if not, we create it.  I
-    # don't want to make it an error handler on the video file.  That makes me
-    # feel gross.
-    videofile = os.path.join(
-        g.chapter.chapterdir, 
-        "textoviva.mp4"
-    )
-    if not os.path.exists(videofile):
-        log.info(f"Creating video file {videofile}")
-        g.chapter.textoviva.create_video()
-
+    # Keep page loads responsive. Video generation is started explicitly by
+    # the Re-render action so the controls remain available while no video exists.
     g.chapter.load_xml(force=True)
     image_xml = next(iter(g.chapter.images()), None)
 
@@ -227,6 +260,10 @@ def base():
         section="textoviva",
         player_stack=player_stack,
         small_image_workshop=small_image_workshop(image_xml),
+        rerender_url=url_for(
+            "library.book.chapter.textoviva.rerender",
+            **g.chapter.kwargs,
+        ),
     )
 
 
