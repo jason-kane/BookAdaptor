@@ -71,12 +71,23 @@ def gather_candidate_videos(image_xml: Tag, chapter: Chapter):
     paragraph_dir = chapter.get_paragraph_dir(paragraph.attrs["index"])
     
     comfy_prefix = f"{chapter.nice}_img_{as_int(image_xml.attrs['index'])}"
-    for fn in glob.glob(
-        os.path.join(
-            const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], 
-            comfy_prefix + "*.mp4"
+    comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+    comfy_globs = [
+        os.path.join(comfy_output_dir, comfy_prefix + "*.mp4"),
+        os.path.join(comfy_output_dir, "video", comfy_prefix + "*.mp4"),
+    ]
+    comfy_videos = []
+    for comfy_glob in comfy_globs:
+        matches = sorted(glob.glob(comfy_glob))
+        log.info(
+            "Searching ComfyUI output for animation candidates",
+            image_index=image_xml.attrs["index"],
+            pattern=comfy_glob,
+            matches=matches,
         )
-    ):
+        comfy_videos.extend(matches)
+
+    for fn in comfy_videos:
         destination = os.path.join(
             const.LIBRARY_DIR,
             paragraph_dir,

@@ -309,12 +309,45 @@ def generate_audio_button(chapter, phrase_xml, target=None):
         hx-vals='{{"page": "{request.args.get("page", 1)}" }}'
         hx-target="{target}"
         hx-swap="outerHTML"
-        hx-trigger="click">(Re)generate Audio</wa-button>"""
+        hx-trigger="click"
+        hx-on::before-request="this.disabled=true; this.querySelector('.audio-button-label').style.display='none'; this.querySelector('.audio-button-spinner').style.display='inline-flex'"
+        hx-on::after-request="this.disabled=false; this.querySelector('.audio-button-label').style.display=''; this.querySelector('.audio-button-spinner').style.display='none'">
+        <span class="audio-button-label">(Re)generate Audio</span>
+        <wa-spinner class="audio-button-spinner" aria-label="Generating audio" style="display:none"></wa-spinner>
+    </wa-button>"""
+
+
+def chapter_timing_updates(chapter):
+    return "".join(
+        render_template("chapter_phrase_timing.html",
+                        timing_id=f"chapter-{entry['type']}-timing-" + str(
+                            entry['phrase'].index if entry['type'] == 'phrase' else entry[entry['type']]['index']),
+                        timing=entry["timing"], missing_audio=entry.get("missing_audio", False),
+                        missing_image=entry.get("missing_image", False), timing_oob=True)
+        for entry in chapter.timeline()
+    )
 
 
 def chapter_audio_controls(chapter, phrase_xml, oob=False):
     """Audio and pronunciation controls for a phrase in the chapter text view."""
+    timing_updates = chapter_timing_updates(chapter)
     target = f"#chapter-audio-controls-{phrase_xml['index']}"
+    add_image_url = url_for(
+        "library.book.chapter.add_timeline_image_below",
+        phrase_index=phrase_xml['index'],
+        **chapter.kwargs,
+    )
+    add_phrase_url = url_for(
+        "library.book.chapter.add_timeline_phrase_below",
+        phrase_index=phrase_xml['index'],
+        **chapter.kwargs,
+    )
+    add_silence_url = url_for(
+        "library.book.chapter.add_timeline_silence",
+        target_type="phrase",
+        target_index=phrase_xml['index'],
+        **chapter.kwargs,
+    )
     oob_attribute = ' hx-swap-oob="true"' if oob else ""
     soundslike_url = url_for(
         "library.book.chapter.phrases.pronunciation.soundslike",
@@ -324,8 +357,48 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
         {pronunciation_textarea(chapter, phrase_xml)}
         {soundslike(phrase_xml, soundslike_url, key=phrase_xml['index'])}
         {audio_player(chapter, phrase_xml)}
-        {generate_audio_button(chapter, phrase_xml, target=target)}
-    </div>"""
+        <div class="wa-cluster">
+            {generate_audio_button(chapter, phrase_xml, target=target)}
+            <wa-button
+                hx-post="{add_image_url}"
+                hx-target="#phrase_{phrase_xml['index']}"
+                hx-swap="afterend"
+                hx-disabled-elt="this"
+            >Add Image Below</wa-button>
+            <wa-button
+                hx-post="{add_silence_url}"
+                hx-target="#phrase_{phrase_xml['index']}"
+                hx-swap="afterend"
+                hx-disabled-elt="this"
+            >Add Silence Below</wa-button>
+            <wa-button
+                hx-post="{add_phrase_url}"
+                hx-target="#chapter-phrase-list"
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-on::after-request="if (event.detail.successful) window.previous_phrase_index = -1"
+            >Add Phrase Below</wa-button>
+            {chapter_merge_with_previous_button(chapter, phrase_xml)}
+        </div>
+    </div>{timing_updates}"""
+
+
+def chapter_merge_with_previous_button(chapter, phrase_xml):
+    """Offer to merge this active chapter phrase with its predecessor."""
+    if int(phrase_xml.get("index", "0")) <= 0:
+        return ""
+
+    merge_url = url_for(
+        "library.book.chapter.phrases.merge_with_previous",
+        **chapter.kwargs,
+    )
+    return f"""<wa-button
+        hx-post="{merge_url}"
+        hx-target="#chapter-phrase-list"
+        hx-swap="innerHTML"
+        hx-vals='{{"phrase_index": "{phrase_xml["index"]}", "page": "{request.args.get("page", 1)}"}}'
+        hx-confirm="Merge this phrase with the previous phrase?"
+        variant="neutral">Merge with Previous</wa-button>"""
 
 
 def pronunciation_textarea(chapter, phrase_xml):

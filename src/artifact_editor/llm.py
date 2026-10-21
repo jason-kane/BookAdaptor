@@ -10,8 +10,6 @@ import fnv_hash_fast
 import redis
 from bs4 import Tag
 
-from artifact_editor.chapter.chapter import get_prompt_workflow_by_filename
-from artifact_editor.phrases.phrases import clean_latex
 import comfy
 import const
 import logger
@@ -141,6 +139,9 @@ def text_2_audio(
     Raises:
         ValueError: If the specified character has no voice defined.
     """
+    # Phrase imports this module while initializing.
+    from artifact_editor.phrases.phrases import clean_latex
+
     spoken_text = clean_latex(phrase_xml.get_text())
 
     character_dict = characters.get_character(chapter, character_name)
@@ -280,6 +281,9 @@ def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", 
     content = None
     filename = "llm_str.txt"
     if not (content := get_cached_prompt(prompt, format="txt", force=force)):
+
+        # Chapter imports the phrase/LLM stack while initializing.
+        from artifact_editor.chapter.chapter import get_prompt_workflow_by_filename
 
         workflow_filename = get_prompt_workflow_by_filename(
             workflow_filename="chat.qwen35-json.Qwen 3.5 4b bf16.json",

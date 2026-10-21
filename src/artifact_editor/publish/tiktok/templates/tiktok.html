@@ -1,19 +1,22 @@
 {% set PUBLISH = True %}
 {% set TIKTOK = True %}
-{% extends "base.html" %}
-
-{% block scripts %}
-<script src="/static/js/tiktok.js"></script>
-{% endblock %}
-
-{% block title %}
-<title>TikTok Publish View</title>
-{% endblock %}
-
-{% block styles %}
-{% endblock %}
-
+{% extends "column_fragment.html" if request.args.get('embedded') == '1' else "base.html" %}
+{% block title %}<title>TikTok Publish View</title>{% endblock %}
+{% block scripts %}<script src="/static/js/tiktok.js"></script>{% endblock %}
 {% block body %}
-<div>
+<div class="wa-stack">
+    <wa-button variant="brand" href="{{ url_for('.connect') }}" target="_top">{{ 'Reconnect to TikTok' if connected else 'Connect to TikTok' }}</wa-button>
+    <p role="status">
+        {% if request.args.get('tiktok_connection') in ['failed', 'denied'] %}TikTok connection did not complete. Please try again.
+        {% elif connected %}TikTok is connected.
+        {% else %}Connect your TikTok account to upload videos.{% endif %}
+    </p>
+    <p>Upload the rendered chapter video to your TikTok inbox. Open the notification in TikTok to edit the caption, review AI disclosure and other settings, and finish posting.</p>
+    <p>Keep this tab open during the transfer. Uploading here does not publish the video.</p>
+    <form id="tiktok-upload-form" class="wa-stack" action="{{ url_for('.upload') }}" data-status-url="{{ url_for('.status') }}" method="post">
+        <p role="status" class="tiktok-status"></p>
+        <wa-button type="submit" variant="brand" {% if not connected %}disabled{% endif %}>Upload Video to TikTok Inbox</wa-button>
+        <wa-button type="button" class="tiktok-check" {% if not connected %}disabled{% endif %}>Check processing status</wa-button>
+    </form>
 </div>
 {% endblock %}

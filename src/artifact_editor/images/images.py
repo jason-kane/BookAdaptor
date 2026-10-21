@@ -109,6 +109,15 @@ def image_forex(chapter, image_xml, image_index) -> str:
 
     all_images = chapter.get_xml().findAll("image")
     total_images = len(all_images)
+    # IDs belong to assets; only document positions determine navigation order.
+    position = next(
+        (offset for offset, image in enumerate(all_images)
+         if str(image.attrs["index"]) == str(image_index)),
+        None,
+    )
+    if position is None:
+        raise ValueError(f"Image {image_index} is not in this chapter")
+    image_xml = all_images[position]
 
     total_height = 200
     box_width = "14.2%"  # 7 blocks of 14.2% = 99.4% + 0.6% for padding
@@ -145,7 +154,7 @@ def image_forex(chapter, image_xml, image_index) -> str:
                         )
 
                         absolute[sixtyfour_c, sixtyfour_r] = f"""<a 
-                            href="{url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=count)}">
+                            href="{url_for('library.book.chapter.images.base', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, image_index=image.attrs["index"])}">
                             <div class="imgheight img-{image_height}" style="background-color:#777">
                                 <img class="image_{image.attrs.get("index")}" src="{imageurl}"/></img>
                             </div>
@@ -164,22 +173,22 @@ def image_forex(chapter, image_xml, image_index) -> str:
 
         return left
 
-    count = image_index - (4 + 16 + 64)
-    if (image_index > 20):
+    count = position - (4 + 16 + 64)
+    if (position > 20):
         left = gridtable(8, count)
     else:
         # height:{total_height}px; 
         left = f'<div class="grid" style="min-height: 1px; width:{box_width}; float:left"></div>'
         
-    count = image_index - (4 + 16)
-    if (image_index > 4):
+    count = position - (4 + 16)
+    if (position > 4):
         left += gridtable(4, count)
     else:
         # height:{total_height}px; 
         left += f'<div class="grid" style="min-height: 1px; width:{box_width}; float:left"></div>'
             
-    count = image_index - 4
-    if (image_index > 0):
+    count = position - 4
+    if (position > 0):
         left += gridtable(2, count)
     else:
         # height:{total_height}px; 
@@ -204,7 +213,7 @@ def image_forex(chapter, image_xml, image_index) -> str:
         </img>
     </div>"""
 
-    count = image_index + 1
+    count = position + 1
     if total_images > count:
         right = gridtable(2, count)
     else:
@@ -213,7 +222,7 @@ def image_forex(chapter, image_xml, image_index) -> str:
 
     log.warning('A')
 
-    count = image_index + 5
+    count = position + 5
     if total_images > count:
         right += gridtable(4, count)
     else:
@@ -223,7 +232,7 @@ def image_forex(chapter, image_xml, image_index) -> str:
     log.warning('B')
 
     try:
-        count = image_index + 17
+        count = position + 21
         log.info("count: %s, total_images: %s", count, total_images)
         if total_images > count:
             right += gridtable(8, count)
@@ -976,6 +985,43 @@ def generate_metadata_character_action_old(character_dict, image_xml, force=Fals
             )
 
 
+def generate_image_description(image_xml, force=False):
+    """Describe the illustration using its story span and generated metadata."""
+    text = get_text_to_next(
+        image_xml=image_xml, next_image_xml=image_xml.find_next("image")
+    )
+    context = get_surrounding_paragraphs(
+        image_xml.find_parent("paragraph"), context_min=600
+    )
+    metadata = {key: value for key, value in image_xml.attrs.items()
+                if key in ("setting", "tod", "camera", "scene_characters", "focus_character")
+                or key.endswith(("_pose", "_location", "_action", "_description"))
+                or key.startswith("lighting_")}
+    description = llm.str_prompt(
+        "Write a concise, concrete description of a single illustration for this story passage. "
+        "Describe the visible characters, actions, setting, lighting, and composition. "
+        "Use the scene metadata for consistency. Return only the description.\n\n"
+        f"Passage:\n{text}\n\nSurrounding context:\n{context}\n\nScene metadata:\n{metadata}",
+        force=force,
+    ).strip()
+    image_xml["description"] = description
+    return description
+
+
+def generate_missing_metadata(chapter, progress=None):
+    """Fill missing image metadata and descriptions, saving after each image."""
+    progress = progress or (lambda percent, message: None)
+    image_list = chapter.get_xml().find_all("image")
+    for position, image in enumerate(image_list):
+        progress(position * 100 / len(image_list),
+                 f"Generating metadata: image {position + 1} of {len(image_list)}")
+        generate_metadata_from_text(chapter, image, force_all=False)
+        if not image.get("description", "").strip():
+            generate_image_description(image)
+        chapter.save_xml()
+    progress(100, "Missing metadata complete")
+
+
 def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> None:
     """
     Fill in all the metadata fields based on the text surrounding this image.
@@ -1131,11 +1177,36 @@ def generate_animation_prompt(chapter, image_xml, force=False):
         image_xml.find_parent("paragraph"), context_min=600
     )
 
+    frames = int(image_xml.attrs.get("frames", 0) or 0)
+    duration = frames / const.FPS if frames > 0 else float(
+        image_xml.attrs.get("duration", 0) or 0
+    )
+    if duration <= 0:
+        next_image = image_xml.find_next("image")
+        for point in image_xml.next_elements:
+            if point is next_image:
+                break
+            if isinstance(point, Tag) and point.name == "phrase":
+                duration += float(point.attrs.get("duration", 0) or 0)
+    duration_instruction = (
+        f"The expected animation duration is {duration:.2f} seconds. "
+        "Keep all motion comfortably achievable within that time. "
+        if duration > 0 else
+        "This is a short animation clip. "
+    )
+
     prompt = (
         f"I want to generate an animation prompt for a portion of a story."
         f"  The text is: {text}.  "
         f"The surrounding text is: {surrounding_text}.  "
-        "Generate a concise animation prompt that captures the essence of the scene."
+        f"{duration_instruction}"
+        "Generate a concise animation prompt that captures the essence of the scene. "
+        "Use one short sentence describing a single simple action or subtle motion. "
+        "Do not add a sequence of events, scene changes, elaborate choreography, "
+        "or details from the surrounding story that cannot fit in this clip. "
+        "Output only the animation description itself as plain text. "
+        "Do not include any preface, explanation, labels such as 'Prompt:', "
+        "Markdown formatting, blockquotes, or enclosing quotation marks."
     )
 
     animation_prompt = llm.str_prompt(prompt, force=force)

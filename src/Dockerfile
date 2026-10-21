@@ -1,4 +1,4 @@
-FROM ubuntu:26.04
+FROM ubuntu:26.04 AS system-deps
 
 # and blessed sanity returns that all might be simple and well in the land of
 # docker.
@@ -6,33 +6,35 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt update && apt install -y \
     build-essential \
-    docker.io \
-    docker-compose-v2 \
     ffmpeg \
     git \
     gunicorn \
     python3 \
     python3-dev \
     python3-pip \
-    python3-venv \  
-    texlive-full \
+    python3-venv \
+    python3-setuptools \
+    python3-wheel \
     && ln -s /usr/bin/python3 /usr/bin/python \
     && apt clean
    
 ENV BLIS_ARCH="generic"
 RUN pip install blis --no-binary blis
 
-# lighter dependencies
-RUN apt update && apt install -y \
-    python3-setuptools \
-    python3-wheel \
+# Keep the large TeX installation separate from the stable base packages.
+FROM system-deps AS texlive
+RUN apt update && apt install -y texlive-full \
     && apt clean
+
+# Application dependencies inherit both the stable base and TeX Live.
+FROM texlive AS app
 
 # we need typing-extensions 4.16, apt gives us 4.15
 # this uninstall is brutal and is going to break stuff.
+
 RUN apt update && apt remove -y python3-typing-extensions && apt clean
 COPY requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt
+RUN pip install -r /app/requirements.txt --ignore-installed
 # and a model for spacy, which we're using for linguistics, which is
 # unnecessarily difficult to figure out how to get what you want.. but I just
 # thought of how to do it, so here we are.  To do: when this obviously heavily

@@ -85,6 +85,7 @@ services:
       - home-network
 
   artifactserver:
+    image: bookadaptor-app:latest
     build:
       context: ./src/
       dockerfile: Dockerfile
@@ -149,7 +150,9 @@ services:
       - "./comfy/ComfyUI/user-profile:/root/ComfyUI/user-profile"
       - "./comfy/ComfyUI_frontend/dist:/usr/local/lib/python3.13/site-packages/comfyui_frontend_package/static"
     environment:
-      - CLI_ARGS=--enable-cors-header "*"
+      # Avoid dynamic allocator failures on tiny allocations with this image.
+      # The entrypoint reads CLI_ARGS rather than forwarding command arguments.
+      - CLI_ARGS=--enable-cors-header "*" --disable-dynamic-vram
     security_opt:
       # - "label=type:nvidia_container_t"
       - "label=disable"
@@ -165,9 +168,7 @@ services:
       - home-network
 
   websocket:
-    build:
-      context: ./src/
-      dockerfile: Dockerfile
+    image: bookadaptor-app:latest
     depends_on:
       - redis
     ports:
@@ -179,9 +180,7 @@ services:
       - home-network
 
   video_worker:
-    build:
-      context: ./src/
-      dockerfile: Dockerfile
+    image: bookadaptor-app:latest
     depends_on:
       redis:
         condition: service_healthy
@@ -205,6 +204,13 @@ services:
       - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
       - COMFYUI_API_URL=http://comfyui:8188/
       - COMFYUI_UI_URL=http://localhost:8188/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     networks:
       - home-network
 

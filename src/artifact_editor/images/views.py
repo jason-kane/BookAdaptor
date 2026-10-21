@@ -28,7 +28,6 @@ from pygments import format, lex
 from pygments.filters import Filter
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import HtmlLexer
-from transformers import T5Tokenizer
 
 import comfy
 import const
@@ -96,6 +95,22 @@ bp.register_blueprint(images_selector, url_prefix="/<int:image_index>/selector")
 bp.register_blueprint(images_editor, url_prefix="/<int:image_index>/editor")
 bp.register_blueprint(images_scene, url_prefix="/<int:image_index>/scene")
 bp.register_blueprint(images_camera, url_prefix="/<int:image_index>/camera")
+
+@bp.after_request
+def scope_chapter_image_panel(response):
+    image_index = request.headers.get("X-Chapter-Image-Panel", "")
+    if (image_index.isdecimal() and response.mimetype == "text/html"
+            and response.status_code < 300 and not response.is_streamed
+            and not response.direct_passthrough):
+        from .panel import panel_controls
+
+        response.set_data(panel_controls(
+            response.get_data(as_text=True), image_index,
+            url_for("library.book.chapter.images.base", image_index=int(image_index), **g.chapter.kwargs).rstrip("/") + "/",
+            url_for("library.book.chapter.timeline_image_editor", image_index=int(image_index), **g.chapter.kwargs),
+        ))
+    return response
+
 
 MIN_TOKENS = 128
 MAX_TOKENS = 256
@@ -254,6 +269,10 @@ def comfyui_workflow_open(
 
     if not is_animation and request.args.get("workflow_image_template"):
         workflow_template = request.args.get("workflow_image_template")
+        # Match workflow_run: template selectors may include the mode prefix.
+        # get_workflow searches ui.*.<name>*.json and needs the bare name.
+        workflow_template = workflow_template.split(".")[-1]
+        image_xml.attrs["workflow_image_template"] = workflow_template
 
     elif is_animation:
         # the kind of template used to animate this image over time
@@ -806,8 +825,9 @@ def save_meta_prompt(image_index=0):
 # http://localhost:5000/H.%20P.%20Lovecraft/Cool%20Air/0001/images/forex/5
 @bp.route("/forex/<int:image_index>")
 def htmx_forex(image_index=0):
-    all_images = g.chapter.get_xml().findAll("image")
-    image_xml = all_images[image_index]
+    image_xml = g.chapter.get_image(image_index)
+    if image_xml is None:
+        abort(404, description=f"Image with index {image_index} not found")
 
     image_forex = images.image_forex(g.chapter, image_xml, image_index)
 
@@ -972,8 +992,8 @@ def htmx_rightsize_t5_prompt(image_index):
         return "No T5 prompt to rightsize.", 400
 
     # we don't even _need_ the tokens, just the length.
-    tokenizer = T5Tokenizer.from_pretrained("t5-small")
-    tokens = tokenizer.tokenize(t5_prompt)
+    from worker_client import call_worker
+    tokens = call_worker("t5_tokens", text=t5_prompt)
     log.info(f"T5 prompt is {len(tokens)} tokens long.")
 
     adjust_hint = ""

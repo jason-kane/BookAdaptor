@@ -1,0 +1,41 @@
+{% for entry in chapter.timeline() %}
+{% set missing_audio = entry.missing_audio|default(false) %}
+{% if entry.type == 'image' %}
+{% set image = entry.image %}
+{% include "chapter_timeline_image.html" %}
+{% elif entry.type == "silence" %}
+{% set silence = entry.silence %}
+{% include "chapter_timeline_silence.html" %}
+{% else %}
+{% set phrase = entry.phrase %}
+<div id="phrase_{{ phrase.index }}" class="phrase-container" data-timeline-type="phrase" data-timeline-index="{{ phrase.index }}"
+     data-editor-url="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}">
+    {% with item_type='phrase', item_index=phrase.index %}{% include "chapter_timeline_delete.html" %}{% endwith %}
+    {% set timing = entry.timing %}
+    {% include "chapter_phrase_timing.html" %}
+    <wa-textarea
+        id="phrase_{{ phrase.index }}_ta"
+        class="phrase-editor"
+        hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}"
+        hx-vals='js:{"previous_phrase_index": window.previous_phrase_index }'
+        hx-trigger="click"
+        hx-swap="none"
+        value="{{ phrase.simple_text() }}"
+    ></wa-textarea>
+    <div class="wa-cluster">
+        <wa-icon></wa-icon>
+        <wa-select
+            name="speaker"
+            hx-post="{{ url_for('library.book.chapter.phrases.assign_phrase_speaker', phrase_index=phrase.index, **chapter.kwargs) }}"
+            hx-trigger="change"
+            hx-swap="none"
+        >
+            {% for speaker in speakers %}
+            <wa-option value="{{ speaker.tag }}"{% if phrase.speaker == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
+            {% endfor %}
+        </wa-select>
+    </div>
+    <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs"></div>
+</div>
+{% endif %}
+{% endfor %}

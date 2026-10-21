@@ -1,0 +1,19 @@
+<div class="phrase-container wa-stack wa-gap-s" id="timeline-silence-{{ silence['index'] }}"
+     data-timeline-type="silence" data-timeline-index="{{ silence['index'] }}">
+    {% with timing=entry.timing if entry is defined else timing, timing_id='chapter-silence-timing-' ~ silence['index'] %}
+    {% include "chapter_phrase_timing.html" %}
+    {% endwith %}
+    {% with item_type='silence', item_index=silence['index'] %}{% include "chapter_timeline_delete.html" %}{% endwith %}
+    <form class="wa-stack wa-gap-s"
+          hx-post="{{ url_for('library.book.chapter.update_timeline_silence', silence_index=silence['index'], **chapter.kwargs) }}"
+          hx-trigger="change" hx-swap="none" hx-sync="this:queue last">
+        <wa-slider id="silence-slider-{{ silence['index'] }}" label="Added Silence (seconds)"
+                   min="0" max="3" step="0.001" value="{{ silence['duration'] }}"
+                   oninput="this.closest('form').elements.duration.value = Number(this.value).toFixed(3)">
+            {% for tick in range(7) %}<span slot="reference">{{ tick / 2 }}</span>{% endfor %}
+        </wa-slider>
+        <input aria-label="Silence duration in seconds" type="number" name="duration" min="0" max="3" step="0.001"
+               value="{{ '%.3f'|format(silence['duration']|float) }}"
+               onchange="if (this.checkValidity()) { this.value = Number(this.value).toFixed(3); this.form.querySelector('wa-slider').value = Number(this.value); }">
+    </form>
+</div>

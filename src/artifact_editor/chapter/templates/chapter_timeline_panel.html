@@ -1,0 +1,24 @@
+<div class="wa-stack wa-gap-s">
+    <div id="chapter-timeline-status" role="status" aria-live="polite"></div>
+    <div id="chapter-timeline-scroll">
+        <div id="chapter-phrase-list" data-move-url="{{ url_for('library.book.chapter.move_timeline_image', **chapter.kwargs) }}">
+            {% include "chapter_phrase_list.html" %}
+        </div>
+    </div>
+    <div class="wa-cluster">
+        {{ generate_missing_audio_button|safe }}
+        {{ generate_missing_metadata_button|safe }}
+        {{ generate_missing_images_button|safe }}
+        {{ time_align_button|safe }}
+        <wa-button id="typeset-latex-btn"
+            hx-post="{{ url_for('library.book.chapter.typeset_latex', **chapter.kwargs) }}"
+            hx-disabled-elt="this"
+            hx-on::before-request="beforeRequest(this,event)"
+            hx-on::after-request="afterRequest(this,event); if (event.detail.successful) latex_rerender_url('{{ url_for('library.book.chapter.typography.serve_chapter_pdf', **chapter.kwargs) }}?t=' + Date.now())"
+            hx-target="#typeset-latex-status" hx-swap="textContent"
+            variant="neutral" appearance="accent" size="medium"
+        >Typeset Latex</wa-button>
+        {{ generate_missing_animation_button|safe }}
+        <span id="typeset-latex-status" role="status" aria-live="polite"></span>
+    </div>
+</div>

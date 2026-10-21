@@ -86,7 +86,7 @@ def import_character():
 
 
 @bp.route("/", methods=["GET"])
-def base():
+def base(embedded=False):
     log.info(f'author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"')
 
     all_characters = characters.get_all_characters(g.chapter)
@@ -180,7 +180,11 @@ def base():
         import_character_form=import_character_form,
         section="characters",
         section_cosmetic="Characters",
-        all_character_cards=htmx.all_character_cards(g.chapter, all_characters),
+        embedded=embedded,
+        character_tabs=[
+            {"name": character["name"], "card": htmx.character_data(g.chapter, character)}
+            for character in all_characters.values()
+        ],
         unattached_speakers=unattached_speakers,
         drift_resolution_widget=htmx.drift_resolution_widget(g.chapter),
     )
@@ -422,16 +426,16 @@ def delete_character(character_tag):
 
     if character_tag in all_characters:
         del all_characters[character_tag]
-        characters.save_characters(chapter, all_characters)
+        characters.save_characters(g.chapter, all_characters)
         log.info(
-            "Deleted character %s from chapter %s", character_tag, chapter.chapterdir
+            "Deleted character %s from chapter %s", character_tag, g.chapter.chapterdir
         )
     else:
         log.error(
             "Character %s not found in chapter %s", character_tag, chapter.chapterdir
         )
 
-    return htmx.all_character_cards(g.chapter, all_characters)
+    return base(embedded=True)
 
 
 # POST /Aesop/Fables/0023/characters/Narrator/actions/toggle_global
@@ -492,6 +496,9 @@ def add_character():
     characters.save_characters(g.chapter, all_characters)
 
     log.info("Added new character %s to chapter %s", character_name, g.chapter)
+
+    if request.headers.get("HX-Request"):
+        return base(embedded=True)
 
     return redirect(
         url_for("library.book.chapter.characters.base")

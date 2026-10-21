@@ -726,7 +726,7 @@ def wav_append_delay(
     with contextlib.closing(wave.open(outfile, "wb")) as out:
         out.setparams((nchannels, sampwidth, framerate, nframes, comptype, compname))
         out.writeframes(all_frames)
-        out.writeframes(b"\0" * (sampwidth * delay_wav_frames))
+        out.writeframes(b"\0" * (nchannels * sampwidth * delay_wav_frames))
 
 
 def clean_latex(instr: str) -> str:
@@ -1311,12 +1311,16 @@ def generate_audio(chapter):
     return cache
 
 
-def generate_all_audio(chapter, force=True):
+def generate_all_audio(chapter, force=True, progress=None):
     log.info("[generate_all_audio] (%s, force=%s)", chapter, force)
 
     # we're essentially clicking 'regenerate' on everything
     # that doesn't have a wav file.
-    for phrase_xml in chapter.get_xml().findAll("phrase"):
+    phrase_list = chapter.get_xml().find_all("phrase")
+    for position, phrase_xml in enumerate(phrase_list):
+        if progress:
+            progress(position / max(1, len(phrase_list)) * 100,
+                     f"Generating audio: phrase {position + 1} of {len(phrase_list)}")
         if phrase_xml.attrs.get("type", "") == "dinkus":
             # dinkus phrases are not spoken.
             paragraph_xml = phrase_xml.find_parent("paragraph")
@@ -1363,15 +1367,15 @@ def generate_all_audio(chapter, force=True):
                     log.info(
                         f"Phrase {phrase_index} already has an audio file: {wavfile}"
                     )
-                    continue
-            
-            llm.text_2_audio(
-                chapter,
-                phrase_xml,
-                phrase_xml.attrs.get("speaker", "Narrator"),
-                wavfile,
-                force=False,
-            )
+
+            if not os.path.exists(wavfile):
+                llm.text_2_audio(
+                    chapter,
+                    phrase_xml,
+                    phrase_xml.attrs.get("speaker", "Narrator"),
+                    wavfile,
+                    force=False,
+                )
 
             # do we already have a pronunciation file for this phrase?
             if os.path.exists(wavfile.replace(".wav", ".pronunciation.txt")):
@@ -1416,6 +1420,9 @@ def generate_all_audio(chapter, force=True):
     generate_audio(chapter)
     recalculate_image_frames(chapter)
     chapter.save_xml()
+
+    if progress:
+        progress(100, "Baseline audio complete")
 
 
 def save_speaker(chapter, phrase_index: int, speaker):

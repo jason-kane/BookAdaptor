@@ -19,7 +19,6 @@ from flask import (
     url_for,
 )
 from PIL import Image
-from transformers import T5Tokenizer
 
 import camera
 import const

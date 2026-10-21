@@ -3,7 +3,23 @@
 {% block title %}<title>Textoviva</title>{% endblock %}
 
 {% block styles %}
+<link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
+    #player-stack {
+        width: 100%;
+        min-width: 0;
+    }
+    #player-stack .video-js .vjs-tech {
+        object-fit: contain;
+    }
+
+    .playback-current {
+        outline: 2px solid #e3b341;
+        outline-offset: -2px;
+        background-color: #12345b;
+        color: #fff;
+    }
+
     #image_selection_widget .carousel-big-picture {
         display: block;
         width: min(400px, 100%);
@@ -13,6 +29,44 @@
     #image_selection_widget cropper-canvas {
         width: min(400px, 100%);
         height: min(400px, 50vh);
+    }
+    wa-page > aside[slot="aside"] {
+        box-sizing: border-box;
+        height: calc(100dvh - var(--banner-height, 0px) - var(--header-height, 0px) - var(--subheader-height, 0px));
+        min-height: 0;
+        overflow: hidden;
+    }
+    #image-stack {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        min-width: 0;
+    }
+    #image-base,
+    #video-base {
+        min-height: 0;
+        min-width: 0;
+        width: 100%;
+        overflow: auto;
+        overscroll-behavior: contain;
+    }
+    #video-base {
+        justify-content: flex-start;
+    }
+    #video-base > * {
+        flex-shrink: 0;
+    }
+    #image-base img {
+        display: block;
+        object-fit: contain;
+    }
+    #phrase_accordion .current-image-phrase,
+    #phrase_accordion .current-image-phrase::part(accordion-item),
+    #phrase_accordion .current-image-phrase::part(button),
+    #phrase_accordion .current-image-phrase::part(content) {
+        background-color: #12345b;
+        color: #fff;
     }
     .thumbnails {
         display: flex;
@@ -48,6 +102,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
 <script>
     // The image editor page normally provides this helper through images.js;
     // Textoviva uses the same selector without loading that page's scripts.
@@ -85,46 +141,33 @@
 <script>
     //wait for dom to load
     document.addEventListener("DOMContentLoaded", function() {
-        // get the video element
-        const video = document.getElementById("chapter-video");
-        // listen for the 'pause' event
-        video.addEventListener("pause", function() {
-            console.log("Video paused at: " + video.currentTime + " seconds");
-            video.exitFullscreen();
-            // update the image panel in the upper right
-            // by sending it the pause time, it will figure out which
-            // image we are talking about.
-
-            // update the animation panel in the lower right,
-            // by sending it the pause time, it will figure out which
-            // animation we are talking about.
-
-            // finally, update the phrase panel on the left side.  We want to
-            // popout the phrase that corresponds to the current time in the video.  
-
-            // the big picture is:  play the video.  pause when you see something "wrong"
-            // then fix it.
-            var pauseTime = video.currentTime;
-            // oom_spaw on the responses will update all the widgets
-            // to the the ones that matter for this moment in the video.
-            htmx.ajax('GET', 'pause?pauseTime=' + pauseTime, {
-                swap: 'none'
+        // The animation panel carries the phrases covered by the selected image.
+        // Observe its replacements so pause and workshop swaps stay in sync.
+        let selectedPanel;
+        function syncSelectedImagePhrases() {
+            if (!customElements.get('wa-accordion-item')) return;
+            const panel = document.getElementById('video-base');
+            if (panel === selectedPanel) return;
+            selectedPanel = panel;
+            const indices = new Set(JSON.parse(panel?.dataset.phraseIndices || '[]'));
+            document.querySelectorAll('#phrase_accordion wa-accordion-item').forEach(item => {
+                const selected = indices.has(item.id.slice('phrase_'.length));
+                item.classList.toggle('current-image-phrase', selected);
+                item.expanded = selected;
             });
-
+        }
+        customElements.whenDefined('wa-accordion-item').then(syncSelectedImagePhrases);
+        new MutationObserver(syncSelectedImagePhrases).observe(document.body, {
+            childList: true,
+            subtree: true
         });
-
-        video.addEventListener("play", function() {
-            video.requestFullscreen();
-        });
-
-        
     });
 </script>
 {% endblock %}
 
 {% block navigation %}
 <div class="wa-stack">
-    <wa-accordion id="phrase_accordion" mode="single-collapsible" style="width: 20em">
+    <wa-accordion id="phrase_accordion" mode="multiple" style="width: 20em">
         {% for phrase in g.chapter.phrases() %}
         <wa-accordion-item id="phrase_{{ phrase.index|string }}">
             <div slot="label">
@@ -142,22 +185,20 @@
 {% endblock %}
 
 {% block aside %}
-    <div id="image-stack" class="wa-stack">
+    <div id="image-stack" class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
         <div class="wa-cluster">
             <wa-button
-                hx-post="{{ rerender_url }}"
-                hx-target="#rerender-status"
-                hx-swap="innerHTML"
-                hx-on::before-request="beforeRequest(this,event)"
-                hx-on::after-request="afterRequest(this,event)"
+                ws-send
+                hx-trigger="click"
+                hx-vals='{{ rerender_task|tojson }}'
                 variant="brand"
                 appearance="accent"
             >Re-render</wa-button>
-            <span id="rerender-status" role="status"></span>
+            <div id="video-progress-{{ rerender_task.job_id }}" role="status" aria-live="polite"></div>
         </div>
         <div id="image-base">
             {{ small_image_workshop|safe }}             
         </div>
-        <div id="video-base"></div>
+        {{ animation_panel|safe }}
     </div>
 {% endblock %}

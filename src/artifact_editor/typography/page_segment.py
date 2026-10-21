@@ -514,11 +514,9 @@ def retrieve_segment_from_book(
 
     # this is fun.
     r, g, b = chapter.index_to_highlight_color(phrase_index)
-    text_layer_rainbow_fn = os.path.join(const.LIBRARY_DIR, chapter.chapterdir, "text_layer_rainbow.png")
-
-    if not os.path.exists(text_layer_rainbow_fn):
-        log.info("Rainbow text layer is missing; generating it", filename=text_layer_rainbow_fn)
-        draw_text_layers(chapter, phrase_xml=None, rainbow=True)
+    text_layer_rainbow_fn = os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter.rainbow-1.png"
+    )
 
     # Load the rainbow file
     with open(text_layer_rainbow_fn, "rb") as h:
@@ -542,7 +540,8 @@ def retrieve_segment_from_book(
         os.path.join(
             const.LIBRARY_DIR, 
             chapter.chapterdir, 
-            "text_layer_plain.png"
+            chapter.language,
+            "chapter-1.png"
         ), "rb"
     ) as h:
         img = Image.open(h)
@@ -887,8 +886,11 @@ def from_offset(
 
     # log.info(f'To build image at offset {top_index} we are pasting segments from {adjusted_top} to {adjusted_bottom}')
 
+    text_revision = os.stat(os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
+    )).st_mtime_ns
     for segment_top in range(adjusted_top, adjusted_bottom, SEGMENT_HEIGHT):
-        cache_key = f"segment:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
+        cache_key = f"segment:chapter-png-native-v1:{text_revision}:{G['TEXT_WIDTH']}:{chapter.language}:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
 
         image_segment = redis_cache.get(cache_key)
         if force:

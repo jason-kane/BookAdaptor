@@ -137,3 +137,26 @@ Open this link: [http://localhost:8080/](http://localhost:8080/)
 [UI Walkthrough](walkthrough.md)
 
 [Release Notes](release_notes_001.md)
+
+## ML worker calls
+
+The artifact server delegates sentence splitting (spaCy), IPA transcription
+(PyTorch/Whisper), and T5 tokenization to `video_worker`. `worker_client.py`
+sends a JSON request over `ws://websocket:5001/worker-rpc`; the websocket service
+queues it alongside video renders in Redis and returns the correlated result.
+Set `WORKER_WEBSOCKET_URL` to override the internal websocket address.
+
+The worker imports and caches models on first use. Calls originating inside a
+video render execute locally, avoiding a nested queue wait. Requests wait up to
+600 seconds, including time behind other renders; worker failures are returned
+to the caller. The web process never imports the ML implementations.
+
+After updating an existing installation, recreate the worker to apply its GPU
+reservation and restart the websocket service to load the new endpoint:
+
+```sh
+docker compose up -d --no-deps --force-recreate video_worker websocket artifactserver
+```
+
+The obsolete `drawing.fifo` / `gpu_service` integration is outside this worker
+protocol. ComfyUI continues to execute its own image, audio, and animation jobs.

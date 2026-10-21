@@ -1,3 +1,4 @@
+from pathlib import Path
 import base64
 import glob
 import json
@@ -123,6 +124,11 @@ class Phrase:
 
         self.chapter = chapter
         self.phrase_xml = phrase_xml
+        # Unsaved and legacy phrases may not have Quill formatting yet.
+        # Keep the JSON string interface expected by the phrase editor.
+        if "delta" not in phrase_xml.attrs:
+            text = phrase_xml.get_text()
+            self.delta = json.dumps([{"insert": text}] if text else [])
         phrase_index = self.phrase_xml.attrs.get("index", "-1")
         # strong
         self.index = as_int(phrase_index)
@@ -561,6 +567,39 @@ class Chapter:
     def images(self) -> Iterable[Tag]:
         return self.find_all_tag("image")
 
+    def timeline(self):
+        """Yield phrases and image slots in chapter document order."""
+        from .timeline import image_timings, phrase_timings, phrase_audio_missing
+
+        self.load_xml()
+        if self.soup:
+            timings = phrase_timings(self.soup)
+            silence_times = phrase_timings(self.soup, item_type="silence")
+            image_times = image_timings(self.soup)
+            from artifact_editor.images.animation_source import animation_frame_count
+            for image in self.soup.find_all("image"):
+                timing = image_times.get(str(image["index"]))
+                if timing is not None:
+                    directory = Path(const.LIBRARY_DIR) / self.get_paragraph_dir(
+                        int(image.find_parent("paragraph")["index"]))
+                    count = animation_frame_count(image, directory, const.FPS)
+                    timing["animation_frames"] = count
+                    timing["animation_shortfall"] = count is not None and count < timing["frames"]
+
+            for tag in self.soup.find_all(["phrase", "image", "silence"]):
+                if tag.name == "phrase":
+                    yield {"type": "phrase", "phrase": Phrase(self, tag),
+                           "missing_audio": phrase_audio_missing(self, tag, const.LIBRARY_DIR),
+                           "timing": timings.get(str(tag["index"]))}
+                elif tag.name == "silence":
+                    yield {"type": "silence", "silence": tag,
+                           "timing": silence_times.get(str(tag["index"]))}
+                else:
+                    image_filename = self.get_image_filename(tag)
+                    yield {"type": "image", "image": tag,
+                           "missing_image": not image_filename or not os.path.isfile(image_filename),
+                           "timing": image_times.get(str(tag["index"]))}
+
     def speakers(self) -> list[Speaker]:
         """
         Get the list of speaker uniques for this chapter.
@@ -605,6 +644,9 @@ class Chapter:
             (data[:, :, 0] == r) & (data[:, :, 1] == g) & (data[:, :, 2] == b)
         )
         coordinates = np.argwhere(highlight_mask)
+        if coordinates.size == 0:
+            # Empty or hidden phrases have no colored glyphs in the text layer.
+            return highlight_mask, 0, 0, 0, 0
 
         y_min, x_min = coordinates.min(axis=0)
         y_max, x_max = coordinates.max(axis=0)
@@ -612,14 +654,14 @@ class Chapter:
         return highlight_mask, y_min, x_min, y_max, x_max
 
     def get_bottom_height(self, force: bool = False) -> int:
-        all_phrases = list(self.phrases())
-        phrase_xml = all_phrases[-1].phrase_xml
-
-        # open the rainbow text, filter for the color of the last phrase,
-        # determine those dimensions.
-        _, _, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
-
-        return y_max
+        for phrase in reversed(list(self.phrases())):
+            phrase_xml = phrase.phrase_xml
+            if not phrase_xml.get_text().strip():
+                continue
+            mask, _, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
+            if mask.any():
+                return int(y_max)
+        return 0
 
     def get_text_height(self, force: bool = False) -> int:
         all_phrases = list(self.phrases())
@@ -1036,14 +1078,7 @@ class Chapter:
                 f"image_{as_int(image_xml.attrs['index']):06d}_{video_index:02d}",
             )
 
-            os.makedirs(output_dir, exist_ok=True)
-
-            # use ffmpeg to extract frames
-            command = (
-                f"ffmpeg -i {video_fn} -vf fps={const.FPS} {output_dir}/frame_%04d.png"
-            )
-            log.info("Extracting frames from video", command=command)
-            subprocess.run(command, shell=True, check=True)
+            tools.extract_frames(video_fn, output_dir)
 
         if not video_fn or not os.path.exists(video_fn):
             log.error("Video file does not exist", video_fn=video_fn)
@@ -2523,7 +2558,7 @@ class Chapter:
                 continue
             scrolled_frames += 1
 
-        self.scrolling_rate = height / float(scrolled_frames)
+        self.scrolling_rate = max(0, height) / float(scrolled_frames) if scrolled_frames else 0.0
         log.info(
             "In order to traverse %s pixels of text height in %s frames",
             height,
@@ -2581,18 +2616,10 @@ class Chapter:
         return None
 
     def get_all_audio_tracks(self) -> list[str]:
-        mplan = self.get_masterplan()
-        audio_tracks = []
-        for word in mplan.words:
-            audio_tracks.append(
-                os.path.join(
-                    const.LIBRARY_DIR,
-                    word.paragraph_dir,
-                    word.src.lstrip("/"),
-                )
-            )
+        from .timeline import chapter_audio_tracks
+        from artifact_editor.phrases.phrases import wav_append_delay
 
-        return audio_tracks
+        return chapter_audio_tracks(self, const.LIBRARY_DIR, wav_append_delay)
 
     def safe_title(self):
         log.info(self.config)
@@ -2615,19 +2642,12 @@ class Chapter:
 
     def max_image_index(self) -> int:
         """
-        what does max_image_index mean?  The maximum index of the images in the book?
+        Return the highest image ID, independently of timeline order.
         """
-        if self._max_image_index:
-            return self._max_image_index
-
-        all_images = self.get_xml().findAll("image")
-        last_index = all_images[-1].attrs.get("index", None)
-
-        if last_index is None:
-            last_index = len(all_images) - 1
-
-        self._max_image_index = last_index
-        return int(last_index)
+        return max(
+            (int(image["index"]) for image in self.get_xml().find_all("image")),
+            default=-1,
+        )
 
 
 def xml_upgrade(chapter: Chapter, soup: Tag) -> Tag:

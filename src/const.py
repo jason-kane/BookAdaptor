@@ -54,7 +54,7 @@ TODO_DIR: str = os.path.join(
 )
 
 DEFAULT_IMAGE_TEMPLATE: str = configuration.get("DEFAULT_IMAGE_TEMPLATE", "t2i.zit-paragraph")
-DEFAULT_ANIMATION_TEMPLATE: str = configuration.get("DEFAULT_ANIMATION_TEMPLATE", "i2v.minimax_h3")
+DEFAULT_I2V_TEMPLATE: str = configuration.get("DEFAULT_I2V_TEMPLATE", "i2v.minimax_h3")
 
 COMFY_DIRS: dict[str, dict[str, str]] = configuration.get("COMFY_DIRS", {})
 COMFYUI_API_URL: str = configuration.get("COMFYUI_API_URL", "http://comfyui:8188/")

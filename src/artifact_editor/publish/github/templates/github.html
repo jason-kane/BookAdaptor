@@ -1,6 +1,6 @@
 {% set PUBLISH = True %}
 {% set GITHUB = True %}
-{% extends "base.html" %}
+{% extends "column_fragment.html" if request.args.get('embedded') == '1' else "base.html" %}
 
 {% block scripts %}
 <script src="/static/js/github.js"></script>
@@ -51,7 +51,7 @@
         <wa-button
             id="github-publish-button"
             variant="primary"
-            hx-post="save"
+            hx-post="{{ url_for('library.book.chapter.publish.github.save', **chapter.kwargs) }}"
         >Save Chapter to GitHub</wa-button>
     </form>
     

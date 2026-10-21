@@ -3,6 +3,9 @@ dot-cache/*
 dot-config/*
 dot-local/*
 src/.github_token
+src/.youtube-oauth/
+src/.tiktok-oauth/
+src/artifact_editor/publish/youtube/NOTES.md
 **/__pycache__/*
 src/pages/**/*
 src/artifact_editor/text_old/*

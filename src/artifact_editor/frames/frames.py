@@ -15,6 +15,9 @@ from PIL import Image
 # from artifact_editor.chapter.chapter import Chapter
 import const
 import logger
+from artifact_editor.frames.frame_cache import (
+    frame_is_current, invalidate_frame_metadata, save_frame_metadata,
+)
 from artifact_editor import (
     #images,
     tools,
@@ -240,14 +243,14 @@ def draw_frame(
                     transition_frames.remove("done.flag")
 
             animation_frames = []
-            for animation_frame_directory_name in glob(
+            for animation_frame_directory_name in sorted(glob(
                 os.path.join(
                     const.LIBRARY_DIR,
                     paragraphdir,
                     "animation",
                     f"image_{int(image_dict['index']):06d}_*",
                 )
-            ):
+            )):
                 log.info(f"Found animation frame directory: {animation_frame_directory_name}")
             
                 if os.path.exists(animation_frame_directory_name):
@@ -289,7 +292,7 @@ def draw_frame(
                             video_filename,
                             animate_frame_dir
                         )
-                        animation_frames = tools.expand_dir(
+                        animation_frames += tools.expand_dir(
                             os.path.join(animate_frame_dir, "*.png"), 
                             reverse=False
                         )
@@ -334,7 +337,39 @@ def draw_frame(
                 )
             )
 
+            # Resolve the exact animation/camera/static image before comparing
+            # inputs, and before building text layers or composing a canvas.
+            last_image_pfn = None
+            for i, image_pfn in enumerate(image_cycle):
+                if image_pfn is None:
+                    image_pfn = last_image_pfn
+                if i >= frame_index - first_frame_index:
+                    break
+                last_image_pfn = image_pfn
+
             fullscreen = image_dict.get("fullscreen", False)
+            image_stat = os.stat(image_pfn)
+            frame_inputs = {
+                "text_source": "chapter-png",
+                "text_revision": os.stat(os.path.join(
+                    const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
+                )).st_mtime_ns if not fullscreen else None,
+                "frame_index": frame_index,
+                "image_filename": os.path.basename(image_pfn),
+                "image_path": os.path.abspath(image_pfn),
+                "image_revision": image_stat.st_mtime_ns,
+                "image_size": image_stat.st_size,
+                "text_scroll_offset": scroll_lock,
+                "phrase_id": phrase_id,
+                "fullscreen": fullscreen,
+                "mode": image_dict.get("mode", "fit-to-width"),
+                "animate": image_dict.get("animate", ""),
+                "first_frame_index": first_frame_index,
+                "max_frame_index": max_frame_index,
+            }
+            if not force and frame_is_current(frame_fn, frame_inputs):
+                return
+            invalidate_frame_metadata(frame_fn)
 
             if not fullscreen:
                 if scroll_lock is None:
@@ -371,37 +406,6 @@ def draw_frame(
                 log.info('Creating widescreen canvas')
                 # make an output dimensioned canvas
                 canvas = Image.new("RGBA", size=(G["HSIZE"], G["VSIZE"]), color="black")
-
-                # for the record, yes, this is a bit aggresively stupid but..
-                # Q: how do you get the Nth entry in a generator?
-                # A: by enumerating it
-                log.info("Skip over the first %s of imaginative images", frame_index - first_frame_index, frame_index=frame_index, first_frame_index=first_frame_index)
-                log.debug(
-                    "transition_frames=%s, animation_frames=%s",
-                    len(transition_frames),
-                    len(animation_frames),
-                )
-                
-                # its all about when you break.
-                last_image_pfn = None
-                i = 0
-                for image_pfn in image_cycle:
-                    # if static_only:
-                    #     log.info("Static image, using it")
-                    #     # static image, no need to skip anything
-                    #     break
-                    if image_pfn is None:
-                        image_pfn = last_image_pfn
-
-                    if i >= (frame_index - first_frame_index):
-                        log.info(f"[{frame_index}] Choosing {os.path.basename(image_pfn)} for subframe {i}")
-                        break
-
-                    last_image_pfn = image_pfn
-                    i += 1
-                    
-                    #else:
-                    #    log.info(f"[{frame_index}] Skipping over {os.path.basename(image_pfn)}")
 
                 mode = image_dict.get("mode", "fit-to-width")  # image scaling method
 
@@ -551,17 +555,6 @@ def draw_frame(
                     color="black"
                 )
 
-                last_image_pfn = None
-                for i, image_pfn in enumerate(image_cycle):
-                    if image_pfn is None:
-                        image_pfn = last_image_pfn
-
-                    if i >= (frame_index - first_frame_index):
-                        log.debug(f"[{frame_index}] Choosing {os.path.basename(image_pfn)} for subframe {i}")
-                        break
-                    
-                    last_image_pfn = image_pfn
-
                 mode = image_dict.get("mode", "fit-to-width")  # image scaling method
 
                 imaginative_image = ImageSafetyDanceOpen(image_pfn)
@@ -627,6 +620,7 @@ def draw_frame(
                     )
 
             canvas.save(frame_fn)
+            save_frame_metadata(frame_fn, frame_inputs)
             log.info(f"[{frame_index:08}/{max_frame_index:08}] Saved {frame_fn}")
             success = True
         except Exception as err:
@@ -634,6 +628,8 @@ def draw_frame(
             log.error(traceback.format_exc())
             success = False
 
+    if not success:
+        raise RuntimeError(f"Failed to draw frame {frame_index} after {failcount} attempts")
     log.info(f"[{frame_index:08}/{max_frame_index:08}] draw_frame() complete")
 
 

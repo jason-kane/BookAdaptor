@@ -1,0 +1,10 @@
+# Protect expensive dependency layers, including texlive-full, from disk-pressure GC.
+# This policy applies to the kind-builder docker-container builder.
+[worker.oci]
+  gc = true
+
+[[worker.oci.gcpolicy]]
+  all = true
+  reservedSpace = "50GB"
+  maxUsedSpace = "100GB"
+  minFreeSpace = "50GB"

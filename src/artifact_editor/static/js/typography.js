@@ -18,12 +18,9 @@ function renderPage(num) {
         var viewport = page.getViewport({ scale: scale });
         var outputScale = window.devicePixelRatio || 1;
 
-        canvas.width = viewport.width
-        //Math.floor(viewport.width * outputScale);
-        canvas.height = viewport.height
-        //Math.floor(viewport.height * outputScale);
-        //canvas.style.width = Math.floor(viewport.width) + "px";
-        //canvas.style.height =  Math.floor(viewport.height) + "px";
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.maxWidth = viewport.width + "px";
 
         var transform = outputScale !== 1
             ? [outputScale, 0, 0, outputScale, 0, 0]

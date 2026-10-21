@@ -27,6 +27,8 @@ from artifact_editor.library.views import bp as library
 from artifact_editor.masterplan.views import bp as masterplan
 from artifact_editor.music.views import bp as music
 from artifact_editor.publish.views import bp as publish
+from artifact_editor.publish.youtube.oauth import bp as youtube_oauth
+from artifact_editor.publish.tiktok.oauth import bp as tiktok_oauth
 from artifact_editor.static import bp as static
 from artifact_editor.styles.views import bp as styles
 from artifact_editor.therapy.views import bp as therapy
@@ -135,6 +137,8 @@ class RegexConverter(BaseConverter):
 
 def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     app = Flask(__name__)
+    app.register_blueprint(youtube_oauth)
+    app.register_blueprint(tiktok_oauth)
 
     CORS(app, expose_headers=["HX-Push-Url", "HX-Trigger", "HX-Redirect"])
 

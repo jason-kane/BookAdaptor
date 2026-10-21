@@ -90,13 +90,13 @@
   <script type="module">
     import Quill from "/static/js/quill.js";
 
-    function beforeRequest(obj, event) {
+    window.beforeRequest = function(obj, event) {
       obj.setAttribute('loading', '');
-    }
-    function afterRequest(obj, event) {
+    };
+    window.afterRequest = function(obj, event) {
       obj.removeAttribute('loading');
       htmx.process(obj);
-    }
+    };
     function showAdvanced() {
       const advanced = document.getElementById("advanced");
       advanced.style.display = "block";
@@ -418,20 +418,6 @@
         </wa-breadcrumb-item>
         {% endif %}
         
-        {% if chapter %}
-        <wa-breadcrumb-item>
-          <wa-dropdown>
-            <wa-button slot="trigger" with-caret size="medium" appearance="filled">
-              Publish
-            </wa-button>
-            <a href="{{ url_for('library.book.chapter.publish.youtube.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Youtube</wa-dropdown-item></a>
-            <a href="{{ url_for('library.book.chapter.publish.tiktok.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>TikTok</wa-dropdown-item></a>
-            <a href="{{ url_for('library.book.chapter.publish.github.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>GitHub</wa-dropdown-item></a>
-          </wa-dropdown>
-        </wa-breadcrumb-item>
-
-        <a href="{{ url_for('library.book.chapter.textoviva.base') }}"><wa-button size="medium" appearance="filled">Textoviva</wa-button></a>
-        {% endif %}
       </wa-breadcrumb>
       <wa-button id="todo" appearance="outlined" variant="neutral">Dev TODO</wa-button>
     </div>

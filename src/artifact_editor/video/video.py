@@ -4,6 +4,7 @@ import multiprocessing as mp
 import os
 import subprocess
 import time
+import threading
 
 from artifact_editor import camera
 import const
@@ -64,15 +65,26 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
     paragraph_index = 0
     current_paragraph_index = -1
 
-    mplan = chapter.get_masterplan()
+    # Rebuild timing from XML, including edits to pauses and older cached
+    # plans that did not account for silence in the highlight timeline.
+    mplan = chapter.get_masterplan(force=True)
     max_frame_index = mplan.words[-1].end_frame
     total_frames = max(1, max_frame_index + 1)
     completed_frames = 0
+    progress_lock = threading.Lock()
 
     def report_frames(completed):
         if progress:
             percent = 10 + int(65 * min(completed, total_frames) / total_frames)
             progress(percent, f"Rendering frames ({min(completed, total_frames)}/{total_frames})")
+
+    def frame_completed(_result=None):
+        nonlocal completed_frames
+        # Pool callbacks run in its result thread; cached frames are counted
+        # by the submitting thread. Serialize counts and progress publication.
+        with progress_lock:
+            completed_frames += 1
+            report_frames(completed_frames)
 
     if progress:
         progress(5, "Preparing frame timeline")
@@ -80,7 +92,10 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
     # first sync pass to link a specific camera location to every frame
     chapter.build_frame_to_camera(
         aspect=aspect,
-        force=force
+        # The camera map contains None for fullscreen phrase frames. Rebuild
+        # it from the current masterplan every render so edits to phrase
+        # fullscreen flags cannot leave stale None entries on text frames.
+        force=True,
     )
 
     m = mp.Manager()
@@ -117,6 +132,25 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                 raise ValueError(
                     f"Masterplan has no image for frame {current_frame}; cannot render video"
                 )
+
+            # frame_to_image returns the next image plan when the timeline has
+            # a gap before it. Extend that image backward across the gap so
+            # the rendered sequence still starts at frame 0 and remains
+            # contiguous for ffmpeg's image-sequence input.
+            if image_dict["start_frame"] > current_frame:
+                gap_end = image_dict["start_frame"] - 1
+                log.warning(
+                    "Image timeline gap; filling frames %s through %s with the next image",
+                    current_frame,
+                    gap_end,
+                )
+                image_dict["start_frame"] = current_frame
+                image_dict["end_frame"] = min(
+                    gap_end,
+                    image_dict["end_frame"],
+                    max_frame_index,
+                )
+            image_plan_fullscreen = bool(image_dict.get("fullscreen", False))
 
             # # absolute path to the source image
             # # "image" can either be a simple filename relative to the paragraph_dir,
@@ -173,14 +207,20 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                         )
                         current_paragraph_index = paragraph_index
 
-                    # if the frame already exists, skip it.
+                    # draw_frame validates its companion metadata before reusing a frame.
                     frame_fn = os.path.join(
                         framedir, f"frame_{current_frame:06}.png"
                     )
-                    if os.path.exists(frame_fn):
-                        continue
-
                     image_dict["paragraph_tags"] = paragraph_tags
+                    # Camera entries are intentionally None on fullscreen
+                    # phrase frames. Keep the draw-time image flags aligned
+                    # with that phrase-level camera decision; otherwise a
+                    # textless/fullscreen phrase can inherit a non-fullscreen
+                    # image plan and fail while looking up its scroll lock.
+                    image_dict["fullscreen"] = bool(
+                        image_plan_fullscreen
+                        or word.get("fullscreen", False)
+                    )
 
                     # check for a camera effect frame, if it exists that becomes
                     # our new base image.
@@ -220,7 +260,8 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                         previous_image,
                         animate_lock,
                         paragraph_index,
-                        phrase_id
+                        phrase_id,
+                        force,
                     )
 
                     previous_image = image_dict
@@ -231,12 +272,12 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                                 frames.draw_frame,
                                 args=args,
                                 error_callback=onErr,
+                                callback=frame_completed,
                             )
                         )
                     else:
                         frames.draw_frame(*args)
-                        completed_frames += 1
-                        report_frames(completed_frames)
+                        frame_completed()
 
             # Always advance, including when this image matches the previous
             # one. Without this, a persisted final image can leave the outer
@@ -249,12 +290,8 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
         if const.MULTIPROCESS:
             log.info("Closing pool...")
             if jobs:
-                last_reported = -1
                 while True:
                     completed = sum(job.ready() for job in jobs)
-                    if completed != last_reported:
-                        report_frames(completed)
-                        last_reported = completed
                     if completed == len(jobs):
                         log.info("All jobs are ready, closing pool...")
                         break
@@ -306,7 +343,7 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
 
 
 
-def render_masterplan_widescreen(chapter):
+def render_masterplan_widescreen(chapter, progress=None):
     """
     Render the masterplan for the book in bookdir, output is the mp4.
     Thin wrapper around Book().book_to_video()
@@ -324,7 +361,7 @@ def render_masterplan_widescreen(chapter):
     os.makedirs(framedir, exist_ok=True)
 
     log.info('Triggering book_to_video()...')
-    book_to_video(chapter, force=False)
+    book_to_video(chapter, force=False, progress=progress)
 
 
 def render_masterplan_portrait(chapter):

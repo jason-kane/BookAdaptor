@@ -274,7 +274,12 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
             for fragment in paragraph.contents:
                 if isinstance(fragment, Tag):
                         
-                    if fragment.name == "phrase":
+                    if fragment.name == "silence":
+                        silence_frames = round(as_float(fragment.attrs.get("duration", 0)) * const.FPS)
+                        fragment.attrs["frames"] = str(silence_frames)
+                        frames += silence_frames
+
+                    elif fragment.name == "phrase":
                         # accumulate phrase durations
                         try:
                             phrase_frames = as_int(fragment.attrs.get("frames", "0"))
@@ -391,6 +396,15 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
 
                         image_frame_index += frame_duration
 
+                    elif fragment.name == "silence":
+                        # Audio assembly emits these pauses too. Keep the last
+                        # highlight visible and advance the next phrase's start.
+                        frame_duration = as_int(fragment.attrs.get("frames", 0))
+                        frame_index += frame_duration
+                        if words:
+                            words[-1].frames += frame_duration
+                            words[-1].end_frame += frame_duration
+
                     elif fragment.name == "phrase":
                         spoken_text = as_str(fragment.get_text())
                         frame_duration = as_int(fragment.attrs.get("frames", 0))
@@ -407,8 +421,9 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
 
                         tags = tags_to_dict(paragraph.attrs.get('tags'))
                         our_words = {
-                            "start_frame": frame_index,
-                            "frames": frame_duration,  
+                            # Cover any leading silence with the first phrase.
+                            "start_frame": frame_index if words else 0,
+                            "frames": frame_duration if words else frame_index + frame_duration,
                             "end_frame": (frame_index + frame_duration) - 1,
                             "text": spoken_text.strip(),
                             "paragraph_tags": tags,

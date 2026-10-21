@@ -56,6 +56,30 @@ def get_workflow_templates(interface="ui", mode="t2i"):
             )
 
 
+def selected_image_workflow(image, templates, default):
+    """Resolve legacy selections and recover still workflows overwritten by animation."""
+    def match(value):
+        value = os.path.basename(value or "").removesuffix(".json")
+        for prefix in ("ui.", "api."):
+            value = value.removeprefix(prefix)
+        for template in templates:
+            if value in (template.id, template.id.split(".", 1)[-1]):
+                return template.id
+            if value == os.path.basename(template.path).removesuffix(".json").removeprefix("ui.").removeprefix("api."):
+                return template.id
+        return None
+
+    saved = match(image.get("workflow_image_template"))
+    if saved:
+        return saved
+    filename = os.path.basename(image.get("src") or "")
+    for template in templates:
+        identifier = template.id.split(".", 1)[-1]
+        if filename.startswith(f"img_{image.get('index')}_{identifier}_"):
+            return template.id
+    return match(default) or ""
+
+
 # little harness so we play nice.
 class ComfyWorkflowUI(TextToImageProviderUI):
     key = "comfyui.workflow"
@@ -95,15 +119,13 @@ class ComfyWorkflowUI(TextToImageProviderUI):
             image_index=image_xml.attrs["index"],
         )
 
-        workflow_image_template = image_xml.attrs.get("workflow_image_template", "")
-        if workflow_image_template in [None, ""]:
-            workflow_image_template = const.DEFAULT_IMAGE_TEMPLATE
-        
-        if "." in workflow_image_template:
-            mode = workflow_image_template.split(".")[0]
-            workflow_image_template = workflow_image_template.split(".")[-1]
-        else:
-            mode = "*"
+        templates_by_mode = {
+            mode: list(get_workflow_templates(interface="ui", mode=mode)) for mode in modes
+        }
+        selected_workflow = selected_image_workflow(
+            image_xml, [template for group in templates_by_mode.values() for template in group],
+            const.DEFAULT_IMAGE_TEMPLATE,
+        )
 
         workflow_selector = f"""
         <div style="width: 100%">
@@ -115,7 +137,7 @@ class ComfyWorkflowUI(TextToImageProviderUI):
                 hx-put="{choose_workflow_url}"
                 hx-swap="none"
                 hx-trigger="change"
-                value="{mode}.{workflow_image_template}">
+                value="{html.escape(selected_workflow, quote=True)}">
         """
 
         first = True
@@ -129,17 +151,12 @@ class ComfyWorkflowUI(TextToImageProviderUI):
             if many:
                 workflow_selector += f"<small>{mode.upper()} workflows:</small>"
 
-            for template in get_workflow_templates(interface="ui", mode=mode):
-                if mode + "." + workflow_image_template == template.id:
-                    workflow_selector += f"""<wa-option selected value="{template.id}">{template.name}</wa-option>"""
-                else:
-                    log.warning(
-                        "Not a match",
-                        mode=mode,
-                        workflow_image_template=workflow_image_template,
-                        template_id=template.id,
-                    )
-                    workflow_selector += f"""<wa-option value="{template.id}">{template.name}</wa-option>"""
+            for template in templates_by_mode[mode]:
+                selected = " selected" if selected_workflow == template.id else ""
+                workflow_selector += (
+                    f'<wa-option{selected} value="{html.escape(template.id, quote=True)}">'
+                    f'{html.escape(template.name)}</wa-option>'
+                )
 
         workflow_selector += """
             </wa-select>

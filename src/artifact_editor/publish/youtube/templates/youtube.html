@@ -1,6 +1,6 @@
 {% set PUBLISH = True %}
 {% set YOUTUBE = True %}
-{% extends "base.html" %}
+{% extends "column_fragment.html" if request.args.get('embedded') == '1' else "base.html" %}
 
 {% block scripts %}
 <script src="/static/js/youtube.js"></script>
@@ -14,6 +14,68 @@
 {% endblock %}
 
 {% block body %}
-<div>
+<div class="wa-stack">
+    <wa-button id="youtube-connect" variant="brand" href="{{ url_for('.connect') }}" target="_top"
+        aria-describedby="youtube-connect-status">{{ 'Reconnect to YouTube' if youtube_connected else 'Connect to YouTube' }}</wa-button>
+    <p id="youtube-connect-status" role="status">
+        {% if youtube_connection == 'denied' %}YouTube authorization was cancelled. You can try again.
+        {% elif youtube_connection == 'failed' %}YouTube connection failed. Please try again and grant upload permission.
+        {% elif youtube_connected %}YouTube is connected. Upload permission is saved for this editor.
+        {% else %}Connect your YouTube account to authorize video uploads.{% endif %}
+    </p>
+    <form id="youtube-upload-form" class="wa-stack" action="{{ url_for('.upload') }}" method="post"
+        data-title-title="{{ title_title }}" data-title-author="{{ title_author }}"
+        data-author-hashtag="{{ author_hashtag }}" data-generated-title="{{ upload_title }}">
+        <wa-input name="title" label="Title" value="{{ settings.title }}" maxlength="100" required
+            hint="Includes the chapter and book titles. Reorder or edit to emphasize the source material (100 characters maximum)."></wa-input>
+        <wa-select name="title_category" label="Book category" value="{{ settings.title_category }}" required
+            hint="Used as a hashtag in the default title.">
+            <wa-option value="">Choose a category</wa-option>
+            {% for category in title_categories %}
+            <wa-option value="{{ category }}">{{ category }}</wa-option>
+            {% endfor %}
+        </wa-select>
+        <wa-select name="title_format" label="Content format (optional)" value="{{ settings.title_format }}"
+            hint="Adds a hashtag such as #poem. Custom title edits are preserved.">
+            <wa-option value="">None</wa-option>
+            {% for format in title_formats %}
+            <wa-option value="{{ format }}">{{ format }}</wa-option>
+            {% endfor %}
+        </wa-select>
+        <wa-textarea name="description" label="Description" value="{{ settings.description }}"
+            rows="12" resize="vertical"
+            hint="Pieces under 1,024 characters include the full text and hashtags. Edit to add your own notes."></wa-textarea>
+        <wa-select name="privacy_status" label="Visibility" value="{{ settings.privacy_status }}">
+            <wa-option value="private">Private</wa-option>
+            <wa-option value="unlisted">Unlisted</wa-option>
+            <wa-option value="public">Public</wa-option>
+        </wa-select>
+        <wa-select name="license" label="License" value="{{ settings.license }}" required>
+            <wa-option value="youtube">YouTube</wa-option>
+            <wa-option value="creativeCommon">Creative Commons Attribution</wa-option>
+        </wa-select>
+        <wa-radio-group name="made_for_kids" label="Made for kids" value="{{ settings.made_for_kids }}" required>
+            <wa-radio value="true">Yes, made for kids</wa-radio>
+            <wa-radio value="false">No, not made for kids</wa-radio>
+        </wa-radio-group>
+        <wa-radio-group name="ai_use" label="AI use" value="{{ settings.ai_use }}" required>
+            <wa-radio value="true">Yes</wa-radio>
+            <wa-radio value="false">No</wa-radio>
+        </wa-radio-group>
+        <wa-radio-group name="paid_promotion" label="Paid promotion" value="{{ settings.paid_promotion }}" required>
+            <wa-radio value="true">Yes</wa-radio>
+            <wa-radio value="false">No</wa-radio>
+        </wa-radio-group>
+        <wa-input name="tags" label="Tags" value="{{ settings.tags }}" data-generated-tags="{{ upload_tags }}"
+            hint="Separate tags with commas. Poems include the poem tag."></wa-input>
+        <wa-select name="category_id" label="YouTube category" value="{{ settings.category_id }}">
+            <wa-option value="24">Entertainment</wa-option>
+            <wa-option value="27">Education</wa-option>
+            <wa-option value="1">Film &amp; Animation</wa-option>
+        </wa-select>
+        <p id="youtube-upload-status" role="status">{{ 'Ready to upload the rendered chapter video.' if youtube_connected else 'Connect to YouTube before uploading.' }}</p>
+        <wa-button id="youtube-upload" type="submit" variant="brand" {% if not youtube_connected %}disabled{% endif %}
+            aria-describedby="youtube-upload-status">Upload Video</wa-button>
+    </form>
 </div>
 {% endblock %}

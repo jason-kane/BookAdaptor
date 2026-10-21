@@ -8,6 +8,7 @@ from flask import (
 import const
 import logger
 import os
+from markupsafe import escape
 
 from .chapter import Chapter
 
@@ -16,21 +17,83 @@ log = logger.log(__name__)
 
 
 def import_button(chapter: Chapter):
-    import_url = url_for(
-        'library.book.chapter.import_chapter',
-        **chapter.kwargs,
-    )
-    return f"""
-    <wa-button 
-        id="import_btn" 
-        hx-post="{ import_url }"
-        hx-on::before-request="beforeRequest(this,event)"
-        hx-on::after-request="afterRequest(this,event)"
-        hx-swap="none" 
-        variant="neutral" 
-        appearance="accent" 
-        size="medium" 
-    >Import Chapter</wa-button>"""
+    import json
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    task = escape(json.dumps({
+        "action": "chapter_import", "job_id": job_id,
+        "author": chapter.author.name, "title": chapter.title,
+        "chapter_number": chapter.number, "language": chapter.language,
+    }))
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+        data-chapter-import="{job_id}">
+        <wa-button id="import_btn" ws-send hx-trigger="click" hx-vals='{task}'
+            variant="neutral" appearance="accent" size="medium">Import Chapter</wa-button>
+        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
+    </div>"""
+
+
+
+def generate_missing_metadata_button(chapter: Chapter):
+    import json
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    task = escape(json.dumps({
+        "action": "chapter_missing_metadata", "job_id": job_id,
+        "author": chapter.author.name, "title": chapter.title,
+        "chapter_number": chapter.number, "language": chapter.language,
+    }))
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+        data-chapter-metadata="{job_id}">
+        <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
+            variant="neutral" appearance="accent" size="medium">Generate Missing Metadata</wa-button>
+        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
+    </div>"""
+
+
+def time_align_button(chapter: Chapter):
+    import json
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    task = escape(json.dumps({
+        "action": "textoviva_time_align", "job_id": job_id,
+        "author": chapter.author.name, "title": chapter.title,
+        "chapter_number": chapter.number, "language": chapter.language,
+    }))
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+        <wa-button ws-send hx-trigger="click" hx-vals='{task}'
+            variant="neutral" appearance="accent" size="medium">Time Align</wa-button>
+        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
+    </div>"""
+
+
+def generate_missing_images_button(chapter):
+    return missing_asset_button(chapter, "chapter_missing_images", "Generate Missing Images")
+
+
+def generate_missing_animation_button(chapter):
+    return missing_asset_button(chapter, "chapter_missing_animations", "Generate Missing Animations")
+
+
+def missing_asset_button(chapter, action, label):
+    import json
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    task = escape(json.dumps({
+        "action": action, "job_id": job_id,
+        "author": chapter.author.name, "title": chapter.title,
+        "chapter_number": chapter.number, "language": chapter.language,
+    }))
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+        data-chapter-assets="{job_id}">
+        <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
+            variant="neutral" appearance="accent" size="medium">{label}</wa-button>
+        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
+    </div>"""
 
 
 
@@ -151,11 +214,12 @@ def chapter_mood_widget(chapter):
     return f"""
         <wa-textarea
             name="mood"
+            hx-vals='js:{{"mood": this.value}}'
             hx-put="{mood_set_url}"
             hx-trigger="change"
             hx-swap="none"
             label="Mood"
-            value="{chapter.mood}">
+            value="{escape(chapter.mood)}">
         </wa-textarea>
     """
 
@@ -169,10 +233,11 @@ def chapter_theme_widget(chapter):
     return f"""
         <wa-textarea
             name="theme"
+            hx-vals='js:{{"theme": this.value}}'
             hx-trigger="change"
             hx-swap="none"
             hx-put="{theme_set_url}"
             label="Theme"
-            value="{chapter.theme}">
+            value="{escape(chapter.theme)}">
         </wa-textarea>
     """

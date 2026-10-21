@@ -1,0 +1,5 @@
+<wa-textarea id="timeline-animation-description-{{ image['index'] }}" label="Description" name="animation_prompt" cols="70" rows="3"
+    value="{{ image.get('animation_prompt', '') }}"
+    hx-post="{{ editor_url }}" hx-vals='{"action":"animation_description"}'
+    hx-trigger="change" hx-swap="none"
+></wa-textarea>

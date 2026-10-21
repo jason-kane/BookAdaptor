@@ -1,0 +1,8 @@
+<wa-button class="chapter-timeline-delete" type="button" size="small"
+    variant="danger" appearance="plain" aria-label="Delete {{ item_type }}" title="Delete {{ item_type }}"
+    hx-post="{{ url_for('library.book.chapter.delete_timeline_item', item_type=item_type, item_index=item_index, **chapter.kwargs) }}"
+    hx-target="closest [data-timeline-type]" hx-swap="outerHTML" hx-disabled-elt="this"
+    hx-confirm="Delete this {{ item_type }} from the timeline?"
+    hx-on::after-request="if (event.detail.successful && '{{ item_type }}' === 'phrase' && String(window.previous_phrase_index) === '{{ item_index }}') window.previous_phrase_index = -1">
+    <wa-icon name="trash" aria-hidden="true"></wa-icon>
+</wa-button>

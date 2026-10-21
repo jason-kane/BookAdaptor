@@ -6,6 +6,7 @@ import copy
 import random
 import re
 import subprocess
+import shutil
 import time
 from typing import Any
 import fnv_hash_fast
@@ -646,15 +647,26 @@ def extract_frames(videofile, frame_dir):
     Extract frames from videofile into frame_dir.
     """
     log.info(f"Extracting frames from {videofile} to {frame_dir}...")
+    # Different extraction paths previously mixed four- and six-digit names,
+    # and shorter replacements left the previous video's tail behind.
+    shutil.rmtree(frame_dir, ignore_errors=True)
     os.makedirs(frame_dir, exist_ok=True)
     cmd = [
         "/usr/bin/ffmpeg",
+        "-nostdin",
+        "-y",
         "-i",
         videofile,
+        "-vf",
+        f"fps={const.FPS}",
         os.path.join(frame_dir, "frame_%06d.png"),
     ]
     # log.info(json.dumps(cmd, indent=2))
-    subprocess.run(cmd, capture_output=False)
+    try:
+        subprocess.run(cmd, capture_output=False, check=True)
+    except BaseException:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+        raise
     log.info(f"DONE extracting frames from {videofile} to {frame_dir}.")
     return frame_dir
 

@@ -1,18 +1,12 @@
 import html
+import json
 import os
 
-import numpy as np
 import speech_recognition as sr
-import torch
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 from flask import Blueprint, g, make_response, render_template, request, send_file
 from speech_recognition.audio import AudioData
-from transformers import (
-    WhisperFeatureExtractor,
-    WhisperForConditionalGeneration,
-    WhisperProcessor,
-)
 
 import const
 import logger
@@ -686,45 +680,11 @@ def repronounce_missing_words(author: str, title: str, chapter_number: int):
 def recognize_neurolang_ipa_whisper_medium(
     self, audio_data: AudioData, show_dict: bool = False, **kwargs
 ):
-    processor = WhisperProcessor.from_pretrained("neurlang/ipa-whisper-medium")
-    model = WhisperForConditionalGeneration.from_pretrained(
-        "neurlang/ipa-whisper-medium"
-    )
-    fe = WhisperFeatureExtractor.from_pretrained("neurlang/ipa-whisper-medium")
+    import base64
+    from worker_client import call_worker
 
-    model.config.forced_decoder_ids = None
-    model.config.suppress_tokens = []
-    model.generation_config.forced_decoder_ids = None
-    model.generation_config._from_model_config = True
-
-    # turn AudioData into torch.FloatTensor with shape (batch_size, sequence_length, feature_dim)?
-    audio = audio_data.get_raw_data(
-        convert_width=2, convert_rate=16000
-    )  # PCM 16kHz raw audio data
-
-    # truncate to 30 seconds
-    max_length = 30 * 16000 * 2  # 30 seconds * 16000 samples/second * 2 bytes/sample
-    if len(audio) > max_length:
-        audio = audio[:max_length]
-        log.info(f"Audio truncated to 30 seconds (max_length={max_length} bytes)")
-
-    as_tensor = np.frombuffer(audio, np.int16).flatten().astype(np.float32) / 32768.0
-
-    # log.info(f"Audio data length: {len(audio)} bytes")
-    log.info(f"Audio duration: {len(audio) / 16000} seconds")
-    input_features = fe(
-        raw_speech=torch.from_numpy(as_tensor), sampling_rate=16000, return_tensors="pt"
-    )
-    log.info(f"{input_features.input_features=}")
-
-    predicted_ids = model.generate(
-        input_features=input_features.input_features,
-        # torch.from_numpy(as_tensor)
-    )
-    log.info("predicted_ids: %s", predicted_ids)
-    transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)
-    log.info(f"Transcription: {transcription}")
-    return transcription
+    audio = audio_data.get_raw_data(convert_width=2, convert_rate=16000)
+    return call_worker("whisper_ipa", audio=base64.b64encode(audio[:30 * 16000 * 2]).decode("ascii"))
 
 
 @bp.route("/actions/record_audio/<int:phrase_index>", methods=["POST"])
@@ -791,19 +751,20 @@ def record_audio(
 
 
 @bp.route("/actions/merge_with_previous", methods=["POST"])
-def merge_with_previous(author: str, title: str, chapter_number: int, language: str):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+def merge_with_previous():
+    chapter = g.chapter
 
     phrase_index = int(request.form.get("phrase_index", None))
     page = request.form.get("page", None)
 
     phrase_xml = chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        return "Phrase not found", 404
 
     log.info(f"Merging phrase {phrase_index} with previous phrase.")
 
     # find the previous phrase, this is the phrase we are augmenting.
-    previous_phrase = phrase_xml.find_previous_sibling("phrase")
+    previous_phrase = phrase_xml.find_previous("phrase")
     if previous_phrase is None:
         log.error(f"No previous phrase found for phrase {phrase_index}.")
         return "No previous phrase found", 404
@@ -814,7 +775,8 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
         # we want to retain line breaks in verse mode
         previous_phrase_text = previous_phrase.get_text()
         merging_phrase_text = phrase_xml.get_text()
-        new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}"
+        separator = "" if not previous_phrase_text or previous_phrase_text[-1:].isspace() else " "
+        new_phrase_text = f"{previous_phrase_text}{separator}{merging_phrase_text}"
 
         previous_phrase.clear()
         new_phrase = NavigableString(new_phrase_text)
@@ -823,7 +785,7 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
         # append our text to the previous phrase
         previous_phrase_text = previous_phrase.get_text().strip()
         merging_phrase_text = phrase_xml.get_text().strip()
-        new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}"
+        new_phrase_text = f"{previous_phrase_text} {merging_phrase_text}".strip()
 
         previous_phrase.clear()
         new_phrase = NavigableString(new_phrase_text)
@@ -834,6 +796,24 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
 
     # remove our pronunciation, so the audio will be regenerated
     previous_phrase.attrs.pop("pronunciation", None)
+    previous_phrase.attrs.pop("duration", None)
+    previous_phrase.attrs.pop("filtered_pronunciation", None)
+
+    previous_delta = previous_phrase.attrs.get("delta")
+    merging_delta = phrase_xml.attrs.get("delta")
+    if previous_delta is not None or merging_delta is not None:
+        previous_ops = json.loads(previous_delta) if previous_delta else []
+        merging_ops = json.loads(merging_delta) if merging_delta else []
+        if not isinstance(previous_ops, list) or not isinstance(merging_ops, list):
+            return "Phrase delta must be a list of Quill operations", 400
+        previous_phrase.attrs["delta"] = json.dumps(previous_ops + merging_ops)
+
+    previous_latex = previous_phrase.attrs.get("latex")
+    merging_latex = phrase_xml.attrs.get("latex")
+    if previous_latex is not None or merging_latex is not None:
+        previous_phrase.attrs["latex"] = " ".join(
+            value for value in (previous_latex, merging_latex) if value
+        )
 
     if "src" in phrase_xml.attrs:
         wavfile = os.path.join(const.LIBRARY_DIR, phrase_xml.attrs["src"].lstrip("/"))
@@ -846,9 +826,18 @@ def merge_with_previous(author: str, title: str, chapter_number: int, language: 
     phrase_xml.decompose()
     log.info(f"Removed phrase {phrase_index} from book.")
 
+    phrases.reindex_phrases(chapter)
+
     # save the book xml
     chapter.save_xml()
 
+    if request.headers.get("HX-Target") == "chapter-phrase-list":
+        return render_template(
+            "chapter_phrase_list.html",
+            phrases=list(chapter.phrases()),
+            speakers=chapter.speakers(),
+            chapter=chapter,
+        ), 200
     return htmx.phrase_editor(chapter, previous_phrase, page), 200
 
 

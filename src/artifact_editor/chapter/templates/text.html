@@ -5,42 +5,254 @@
 {% endblock %}
 
 {% block styles %}
+<link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
+    #player-stack {
+        width: 100%;
+        min-width: 0;
+    }
+    #player-stack .video-js .vjs-tech {
+        object-fit: contain;
+    }
+
+    .playback-current {
+        outline: 2px solid #e3b341;
+        outline-offset: -2px;
+        background-color: #12345b;
+        color: #fff;
+    }
+
     .chapter-layout {
         display: flex;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        gap: clamp(1rem, 2vw, 2rem);
+        align-items: stretch;
+        gap: clamp(0.5rem, 1vw, 1rem);
     }
-    .chapter-editor-column,
-    .chapter-phrase-column {
-        flex: 1 1 18rem;
-        min-width: min(100%, 16rem);
+    .chapter-column {
+        position: relative;
+        flex: 1 1 0;
+        min-width: 0;
     }
-    .chapter-editor-column {
-        flex-basis: 16rem;
-        max-width: 27rem;
+    .chapter-column-content {
+        min-width: 0;
+        width: 100%;
     }
-    .chapter-phrase-column {
-        flex-basis: 18rem;
-        min-width: min(100%, 18rem);
+    .chapter-column-content[hidden] {
+        display: none;
     }
-    .chapter-rendered-column {
-        flex: 0 1 32.6875rem;
-        min-width: min(100%, 20rem);
+    .chapter-column-toggle {
+        position: absolute;
+        top: 0.25rem;
+        right: 0;
+        z-index: 1;
+        width: 2.5rem;
+    }
+    .chapter-column-content > wa-tab-group::part(nav) {
+        margin-inline-end: 2.75rem;
+    }
+    .chapter-column-toggle::part(base) {
+        padding-inline: 0;
+        width: 100%;
+    }
+    .chapter-column.is-collapsed {
+        flex: 0 0 2.5rem;
+    }
+    .chapter-column.is-collapsed > .chapter-column-toggle {
+        width: 100%;
+        height: 100%;
+        min-height: 12rem;
+        top: 0;
+    }
+    .chapter-column.is-collapsed > .chapter-column-toggle::part(base) {
+        width: 100%;
+        height: 100%;
     }
     .chapter-rendered-scroll {
-        width: min(100%, 523px);
+        width: 100%;
         height: 46em;
         overflow-y: scroll;
     }
+    #chapter-timeline-scroll {
+        height: max(12rem, calc(100dvh - 14rem));
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
+    }
+    .chapter-rendered-scroll > canvas,
+    .chapter-rendered-scroll > img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    .chapter-rendered-scroll:has(> img) {
+        background-color: #fffdf5;
+    }
     .phrase-container {
+        position: relative;
         border: 1px solid #5c5b5b;
         margin-bottom: 0.5em;
         margin-top: 0.5em;
     }
+    .phrase-container[data-timeline-type="phrase"] .chapter-audio-warning-badge {
+        pointer-events: none;
+    }
     .phrase-container:hover {
         border: 1px solid #613737;
+    }
+    #chapter-phrase-list .chapter-timeline-delete {
+        display: none;
+        position: absolute;
+        inset-block-start: 0.125rem;
+        inset-inline-end: 0.125rem;
+        z-index: 2;
+    }
+    .chapter-timeline-time { cursor: pointer; }
+    .chapter-timeline-time:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 2px;
+    }
+    #chapter-phrase-list .chapter-timeline-timing {
+        box-sizing: border-box;
+        min-height: 2.25rem;
+        padding-inline-end: 2.5rem;
+    }
+    #chapter-phrase-list > .selected > .chapter-timeline-delete,
+    #chapter-phrase-list > details[open] > .chapter-timeline-delete {
+        display: inline-block;
+    }
+    .chapter-timeline-image {
+        position: relative;
+        display: block;
+        padding: 0;
+        margin-block: 0.5rem;
+        border: 1px solid #5c5b5b;
+        border-radius: 0.25rem;
+        color: inherit;
+        text-decoration: none;
+    }
+    .chapter-timeline-image .chapter-image-warning-badges {
+        display: flex;
+        gap: 0.25rem;
+        pointer-events: none;
+    }
+    .chapter-timeline-image:hover {
+        border-color: #613737;
+    }
+    #chapter-phrase-list > [data-timeline-type]:nth-child(odd of [data-timeline-type]) {
+        --timeline-entry-background: #000;
+        background-color: #000;
+    }
+    #chapter-phrase-list > [data-timeline-type]:nth-child(even of [data-timeline-type]) {
+        --timeline-entry-background: #242424;
+        background-color: #242424;
+    }
+    #chapter-phrase-list .phrase-editor::part(base),
+    #chapter-phrase-list .phrase-editor::part(textarea-wrapper),
+    #chapter-phrase-list .phrase-editor::part(textarea),
+    #chapter-phrase-list wa-select[name="speaker"]::part(combobox),
+    #chapter-phrase-list wa-select[name="speaker"]::part(display-input) {
+        background-color: var(--timeline-entry-background);
+    }
+    #chapter-phrase-list > .chapter-timeline-image:has(.animation-duration-warning) {
+        background-color: var(--wa-color-danger-fill-quiet, #641122);
+        border-color: var(--wa-color-danger-border-normal, #de2d44);
+    }
+    .chapter-timeline-image > summary {
+        display: flex;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        min-width: 0;
+        text-indent: 0;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+    }
+    .chapter-timeline-image > summary > [id^="chapter-image-timing-"] {
+        flex-basis: 100%;
+        min-width: 0;
+        margin-inline: 0;
+    }
+    .chapter-timeline-image > summary > span[title="Drag to move image"] { cursor: grab; }
+    .chapter-timeline-image[open] { border-color: #410f80; }
+    .chapter-timeline-image[open] > summary > span[title="Drag to move image"] {
+        display: none;
+    }
+    .chapter-timeline-image[open] > summary {
+        list-style: none;
+        margin: 0;
+    }
+    .chapter-timeline-image[open] > summary::marker {
+        content: '';
+    }
+    .chapter-timeline-image[open] > summary::-webkit-details-marker {
+        display: none;
+    }
+    .chapter-timeline-image[open] > summary::before,
+    .chapter-timeline-image[open] > summary::after {
+        display: none;
+    }
+    .chapter-mini-image-editor { margin-top: 0.75rem; }
+    .chapter-image-gallery {
+        display: grid;
+        grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+        align-items: start;
+        gap: 0.75rem;
+    }
+    .chapter-recent-images {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 4rem), 1fr));
+        align-items: start;
+        justify-items: start;
+        gap: 0.25rem;
+    }
+    .chapter-recent-images .chapter-image-thumbnail {
+        max-width: 100%;
+    }
+    .chapter-image-thumbnail {
+        display: inline-flex;
+        flex: 0 0 auto;
+        width: fit-content;
+        height: auto;
+        min-width: 0;
+        min-height: 0;
+        line-height: 0;
+        padding: 2px;
+        border: 2px solid transparent;
+        border-radius: 0.25rem;
+        background: transparent;
+        cursor: pointer;
+    }
+    .chapter-image-thumbnail[aria-pressed="true"] {
+        border-color: var(--wa-color-brand-50, #7560ca);
+    }
+    .chapter-image-thumbnail[aria-pressed="false"]:hover {
+        border-color: var(--wa-color-neutral-border-quiet, #777);
+    }
+    .chapter-timeline-image .chapter-mini-image-preview {
+        width: 100%;
+        height: auto;
+        max-height: 13.5rem;
+        object-fit: contain;
+    }
+    [data-timeline-type].drop-before { box-shadow: 0 -3px var(--wa-color-brand-50, #7560ca); }
+    [data-timeline-type].drop-after { box-shadow: 0 3px var(--wa-color-brand-50, #7560ca); }
+    .chapter-timeline-image > summary > img {
+        width: 6rem;
+        height: 4.5rem;
+        object-fit: contain;
+        flex-shrink: 0;
+    }
+    .chapter-timeline-image .chapter-image-thumbnail img {
+        display: block;
+        width: auto;
+        height: auto;
+        max-width: min(6rem, 100%);
+        max-height: 4.5rem;
+        margin: 0;
+    }
+    .chapter-timeline-image[open] > summary > img {
+        display: none;
     }
     .phrase-container.selected {
         border: 3px solid #410f80;
@@ -50,8 +262,36 @@
         width: 100%;
         min-width: 0;
     }
+    .chapter-section {
+        border-bottom: 1px solid #aaa;
+        padding-bottom: 1rem;
+        margin-bottom: 1rem;
+    }
+    .chapter-section-editor {
+        min-height: 12em;
+    }
+    .chapter-section-editor.ql-container {
+        height: auto;
+    }
+    .chapter-section-editor .ql-editor {
+        box-sizing: border-box;
+        height: auto;
+        min-height: 12em;
+        overflow-y: hidden;
+    }
     .ql-editor {
+        font-family: Helvetica, Arial, sans-serif;
         font-size: 16px;
+    }
+
+    .ql-snow .ql-picker.ql-font .ql-picker-label:not([data-value])::before,
+    .ql-snow .ql-picker.ql-font .ql-picker-item:not([data-value])::before {
+        content: "Helvetica";
+        font-family: Helvetica, Arial, sans-serif;
+    }
+    .ql-snow .ql-picker.ql-size .ql-picker-label:not([data-value])::before,
+    .ql-snow .ql-picker.ql-size .ql-picker-item:not([data-value])::before {
+        content: "16px";
     }
 
     .ql-snow .ql-picker.ql-size .ql-picker-label[data-value]::before,
@@ -63,6 +303,22 @@
     .ql-snow .ql-picker.ql-font .ql-picker-item[data-value]::before {
         content: attr(data-value) !important;
     }    
+
+    .ql-snow .ql-picker.ql-font [data-value="Roboto Condensed"]::before {
+        font-family: "Roboto Condensed", sans-serif;
+    }
+    .ql-snow .ql-picker.ql-font [data-value="Times New Roman"]::before {
+        font-family: "Times New Roman", serif;
+    }
+    .ql-snow .ql-picker.ql-font [data-value="Calibri"]::before {
+        font-family: "Calibri", sans-serif;
+    }
+    .ql-snow .ql-picker.ql-font [data-value="Calibri Light"]::before {
+        font-family: "Calibri Light", sans-serif;
+    }
+    .ql-snow .ql-picker.ql-font [data-value="Sans-Serif"]::before {
+        font-family: sans-serif;
+    }
  
     .ql-snow .ql-picker.ql-font {
         width: 150px !important;
@@ -78,17 +334,55 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-columns.js', v='3') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='phrase-toggle-2') }}" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
-    const fontFamilyArr = ["Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
+    // Quill's false option represents unformatted text and resets to CSS defaults.
+    const fontFamilyArr = [false, "Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
     let fonts = Quill.import("attributors/style/font");
-    fonts.whitelist = fontFamilyArr;
+    fonts.whitelist = fontFamilyArr.filter(Boolean);
     Quill.register(fonts, true);
 
-    const fontSizeArr = ['10px', '11px', '12px', '14px', '18px', '24px'];
+    const fontSizeArr = ['10px', '11px', '12px', '14px', false, '18px', '24px'];
     var Size = Quill.import('attributors/style/size');
-    Size.whitelist = fontSizeArr;
+    Size.whitelist = [...fontSizeArr.filter(Boolean), '16px'];
     Quill.register(Size, true);
+
+    function showUniformTypography(editor) {
+        const update = () => {
+            const runs = editor.getContents().ops.filter(operation =>
+                typeof operation.insert === 'string' && operation.insert.replace(/\n/g, '').length
+            );
+            if (!runs.length && editor.hasFocus()) return;
+            for (const format of ['font', 'size']) {
+                const values = new Set(runs.map(operation => {
+                    const value = operation.attributes?.[format] || false;
+                    return format === 'size' && value === '16px' ? false : value;
+                }));
+                // With mixed text, Quill shows the current selection's formatting.
+                if (values.size > 1 && editor.hasFocus()) continue;
+                const value = values.size === 1 ? [...values][0] : false;
+                const select = editor.getModule('toolbar').container.querySelector(`select.ql-${format}`);
+                if (!select) continue;
+                const options = Array.from(select.options);
+                select.selectedIndex = values.size > 1 ? -1 : options.findIndex(option =>
+                    value === false ? option.hasAttribute('selected') : option.value === value
+                );
+                const picker = editor.theme.pickers.find(item => item.select === select);
+                if (picker) {
+                    picker.update();
+                    if (values.size > 1) picker.label.dataset.value = 'Mixed';
+                }
+            }
+        };
+        // Run after Quill's own toolbar and picker event handlers have finished.
+        editor.on('editor-change', () => queueMicrotask(update));
+        update();
+    }
 
     function fixPreviousEditor(previous_simple_text) {
         const previous_editor = document.getElementById(`phrase_${window.previous_phrase_index}_ta`);
@@ -151,104 +445,77 @@
     //     'speaker', // css property name
     //     speakerConfig
     // );
-    let text_editor = null;
+    const chapterSections = [];
+    let sectionSaveTimer = null;
 
-    // Wait for the DOM to finish loading
+    window.getChapterSectionsPayload = () => chapterSections.map(section => ({
+        typesetting_method: section.typesetting_method,
+        ops: section.editor.getContents().ops
+    }));
+
+    function saveChapterSections() {
+        clearTimeout(sectionSaveTimer);
+        sectionSaveTimer = setTimeout(() => {
+            fetch('sections', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({sections: JSON.stringify(window.getChapterSectionsPayload())})
+            }).then(response => {
+                if (!response.ok) throw new Error(`Section save failed: ${response.status}`);
+            }).catch(error => console.error(error));
+        }, 200);
+    }
+
+    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}) {
+        const index = chapterSections.length;
+        const sectionElement = document.createElement('section');
+        sectionElement.className = 'chapter-section wa-stack';
+        sectionElement.innerHTML = `
+            <div id="text_editor_${index}" class="text-editor chapter-section-editor"></div>
+            <div class="wa-cluster chapter-section-controls">
+                <wa-select class="typesetting-method" label="Typesetting method" value="verse">
+                    <wa-option value="verse">Verse</wa-option>
+                    <wa-option value="plain">Plain</wa-option>
+                </wa-select>
+                <wa-button class="add-section" type="button" variant="neutral" appearance="accent">Add Section</wa-button>
+            </div>`;
+        document.getElementById('chapter-sections').appendChild(sectionElement);
+
+        const editor = new Quill(`#text_editor_${index}`, {
+            modules: {
+                syntax: true,
+                toolbar: {
+                    container: [
+                        [{'font': fontFamilyArr}, {'size': fontSizeArr}],
+                        ['bold', 'italic'],
+                        [{'align': ''}, {'align': 'center'}, {'align': 'justify'}]
+                    ]
+                }
+            },
+            theme: 'snow'
+        });
+        const section = {editor, typesetting_method: sectionData.typesetting_method || 'verse'};
+        chapterSections.push(section);
+        sectionElement.querySelector('.typesetting-method').value = section.typesetting_method;
+        editor.setContents({ops: sectionData.ops || []});
+        showUniformTypography(editor);
+        editor.on('text-change', saveChapterSections);
+        sectionElement.querySelector('.typesetting-method').addEventListener('change', event => {
+            section.typesetting_method = event.target.value;
+            saveChapterSections();
+        });
+        sectionElement.querySelector('.add-section').addEventListener('click', () => {
+            addChapterSection();
+            saveChapterSections();
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-        if (!text_editor) {
-            text_editor = new Quill('#text_editor', {
-                modules: {
-                    syntax: true,
-                    toolbar: {
-                        container: [
-                            [{ 'font': fontFamilyArr }, {'size': fontSizeArr }],
-                            ['bold', 'italic'], // 'underline', 'strike'], // toggled buttons
-                            [
-                                { align: ''}, 
-                                { align: 'center' }, 
-                                // { align: 'right' },
-                                { align: 'justify' }
-                            ], // text alignment
-                            //[{'speaker': speakerArr}],
-                        ],
-                        // handlers: {
-                        //     'speaker': function(value) {
-                        //         const range = this.quill.getSelection();
-                                
-                        //         if (range && range.length > 0) {
-                        //             if (value === 'New Character') {
-                        //                 // this.quill.format('speaker', );
-                        //                 // new character model
-                        //             } else {
-                        //                 this.quill.formatText(range.index, range.length, 'speaker', value);
-                        //             }
-                        //             this.quill.insertText(range.index, 'speaker');
-                        //         }
-                        //     }
-                        // }
-                    }                        // only include features supported through to Latex.
-                        
-                        // ['color', 'background'], // defaults from theme
-                        // ['blockquote', 'code-block'], // blockquote, code block
-                        // [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
-                        // ['link'], // links
-                        // ['blockquote', 'code-block'],
-                    
-                },
-                theme: 'snow'
-            });
-
-            //wish I was kidding
-            // 1. Get a reference to Quill's internal tooltip input element
-            const tooltipInput = text_editor.theme.tooltip.root.querySelector('input[data-link]');
-
-            // 2. Overwrite the default strings with whatever you want!
-            if (tooltipInput) {
-                tooltipInput.dataset.link = 'https://localhost/tooltips';
-                tooltipInput.dataset.video = ''; // 'Paste video URL here...';
-                tooltipInput.dataset.formula = 'e = mc^2';
-            }
-
-            // Listen for text changes in the Quill editor and auto-save
-            // https://quilljs.com/docs/api#text-change
-            text_editor.on('text-change', (delta, oldDelta, source) => {
-                // Right now _every_ change is being sent to the server.  
-                // This is a little ridiculous.  If we can soak and bundle
-                // changes for a few seconds, that would be less noisy.
-                htmx.ajax('POST', 'delta', {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    values: {
-                        delta: JSON.stringify(text_editor.getContents()),
-                    },
-                    swap: 'none',
-                    onError: function (err) {
-                        console.error('Error updating:', err);
-                    }
-                });
-            });
-
-            // const speakerPickerItems = Array.prototype.slice.call(document.querySelectorAll('.ql-speaker .ql-picker-item'));
-
-            // speakerPickerItems.forEach(item => item.textContent = item.dataset.value);
-
-            // document.querySelector('.ql-speaker .ql-picker-label').innerHTML
-            //     = 'Choose Speaker' + document.querySelector('.ql-speaker .ql-picker-label').innerHTML;            
-
-        }
-
-        // Retrieve the current chapter content
-        htmx.ajax('GET', 'delta', {
-          source: '#text_editor',
-          swap: 'none',
-          handler: function(target, info) {
-            if (info.xhr.status === 200) {
-              text_editor.setContents(JSON.parse(info.xhr.responseText));
-            } else {
-              console.error('Error fetching todo:', info.xhr.statusText);
-            }
-          }
+        fetch('sections').then(response => response.json()).then(sections => {
+            (sections.length ? sections : [{typesetting_method: 'verse', ops: []}]).forEach(addChapterSection);
+        }).catch(error => {
+            console.error('Could not load chapter sections:', error);
+            addChapterSection();
         });
     });
 </script>
@@ -272,77 +539,151 @@
 {% block body %}
 
 <div class="chapter-layout">
-    <div class="wa-stack wa-gap-0 chapter-editor-column">
-        <div>
-            <div 
-                id="text_editor" 
-                class="text-editor"
-                style="height: 47em;">
-            </div>
+    <div class="chapter-column wa-stack wa-gap-0 chapter-editor-column">
+        <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
+            data-column-label="Text" aria-expanded="true" aria-controls="chapter-text-content"
+            aria-label="Collapse Text column" title="Collapse Text column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
+        <div id="chapter-text-content" class="chapter-column-content">
+        <wa-tab-group active="text">
+            <wa-tab panel="text">Text</wa-tab>
+            <wa-tab panel="mood">Mood</wa-tab>
+            <wa-tab panel="theme">Theme</wa-tab>
+            <wa-tab-panel name="text">
+                <div class="wa-stack">
+                    <div id="chapter-sections" class="wa-stack"></div>
+
+                    <div class="wa-cluster">
+                        <wa-button
+                            id="reflow_btn"
+                            hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}"
+                            hx-on::before-request="beforeRequest(this,event)"
+                            hx-on::after-request="afterRequest(this,event)"
+                            hx-swap="none"
+                            variant="neutral"
+                            appearance="accent"
+                            size="medium"
+                        >Reflow Paragraphs</wa-button>
+
+                        {{import_button|safe}}
+
+                    </div>
+                </div>
+            </wa-tab-panel>
+            <wa-tab-panel name="mood">
+                <div class="wa-stack">
+                    <div id="chapter-mood-editor">{{ chapter_mood|safe }}</div>
+                    <wa-button
+                        hx-post="{{ url_for('library.book.chapter.generate_mood', **chapter.kwargs) }}"
+                        hx-target="#chapter-mood-editor"
+                        hx-swap="innerHTML"
+                        hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-mood-status').textContent = 'Generating mood…'"
+                        hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-mood-status').textContent = event.detail.successful ? 'Mood generated and saved.' : 'Mood generation failed. Check that chapter text is imported and try again.'"
+                    >Generate Mood</wa-button>
+                    <p id="chapter-mood-status" role="status" aria-live="polite"></p>
+                </div>
+            </wa-tab-panel>
+            <wa-tab-panel name="theme">
+                <div class="wa-stack">
+                    <div id="chapter-theme-editor">{{ chapter_theme|safe }}</div>
+                    <wa-button
+                        hx-post="{{ url_for('library.book.chapter.generate_theme', **chapter.kwargs) }}"
+                        hx-target="#chapter-theme-editor"
+                        hx-swap="innerHTML"
+                        hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-theme-status').textContent = 'Generating theme…'"
+                        hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-theme-status').textContent = event.detail.successful ? 'Theme generated and saved.' : 'Theme generation failed. Check that chapter text is imported and try again.'"
+                    >Generate Theme</wa-button>
+                    <p id="chapter-theme-status" role="status" aria-live="polite"></p>
+                </div>
+            </wa-tab-panel>
+        </wa-tab-group>
         </div>
 
-        <div class="wa-cluster">
-            <wa-button 
-                id="reflow_btn" 
-                hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}""
-                hx-on::before-request="beforeRequest(this,event)"
-                hx-on::after-request="afterRequest(this,event)"
-                hx-swap="none" 
-                variant="neutral" 
-                appearance="accent" 
-                size="medium" 
-            >Reflow Paragraphs</wa-button>
+    </div>
+    <div id="phrase-stack" class="chapter-column wa-stack wa-gap-0 chapter-phrase-column">
+        <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
+            data-column-label="Timeline" aria-expanded="true" aria-controls="chapter-timeline-content"
+            aria-label="Collapse Timeline column" title="Collapse Timeline column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
+        <div id="chapter-timeline-content" class="chapter-column-content">
+        <wa-tab-group active="timeline"
+            hx-on:wa-tab-show="if (event.target === this) htmx.trigger(this.querySelector('wa-tab-panel[name=' + this.active + ']'), 'load-column')">
+            <wa-tab panel="timeline">Timeline</wa-tab>
+            <wa-tab panel="characters">Characters</wa-tab>
+            <wa-tab panel="pronunciation">Pronunciation</wa-tab>
+            <wa-tab-panel name="timeline"
+                hx-get="{{ url_for('library.book.chapter.timeline_panel', **chapter.kwargs) }}"
+                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace">
+            </wa-tab-panel>
+            <wa-tab-panel name="characters"
+                hx-get="{{ url_for('library.book.chapter.characters.base', panel=1, **chapter.kwargs) }}"
+                hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
+            </wa-tab-panel>
+            <wa-tab-panel name="pronunciation"
+                hx-get="{{ url_for('library.book.chapter.phrases.pronunciation.base', panel=1, **chapter.kwargs) }}"
+                hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
+            </wa-tab-panel>
+        </wa-tab-group>
+        </div>
+    </div>
+    <div class="chapter-column wa-stack chapter-rendered-column">
+        <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
+            data-column-label="Preview" aria-expanded="true" aria-controls="chapter-preview-content"
+            aria-label="Collapse Preview column" title="Collapse Preview column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
+        <div id="chapter-preview-content" class="chapter-column-content">
+        <wa-tab-group active="pdf">
+            <wa-tab panel="pdf">PDF</wa-tab>
+            <wa-tab panel="image">Image</wa-tab>
+            <wa-tab panel="rainbow">Rainbow</wa-tab>
+            <wa-tab-panel name="pdf">
+                <div class="chapter-rendered-scroll">
+                    <canvas id="the-canvas"></canvas>
+                </div>
+            </wa-tab-panel>
+            <wa-tab-panel name="image">
+                <div class="chapter-rendered-scroll">
+                    <img src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
+                </div>
+            </wa-tab-panel>
+            <wa-tab-panel name="rainbow">
+                <div class="chapter-rendered-scroll">
+                    <img src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
+                </div>
+            </wa-tab-panel>
+        </wa-tab-group>
+        </div>
+    </div>
 
-            {{import_button|safe}}
-        </div>
-    </div>
-    <div id="phrase-stack" class="wa-stack wa-gap-0 chapter-phrase-column">
-        <div class="wa-cluster" style="justify-content: space-between; align-items: center;">
-            <h2>Phrases</h2>
-            <wa-button
-                size="small"
-                href="{{ url_for('library.book.chapter.characters.base', **chapter.kwargs) }}"
-            >Characters</wa-button>
-            <wa-button
-                size="small"
-                href="{{ url_for('library.book.chapter.phrases.pronunciation.base', **chapter.kwargs) }}"
-            >Pronunciation Guide</wa-button>
-        </div>
-        <div class="wa-cluster">
-            {{ generate_missing_audio_button|safe }}
-        </div>
-        {% for phrase in phrases %} 
-        <div id="phrase_{{ phrase.index }}" class="phrase-container">
-            <wa-textarea 
-                id="phrase_{{ phrase.index }}_ta" 
-                class="phrase-editor"
-                hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}"
-                hx-vals='js:{"previous_phrase_index": window.previous_phrase_index }'
-                hx-trigger="click"
-                hx-swap="none"
-                value="{{ phrase.simple_text() }}"
-                
-            ></wa-textarea>
-            <div class="wa-cluster">
-                <wa-icon></wa-icon>
-                <wa-select 
-                    name="speaker"
-                    hx-post="{{ url_for('library.book.chapter.phrases.assign_phrase_speaker', phrase_index=phrase.index, **chapter.kwargs) }}"
-                    hx-trigger="change"
-                    hx-swap="none"
-                >
-                    {% for speaker in speakers %}
-                        <wa-option value="{{ speaker.tag }}"{% if phrase.speaker == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
-                    {% endfor %}
-                </wa-select>
-            </div>
-            <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs"></div>
-        </div>
-        {% endfor %}
-    </div>
-    <div class="wa-stack chapter-rendered-column">
-        <div class="chapter-rendered-scroll">
-            <canvas id="the-canvas"></canvas>
+    <div class="chapter-column wa-stack wa-gap-0">
+        <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
+            data-column-label="Video" aria-expanded="true" aria-controls="chapter-output-content"
+            aria-label="Collapse Video column" title="Collapse Video column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
+        <div id="chapter-output-content" class="chapter-column-content">
+            <wa-tab-group active="textoviva">
+                <wa-tab panel="textoviva">Textoviva</wa-tab>
+                <wa-tab panel="publish">Publish</wa-tab>
+                <wa-tab-panel name="textoviva"
+                    hx-get="{{ url_for('library.book.chapter.textoviva.player', **chapter.kwargs) }}"
+                    hx-trigger="load" hx-swap="innerHTML">
+                </wa-tab-panel>
+                <wa-tab-panel name="publish">
+                    <wa-tab-group active="publish-youtube">
+                        <wa-tab panel="publish-youtube">YouTube</wa-tab>
+                        <wa-tab panel="publish-tiktok">TikTok</wa-tab>
+                        <wa-tab panel="publish-github">GitHub</wa-tab>
+                        <wa-tab-panel name="publish-youtube"
+                            hx-get="{{ url_for('library.book.chapter.publish.youtube.base', embedded=1, **chapter.kwargs) }}"
+                            hx-trigger="load" hx-swap="innerHTML">
+                        </wa-tab-panel>
+                        <wa-tab-panel name="publish-tiktok"
+                            hx-get="{{ url_for('library.book.chapter.publish.tiktok.base', embedded=1, **chapter.kwargs) }}"
+                            hx-trigger="load" hx-swap="innerHTML">
+                        </wa-tab-panel>
+                        <wa-tab-panel name="publish-github"
+                            hx-get="{{ url_for('library.book.chapter.publish.github.base', embedded=1, **chapter.kwargs) }}"
+                            hx-trigger="load" hx-swap="innerHTML">
+                        </wa-tab-panel>
+                    </wa-tab-group>
+                </wa-tab-panel>
+            </wa-tab-group>
         </div>
     </div>
 

@@ -1,7 +1,6 @@
 import html
 from PIL import Image
 
-from torch import div
 import logger
 from flask import request, url_for, make_response
 import os

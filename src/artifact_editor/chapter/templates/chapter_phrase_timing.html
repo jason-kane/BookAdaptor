@@ -1,0 +1,12 @@
+<div id="{{ timing_id if timing_id is defined else 'chapter-phrase-timing-' ~ phrase.index }}" class="chapter-timeline-timing wa-cluster wa-gap-s{% if timing and (timing.exceeds_animation_duration or timing.animation_shortfall) %} animation-duration-warning{% endif %}"{% if timing_oob %} hx-swap-oob="outerHTML"{% endif %}>
+    {% if missing_audio %}<wa-badge class="chapter-audio-warning-badge" variant="danger">Audio</wa-badge>{% endif %}
+    {% if missing_image or (timing and timing.animation_shortfall) %}
+    <span class="chapter-image-warning-badges">
+        {% if missing_image %}<wa-badge variant="danger">Image</wa-badge>{% endif %}
+        {% if timing and timing.animation_shortfall %}<wa-badge class="chapter-animation-warning-badge" variant="danger">Animation</wa-badge>{% endif %}
+    </span>
+    {% endif %}
+    {% if timing %}
+    <span class="chapter-timeline-time" role="button" tabindex="0" aria-label="Toggle panel selection">{{ '%.2f'|format(timing.start) }}s ({{ timing.frame_start }}) - {{ '%.2f'|format(timing.end) }}s ({{ timing.frame_end if timing.frame_end is not none else '—' }}): {{ '%.2f'|format(timing.duration) }}s ({{ timing.frames }})</span>
+    {% endif %}
+</div>

@@ -1,5 +1,5 @@
 {% set AUDIO = True %}
-{% extends "base.html" %}
+{% extends "column_fragment.html" if request.args.get("panel") == "1" else "base.html" %}
 
 {% block scripts %}
 {% endblock %}

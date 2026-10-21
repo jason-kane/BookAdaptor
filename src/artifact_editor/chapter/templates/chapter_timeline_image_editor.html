@@ -1,0 +1,93 @@
+{% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
+<div class="wa-stack wa-gap-s" hx-sync="this:queue all">
+    {% if image.get('src') %}
+    <wa-tab-group active="image" aria-label="Image and animation editor">
+        <wa-tab panel="image">Image</wa-tab>
+        <wa-tab panel="animation">Animation</wa-tab>
+        <wa-tab-panel name="image">
+    {% endif %}
+    <div class="chapter-image-gallery">
+    <img class="chapter-mini-image-preview" draggable="false"
+        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) }}"
+        alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
+    <div class="chapter-recent-images" aria-label="Recent images for this slot">
+        {% for thumbnail in thumbnails %}
+        <button type="button" class="chapter-image-thumbnail"
+            aria-label="{{ 'Current image' if thumbnail.selected else 'Use image ' ~ loop.index }}"
+            aria-pressed="{{ 'true' if thumbnail.selected else 'false' }}"
+            hx-post="{{ editor_url }}" hx-vals='{{ {"action": "select", "filename": thumbnail.filename}|tojson }}'
+            hx-target="#timeline-image-editor-{{ image['index'] }}" hx-swap="innerHTML">
+            <img loading="lazy" draggable="false"
+                src="{{ url_for('library.book.chapter.images.selector.get_alternate_image', image_index=image['index'], filename=thumbnail.filename, **chapter.kwargs) }}"
+                alt="{{ thumbnail.filename }}">
+        </button>
+        {% endfor %}
+    </div>
+    </div>
+    <img id="timeline-image-preview-{{ image['index'] }}" hx-swap-oob="outerHTML" loading="lazy" draggable="false"
+        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) }}"
+        alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
+    <div class="wa-stack wa-gap-s"
+         hx-headers='{{ {"X-Chapter-Image-Panel": image["index"]|string}|tojson }}'>
+        {{ prompt_controls|safe }}
+    </div>
+    {% if image.get('src') %}
+        </wa-tab-panel>
+        <wa-tab-panel name="animation">
+            {% if timing %}
+            <div class="wa-stack wa-gap-xs">
+                <span>Animation frames: {{ timing.animation_frames if timing.animation_frames is not none else 'Unknown' }}</span>
+                <span>Audio duration in frames: {{ timing.frames }}</span>
+                {% if timing.animation_shortfall %}
+                <span>Animation is {{ timing.frames - timing.animation_frames }} frames shorter than audio ({{ '%.3f'|format((timing.frames - timing.animation_frames) / animation_fps) }} seconds).</span>
+                {% endif %}
+            </div>
+            {% endif %}
+            <video id="timeline-animation-player-{{ image['index'] }}"
+                class="video-js chapter-animation-video vjs-big-play-centered"
+                controls preload="metadata" playsinline
+                poster="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) }}"
+                aria-label="Animation for image {{ image['index'] }}">
+                {% if animation_url %}<source src="{{ animation_url }}" type="video/mp4">{% endif %}
+            </video>
+            {% if not animation_url %}<p>No animation generated yet.</p>{% endif %}
+            <wa-select id="timeline-animation-workflow-{{ image['index'] }}"
+                label="Choose i2v Workflow" name="workflow_i2v_template"
+                value="{{ selected_i2v_template }}"
+                hx-post="{{ editor_url }}" hx-vals='{"action":"animation_workflow"}'
+                hx-trigger="change" hx-swap="none">
+                {% if selected_i2v_template not in i2v_templates|map(attribute='id')|list %}
+                <wa-option value="{{ selected_i2v_template }}">{{ selected_i2v_template }}</wa-option>
+                {% endif %}
+                {% for template in i2v_templates %}
+                <wa-option value="{{ template.id }}">{{ template.name }}</wa-option>
+                {% endfor %}
+            </wa-select>
+            {% include 'chapter_timeline_animation_description.html' %}
+            {% set animation_workflow_url = url_for('library.book.chapter.textoviva.open_animation_workflow', image_index=image['index'], **chapter.kwargs) %}
+            <div class="wa-stack wa-gap-s" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+                <div class="wa-cluster">
+                    <wa-button
+                        hx-post="{{ editor_url }}" hx-vals='{"action":"regenerate_animation_description"}'
+                        hx-target="#timeline-animation-description-{{ image['index'] }}" hx-swap="outerHTML"
+                        hx-disabled-elt="this">Regenerate Description</wa-button>
+                    <wa-button
+                        hx-post="{{ url_for('library.book.chapter.textoviva.regenerate_animation', image_index=image['index'], **chapter.kwargs) }}"
+                        hx-include="#timeline-animation-description-{{ image['index'] }}, #timeline-animation-workflow-{{ image['index'] }}"
+                        hx-target="#timeline-animation-status-{{ image['index'] }}" hx-swap="innerHTML"
+                        hx-disabled-elt="this" variant="brand">Re-render</wa-button>
+                    <wa-button href="{{ animation_workflow_url }}" target="_blank"
+                        data-workflow-url="{{ animation_workflow_url }}"
+                        onclick="this.href = this.dataset.workflowUrl + '?' + new URLSearchParams({animation_prompt: document.getElementById('timeline-animation-description-{{ image['index'] }}').value, workflow_i2v_template: document.getElementById('timeline-animation-workflow-{{ image['index'] }}').value})"
+                        variant="brand" appearance="accent" pill
+                        aria-label="Open animation workflow in ComfyUI">
+                        <wa-icon src="/static/images/comfyui.svg"></wa-icon>
+                    </wa-button>
+                </div>
+                <div id="timeline-animation-status-{{ image['index'] }}" role="status" aria-live="polite"></div>
+            </div>
+        </wa-tab-panel>
+    </wa-tab-group>
+    {% endif %}
+    <span class="chapter-image-working htmx-indicator" role="status">Working…</span>
+</div>

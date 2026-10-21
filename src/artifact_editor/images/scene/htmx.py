@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from bs4 import Tag
 from flask import request, url_for
-from torch import div
 
 import logger
 from artifact_editor.characters import characters
@@ -132,8 +131,8 @@ def description(chapter, image_xml):
         hx-post="{update_description_url}"
         hx-trigger="change delay:500ms"
         hx-swap="none"
-        rows="{len(desc) // 60}"
-        size="large"
+        cols="70"
+        rows="3"
         style="width: 100%"
     ></wa-textarea>
     """
@@ -142,48 +141,8 @@ def description(chapter, image_xml):
 def setting(chapter, image_xml):
     setting = html.escape(image_xml.attrs.get("setting", ""))
 
-    recent_settings = ""
-    count = 0
-    total_previous_settings = 6
-    previous_setting = setting
-
-    border_plain = "3px solid" + "#494949"
-    border_hover = "3px solid" + "#C9C25B"
-
-    previous_image = image_xml.find_previous("image")
-    log.info("Iterating previous images for alternative settings")
-    while count < total_previous_settings and previous_image is not None:
-        log.info("Found previous image", previous_image=previous_image)
-        if previous_image.attrs.get("setting", "") != previous_setting:
-            count += 1       
-
-            if "src" in previous_image.attrs:
-                img_src = url_for(
-                    'library.book.chapter.images.show_image_by_index',
-                    author=chapter.author.name,
-                    title=chapter.title,
-                    chapter_number=chapter.number,
-                    language=chapter.language,
-                    height=127,
-                    image_index=previous_image.attrs["index"]
-                )
-            else:
-                img_src = "/static/images/x.png"
-    
-            recent_settings += f"""<img 
-                style="border: {border_plain}; margin: 2px; cursor: pointer;"
-                onmouseover="this.style.border='{border_hover}';"
-                onmouseout="this.style.border='{border_plain}';"
-                hx-put="scene/previous_setting?previous_index={previous_image["index"]}"
-                hx-target="#setting-textarea"
-                hx-swap="outerHTML transition:true"
-                height='127px' width='127px' src='{img_src}'>
-            </img>"""
-
-        previous_image = previous_image.find_previous("image")
-
     return f"""
-        <div class="wa-flank" style="position: relative;" id="setting-textarea">
+        <div class="wa-stack" id="setting-textarea">
             <div class="wa-stack">
                 <wa-textarea 
                     label="Setting" 
@@ -203,13 +162,6 @@ def setting(chapter, image_xml):
                     hx-swap="outerHTML transition:true">
                     Generate Setting
                 </wa-button>
-            </div>
-            
-            <div class="wa-stack">
-                <div class="wa-grid wa-align-items-start" style="--min-column-size: 130px;">
-                    <div style="position: absolute;top: 0px;color: var(--wa-form-control-label-color);font-weight: var(--wa-form-control-label-font-weight);line-height: var(--wa-form-control-label-line-height);">Previous settings:</div>
-                    {recent_settings}
-                </div>
             </div>
         </div>"""
 
@@ -289,9 +241,7 @@ def mood(chapter, image_xml):
     # Which gives the user something they can drag around inside the phrase.
     
     # Audio Effects CAN block.  Up to you.  Checkbox.  Block in this case meaning it is serialized with the voice track.  So you won't have to worry about effects making voices hard to understand because they won't overlap, you get talk, talk, talk, effect, talk, ... But .. overlap sounds more natural.
-    return f"""<div>
-    <p>Mood setting coming soon.  This will be a grid of emojis that you can click to add to the prompt, and then use in your music/sfx generation to create a more emotionally responsive soundtrack.</p>
-    </div>"""
+    return ""
 
 
 def camera_lighting(chapter: Chapter, image_xml: Tag):
