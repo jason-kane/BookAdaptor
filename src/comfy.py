@@ -47,11 +47,16 @@ def workflow_type(workflow: Workflow) -> str:
     Determine the type of a workflow based on its structure.
 
     Returns:
-        str: The type of the workflow ('image', 'text', 'other').
+        str: The format of the workflow ('ui' or 'api').
     """
     if "nodes" in workflow.workflow:
         return "ui"
-    if "1" in workflow.workflow:
+    if workflow.workflow and all(
+        isinstance(node, dict)
+        and isinstance(node.get("class_type"), str)
+        and isinstance(node.get("inputs"), dict)
+        for node in workflow.workflow.values()
+    ):
         return "api"
 
     raise ValueError("Unknown workflow type.")
@@ -224,6 +229,15 @@ def run_workflow(
             kind = event.get("type")
             if kind in {"execution_error", "execution_interrupted"}:
                 message = data.get("exception_message", kind)
+                from comfy_recovery import contradictory_oom, restart_comfyui
+                if kind == "execution_error" and contradictory_oom(message):
+                    report(0, "ComfyUI: Inconsistent CUDA OOM; restarting ComfyUI")
+                    try:
+                        recovery = restart_comfyui()
+                    except Exception as error:
+                        log.exception("ComfyUI OOM recovery failed")
+                        recovery = f"ComfyUI restart failed: {error}"
+                    message = f"{message}\n{recovery}"
                 report(0, f"ComfyUI: {message}")
                 raise RuntimeError(f"ComfyUI workflow {job_id} {kind}: {message}")
             if kind == "execution_success" or (kind == "executing" and data.get("node") is None):

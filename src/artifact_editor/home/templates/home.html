@@ -251,7 +251,7 @@
     <title>Home</title>
   </head>
 
-  <body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+  <body hx-ext="ws" ws-connect="{{ websocket_url() }}">
     <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
       <div id="editor" class="editor" style="height: 300px;"></div>
     </wa-drawer>

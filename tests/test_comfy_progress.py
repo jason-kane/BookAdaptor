@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,6 +71,19 @@ class ComfyProgressTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'out of memory'):
             run({'1': {}})
         ws.close.assert_called_once()
+
+    def test_contradictory_oom_restarts_and_reports_recovery(self):
+        error = ('Allocation on device 0 would exceed allowed memory. (out of memory)\n'
+                 'Currently allocated: 0 bytes\nRequested: 1.18 GiB\n'
+                 'Device limit: 11.63 GiB\nFree (according to CUDA): 10.94 GiB')
+        run, ws, _, reports = self.runner([{'type': 'execution_error', 'data': {
+            'prompt_id': 'ours', 'exception_message': error}}])
+        with patch('comfy_recovery.restart_comfyui', return_value='ComfyUI was restarted') as restart:
+            with self.assertRaisesRegex(RuntimeError, 'ComfyUI was restarted'):
+                run({'1': {}})
+            restart.assert_called_once()
+        ws.close.assert_called_once()
+        self.assertIn('restarting ComfyUI', reports[1][1])
 
     def test_timeout_closes_connection(self):
         run, ws, _, _ = self.runner([None])

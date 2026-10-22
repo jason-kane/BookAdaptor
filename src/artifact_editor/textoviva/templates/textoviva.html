@@ -185,7 +185,7 @@
 {% endblock %}
 
 {% block aside %}
-    <div id="image-stack" class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+    <div id="image-stack" class="wa-stack" hx-ext="ws" ws-connect="{{ websocket_url() }}">
         <div class="wa-cluster">
             <wa-button
                 ws-send

@@ -1,3 +1,4 @@
+from artifact_editor.websocket_url import websocket_url
 from artifact_editor.tools import (
     generic_button,
 )
@@ -26,7 +27,7 @@ def import_button(chapter: Chapter):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
         data-chapter-import="{job_id}">
         <wa-button id="import_btn" ws-send hx-trigger="click" hx-vals='{task}'
             variant="neutral" appearance="accent" size="medium">Import Chapter</wa-button>
@@ -45,7 +46,7 @@ def generate_missing_metadata_button(chapter: Chapter):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
         data-chapter-metadata="{job_id}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
             variant="neutral" appearance="accent" size="medium">Generate Missing Metadata</wa-button>
@@ -63,7 +64,7 @@ def time_align_button(chapter: Chapter):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
             variant="neutral" appearance="accent" size="medium">Time Align</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
@@ -88,7 +89,7 @@ def missing_asset_button(chapter, action, label):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="ws://localhost:5001/ws"
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
         data-chapter-assets="{job_id}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
             variant="neutral" appearance="accent" size="medium">{label}</wa-button>

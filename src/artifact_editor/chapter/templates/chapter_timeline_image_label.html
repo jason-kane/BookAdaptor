@@ -1,0 +1,1 @@
+<span id="timeline-image-label-{{ image['index'] }}"{% if label_oob %} hx-swap-oob="outerHTML"{% endif %}>Image {{ image['index'] }}{% if not image.get('src') %} · Not generated{% endif %}</span>

@@ -1,0 +1,71 @@
+<script src="/static/js/props.js"></script>
+<div id="chapter-props" class="wa-stack">
+    {% if message %}<p role="status">{{ message }}</p>{% endif %}
+    {% if error %}<div role="alert" style="padding:1em;border:1px solid var(--wa-color-danger-60);border-radius:var(--wa-border-radius-m);white-space:pre-wrap">{{ error }}</div>{% endif %}
+    <wa-tab-group active="{{ 'prop-' ~ active_tag if active_tag else ('prop-' ~ (props|first) if props else 'new') }}">
+    {% for tag, prop in props.items() %}
+        <wa-tab panel="prop-{{ tag }}">{{ prop.name }}</wa-tab>
+    {% endfor %}
+        <wa-tab panel="new">New</wa-tab>
+    {% for tag, prop in props.items() %}
+    <wa-tab-panel name="prop-{{ tag }}">
+    <div class="wa-stack" style="position:relative;padding-top:40px">
+        <wa-button type="button" size="small" variant="danger" appearance="plain"
+            aria-label="Delete prop" title="Delete prop"
+            style="position:absolute;top:0;right:0"
+            hx-delete="{{ url_for('library.book.chapter.props.delete', tag=tag, **chapter.kwargs) }}"
+            hx-target="#chapter-props" hx-swap="outerHTML" hx-disabled-elt="this">
+            <wa-icon name="trash" aria-hidden="true"></wa-icon>
+        </wa-button>
+    <form class="wa-stack" data-prop-autosave onsubmit="event.preventDefault()">
+        <wa-input name="name" label="Prop name" value="{{ prop.name }}" required
+            hx-post="{{ url_for('library.book.chapter.props.update', tag=tag, autosave=1, **chapter.kwargs) }}"
+            hx-trigger="change delay:500ms" hx-include="closest form"
+            hx-sync="closest form:queue last" hx-swap="none"></wa-input>
+        <wa-textarea name="description" label="Description" value="{{ prop.description }}" resize="auto"
+            hx-post="{{ url_for('library.book.chapter.props.update', tag=tag, autosave=1, **chapter.kwargs) }}"
+            hx-trigger="change delay:500ms" hx-include="closest form"
+            hx-sync="closest form:queue last" hx-swap="none"></wa-textarea>
+        <wa-button type="button"
+            hx-post="{{ url_for('library.book.chapter.props.generate_description', tag=tag, **chapter.kwargs) }}"
+            hx-include="closest form" hx-target="#chapter-props" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="#prop-description-progress-{{ tag }}">Generate Description</wa-button>
+        <span id="prop-description-progress-{{ tag }}" class="htmx-indicator" role="status">Reading story and generating description…</span>
+        <div class="wa-stack" hx-ext="ws" ws-connect="{{ websocket_url() }}"
+             data-prop-image="{{ job_ids[tag] }}"
+             data-image-src="{{ url_for('library.book.chapter.props.image', tag=tag, **chapter.kwargs) }}">
+        <div data-prop-preview>
+        {% if tag in image_tags %}
+        <img src="{{ url_for('library.book.chapter.props.image', tag=tag, **chapter.kwargs) }}" alt="{{ prop.name }} reference" style="max-width:100%;max-height:300px;object-fit:contain;background:white">
+        {% endif %}
+        </div>
+        <div class="wa-cluster">
+        <wa-button type="button" ws-send hx-trigger="click"
+            hx-vals='{{ {"action": "prop_image", "job_id": job_ids[tag], "author": chapter.author.name, "title": chapter.title, "chapter_number": chapter.number, "language": chapter.language, "prop_tag": tag}|tojson }}'>Generate Image</wa-button>
+        {% with workflow_url=url_for('library.book.chapter.props.open_workflow', tag=tag, **chapter.kwargs), subject='prop image' %}
+        {% include 'reference_workflow_button.html' %}
+        {% endwith %}
+        </div>
+        <div id="video-progress-{{ job_ids[tag] }}" role="status" aria-live="polite"></div>
+        </div>
+        <span data-save-status role="status" aria-live="polite"></span>
+    </form>
+    </div>
+    </wa-tab-panel>
+    {% endfor %}
+    <wa-tab-panel name="new">
+    <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.props.base', **chapter.kwargs) }}" hx-target="#chapter-props" hx-swap="outerHTML">
+        <wa-input name="name" label="New prop name" required></wa-input>
+        <wa-textarea name="description" label="Description" resize="auto"></wa-textarea>
+        <wa-button type="submit">Add Prop</wa-button>
+    </form>
+    </wa-tab-panel>
+    </wa-tab-group>
+    <div class="wa-cluster">
+        <wa-button type="button"
+            hx-post="{{ url_for('library.book.chapter.props.extract', **chapter.kwargs) }}"
+            hx-target="#chapter-props" hx-swap="outerHTML" hx-disabled-elt="this"
+            hx-indicator="#props-extract-progress">Extract Props</wa-button>
+        <span id="props-extract-progress" class="htmx-indicator" role="status">Extracting props from story…</span>
+    </div>
+</div>

@@ -315,3 +315,25 @@ def add_import_images(soup):
         image = document.new_tag("image", attrs={"index": str(index)})
         starts[position][1].insert_before(image)
     update_image_frames(soup)
+
+
+def detach_all_images(chapter):
+    """Detach generated stills without deleting slots, metadata, or asset files."""
+    for image in chapter.get_xml().find_all("image"):
+        image.attrs.pop("src", None)
+    chapter.save_xml()
+
+
+def remove_all_image_metadata(chapter):
+    """Clear generated scene details and prompts while preserving assets and timing."""
+    fields = {
+        "style", "setting", "tod", "camera", "scene_characters", "focus_character",
+        "description", "animation_prompt", "prompt", "t5_prompt", "clip_prompt",
+        "styled_prompt", "negative_prompt", "styled",
+    }
+    character_suffixes = ("_pose", "_location", "_action", "_motivation", "_description")
+    for image in chapter.get_xml().find_all("image"):
+        for key in list(image.attrs):
+            if key in fields or key.startswith("lighting_") or key.endswith(character_suffixes):
+                del image.attrs[key]
+    chapter.save_xml()

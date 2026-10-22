@@ -201,7 +201,7 @@ def save_scene_characters(image_index=0):
 
     g.chapter.save_xml()
 
-    return htmx.scene_characters(g.chapter, image_xml)
+    return htmx.characters_section(g.chapter, image_xml)
 
 
 @bp.route("characters", methods=["POST"])
@@ -215,7 +215,7 @@ def generate_scene_characters(image_index=0):
         image_xml.attrs["scene_characters"] = ",".join(scene_characters)
         g.chapter.save_xml()
 
-    return htmx.scene_characters(g.chapter, image_xml)
+    return htmx.characters_section(g.chapter, image_xml)
 
 #
 # Character Description Actions
@@ -484,6 +484,7 @@ def copy_from_previous(image_index=0):
                 "camera",
                 "setting",
                 "scene_characters",
+                "scene_props",
                 "meta_prompt",
             ]:
                 log.info(f"Updating XML ({key})...")
@@ -542,3 +543,16 @@ def copy_from_previous(image_index=0):
 
     return response
 
+
+
+@bp.route("props", methods=["PUT"])
+def save_scene_props(image_index=0):
+    from artifact_editor.props import props
+    records = props.get_all_props(g.chapter)
+    selected = list(dict.fromkeys(request.form.getlist("scene_props")))
+    if any(tag not in records for tag in selected):
+        return "Unknown prop", 400
+    image_xml = g.chapter.get_image(image_index)
+    image_xml.attrs["scene_props"] = ",".join(selected)
+    g.chapter.save_xml()
+    return htmx.scene_props(g.chapter, image_xml)

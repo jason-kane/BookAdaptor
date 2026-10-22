@@ -1,5 +1,5 @@
 {% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
-<div class="wa-stack wa-gap-s" hx-sync="this:queue all">
+<div class="wa-stack wa-gap-s" hx-sync="this:queue all" hx-ext="ws" ws-connect="{{ websocket_url() }}">
     {% if image.get('src') %}
     <wa-tab-group active="image" aria-label="Image and animation editor">
         <wa-tab panel="image">Image</wa-tab>
@@ -7,9 +7,12 @@
         <wa-tab-panel name="image">
     {% endif %}
     <div class="chapter-image-gallery">
+    <button type="button" class="chapter-image-viewer-open" data-view-image="{{ image['index'] }}"
+        aria-label="View image {{ image['index'] }} at full size"{% if not image.get('src') %} disabled{% endif %}>
     <img class="chapter-mini-image-preview" draggable="false"
-        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) }}"
+        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) if image.get('src') else url_for('static', filename='images/x.png') }}"
         alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
+    </button>
     <div class="chapter-recent-images" aria-label="Recent images for this slot">
         {% for thumbnail in thumbnails %}
         <button type="button" class="chapter-image-thumbnail"
@@ -24,12 +27,16 @@
         {% endfor %}
     </div>
     </div>
-    <img id="timeline-image-preview-{{ image['index'] }}" hx-swap-oob="outerHTML" loading="lazy" draggable="false"
-        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) }}"
+    {% with label_oob=true %}{% include "chapter_timeline_image_label.html" %}{% endwith %}
+    <img id="timeline-image-preview-{{ image['index'] }}"{% if image.get('src') %}
+        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"{% endif %} hx-swap-oob="outerHTML" loading="lazy" draggable="false"
+        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) if image.get('src') else url_for('static', filename='images/x.png') }}"
         alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
     <div class="wa-stack wa-gap-s"
          hx-headers='{{ {"X-Chapter-Image-Panel": image["index"]|string}|tojson }}'>
         {{ prompt_controls|safe }}
+        <div id="timeline-image-status-{{ image['index'] }}" data-image-editor-url="{{ editor_url }}"
+             data-image-editor-target="#timeline-image-editor-{{ image['index'] }}" role="status" aria-live="polite"></div>
     </div>
     {% if image.get('src') %}
         </wa-tab-panel>
@@ -65,7 +72,7 @@
             </wa-select>
             {% include 'chapter_timeline_animation_description.html' %}
             {% set animation_workflow_url = url_for('library.book.chapter.textoviva.open_animation_workflow', image_index=image['index'], **chapter.kwargs) %}
-            <div class="wa-stack wa-gap-s" hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+            <div class="wa-stack wa-gap-s">
                 <div class="wa-cluster">
                     <wa-button
                         hx-post="{{ editor_url }}" hx-vals='{"action":"regenerate_animation_description"}'

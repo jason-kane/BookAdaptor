@@ -1,0 +1,20 @@
+{% if tag != 'Narrator' %}
+<div class="wa-stack">
+    <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.characters.aliases', character_tag=tag, **chapter.kwargs) }}"
+          hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML">
+        <wa-textarea name="aliases" label="Aliases (one per line)" value="{{ character.get('alias', [])|join('\n') }}"
+            hint="Other names for this character, such as Roger, Mr. Stone, or Mr. S."></wa-textarea>
+        <wa-button type="submit">Save Aliases</wa-button>
+    </form>
+    <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.characters.merge', character_tag=tag, **chapter.kwargs) }}"
+          hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML">
+        <wa-select name="target_tag" label="This character is an alias of" required>
+            {% for other_tag, other in catalog.items() if other_tag != tag and other_tag != 'Narrator' %}
+            <wa-option value="{{ other_tag }}">{{ other.name }}</wa-option>
+            {% endfor %}
+        </wa-select>
+        <p>Merge into the selected character, keeping its settings and updating story and scene references. This character’s names become aliases.</p>
+        <wa-button type="submit">Merge Characters</wa-button>
+    </form>
+</div>
+{% endif %}

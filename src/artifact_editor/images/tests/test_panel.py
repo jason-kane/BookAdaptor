@@ -27,7 +27,7 @@ class PanelTests(unittest.TestCase):
         panel = self.render('<wa-button id="workflow-run-button" hx-post="run" hx-swap="none"></wa-button><wa-button hx-post="generate_meta" hx-target="#strip-centerpiece"></wa-button>')
         for button, action in zip(panel.find_all('wa-button'), ('generate', 'metadata')):
             self.assertEqual(button['hx-post'], '/chapter/timeline/image/4')
-            self.assertEqual(button['hx-target'], '#timeline-image-editor-4')
+            self.assertEqual(button['hx-target'], '#timeline-image-status-4')
             self.assertEqual(button['hx-swap'], 'innerHTML')
             self.assertIn(action, button['hx-vals'])
 

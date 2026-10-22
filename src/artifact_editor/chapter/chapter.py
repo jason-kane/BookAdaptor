@@ -272,6 +272,12 @@ def get_prompt_workflow_by_filename(
                 node["widgets_values_named"] = {
                     common_string_nodes[node.get("type")]: prompt
                 }
+            elif node.get("title") in ["SYSTEM_PROMPT", "System Prompt"]:
+                value = system_prompt or ""
+                node["widgets_values"] = [value]
+                node["widgets_values_named"] = {
+                    common_string_nodes[node.get("type")]: value
+                }
             elif node.get("title") in ["Output Filename"]:
                 node["widgets_values"] = [ outputfile ]
                 node["widgets_values_named"] = {
@@ -958,7 +964,8 @@ class Chapter:
         """
         Get the prompt for a given image, if it exists.
         """
-        return as_str(image_xml.attrs.get("prompt", ""))
+        from artifact_editor.props.props import include_in_prompt
+        return include_in_prompt(self, image_xml, as_str(image_xml.attrs.get("prompt", "")))
 
     def get_last_frame(
         self,
@@ -2058,7 +2065,9 @@ class Chapter:
                     ),
                 }
 
+        from artifact_editor.props.props import selected_props
         out = {
+            "props": selected_props(self, image_xml),
             "setting": as_str(image_xml.attrs.get("setting", "")),
             "tod": as_str(image_xml.attrs.get("tod", "")),
             "camera": as_str(image_xml.attrs.get("camera", "")),
@@ -2067,8 +2076,15 @@ class Chapter:
                 "quality": as_str(image_xml.attrs.get("lighting_quality", "")),
                 "source": as_str(image_xml.attrs.get("lighting_source", "")),
             },
-            # easy way to put your thumb on the scale.
-            # [PARAGRAPH META] is the LAW!!
+            # Carry source truth through the ComfyUI prompt-rewriting stage too.
+            "source_passage": tools.get_text_to_next(image_xml, image_xml.find_next("image")),
+            "visual_constraints": tools.get_image_narration_context(image_xml),
+            "interpretation_priority": (
+                "The source_passage and visual_constraints override conflicting description, "
+                "character actions, poses, and other generated metadata. The description is "
+                "a draft, not source truth. Preserve depicted objects as pictures on their "
+                "stated surfaces; do not turn them into physical objects."
+            ),
             "description": as_str(image_xml.attrs.get("description", "")),
         }
 

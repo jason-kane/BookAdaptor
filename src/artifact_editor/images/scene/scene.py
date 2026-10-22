@@ -4,7 +4,7 @@ from bs4.element import Tag
 
 import logger
 from artifact_editor import llm
-from artifact_editor.tools import get_surrounding_paragraphs, get_text_to_next
+from artifact_editor.tools import get_image_narration_context, get_text_to_next
 
 log = logger.log(__name__)
 
@@ -15,10 +15,7 @@ from . import const as scene_const
 
 def generate_character_pose(image_xml: Tag, character):
     # all the text around us
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), 
-        context_min=600
-    )
+    context = get_image_narration_context(image_xml)
 
     # the specific text we want to focus on for this character pose determination
     text = get_text_to_next(
@@ -54,10 +51,7 @@ def generate_character_pose(image_xml: Tag, character):
 
 def generate_tod(image_xml: Tag):
     # all the text around us
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), 
-        context_min=600
-    )
+    context = get_image_narration_context(image_xml)
 
     # the specific text we want to focus on for this TOD determination
     text = get_text_to_next(
@@ -90,10 +84,7 @@ def generate_tod(image_xml: Tag):
 
 def generate_camera(image_xml: Tag):
     # all the text around us
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), 
-        context_min=600
-    )
+    context = get_image_narration_context(image_xml)
 
     # the specific text we want to focus on for this camera angle determination
     text = get_text_to_next(
@@ -133,10 +124,7 @@ def generate_scene_characters(chapter, image_xml: Tag):
     Which characters are in this scene?  Even characters that don't speak.Return a list of character names.
     """
     # all the text around us
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), 
-        context_min=600
-    )
+    context = get_image_narration_context(image_xml)
 
     # the specific text we want to focus on for this character determination
     text = get_text_to_next(
@@ -175,9 +163,7 @@ def generate_focus_character(chapter, image_xml: Tag):
     """
     Which character is the focus of this image?
     """
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     all_character_names = characters.get_all_character_names(chapter)
 
@@ -232,10 +218,7 @@ def generate_lighting(chapter, image_xml: Tag):
     What is the lighting in this scene?  Return one of [UNKNOWN, DARK, DIM, NORMAL, BRIGHT]
     """
     # all the text around us
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), 
-        context_min=600
-    )
+    context = get_image_narration_context(image_xml)
 
     # the specific text we want to focus on for this character determination
     text = get_text_to_next(

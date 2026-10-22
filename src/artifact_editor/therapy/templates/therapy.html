@@ -134,7 +134,7 @@
     </script>
 </head>
 
-<body hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+<body hx-ext="ws" ws-connect="{{ websocket_url() }}">
     <h1>Conversation</h1>
 
     <!-- <button id="start-button">Start Recording</button>

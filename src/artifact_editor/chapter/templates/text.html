@@ -193,6 +193,42 @@
         display: none;
     }
     .chapter-mini-image-editor { margin-top: 0.75rem; }
+    /* Image buttons retain their interaction without the native theme's bevel/gloss. */
+    .chapter-image-viewer-open,
+    .chapter-image-thumbnail {
+        appearance: none;
+        background-image: none;
+        box-shadow: none;
+    }
+    .chapter-image-viewer-open::before,
+    .chapter-image-viewer-open::after,
+    .chapter-image-thumbnail::before,
+    .chapter-image-thumbnail::after {
+        content: none;
+        display: none;
+    }
+    .chapter-image-viewer-open:focus-visible,
+    .chapter-image-thumbnail:focus-visible {
+        outline: 2px solid var(--wa-color-brand-50, #7560ca);
+        outline-offset: 2px;
+    }
+    .chapter-image-viewer-open {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        height: auto;
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        line-height: 0;
+        background: transparent;
+        cursor: zoom-in;
+    }
+    .chapter-image-viewer-open > img { display: block; }
+    .chapter-image-viewer-open:disabled { cursor: default; }
+    .chapter-image-viewer-layout { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
+    #chapter-image-full { width: 100%; height: 78vh; object-fit: contain; }
     .chapter-image-gallery {
         display: grid;
         grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
@@ -338,7 +374,7 @@
 <script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='3') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='phrase-toggle-2') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='image-viewer-1') }}" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.
@@ -537,6 +573,13 @@
 {% endblock %}
 
 {% block body %}
+<wa-dialog id="chapter-image-viewer" label="Chapter image" style="--width: 96vw;">
+    <div class="chapter-image-viewer-layout">
+        <wa-button id="chapter-image-previous" aria-label="Previous image" appearance="plain">❮</wa-button>
+        <img id="chapter-image-full" alt="Chapter image">
+        <wa-button id="chapter-image-next" aria-label="Next image" appearance="plain">❯</wa-button>
+    </div>
+</wa-dialog>
 
 <div class="chapter-layout">
     <div class="chapter-column wa-stack wa-gap-0 chapter-editor-column">
@@ -608,6 +651,7 @@
             hx-on:wa-tab-show="if (event.target === this) htmx.trigger(this.querySelector('wa-tab-panel[name=' + this.active + ']'), 'load-column')">
             <wa-tab panel="timeline">Timeline</wa-tab>
             <wa-tab panel="characters">Characters</wa-tab>
+            <wa-tab panel="props">Props</wa-tab>
             <wa-tab panel="pronunciation">Pronunciation</wa-tab>
             <wa-tab-panel name="timeline"
                 hx-get="{{ url_for('library.book.chapter.timeline_panel', **chapter.kwargs) }}"
@@ -615,6 +659,10 @@
             </wa-tab-panel>
             <wa-tab-panel name="characters"
                 hx-get="{{ url_for('library.book.chapter.characters.base', panel=1, **chapter.kwargs) }}"
+                hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
+            </wa-tab-panel>
+            <wa-tab-panel name="props"
+                hx-get="{{ url_for('library.book.chapter.props.base', **chapter.kwargs) }}"
                 hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
             </wa-tab-panel>
             <wa-tab-panel name="pronunciation"

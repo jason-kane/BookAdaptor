@@ -111,7 +111,8 @@ def pending_video_progress(pubsub, client):
 
 def run_video_job(client, task):
     job_id = task["job_id"]
-    message = {"chapter_import": "Preparing chapter import",
+    message = {"timeline_metadata": "Preparing image metadata", "timeline_image": "Preparing timeline image", "character_image": "Preparing character image", "prop_image": "Preparing prop image",
+               "chapter_import": "Preparing chapter import",
                "chapter_missing_metadata": "Preparing missing metadata",
                "chapter_missing_images": "Preparing missing images",
                "chapter_missing_animations": "Preparing missing animations"}.get(
@@ -132,6 +133,28 @@ def run_video_job(client, task):
             number=int(task["chapter_number"]),
             language=task["language"],
         )
+        if task.get("action") == "timeline_metadata":
+            from artifact_editor.images.jobs import generate_timeline_metadata
+            generate_timeline_metadata(chapter, task["image_index"], progress=lambda percent, message: publish_progress(
+                client, job_id, percent, message
+            ))
+            publish_progress(client, job_id, 100, "Image metadata complete", "complete")
+            return
+        if task.get("action") == "timeline_image":
+            from artifact_editor.images.jobs import generate_timeline_image
+            generate_timeline_image(chapter, task["image_index"])
+            publish_progress(client, job_id, 100, "Image generation complete", "complete")
+            return
+        if task.get("action") == "prop_image":
+            from artifact_editor.props.props import draw_prop
+            draw_prop(chapter, task["prop_tag"], description=task["description"])
+            publish_progress(client, job_id, 100, "Prop image complete", "complete")
+            return
+        if task.get("action") == "character_image":
+            from artifact_editor.characters.characters import draw_headshot
+            draw_headshot(chapter, task["character_tag"], force=True, description=task["description"])
+            publish_progress(client, job_id, 100, "Character image complete", "complete")
+            return
         if task.get("action") in ("chapter_missing_images", "chapter_missing_animations"):
             method = (chapter.textoviva.generate_missing_images
                       if task["action"] == "chapter_missing_images"
@@ -175,7 +198,7 @@ def run_video_job(client, task):
                     client, job_id, percent, message
                 ),
             )
-        else:
+        elif task.get("action") in (None, "video_render") and "aspect" in task:
             book_to_video(
                 chapter,
                 aspect=task["aspect"],
@@ -184,10 +207,12 @@ def run_video_job(client, task):
                     client, job_id, percent, message
                 ),
             )
+        else:
+            raise ValueError(f"Unsupported render job action: {task.get('action')!r}")
         publish_progress(client, job_id, 100, "Video render complete", "complete")
     except Exception as exc:
         log.exception("Video render job %s failed", job_id)
-        label = {"chapter_import": "Chapter import",
+        label = {"timeline_metadata": "Image metadata generation", "timeline_image": "Image generation", "character_image": "Character image generation", "prop_image": "Prop image generation", "chapter_import": "Chapter import",
                  "chapter_missing_metadata": "Metadata generation",
                  "chapter_missing_images": "Image generation",
                  "chapter_missing_animations": "Animation generation"}.get(
@@ -289,7 +314,18 @@ def handle_websocket(ws):
             if incoming:
                 try:
                     task = json.loads(incoming)
-                    if task.get("action") in ("chapter_missing_images", "chapter_missing_animations", "chapter_missing_metadata", "chapter_import", "textoviva_rerender", "textoviva_time_align", "textoviva_missing_animation"):
+                    if task.get("action") in ("character_image", "prop_image", "chapter_missing_images", "chapter_missing_animations", "chapter_missing_metadata", "chapter_import", "textoviva_rerender", "textoviva_time_align", "textoviva_missing_animation"):
+                        character_fields = {}
+                        if task["action"] == "character_image":
+                            tag, description = task.get("character_tag"), task.get("description")
+                            if not isinstance(tag, str) or not tag or not isinstance(description, str) or not description.strip():
+                                raise ValueError("Character and description are required")
+                            character_fields = {"character_tag": tag, "description": description}
+                        if task["action"] == "prop_image":
+                            tag, description = task.get("prop_tag"), task.get("description")
+                            if not isinstance(tag, str) or not tag or not isinstance(description, str) or not description.strip():
+                                raise ValueError("Prop and description are required")
+                            character_fields = {"prop_tag": tag, "description": description}
                         sections = task.get("sections")
                         if task["action"] == "chapter_import":
                             if not isinstance(sections, str) or not isinstance(json.loads(sections), list):
@@ -299,12 +335,15 @@ def handle_websocket(ws):
                             "action", "job_id", "author", "title",
                             "chapter_number", "language",
                         )}
+                        task.update(character_fields)
                         task["job_id"] = uuid.UUID(task["job_id"]).hex
                         task["chapter_number"] = int(task["chapter_number"])
                         if task["action"] == "chapter_import":
                             task["sections"] = sections
                         label = "Queued for chapter import" if task["action"] == "chapter_import" else "Queued for Time Align" if task["action"] == "textoviva_time_align" else "Queued for re-render"
-                        if task["action"] == "chapter_missing_metadata":
+                        if task["action"] in ("prop_image", "character_image"):
+                            label = "Queued for " + ("prop" if task["action"] == "prop_image" else "character") + " image generation"
+                        elif task["action"] == "chapter_missing_metadata":
                             label = "Queued for missing metadata"
                         elif task["action"] in ("chapter_missing_images", "chapter_missing_animations"):
                             label = "Queued for missing " + task["action"].removeprefix("chapter_missing_")

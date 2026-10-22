@@ -1,0 +1,13 @@
+<div id="scene_props" class="wa-stack">
+    <wa-select name="scene_props" label="Scene Props" multiple with-clear value="{{ selected|join(' ') }}"
+        hx-put="{{ url_for('library.book.chapter.images.scene.save_scene_props', image_index=image['index'], **chapter.kwargs) }}"
+        hx-trigger="change" hx-target="closest #scene_props" hx-swap="outerHTML"
+        hint="Choose props present in this scene.">
+        {% for tag, prop in props.items() %}
+        <wa-option value="{{ tag }}"{% if tag in selected %} selected{% endif %}>{{ prop.name }}</wa-option>
+        {% endfor %}
+    </wa-select>
+    {% for tag in selected if tag in props %}
+    <div><strong>{{ props[tag].name }}</strong>: {{ props[tag].description }}</div>
+    {% endfor %}
+</div>

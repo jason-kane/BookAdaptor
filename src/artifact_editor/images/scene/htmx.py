@@ -61,6 +61,7 @@ def image_scene_workshop(
         {style_ui}
         {description_ui}
         {setting_ui}
+        {scene_props(chapter, image_xml)}
         {tod_ui}
         {mood_ui}
         {camera_ui}
@@ -380,7 +381,7 @@ def scene_characters(chapter, image_xml):
             label="Scene Characters"
             hx-put="scene/characters"
             hx-swap="outerHTML transition:true"
-            hx-target="#characters_section"
+            hx-target="closest #characters_section"
             hx-trigger="change delay:500ms"
             hint="Choose character(s) to include in this scene."
             with-clear
@@ -393,7 +394,7 @@ def scene_characters(chapter, image_xml):
             pill
             style="align-self: flex-end; margin-left: 1em;"
             hx-post="scene/characters"
-            hx-target="#scene_characters"
+            hx-target="closest #characters_section"
             hx-swap="outerHTML transition:true"
         >Generate</wa-button>
     </div>"""
@@ -859,3 +860,11 @@ def character_action(chapter, character, image_xml):
     </div>"""
 
 
+
+
+def scene_props(chapter, image_xml):
+    from artifact_editor.props import props
+    from flask import render_template
+    return render_template('scene_props.html', chapter=chapter, image=image_xml,
+                           props=props.get_all_props(chapter),
+                           selected=image_xml.get('scene_props', '').split(','))

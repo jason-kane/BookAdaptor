@@ -20,6 +20,7 @@ from artifact_editor.author.views import bp as author
 from artifact_editor.book.views import bp as book
 from artifact_editor.chapter.views import bp as chapter
 from artifact_editor.characters.views import bp as characters
+from artifact_editor.props.views import bp as props
 from artifact_editor.frames.views import bp as frames
 from artifact_editor.home.views import bp as home
 from artifact_editor.images.views import bp as images
@@ -56,6 +57,8 @@ if t.TYPE_CHECKING:
 #     text,
 #     url_prefix="/text",
 # )
+
+chapter.register_blueprint(props, url_prefix="/props")
 
 chapter.register_blueprint(
     characters, 
@@ -137,6 +140,8 @@ class RegexConverter(BaseConverter):
 
 def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     app = Flask(__name__)
+    from artifact_editor.websocket_url import websocket_url
+    app.jinja_env.globals["websocket_url"] = websocket_url
     app.register_blueprint(youtube_oauth)
     app.register_blueprint(tiktok_oauth)
 

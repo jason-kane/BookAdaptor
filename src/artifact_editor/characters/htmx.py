@@ -1,3 +1,4 @@
+from artifact_editor.websocket_url import websocket_url
 import json
 from os import name
 from typing import Any
@@ -7,7 +8,7 @@ import const
 from artifact_editor.tools import (
     generic_button,
 )
-from flask import url_for
+from flask import url_for, render_template
 import audio_effects
 from .voices import KOKORO_VOICES
 from .characters import (
@@ -105,59 +106,31 @@ def gender_selection(chapter, character_dict, tag):
 
 
 def headshot(character_dict, chapter, tag):
-    OUT = f"""<div class="wa-stack" id="headshot_{tag}">"""
-    cosmetic_name = character_dict.get("name", tag)
-    author = chapter.author
-    title = chapter.title
-    chapter_number = chapter.number
+    import uuid
+    from markupsafe import escape
 
-    regenerate_url = url_for(
-        "library.book.chapter.characters.regenerate_headshot",
-        **chapter.kwargs,
-        character_tag=tag,
-    )
-
-    headshot_src_url = url_for(
-        "library.book.chapter.characters.headshot", **chapter.kwargs, character_tag=tag
-    )
-
-    if character_dict.get("headshot", False):
-        # they DO have a headshot.
-        return (
-            OUT
-            + f"""
-        <div class="wa-frame:square" slot="header">
-            <div class="wa-stack wa-align-items-center wa-gap-xs wa-caption-m">
-                <img height="600px" width="600px" src="{headshot_src_url}" alt="{cosmetic_name}'s headshot">
-            </div>
+    job_id = uuid.uuid4().hex
+    task = escape(json.dumps({
+        "action": "character_image", "job_id": job_id,
+        "author": chapter.author.name, "title": chapter.title,
+        "chapter_number": chapter.number, "language": chapter.language,
+        "character_tag": tag,
+    }))
+    src = url_for("library.book.chapter.characters.headshot", **chapter.kwargs, character_tag=tag)
+    image = (f'<img src="{escape(src)}?v={job_id}" alt="Full-body character image" '
+             'style="max-width:100%;max-height:600px;object-fit:contain">'
+             if character_dict.get("headshot") else '<span>No Image</span>')
+    label = "Regenerate Image" if character_dict.get("headshot") else "Generate Image"
+    return f"""<div class="wa-stack" id="headshot_{escape(tag)}" hx-ext="ws"
+        ws-connect="{websocket_url()}" data-character-image="{job_id}"
+        data-character-tag="{escape(tag)}" data-image-src="{escape(src)}">
+        <div data-character-preview>{image}</div>
+        <div class="wa-cluster">
+        <wa-button type="button" ws-send hx-trigger="click" hx-vals='{task}'>{label}</wa-button>
+        {render_template('reference_workflow_button.html', workflow_url=url_for('library.book.chapter.characters.open_workflow', character_tag=tag, **chapter.kwargs), description_id=tag + '_description', subject='character image')}
         </div>
-
-        <wa-button
-            hx-get="{ regenerate_url }"
-            hx-target="#headshot_{tag}">Regenerate Image</wa-button>
-    </div>
-        """
-        )
-    else:
-        # they do NOT have a headshot.
-        return (
-            OUT
-            + f"""
-        <div class="wa-frame:landscape" slot="header">
-            <div class="wa-stack wa-align-items-center wa-gap-xs wa-caption-m">
-                <wa-icon src="/static/fontawesome7/svgs/regular/image.svg"></wa-icon>
-                <span>No Image</span>
-            </div>
-        </div>
-    
-        <wa-button
-            hx-get="{regenerate_url}"
-            hx-on::before-request="beforeRequest(this, event)"
-            hx-on::after-request="afterRequest(this, event)"
-            hx-target="#headshot_{tag}">Generate Image</wa-button>
-    </div>
-    """
-        )
+        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
+    </div>"""
 
 
 # Tip is a young boy from the country of the Gillikins in the Land of Oz. He was raised by an old woman named Mombi, who was rumored to have magical abilities. Despite being brought up by Mombi, Tip does not remember anything
@@ -178,7 +151,7 @@ def character_description_response(chapter, character_name, description):
         value="{html_escaped_description}"
         hx-post="{update_description_url}"
         hx-trigger="change delay:500ms"
-        rows="{len(description) // 100}"
+        rows="4"
         size="large"
         style="width: 100%"
     ></wa-textarea>
@@ -600,17 +573,18 @@ def character_data(chapter, character_dict: dict[str, Any]):
     visual_appearances = character_dict.get("visual_appearances", 0)
     audio_appearances = character_dict.get("audio_appearances", 0)
 
+    has_voice = character_dict.get("has_voice", True)
     blender = voice_blender(
         chapter=chapter,
         character=character_dict,
         character_tag=tag,
-    )
+    ) if has_voice else ""
 
     pronunciation_filter = character_dict.get("pronunciation_filter", 2000)
 
     character_pronunciation_widget_html = character_pronunciation_widget(
         chapter.url, tag, pronunciation_filter
-    )
+    ) if has_voice else ""
 
     description_editor = "" if is_narrator else f"""
         {character_description_response(chapter, tag, description)}
@@ -618,6 +592,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
             <wa-button
                 hx-post="{url_for('library.book.chapter.characters.generate_description', **chapter.kwargs, character_tag=tag)}"
                 hx-target="#{tag}_description"
+                hx-params="none"
                 hx-swap="outerHTML transition:true">Extract Text Description</wa-button>
 
             <wa-button
@@ -633,7 +608,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
         </div>
     """
     headshot_editor = "" if is_narrator else f"""
-        <div class="wa-stack" id="{tag}_right_column">
+        <div class="wa-stack" id="{tag}_right_column" style="flex: 0 1 auto; min-width: 0; max-width: 40%">
             {headshot(character_dict, chapter, tag)}
         </div>
     """
@@ -643,15 +618,52 @@ def character_data(chapter, character_dict: dict[str, Any]):
     )
     has_voice_weights = "voice_selection_panel" in blender
 
+    voice_controls = f"""
+                <wa-select
+                    label="TTS Engine"
+                    value="{tts_engine}"
+                    hx-post="{ url_for('library.book.chapter.characters.update_tts_engine', **chapter.kwargs, character_tag=tag) }"
+                    hx-trigger="change delay:500ms"
+                    name="tts_engine">
+                    <wa-option value="kokoro">Kokoro</wa-option>
+                </wa-select>
+
+                {blender}
+                {character_pronunciation_widget_html}
+    """ if has_voice else ""
+    voice_buttons = f"""
+                <wa-button {'' if has_positive_voice_weights else 'disabled'}
+                    id="{tag}_remove_voices"
+                    hx-post="{ url_for('library.book.chapter.characters.remove_voice_weights', **chapter.kwargs, character_name=tag) }"
+                    hx-target="#{tag}_engine"
+                    hx-swap="outerHTML transition:true">Remove Voice</wa-button>
+
+                <wa-button
+                    id="{tag}_randomize_voices"
+                    hx-post="{ url_for('library.book.chapter.characters.randomize_voice_weights', **chapter.kwargs, character_name=tag) }"
+                    hx-target="#{tag}_engine"
+                    {'disabled' if not has_voice_weights else ''}
+                    hx-swap="outerHTML transition:true">Randomize Voice Weights</wa-button>
+
+
+    """ if has_voice else ""
+
     return f"""
     <div 
         style="border: 1px solid #e0e0e0; padding: 16px; border-radius: var(--wa-border-radius-m); position: relative;" 
         id="character_{tag}"
         class="wa-stack"
     >
-        <div id="{tag}_scope" class="wa-split wa-gap-0">    
-            <div class="wa-stack" id="{tag}_left_column" style="width: 50%">
-                <div class="wa-cluster">
+        <wa-button type="button" size="small" variant="danger" appearance="plain"
+            aria-label="Delete character" title="Delete character"
+            style="position: absolute; top: 8px; right: 8px; z-index: 1"
+            hx-delete="{url_for('library.book.chapter.characters.delete_character', **chapter.kwargs, character_tag=tag)}"
+            hx-target="#character_cards" hx-include="#{tag}_scope"
+            hx-swap="outerHTML transition:true">
+            <wa-icon name="trash" aria-hidden="true"></wa-icon>
+        </wa-button>
+        <div id="{tag}_scope" class="wa-stack" style="width: 100%; min-width: 0">
+                <div class="wa-cluster" style="padding-right: 40px">
                     <h2>{name}</h2>
                     <h4>({tag})</h4>
                     [{visual_appearances}/{audio_appearances} visual/audio]
@@ -666,8 +678,11 @@ def character_data(chapter, character_dict: dict[str, Any]):
                     hx-target="#{tag}_scope">
                 </wa-input>
 
+                {render_template('character_aliases.html', chapter=chapter, character=character_dict, tag=tag, catalog=get_all_characters(chapter))}
                 {description_editor}
 
+            <div class="wa-split wa-gap-0">
+            <div class="wa-stack" id="{tag}_left_column" style="flex: 1; min-width: 0">
                 <div class="wa-cluster">
                     {gender_selection(chapter, character_dict, tag)}
                     {age_selection(chapter, character_dict, tag)}
@@ -677,46 +692,27 @@ def character_data(chapter, character_dict: dict[str, Any]):
                         hx-swap="outerHTML transition:true">Generate</wa-button>
                 </div>
 
-                <wa-select
-                    label="TTS Engine" 
-                    value="{tts_engine}" 
-                    hx-post="{ url_for('library.book.chapter.characters.update_tts_engine', **chapter.kwargs, character_tag=tag) }"
-                    hx-trigger="change delay:500ms"
-                    name="tts_engine">
-                    <wa-option value="kokoro">Kokoro</wa-option>
-                </wa-select>                
+                <wa-checkbox name="has_voice" {'checked' if has_voice else ''}
+                    hx-post="{url_for('library.book.chapter.characters.set_has_voice', **chapter.kwargs, character_tag=tag)}"
+                    hx-trigger="change"
+                    hx-vals='js:{{"has_voice": event.target.checked}}'
+                    hx-target="#character_{tag}"
+                    hx-swap="outerHTML">Has voice</wa-checkbox>
+                {voice_controls}
 
-                {blender}
-                {character_pronunciation_widget_html}                
 
             </div>
             
             {headshot_editor}
+            </div>
         </div>
 
         <div class="wa-stack" id="{tag}_after_split">
 
             <div class="wa-cluster">
 
-                <wa-button {'' if has_positive_voice_weights else 'disabled'}
-                    id="{tag}_remove_voices"
-                    hx-post="{ url_for('library.book.chapter.characters.remove_voice_weights', **chapter.kwargs, character_name=tag) }"
-                    hx-target="#{tag}_engine" 
-                    hx-swap="outerHTML transition:true">Remove Voice</wa-button>        
+                {voice_buttons}
 
-                <wa-button 
-                    id="{tag}_randomize_voices"
-                    hx-post="{ url_for('library.book.chapter.characters.randomize_voice_weights', **chapter.kwargs, character_name=tag) }"
-                    hx-target="#{tag}_engine"
-                    {'disabled' if not has_voice_weights else ''}
-                    hx-swap="outerHTML transition:true">Randomize Voice Weights</wa-button>
-                
-                <wa-button 
-                    hx-delete="{ url_for('library.book.chapter.characters.delete_character', **chapter.kwargs, character_tag=tag) }"
-                    hx-target="#character_cards"
-                    hx-include="#{tag}_scope"
-                    variant="danger"
-                    hx-swap="outerHTML transition:true">Delete</wa-button>
             </div>
         </div>
     </div>

@@ -27,6 +27,7 @@ from artifact_editor.characters import characters
 from artifact_editor.tools import (
     friendly_location,
     get_surrounding_paragraphs,
+    get_image_narration_context,
     get_tag,
     get_text_to_next,
     wait_for,
@@ -460,9 +461,7 @@ def generate_metadata_setting(image_xml, force=False):
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
     )
 
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     previous_image = image_xml.find_previous_sibling("image")
     if previous_image and "setting" in previous_image.attrs:
@@ -530,7 +529,7 @@ def generate_metadata_setting(image_xml, force=False):
     return image_xml.attrs.get("setting")
 
 
-def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=False):
+def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=False, all_props=None):
     # start with meta_prompt
     prompt = image_xml.attrs.get(
         "meta_prompt", "[SETTING] [TOD] [CAMERA] [FOCUS_CHARACTER] [CHARACTERS]"
@@ -608,15 +607,23 @@ def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=Fals
 
         prompt = prompt.replace("[CHARACTERS]", ", ".join(character_list))
 
+    prop_descriptions = "; ".join(
+        f"{all_props[tag]['name']}: {all_props[tag].get('description', '')}"
+        for tag in image_xml.get('scene_props', '').split(',')
+        if tag in (all_props or {})
+    )
+    if "[PROPS]" in prompt:
+        prompt = prompt.replace("[PROPS]", prop_descriptions)
+    elif prop_descriptions:
+        prompt += " Props in the scene: " + prop_descriptions
+
     image_xml.attrs["prompt"] = prompt
 
     if build_clip:
         # build the clip prompt based on the t5 prompt and the surrounding text
         image_xml.attrs["clip_prompt"] = text_to_image_clip_prompt(
             text=image_xml.attrs["t5_prompt"],
-            paragraph_text=get_surrounding_paragraphs(
-                image_xml.find_parent("paragraph")
-            ),
+            paragraph_text=get_image_narration_context(image_xml),
             t5_prompt=image_xml.attrs["t5_prompt"],
             prompt_fn=os.path.abspath(
                 os.path.join(
@@ -639,9 +646,7 @@ def OBSOLETE_generate_metadata_scene_characters(mybook, image_xml, chapterdir, f
     """
     Which characters are potentially visible in this scene?
     """
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
@@ -741,9 +746,7 @@ def generate_metadata_character_pose(character, image_xml, chapter):
     """
     Choose a pose, location, and action for the character in this image.
     """
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
@@ -758,15 +761,22 @@ def generate_metadata_character_pose(character, image_xml, chapter):
         f"The character is named {character['name']} and is described as: {character.get('description', '')}.  "
         "What is the best pose for this character?  The answer must be one of the following:\n"
         + "\n".join([f"{p[0]}: {p[1]}" for p in scene_const.POSE_CHOICES])
-        + "\nSingle JSON string response only."
+        + '\nReturn only a JSON object with one key, "pose", containing the chosen pose key.'
     )
 
     pose = llm.json_prompt(prompt)
-    valid_pose = [p[0] for p in scene_const.POSE_CHOICES]
-    if isinstance(pose, dict) and "pose" in pose:
-        clean_pose = pose["pose"].strip().lower().replace("-", "_").replace(" ", "_")
-    else:
-        raise ValueError('Unknown pose response: %s' % pose)
+    valid_pose = {key for key, label in scene_const.POSE_CHOICES}
+    candidates = ([pose.get(key) for key in ("pose", "character_pose", "pose_selection")]
+                  if isinstance(pose, dict) else [pose])
+    clean_pose = None
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            normalized = "_".join(candidate.strip().lower().replace("-", "_").split())
+            if normalized in valid_pose:
+                clean_pose = normalized
+                break
+    if clean_pose is None:
+        raise ValueError(f"Unknown pose response: {pose!r}")
 
     image_xml.attrs[f"{character['tag']}_pose"] = clean_pose
     return
@@ -792,9 +802,7 @@ def generate_metadata_character_pose(character, image_xml, chapter):
 
 def generate_metadata_character_location(character, image_xml, chapter):
     # location
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
@@ -854,8 +862,7 @@ def generate_metadata_character_action(character_dict, image_xml: Tag, force=Fal
     The surrounding context is:
     
     #### START
-    {get_surrounding_paragraphs(image_xml.find_parent('paragraph'),
-    context_min=600)}.  
+    {get_image_narration_context(image_xml)}.
     #### END
     
     Respond with a JSON object with two keys: 'action' and 'motivation'.  
@@ -990,9 +997,7 @@ def generate_image_description(image_xml, force=False):
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
     )
-    context = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    context = get_image_narration_context(image_xml)
     metadata = {key: value for key, value in image_xml.attrs.items()
                 if key in ("setting", "tod", "camera", "scene_characters", "focus_character")
                 or key.endswith(("_pose", "_location", "_action", "_description"))
@@ -1000,7 +1005,11 @@ def generate_image_description(image_xml, force=False):
     description = llm.str_prompt(
         "Write a concise, concrete description of a single illustration for this story passage. "
         "Describe the visible characters, actions, setting, lighting, and composition. "
-        "Use the scene metadata for consistency. Return only the description.\n\n"
+        "The passage is authoritative; correct any scene metadata that contradicts it. "
+        "Use explicit spatial relationships rather than ambiguous modifiers such as "
+        "'a painted goblet': say 'a flat signboard with a picture of a water-filled goblet "
+        "painted on its surface' when that is what the passage describes. "
+        "Return only the description.\n\n"
         f"Passage:\n{text}\n\nSurrounding context:\n{context}\n\nScene metadata:\n{metadata}",
         force=force,
     ).strip()
@@ -1022,10 +1031,12 @@ def generate_missing_metadata(chapter, progress=None):
     progress(100, "Missing metadata complete")
 
 
-def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> None:
+def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progress=None) -> None:
     """
     Fill in all the metadata fields based on the text surrounding this image.
     """
+    progress = progress or (lambda percent, message: None)
+    progress(5, "Generating image style")
     if "style" not in image_xml.attrs or force_all:
         generate_metadata_style(image_xml)
 
@@ -1046,6 +1057,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
         # use the text_to_next to determine the setting, tod, camera, # focus_character, and scene_characters.
         if "setting" not in image_xml.attrs or force_all:
             log.info('Generating setting for image %s', image_xml.attrs['index'])
+            progress(15, "Generating setting")
             setting = generate_metadata_setting(image_xml)
             log.info('Setting for image %s: %s', image_xml.attrs['index'], setting)
             image_xml.attrs["setting"] = setting
@@ -1054,6 +1066,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
         if "tod" not in image_xml.attrs or force_all:
             # time of day
             log.info('Generating TOD for image %s', image_xml.attrs['index'])
+            progress(25, "Generating time of day")
             tod = scene.generate_tod(image_xml)
             image_xml.attrs["tod"] = tod
             chapter.save_xml()
@@ -1061,6 +1074,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
         if "camera" not in image_xml.attrs or force_all:
             # camera
             log.info('Generating camera for image %s', image_xml.attrs['index'])
+            progress(35, "Generating camera")
             camera = scene.generate_camera(image_xml)
             image_xml.attrs["camera"] = camera
             chapter.save_xml()
@@ -1068,6 +1082,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
         if "scene_characters" not in image_xml.attrs or force_all:
             # scene characters
             log.info('Generating scene characters for image %s', image_xml.attrs['index'])
+            progress(45, "Finding scene characters")
             scene_characters = scene.generate_scene_characters(chapter, image_xml)
             image_xml.attrs["scene_characters"] = ",".join(sorted(scene_characters))
             chapter.save_xml()
@@ -1078,6 +1093,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
             "lighting_quality" not in image_xml.attrs or force_all
         ):
             log.info('Generating lighting for image %s', image_xml.attrs['index'])
+            progress(55, "Generating lighting")
             scene.generate_lighting(chapter, image_xml)
             chapter.save_xml()
 
@@ -1111,10 +1127,12 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False) -> Non
         ) or force_all:
             # focus character
             log.info('Generating focus character for image %s', image_xml.attrs['index'])
+            progress(65, "Choosing focus character")
             focus_character = scene.generate_focus_character(chapter, image_xml)
             image_xml.attrs["focus_character"] = focus_character
             chapter.save_xml()
 
+    progress(75, "Generating character poses and actions")
     # new characters may have been created, reload them
     # log.info("Reloading all characters for chapter %s", chapter)
     all_characters = characters.get_all_characters(chapter)
@@ -1173,9 +1191,7 @@ def generate_animation_prompt(chapter, image_xml, force=False):
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
     )
 
-    surrounding_text = get_surrounding_paragraphs(
-        image_xml.find_parent("paragraph"), context_min=600
-    )
+    surrounding_text = get_image_narration_context(image_xml)
 
     frames = int(image_xml.attrs.get("frames", 0) or 0)
     duration = frames / const.FPS if frames > 0 else float(

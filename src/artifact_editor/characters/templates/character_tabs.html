@@ -50,4 +50,12 @@
             {{ import_character_form|safe }}
         </wa-tab-panel>
     </wa-tab-group>
+    {% if extraction_message %}<p role="status">{{ extraction_message }}</p>{% endif %}
+    <div class="wa-cluster">
+        <wa-button type="button"
+            hx-post="{{ url_for('library.book.chapter.characters.extract', **chapter.kwargs) }}"
+            hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="#characters-extract-progress">Extract Characters</wa-button>
+        <span id="characters-extract-progress" class="htmx-indicator" role="status">Extracting characters from story…</span>
+    </div>
 </div>

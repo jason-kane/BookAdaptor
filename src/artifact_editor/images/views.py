@@ -1,3 +1,4 @@
+from artifact_editor.props.props import get_all_props
 import copy
 import glob
 import io
@@ -397,7 +398,7 @@ def rebuild_prompt(image_index=0):
     # update with all chapter-specific characters
     all_characters.update(characters.get_all_characters(g.chapter, is_global=False))
 
-    images.build_replacement_prompt(all_characters, g.chapter.bookdir, image_xml)
+    images.build_replacement_prompt(all_characters, g.chapter.bookdir, image_xml, all_props=get_all_props(g.chapter))
 
     value = htmx.prompt_panel(g.chapter, image_xml)
     g.chapter.save_xml()
@@ -610,7 +611,7 @@ def _apply_zmi(chapter, image_xml: Tag) -> None:
     # update with all chapter-specific characters
     all_characters.update(characters.get_all_characters(chapter, is_global=False))
 
-    images.build_replacement_prompt(all_characters, chapter.bookdir, image_xml)
+    images.build_replacement_prompt(all_characters, chapter.bookdir, image_xml, all_props=get_all_props(chapter))
 
     prompt = image_xml.attrs["prompt"]
     image_xml.attrs["raw_prompt"] = prompt
@@ -2441,6 +2442,7 @@ def apply_prompt_template(image_index: int):
                 all_characters,
                 get_bookdir(g.chapter.get_author(), g.chapter.get_title()),
                 image_xml,
+                all_props=get_all_props(g.chapter),
             )
             g.chapter.save_xml()
 

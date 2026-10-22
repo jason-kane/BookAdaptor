@@ -201,3 +201,233 @@ def test_real_websocket_round_trip(monkeypatch):
         http.shutdown()
         http.server_close()
         thread.join(timeout=5)
+
+
+def test_character_image_websocket_captures_current_description(monkeypatch):
+    client, ws = MagicMock(), MagicMock()
+    task = dict(job_id='c' * 32, action='character_image', author='Robert Frost',
+                title='Selected Poems', chapter_number='1', language='en',
+                character_tag='Traveler', description='A traveler in a blue coat.', unwanted=True)
+    ws.receive.side_effect = [json.dumps(task), RuntimeError('end test connection')]
+    monkeypatch.setattr(server, 'redis_connection', lambda: client)
+    monkeypatch.setattr(server, 'pending_video_progress', lambda *args: [])
+    with pytest.raises(RuntimeError, match='end test'):
+        server.handle_websocket(ws)
+    queued = json.loads(client.lpush.call_args.args[1])
+    assert queued['description'] == task['description']
+    assert queued['character_tag'] == 'Traveler'
+    assert 'unwanted' not in queued
+
+
+@pytest.mark.parametrize('fails', [False, True])
+def test_character_image_worker_reports_result(monkeypatch, fails):
+    from artifact_editor.characters import characters
+    from artifact_editor.chapter.chapter import Chapter
+    draw = MagicMock(side_effect=ValueError('generation failed') if fails else None)
+    monkeypatch.setattr(characters, 'draw_headshot', draw)
+    monkeypatch.setattr(Chapter, '__init__', lambda self, **kwargs: None)
+    publish = MagicMock()
+    monkeypatch.setattr(server, 'publish_progress', publish)
+    server.run_video_job(MagicMock(), dict(job_id='d' * 32, action='character_image',
+        author='Robert Frost', title='Selected Poems', chapter_number=1, language='en',
+        character_tag='Traveler', description='Blue coat'))
+    assert draw.call_args.kwargs == dict(force=True, description='Blue coat')
+    assert publish.call_args.args[-1] == ('failed' if fails else 'complete')
+
+
+def test_character_image_uses_full_body_contrasting_background_and_saves_output(monkeypatch, tmp_path):
+    import comfy
+    from artifact_editor.characters import characters
+    character = dict(tag='Traveler', description='A traveler wearing a blue coat')
+    monkeypatch.setattr(characters, 'get_character', lambda *args: character.copy())
+    save = MagicMock()
+    monkeypatch.setattr(characters, 'save_character', save)
+    monkeypatch.setattr(characters.const, 'LIBRARY_DIR', str(tmp_path / 'library'))
+    monkeypatch.setitem(characters.const.COMFY_DIRS, 'artifactserver', {'OUTPUT_DIR': str(tmp_path)})
+    workflow = {'latent': {'class_type': 'EmptySD3LatentImage', 'inputs': {}},
+                'sample': {'class_type': 'KSampler', 'inputs': {}}}
+    template = MagicMock()
+    template.serialize.return_value = workflow
+    monkeypatch.setattr(comfy, 'load_workflow_template', lambda *args: template)
+    def run(data, template_environment):
+        assert 'entire body visible from head to feet' in template_environment['PROMPT']
+        assert 'Plain, solid-color background with strong contrast against the character' in template_environment['PROMPT']
+        assert character['description'] in template_environment['PROMPT']
+        assert data['latent']['inputs'] == dict(width=768, height=1152)
+        output = tmp_path / (template_environment['FILENAME_PREFIX'] + '_00001_.png')
+        output.parent.mkdir(exist_ok=True)
+        output.write_bytes(b'generated image')
+    monkeypatch.setattr(comfy, 'run_workflow', run)
+    chapter = MagicMock(chapterdir='author/book/chapter/1')
+    result = characters.draw_headshot(chapter, 'Traveler', force=True)
+    from pathlib import Path
+    assert Path(result).read_bytes() == b'generated image'
+    assert save.call_args.args[2]['headshot'].endswith('characters/Traveler.png')
+
+
+def test_extract_description_excludes_existing_description_and_generated_metadata(monkeypatch):
+    from bs4 import BeautifulSoup
+    from artifact_editor.characters import characters
+    old_description = 'Invented purple hair and golden armor'
+    character = dict(name='Traveler', tag='Traveler', description=old_description)
+    chapter = MagicMock()
+    chapter.get_xml.return_value = BeautifulSoup('''<chapter>
+        <paragraph><phrase>Selected Poems by Robert Frost</phrase></paragraph>
+        <paragraph><phrase>Traveler wore a blue coat.</phrase>
+        <image><description>Invented purple hair and golden armor</description></image>
+        </paragraph><paragraph><description>Invented purple hair and golden armor</description>
+        </paragraph></chapter>''', 'xml')
+    monkeypatch.setattr(characters, 'get_character', lambda *args: character)
+    monkeypatch.setattr(characters, 'save_character', MagicMock())
+    prompt = MagicMock(side_effect=['Traveler wore a blue coat.', 'A blue coat.'])
+    monkeypatch.setattr(characters.llm, 'str_prompt', prompt)
+    assert characters.generate_description(chapter, 'Traveler') == 'A blue coat.'
+    assert prompt.call_count == 2
+    assert 'Traveler wore a blue coat.' in prompt.call_args_list[0].kwargs['prompt']
+    source_prompt = prompt.call_args_list[0].kwargs['prompt']
+    assert 'Selected Poems by Robert Frost' in source_prompt
+    assert 'BEGIN SOURCE TEXT' in source_prompt
+    assert source_prompt.endswith('END SOURCE TEXT')
+    assert 'entire source text' in source_prompt
+
+    for call in prompt.call_args_list:
+        assert old_description not in call.kwargs['prompt']
+        assert old_description not in call.kwargs['system_prompt']
+
+
+def test_prompt_workflow_receives_system_instructions(monkeypatch, tmp_path):
+    from artifact_editor.chapter import chapter as chapter_module
+    import const
+    template_dir = const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR']
+    monkeypatch.setitem(const.COMFY_DIRS, 'artifactserver', {
+        'WORKFLOW_TEMPLATES_DIR': template_dir,
+        'WORKFLOWS_DIR': str(tmp_path),
+    })
+    filename = chapter_module.get_prompt_workflow_by_filename(
+        workflow_filename='chat.qwen35-json.Qwen 3.5 4b bf16.json',
+        system_prompt='Extract only supported physical traits. No preface.',
+        prompt='Target: Colt. Complete source text.', outputfile='result.txt',
+    )
+    workflow = json.loads((tmp_path / filename).read_text())
+    nodes = {node.get('title'): node for node in workflow['nodes']}
+    assert nodes['System Prompt']['widgets_values'] == ['Extract only supported physical traits. No preface.']
+    assert nodes['System Prompt']['widgets_values_named']['string'] == 'Extract only supported physical traits. No preface.'
+    assert nodes['Prompt']['widgets_values'] == ['Target: Colt. Complete source text.']
+
+
+def test_character_image_template_is_recognized_as_api_workflow():
+    import comfy
+    workflow = comfy.load_workflow_template('api', 't2i', 'zit_style_sample')
+    assert '1' not in workflow.serialize()
+    assert comfy.workflow_type(workflow) == 'api'
+
+
+@pytest.mark.parametrize('data', [{}, {'1': {}}, {'9': {'class_type': 'SaveImage'}}])
+def test_invalid_workflow_is_rejected(data):
+    import comfy
+    with pytest.raises(ValueError, match='Unknown workflow type'):
+        comfy.workflow_type(comfy.Workflow(data))
+
+
+@pytest.mark.parametrize('has_voice', [None, True, False])
+def test_character_voice_controls_follow_has_voice(monkeypatch, has_voice):
+    from types import SimpleNamespace
+    from bs4 import BeautifulSoup
+    from artifact_editor.characters import htmx
+    monkeypatch.setattr(htmx, 'url_for', lambda endpoint, **kwargs: '/' + endpoint)
+    blender = MagicMock(return_value='<div id="voice_selection_panel">Voice mixer</div>')
+    monkeypatch.setattr(htmx, 'voice_blender', blender)
+    monkeypatch.setattr(htmx, 'character_pronunciation_widget', lambda *args: 'Pronunciation controls')
+    character = dict(tag='Colt', name='Colt', description='A small horse')
+    if has_voice is not None:
+        character['has_voice'] = has_voice
+    chapter = SimpleNamespace(kwargs={}, url='/chapter', author=SimpleNamespace(name='Author'), number=1, title='Book', language='english')
+    html = htmx.character_data(chapter, character)
+    soup = BeautifulSoup(html, 'html.parser')
+    assert soup.find('wa-checkbox', attrs={'name': 'has_voice'}).has_attr('checked') == (has_voice is not False)
+    assert bool(soup.find('wa-select', attrs={'name': 'tts_engine'})) == (has_voice is not False)
+    assert ('Voice mixer' in html) == (has_voice is not False)
+    assert ('Pronunciation controls' in html) == (has_voice is not False)
+    assert ('Randomize Voice Weights' in html) == (has_voice is not False)
+    assert ('Remove Voice' in html) == (has_voice is not False)
+    assert 'Generate Image' in html and 'Description' in html and 'Delete' in html
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_has_voice_toggle_persists_without_losing_voice_configuration(monkeypatch, tmp_path, enabled):
+    from flask import Flask, g
+    from types import SimpleNamespace
+    from artifact_editor.characters import characters, views
+    monkeypatch.setattr(characters.const, 'LIBRARY_DIR', str(tmp_path))
+    chapter = SimpleNamespace(chapterdir='chapter')
+    original = dict(tag='Colt', name='Colt', voices=[{'id': 'af_bella', 'strength': 100}],
+                    description='A small horse', audio_appearances=0, visual_appearances=1, number_of_appearances=1)
+    characters.save_characters(chapter, {'Colt': original})
+    monkeypatch.setattr(views.htmx, 'character_data', lambda chapter, character: 'updated card')
+    with Flask(__name__).test_request_context(method='POST', data={'has_voice': str(enabled).lower()}):
+        g.chapter = chapter
+        assert views.set_has_voice('Colt') == 'updated card'
+    saved = characters.get_character(chapter, 'Colt')
+    assert saved['has_voice'] is enabled
+    assert saved['voices'] == original['voices']
+    assert saved['description'] == original['description']
+
+
+@pytest.mark.parametrize("action", ["timeline_image", "timeline_metadata", "unknown_action"])
+def test_image_job_never_falls_through_to_video(monkeypatch, action):
+    from artifact_editor.chapter.chapter import Chapter
+    from artifact_editor.images import jobs
+    from artifact_editor.video import video
+
+    generate, render, publish = MagicMock(), MagicMock(), MagicMock()
+    monkeypatch.setattr(Chapter, "__init__", lambda self, **kwargs: None)
+    monkeypatch.setattr(jobs, "generate_timeline_image", generate)
+    monkeypatch.setattr(jobs, "generate_timeline_metadata", generate)
+    monkeypatch.setattr(video, "book_to_video", render)
+    monkeypatch.setattr(server, "publish_progress", publish)
+    task = dict(job_id="a" * 32, action=action, author="Aesop", title="Fables",
+                chapter_number=25, language="english", image_index=1)
+    server.run_video_job(MagicMock(), task)
+    render.assert_not_called()
+    if action in ("timeline_image", "timeline_metadata"):
+        generate.assert_called_once()
+        assert generate.call_args.args[1] == 1
+        assert publish.call_args.args[-1] == "complete"
+    else:
+        generate.assert_not_called()
+        assert publish.call_args.args[-1] == "failed"
+        assert "Unsupported render job action" in publish.call_args.args[-2]
+
+
+def test_prop_image_websocket_queues_current_description(monkeypatch):
+    client, ws = MagicMock(), MagicMock()
+    task = dict(job_id='e' * 32, action='prop_image', author='Robert Frost',
+                title='Selected Poems', chapter_number='1', language='en',
+                prop_tag='cup', description='A silver cup', unwanted=True)
+    ws.receive.side_effect = [json.dumps(task), RuntimeError('end test connection')]
+    monkeypatch.setattr(server, 'redis_connection', lambda: client)
+    monkeypatch.setattr(server, 'pending_video_progress', lambda *args: [])
+    with pytest.raises(RuntimeError, match='end test'):
+        server.handle_websocket(ws)
+    queued = json.loads(client.lpush.call_args.args[1])
+    assert queued['prop_tag'] == 'cup'
+    assert queued['description'] == 'A silver cup'
+    assert 'unwanted' not in queued
+
+
+@pytest.mark.parametrize('fails', [False, True])
+def test_prop_image_worker_reports_result(monkeypatch, fails):
+    from artifact_editor.props import props
+    from artifact_editor.chapter.chapter import Chapter
+    draw = MagicMock(side_effect=ValueError('generation failed') if fails else None)
+    monkeypatch.setattr(props, 'draw_prop', draw)
+    monkeypatch.setattr(Chapter, '__init__', lambda self, **kwargs: None)
+    publish = MagicMock()
+    monkeypatch.setattr(server, 'publish_progress', publish)
+    server.run_video_job(MagicMock(), dict(job_id='e' * 32, action='prop_image',
+        author='Robert Frost', title='Selected Poems', chapter_number=1, language='en',
+        prop_tag='cup', description='A silver cup'))
+    assert draw.call_args.args[1] == 'cup'
+    assert draw.call_args.kwargs == dict(description='A silver cup')
+    assert publish.call_args.args[-1] == ('failed' if fails else 'complete')
+    assert 'Prop image' in publish.call_args.args[-2]

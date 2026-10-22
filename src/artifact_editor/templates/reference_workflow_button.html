@@ -1,0 +1,6 @@
+<wa-button type="button" href="{{ workflow_url }}" target="_blank"
+    data-workflow-url="{{ workflow_url }}" data-description-id="{{ description_id|default('') }}"
+    onclick="const field = this.dataset.descriptionId ? document.getElementById(this.dataset.descriptionId) : this.closest('form')?.querySelector('[name=description]'); this.href = this.dataset.workflowUrl + '?' + new URLSearchParams({description: field?.value || ''})"
+    variant="brand" appearance="accent" pill aria-label="Open {{ subject }} workflow in ComfyUI" title="Open workflow in ComfyUI">
+    <wa-icon src="/static/images/comfyui.svg"></wa-icon>
+</wa-button>

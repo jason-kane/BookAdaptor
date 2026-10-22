@@ -359,11 +359,96 @@ class TimelineTests(unittest.TestCase):
         self.assertTrue(self.saved)
         self.chapter.kwargs = {}
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
-        env.globals['url_for'] = lambda endpoint, **kwargs: '/image/' + str(kwargs.get('image_index', ''))
+        env.globals['url_for'] = lambda endpoint, **kwargs: (
+            '/static/' + kwargs['filename'] if endpoint == 'static'
+            else '/image/' + str(kwargs.get('image_index', ''))
+        )
         rendered = env.get_template('chapter_timeline_image.html').render(chapter=self.chapter, image=image)
         self.assertIn('draggable="true"', rendered)
         self.assertIn('data-timeline-index="8"', rendered)
         self.assertIn('Not generated', rendered)
+        preview = BeautifulSoup(rendered, 'html.parser').find('img')
+        self.assertEqual(preview['src'], '/static/images/x.png')
+        image['src'] = 'generated.png'
+        rendered = env.get_template('chapter_timeline_image.html').render(chapter=self.chapter, image=image)
+        self.assertEqual(BeautifulSoup(rendered, 'html.parser').find('img')['src'], '/image/8')
+
+    def test_remove_all_metadata_preserves_image_assets_timing_and_workflows(self):
+        preserved = {'index': '4', 'src': 'picture.png', 'animated_src': 'animation.mp4',
+                     'frames': '100', 'duration': '4', 'workflow_image_template': 'test',
+                     'workflow_i2v_template': 'animation-test', 'image_lock': 'off'}
+        generated = {'style': 'ink', 'description': 'Scene', 'setting': 'Garden',
+                     'tod': 'day', 'camera': 'wide', 'scene_characters': 'Alice',
+                     'focus_character': 'Alice', 'lighting_source': 'sun',
+                     'Alice_pose': 'standing', 'Alice_action': 'looking',
+                     'Alice_location': 'left', 'Alice_description': 'Tall',
+                     'Alice_motivation': 'curious', 'animation_prompt': 'Blink',
+                     'prompt': 'Old prompt', 't5_prompt': 'Old prose'}
+        for image in self.soup.find_all('image'):
+            image.attrs.update(generated)
+        image = self.soup.find('image', index='4')
+        image.attrs.update(preserved)
+        self.soup.find('phrase')['src'] = 'audio.wav'
+        module.remove_all_image_metadata(self.chapter)
+        self.assertTrue(self.saved)
+        self.assertEqual(dict(image.attrs), preserved)
+        self.assertTrue(all(not (set(tag.attrs) & set(generated)) for tag in self.soup.find_all('image')))
+        self.assertEqual(self.soup.find('phrase')['src'], 'audio.wav')
+
+    def test_detach_all_images_preserves_slots_metadata_and_other_assets(self):
+        image = self.soup.find('image', index='4')
+        image['description'] = 'Keep this description'
+        image['animated_src'] = 'animation.mp4'
+        phrase = self.soup.find('phrase')
+        phrase['src'] = 'narration.wav'
+        before = [(tag.name, tag.get('index')) for tag in self.soup.find_all(['image', 'phrase'])]
+        module.detach_all_images(self.chapter)
+        self.assertTrue(self.saved)
+        self.assertTrue(all('src' not in tag.attrs for tag in self.soup.find_all('image')))
+        self.assertEqual(image['description'], 'Keep this description')
+        self.assertEqual(image['animated_src'], 'animation.mp4')
+        self.assertEqual(phrase['src'], 'narration.wav')
+        self.assertEqual(before, [(tag.name, tag.get('index')) for tag in self.soup.find_all(['image', 'phrase'])])
+
+    def test_collapsed_image_thumbnail_url_tracks_selected_asset(self):
+        from jinja2 import Environment, FileSystemLoader
+        from urllib.parse import urlencode
+
+        self.chapter.kwargs = {}
+        env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['url_for'] = lambda endpoint, **kwargs: '/image?' + urlencode(kwargs)
+        template = env.get_template('chapter_timeline_image.html')
+        image = self.soup.find('image', index='4')
+        urls = []
+        for filename in ['first.png', 'replacement.png']:
+            image['src'] = filename
+            rendered = template.render(chapter=self.chapter, image=image)
+            url = BeautifulSoup(rendered, 'html.parser').find('img')['src']
+            self.assertIn('v=' + filename, url)
+            self.assertIn('image_index=4', url)
+            urls.append(url)
+        self.assertNotEqual(*urls)
+
+    def test_missing_image_editor_uses_placeholder_for_preview_and_refresh(self):
+        from jinja2 import Environment, FileSystemLoader
+
+        self.chapter.kwargs = {}
+        env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['url_for'] = lambda endpoint, **kwargs: (
+            '/static/' + kwargs['filename'] if endpoint == 'static' else '/image/7'
+        )
+        image = self.soup.find('image', index='7')
+        template = env.get_template('chapter_timeline_image_editor.html')
+        for src, expected in [('', '/static/images/x.png'), ('generated.png', '/image/7')]:
+            image['src'] = src
+            rendered = template.render(chapter=self.chapter, image=image, thumbnails=[], preview_version=1)
+            previews = BeautifulSoup(rendered, 'html.parser').select('img.chapter-mini-image-preview, img[hx-swap-oob]')
+            label = BeautifulSoup(rendered, 'html.parser').select_one('#timeline-image-label-7')
+            self.assertEqual(label['hx-swap-oob'], 'outerHTML')
+            self.assertEqual('Not generated' in label.text, not bool(src))
+            self.assertIn('Image 7', label.text)
+            self.assertEqual(len(previews), 2)
+            self.assertTrue(all(preview['src'] == expected for preview in previews))
 
     def test_add_to_empty_image_timeline_and_missing_phrase(self):
         for image in self.soup.find_all('image'):

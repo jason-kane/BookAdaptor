@@ -141,3 +141,59 @@ document.addEventListener('htmx:beforeCleanupElement', event => {
         }
     });
 });
+
+// Websocket progress replaces the status node; refresh only the completed image's editor.
+const completedTimelineImages = new Set();
+document.addEventListener('htmx:wsAfterMessage', () => {
+    document.querySelectorAll('[data-image-editor-url] [data-video-job]').forEach(status => {
+        if (status.dataset.videoState !== 'complete' || completedTimelineImages.has(status.dataset.videoJob)) return;
+        completedTimelineImages.add(status.dataset.videoJob);
+        const panel = status.closest('[data-image-editor-url]');
+        const imageIndex = status.closest('[data-center-generated-image]')?.dataset.centerGeneratedImage;
+        htmx.ajax('GET', panel.dataset.imageEditorUrl, {
+            target: panel.dataset.imageEditorTarget, swap: 'innerHTML',
+        }).then(async () => {
+            if (imageIndex === undefined) return;
+            const preview = document.getElementById(`timeline-image-preview-${imageIndex}`);
+            if (!preview) return;
+            // Wait for the updated image dimensions before choosing the scroll position.
+            try { await preview.decode(); } catch (_) { /* Still center a failed preview. */ }
+            requestAnimationFrame(() => {
+                if (preview.isConnected) preview.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            });
+        });
+    });
+});
+
+// Read the current timeline each time so newly generated and reordered images participate.
+let viewedChapterImage = null;
+function navigateChapterImage(direction = 0) {
+    const images = Array.from(document.querySelectorAll('.chapter-timeline-image > summary > img[data-full-image-url]'));
+    const position = images.findIndex(image => image.closest('[data-timeline-index]').dataset.timelineIndex === viewedChapterImage);
+    const image = images[position + direction];
+    if (position < 0 || !image) return;
+    viewedChapterImage = image.closest('[data-timeline-index]').dataset.timelineIndex;
+    const fullImage = document.getElementById('chapter-image-full');
+    fullImage.src = image.dataset.fullImageUrl;
+    fullImage.alt = image.alt;
+    document.getElementById('chapter-image-viewer').label = `Image ${viewedChapterImage}`;
+    document.getElementById('chapter-image-previous').disabled = position + direction === 0;
+    document.getElementById('chapter-image-next').disabled = position + direction === images.length - 1;
+}
+document.addEventListener('click', event => {
+    const opener = event.target.closest('[data-view-image]');
+    if (opener && !opener.disabled) {
+        viewedChapterImage = opener.dataset.viewImage;
+        navigateChapterImage();
+        document.getElementById('chapter-image-viewer').open = true;
+    }
+    if (event.target.closest('#chapter-image-previous')) navigateChapterImage(-1);
+    if (event.target.closest('#chapter-image-next')) navigateChapterImage(1);
+});
+document.addEventListener('keydown', event => {
+    if (!document.getElementById('chapter-image-viewer')?.open) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateChapterImage(event.key === 'ArrowLeft' ? -1 : 1);
+    }
+});

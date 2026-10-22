@@ -151,6 +151,38 @@ def get_text_to_next(image_xml, next_image_xml):
     return text_to_next.strip()
 
 
+def get_image_narration_context(image_xml, context_min=600):
+    """Give visual prompts past narration and an explicit boundary against spoilers."""
+    previous = []
+    length = 0
+    for phrase in image_xml.find_all_previous("phrase"):
+        text = phrase.get_text(" ", strip=True)
+        if text:
+            previous.append(text)
+            length += len(text)
+        if length >= context_min:
+            break
+    opening = image_xml.find_next("phrase")
+    opening_text = opening.get_text(" ", strip=True) if opening else ""
+    return (
+        "Narration boundary: depict only the moment at the START of this image's passage. "
+        "Do not summarize the story, foreshadow later events, or advance beyond the narration. "
+        "For a title, heading, or introduction, use a quiet introductory illustration and "
+        "subtle ambient motion; do not act out the plot. Infer no future actions or motivations. "
+        "Preserve what is real versus depicted: a painting, reflection, sign illustration, "
+        "dream, or imagined object must remain attached to its stated medium. "
+        "Describe the physical surface first, then the image ON that surface. "
+        "For example, a goblet of water painted on a signboard means a flat signboard "
+        "bearing a two-dimensional picture of a goblet containing water, not a real "
+        "painted goblet holding actual water. Keep depicted contents inside the picture. "
+        "Do not turn seeing or noticing into approaching, diving, touching, or drinking "
+        "unless the current narration explicitly describes that action. "
+        "Earlier narration is for continuity only.\n"
+        + "Earlier narration:\n" + " ".join(reversed(previous))
+        + "\nOpening narration for this image:\n" + opening_text
+    )
+
+
 def get_surrounding_paragraphs(
     paragraph, context_min=200, context_before=None, context_after=None, with_tags=False
 ):

@@ -31,6 +31,9 @@ def panel_controls(markup, image_index, image_url, editor_url):
             element["hx-target"] = f"#timeline-image-editor-{int(image_index)}"
             element["hx-swap"] = "innerHTML"
             element["hx-include"] = "closest .chapter-mini-image-editor"
+            if action in ("generate", "metadata"):
+                element["hx-target"] = f"#timeline-image-status-{int(image_index)}"
+                element["hx-disabled-elt"] = "this"
             element["hx-on::before-request"] = ""
             element["hx-on::after-request"] = ""
     return str(soup)

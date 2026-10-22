@@ -86,7 +86,7 @@ def import_character():
 
 
 @bp.route("/", methods=["GET"])
-def base(embedded=False):
+def base(embedded=False, extraction_message=""):
     log.info(f'author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"')
 
     all_characters = characters.get_all_characters(g.chapter)
@@ -168,6 +168,7 @@ def base(embedded=False):
 
     return render_template(
         "characters.html",
+        extraction_message=extraction_message,
         language="english",
         rename_select=rename_select,
         pretty_language="English",
@@ -336,6 +337,16 @@ def set_name(character_tag):
 
 
 # http://localhost:5000/Aesop/Fables/0020/characters/The_Frog/actions/update_description
+@bp.route("<character_tag>/actions/has_voice", methods=["POST"])
+def set_has_voice(character_tag):
+    character = characters.get_character(g.chapter, character_tag)
+    if character is None:
+        return "Unknown character", 404
+    character["has_voice"] = request.form.get("has_voice", "false").lower() == "true"
+    characters.save_character(g.chapter, character_tag, character)
+    return htmx.character_data(g.chapter, character)
+
+
 @bp.route("<character_tag>/actions/update_description", methods=["POST"])
 def update_character_description(character_tag):
     """
@@ -477,6 +488,10 @@ def add_character():
 
     if not character_name:
         return "Character name is required", 400
+
+    existing_tag = characters.resolve_character_tag(all_characters, character_name)
+    if existing_tag:
+        return base(embedded=True, extraction_message=f'{character_name} already belongs to {all_characters[existing_tag]["name"]}.')
 
     # ensure the character name is unique
     if character_name in all_characters:
@@ -833,20 +848,9 @@ def voice_set_accent(character_tag=""):
 
 @bp.route("<character_tag>/regenerate")
 def regenerate_headshot(character_tag):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
-
+    chapter = g.chapter
     characters.draw_headshot(chapter, character_tag, force=True)
-
-    all_characters = characters.get_all_characters(chapter)
-    character_dict = all_characters[character_tag]
-
-    character_dict["headshot"] = (
-        f"/{chapter.url}/characters/{character_tag}/headshot.png"
-    )
-
-    characters.save_character(chapter, character_tag, character_dict)
-
+    character_dict = characters.get_character(chapter, character_tag)
     return htmx.headshot(character_dict, chapter, character_tag), 200
 
 
@@ -857,3 +861,49 @@ def headshot(character_tag):
         os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, "characters"),
         f"{character_tag}.png",
     )
+
+
+@bp.route('/extract', methods=['POST'])
+def extract():
+    try:
+        count = characters.extract_characters(g.chapter)
+        message = f'Added {count} new character' + ('s.' if count != 1 else '.')
+    except (RuntimeError, TimeoutError) as exc:
+        from artifact_editor.generation_feedback import generation_failure_message
+        message = generation_failure_message(exc)
+    except ValueError as exc:
+        message = str(exc)
+    return base(embedded=True, extraction_message=message)
+
+
+@bp.route('/<character_tag>/aliases', methods=['POST'])
+def aliases(character_tag):
+    try:
+        characters.set_aliases(g.chapter, character_tag, request.form.get('aliases', '').splitlines())
+        message = 'Aliases saved.'
+    except ValueError as exc:
+        message = str(exc)
+    return base(embedded=True, extraction_message=message)
+
+
+@bp.route('/<character_tag>/merge', methods=['POST'])
+def merge(character_tag):
+    try:
+        characters.merge_characters(g.chapter, character_tag, request.form.get('target_tag', ''))
+        message = 'Characters merged. Names retained as aliases and references updated.'
+    except ValueError as exc:
+        message = str(exc)
+    return base(embedded=True, extraction_message=message)
+
+
+@bp.route('/<character_tag>/workflow')
+def open_workflow(character_tag):
+    from artifact_editor.reference_images import open_reference_workflow
+    catalog = characters.get_all_characters(g.chapter)
+    character = catalog.get(character_tag)
+    if character is None:
+        return 'Character not found', 404
+    try:
+        return redirect(open_reference_workflow('characters', request.args.get('description', character.get('description', ''))))
+    except ValueError as exc:
+        return str(exc), 400

@@ -8,7 +8,15 @@
     <div class="wa-cluster">
         {{ generate_missing_audio_button|safe }}
         {{ generate_missing_metadata_button|safe }}
+        <wa-button variant="danger" appearance="accent"
+            hx-post="{{ url_for('library.book.chapter.remove_all_metadata', **chapter.kwargs) }}"
+            hx-target="#chapter-phrase-list" hx-swap="innerHTML"
+            hx-disabled-elt="this">Remove all Metadata</wa-button>
         {{ generate_missing_images_button|safe }}
+        <wa-button variant="danger" appearance="accent"
+            hx-post="{{ url_for('library.book.chapter.remove_all_images', **chapter.kwargs) }}"
+            hx-target="#chapter-phrase-list" hx-swap="innerHTML"
+            hx-disabled-elt="this">Remove all Images</wa-button>
         {{ time_align_button|safe }}
         <wa-button id="typeset-latex-btn"
             hx-post="{{ url_for('library.book.chapter.typeset_latex', **chapter.kwargs) }}"

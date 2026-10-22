@@ -196,6 +196,7 @@ services:
       - ./templates:/templates
       - ./comfy/ComfyUI/custom_nodes:/custom_nodes
       - ./configuration.toml:/app/configuration.toml
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - CONTAINER_MODE=1
       - COMFYUI_WORKFLOWS_DIR=/workflows

@@ -35,12 +35,17 @@ def test_import_chapter_runs_without_http_context_and_places_images_after_audio(
         progress(100, "Audio complete")
 
     monkeypatch.setattr(phrases, "generate_all_audio", generate_audio)
+    mood, theme = Mock(), Mock()
+    monkeypatch.setattr(views, "generate_chapter_mood", mood)
+    monkeypatch.setattr(views, "generate_chapter_theme", theme)
     progress = Mock()
     views.import_chapter_content(chapter, json.dumps([
         {"typesetting_method": "verse", "ops": [{"insert": "Hello world.\n"}]}
     ]), progress=progress)
     assert chapter.soup.find("image") is not None
     assert chapter.soup.find("image").find_next_sibling("phrase") is not None
+    mood.assert_called_once_with(chapter)
+    theme.assert_called_once_with(chapter)
     progress.assert_called_with(100, "Chapter import complete")
 
 

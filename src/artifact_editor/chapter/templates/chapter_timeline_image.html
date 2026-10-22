@@ -8,10 +8,11 @@
     {% include "chapter_phrase_timing.html" %}
     {% endwith %}
     <span aria-hidden="true" title="Drag to move image">⠿</span>
-    <img id="timeline-image-preview-{{ image['index'] }}" loading="lazy" draggable="false"
-         src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], **chapter.kwargs) }}"
+    <img id="timeline-image-preview-{{ image['index'] }}"{% if image.get('src') %}
+        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"{% endif %} loading="lazy" draggable="false"
+         src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else url_for('static', filename='images/x.png') }}"
          alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
-    <span>Image {{ image['index'] }}{% if not image.get('src') %} · Not generated{% endif %}</span>
+    {% include "chapter_timeline_image_label.html" %}
     </summary>
     {% with item_type='image', item_index=image['index'] %}{% include "chapter_timeline_delete.html" %}{% endwith %}
     <div id="timeline-image-editor-{{ image['index'] }}" class="chapter-mini-image-editor">

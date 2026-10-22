@@ -1,3 +1,4 @@
+from artifact_editor.websocket_url import websocket_url
 from html import escape
 from collections import defaultdict
 import math
@@ -223,7 +224,7 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
         "chapter_number": chapter.number, "language": chapter.language,
     }), quote=True)
     notice = f"""<div id="video-generation-notice" class="wa-stack"
-        hx-ext="ws" ws-connect="ws://localhost:5001/ws">
+        hx-ext="ws" ws-connect="{websocket_url()}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
             variant="brand" appearance="accent">Re-render</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>

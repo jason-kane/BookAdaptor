@@ -32,7 +32,7 @@
             variant="danger">Advanced</wa-button>
     </div>
     <div id="video-render-status" class="wa-stack" aria-live="polite"
-        hx-ext="ws" ws-connect="ws://localhost:5001/ws"></div>
+        hx-ext="ws" ws-connect="{{ websocket_url() }}"></div>
     <div id="advanced" class="wa-cluster" style="display: none;">
         {{calculate_paragraph_durations_button|safe}}
         {{clear_adjusted_images_button|safe}}
