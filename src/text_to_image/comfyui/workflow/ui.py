@@ -103,6 +103,12 @@ class ComfyWorkflowUI(TextToImageProviderUI):
             modes = ["t2i"]
         else:
             modes = ["ti2i", "t2i"]
+        from artifact_editor.chapter.scenes import active_scene, scene_image_path
+        scene = active_scene(image_xml)
+        scene_image = ((scene_image_path(chapter, scene, const.LIBRARY_DIR) if scene.get("src") else None)
+                       if scene is not None else chapter.get_image_filename(image_xml))
+        if scene_image and os.path.isfile(scene_image):
+            modes.append("ref2i")
 
         # new vs. existing workflow?
         #

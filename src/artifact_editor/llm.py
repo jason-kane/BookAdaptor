@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import uuid
 import subprocess
 import shutil
 import fnv_hash_fast
@@ -279,7 +280,7 @@ def text_2_audio(
 
 def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", force:bool=False):
     content = None
-    filename = "llm_str.txt"
+    filename = f"llm_str_{uuid.uuid4().hex}.txt"
     if not (content := get_cached_prompt(prompt, format="txt", force=force)):
 
         # Chapter imports the phrase/LLM stack while initializing.
@@ -290,6 +291,7 @@ def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", 
             prompt=prompt,
             system_prompt=system_prompt,
             outputfile=filename,
+            seed=uuid.uuid4().int % (2**32) if force else None,
         )
 
         comfy.run_workflow_fn(workflow_filename)

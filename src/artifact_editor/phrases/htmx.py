@@ -325,6 +325,7 @@ def chapter_timing_updates(chapter):
                         timing=entry["timing"], missing_audio=entry.get("missing_audio", False),
                         missing_image=entry.get("missing_image", False), timing_oob=True)
         for entry in chapter.timeline()
+        if entry["type"] in ("phrase", "image", "silence")
     )
 
 

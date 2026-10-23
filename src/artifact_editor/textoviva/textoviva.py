@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from artifact_editor.textoviva.workflow import image_workflow_name
+
 import contextlib
 import fcntl
 import glob
@@ -7,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import uuid
 from typing import TYPE_CHECKING
 
 import redis
@@ -368,7 +371,7 @@ class Textoviva:
             if not image_xml.attrs.get("workflow_image_template"):
                 workflow_template = const.DEFAULT_IMAGE_TEMPLATE
                 if "." in workflow_template:
-                    workflow_template = workflow_template.split(".")[-1]
+                    workflow_template = image_workflow_name(workflow_template)
                 image_xml.attrs["workflow_image_template"] = workflow_template
 
             image_fn = self.chapter.get_image_filename(image_xml)
@@ -388,7 +391,7 @@ class Textoviva:
             workflow_template = const.DEFAULT_IMAGE_TEMPLATE
             # mode.workflow_template
             if "." in workflow_template:
-                workflow_template = workflow_template.split(".")[-1]
+                workflow_template = image_workflow_name(workflow_template)
 
             image_xml.attrs["workflow_image_template"] = workflow_template
 
@@ -558,6 +561,7 @@ class Textoviva:
 
             audio_frames = int(image_xml.attrs.get("frames", 0))
             workflow_video_index = 0
+            animation_environment = {"SEED": uuid.uuid4().int % (2**63)} if force else {}
 
             def build_animation_workflow(frame_count: int):
                 saved_frames = image_xml.attrs.get("frames")
@@ -567,7 +571,7 @@ class Textoviva:
                         image_xml,
                         workflow_name=workflow_template,
                         video_index=workflow_video_index,
-                        template_environment={},
+                        template_environment=animation_environment,
                         # Keep animation prompt and frame inputs, but force the
                         # first frame to come from the selected still image.
                         use_image_source=force,

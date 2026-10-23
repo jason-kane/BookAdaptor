@@ -64,7 +64,7 @@ function initializeChapterTimeline() {
     };
     list.addEventListener('dragstart', event => {
         const item = destination(event);
-        if (saving || !item || item.dataset.timelineType !== 'image') {
+        if (saving || !item || !['image', 'scene'].includes(item.dataset.timelineType)) {
             event.preventDefault();
             return;
         }
@@ -93,12 +93,13 @@ function initializeChapterTimeline() {
         const position = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
         clear();
         saving = true;
-        status.textContent = 'Saving image position…';
+        status.textContent = 'Saving panel position…';
         try {
             const response = await fetch(list.dataset.moveUrl, {
                 method: 'POST',
                 body: new URLSearchParams({
                     image_index: item.dataset.timelineIndex,
+                    item_type: item.dataset.timelineType,
                     target_type: target.dataset.timelineType,
                     target_index: target.dataset.timelineIndex,
                     position,
@@ -108,9 +109,9 @@ function initializeChapterTimeline() {
             if (position === 'before') target.before(item);
             else target.after(item);
             htmx.swap(list, await response.text(), { swapStyle: 'none' });
-            status.textContent = 'Image position saved.';
+            status.textContent = 'Panel position saved.';
         } catch (error) {
-            status.textContent = 'Could not move image. ' + error.message;
+            status.textContent = 'Could not move panel. ' + error.message;
         } finally {
             saving = false;
             dragged = null;
@@ -144,11 +145,40 @@ document.addEventListener('htmx:beforeCleanupElement', event => {
 
 // Websocket progress replaces the status node; refresh only the completed image's editor.
 const completedTimelineImages = new Set();
+async function refreshTimelineScene(panel) {
+    const response = await fetch(panel.dataset.imageEditorUrl);
+    if (!response.ok) throw new Error('Could not refresh the scene editor');
+    const updated = new DOMParser().parseFromString(await response.text(), 'text/html');
+    // Keep the mounted controls, focus, and layout intact during background updates.
+    panel.querySelectorAll('[name]').forEach(control => {
+        const replacement = updated.querySelector(`[name="${control.name}"]`);
+        if (replacement) control.value = replacement.getAttribute('value') ?? '';
+    });
+    const scene = panel.closest('[data-timeline-type="scene"]');
+    const preview = updated.querySelector('img');
+    if (preview) {
+        scene.querySelectorAll('img').forEach(image => {
+            if (image.getAttribute('src') !== preview.getAttribute('src')) {
+                image.src = preview.getAttribute('src');
+            }
+            if (image.hasAttribute('data-full-image-url')) image.dataset.fullImageUrl = preview.getAttribute('src');
+        });
+        panel.querySelector('[data-view-image]')?.toggleAttribute('disabled',
+            updated.querySelector('[data-view-image]').hasAttribute('disabled'));
+    }
+}
 document.addEventListener('htmx:wsAfterMessage', () => {
     document.querySelectorAll('[data-image-editor-url] [data-video-job]').forEach(status => {
         if (status.dataset.videoState !== 'complete' || completedTimelineImages.has(status.dataset.videoJob)) return;
         completedTimelineImages.add(status.dataset.videoJob);
         const panel = status.closest('[data-image-editor-url]');
+        if (panel.closest('[data-timeline-type="scene"]')) {
+            refreshTimelineScene(panel).catch(error => {
+                completedTimelineImages.delete(status.dataset.videoJob);
+                console.error(error);
+            });
+            return;
+        }
         const imageIndex = status.closest('[data-center-generated-image]')?.dataset.centerGeneratedImage;
         htmx.ajax('GET', panel.dataset.imageEditorUrl, {
             target: panel.dataset.imageEditorTarget, swap: 'innerHTML',
@@ -167,16 +197,18 @@ document.addEventListener('htmx:wsAfterMessage', () => {
 
 // Read the current timeline each time so newly generated and reordered images participate.
 let viewedChapterImage = null;
+let viewedChapterImageType = 'image';
 function navigateChapterImage(direction = 0) {
     const images = Array.from(document.querySelectorAll('.chapter-timeline-image > summary > img[data-full-image-url]'));
-    const position = images.findIndex(image => image.closest('[data-timeline-index]').dataset.timelineIndex === viewedChapterImage);
+    const position = images.findIndex(image => image.closest('[data-timeline-index]').dataset.timelineIndex === viewedChapterImage && image.closest('[data-timeline-type]').dataset.timelineType === viewedChapterImageType);
     const image = images[position + direction];
     if (position < 0 || !image) return;
     viewedChapterImage = image.closest('[data-timeline-index]').dataset.timelineIndex;
+    viewedChapterImageType = image.closest('[data-timeline-type]').dataset.timelineType;
     const fullImage = document.getElementById('chapter-image-full');
     fullImage.src = image.dataset.fullImageUrl;
     fullImage.alt = image.alt;
-    document.getElementById('chapter-image-viewer').label = `Image ${viewedChapterImage}`;
+    document.getElementById('chapter-image-viewer').label = `${viewedChapterImageType === 'scene' ? 'Scene' : 'Image'} ${viewedChapterImage}`;
     document.getElementById('chapter-image-previous').disabled = position + direction === 0;
     document.getElementById('chapter-image-next').disabled = position + direction === images.length - 1;
 }
@@ -184,6 +216,7 @@ document.addEventListener('click', event => {
     const opener = event.target.closest('[data-view-image]');
     if (opener && !opener.disabled) {
         viewedChapterImage = opener.dataset.viewImage;
+        viewedChapterImageType = opener.dataset.viewType || 'image';
         navigateChapterImage();
         document.getElementById('chapter-image-viewer').open = true;
     }

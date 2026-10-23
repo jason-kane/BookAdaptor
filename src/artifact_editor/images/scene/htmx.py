@@ -37,10 +37,8 @@ def image_scene_workshop(
     )
     description_ui = description(chapter, image_xml)
     setting_ui = setting(chapter, image_xml)
-    tod_ui = tod(chapter, image_xml)
     mood_ui = mood(chapter, image_xml)
     camera_ui = camera_direction(chapter, image_xml)
-    lighting_ui = camera_lighting(chapter, image_xml)
     focus_character_ui = focus_character(chapter, image_xml)
     characters_section_ui = characters_section(
         chapter, image_xml
@@ -62,10 +60,8 @@ def image_scene_workshop(
         {description_ui}
         {setting_ui}
         {scene_props(chapter, image_xml)}
-        {tod_ui}
         {mood_ui}
         {camera_ui}
-        {lighting_ui}
         {focus_character_ui}
         {characters_section_ui}
         {generate_meta_button}
@@ -84,13 +80,15 @@ def datastack(chapter, image_xml):
     if image_xml is None:
         return "<div>No image data available.</div>" 
     
-    setting = image_xml.attrs.get("setting", "")
-    tod = image_xml.attrs.get("tod", "")
+    from artifact_editor.chapter.scenes import setting_description, time_of_day
+    setting = setting_description(image_xml)
+    tod = time_of_day(image_xml)
     camera = image_xml.attrs.get("camera", "")
     focus_character = image_xml.attrs.get("focus_character", "")
     scene_characters = image_xml.attrs.get("scene_characters", "")
     mood = image_xml.attrs.get("mood", "")
-    lighting = image_xml.attrs.get("lighting", "")
+    from artifact_editor.chapter.scenes import lighting as scene_lighting
+    lighting = ", ".join(value for value in scene_lighting(image_xml).values() if value)
 
     character_descriptions = []
     for character_name in scene_characters.split(","):
@@ -124,8 +122,22 @@ def description(chapter, image_xml):
         image_index=image_xml.attrs["index"],
     )
 
-    return f"""<wa-textarea 
-        label="Description"
+    generate_url = url_for(
+        "library.book.chapter.images.scene.regenerate_description",
+        **chapter.kwargs, image_index=image_xml.attrs['index'],
+    )
+    return f"""<fieldset class="chapter-scene-description">
+        <legend>Description</legend>
+        <wa-button class="chapter-scene-description-generate" type="button" size="small"
+            aria-label="Regenerate description" title="Regenerate description"
+            hx-post="{generate_url}" hx-target="closest fieldset" hx-swap="outerHTML"
+            hx-on::before-request="this.loading = true"
+            hx-on::after-request="this.loading = false"
+            hx-disabled-elt="this">
+            <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+        </wa-button>
+        <wa-textarea
+        aria-label="Description"
         name="description"
         id="{image_xml.attrs['index']}_description"
         value="{desc}"
@@ -136,68 +148,23 @@ def description(chapter, image_xml):
         rows="3"
         style="width: 100%"
     ></wa-textarea>
+    </fieldset>
     """
 
 
 def setting(chapter, image_xml):
-    setting = html.escape(image_xml.attrs.get("setting", ""))
-
-    return f"""
-        <div class="wa-stack" id="setting-textarea">
-            <div class="wa-stack">
-                <wa-textarea 
-                    label="Setting" 
-                    name="setting" 
-                    hx-put="scene/save_setting"
-                    hx-target="#setting-textarea"
-                    hx-swap="outerHTML transition:true"
-                    hx-trigger="change"
-                    cols=70
-                    rows=3 
-                    value="{setting}"></wa-textarea>
-
-                <wa-button
-                    style="align-self: flex-end; margin-left: 1em;"
-                    hx-post="scene/generate_setting"
-                    hx-target="#setting-textarea"
-                    hx-swap="outerHTML transition:true">
-                    Generate Setting
-                </wa-button>
-            </div>
-        </div>"""
+    from artifact_editor.chapter.scenes import active_scene, setting_description
+    scene = active_scene(image_xml)
+    description = html.escape(setting_description(image_xml))
+    label = f"Scene {scene['index']}" if scene is not None else "Scene"
+    hint = "Edit this setting in its Scene panel on the timeline." if scene is not None else "Add a Scene Change on the timeline to define a shared setting."
+    return f'<div id="setting-textarea" class="wa-stack"><strong>{label}</strong><div>{description}</div><small>{hint}</small></div>'
 
 
 def tod(chapter, image_xml):
-    tod = image_xml.attrs.get("tod", "")
-
-    out = f"""<div class="wa-cluster" style="width: 100%" id="tod">
-    <wa-select
-        value="{tod}" 
-        hx-put="scene/tod"
-        hx-target="#tod"
-        hx-swap="outerHTML transition:true"
-        hx-trigger="change"
-        name="tod"
-        id="tod-select" 
-        label="Time of day"
-    >""" + "\n"
-    
-    for tod_choice in scene_const.TIME_OF_DAY_CHOICES:
-        out += f'       <wa-option value="{tod_choice[0]}">{tod_choice[1]}</wa-option>\n'
-        
-    out += "    </wa-select>\n"
-
-    out += """    <wa-button
-        pill
-        style="align-self: flex-end; margin-left: 1em;"
-        hx-post="scene/tod"
-        hx-target="#tod"
-        hx-swap="outerHTML transition:true">
-        Generate
-    </wa-button>\n"""
-    
-    out += "</div>"
-    return out
+    from artifact_editor.chapter.scenes import time_of_day
+    value = html.escape(time_of_day(image_xml))
+    return f'<div id="tod"><strong>Scene time of day:</strong> {value}</div>'
 
 
 def mood(chapter, image_xml):
@@ -246,36 +213,9 @@ def mood(chapter, image_xml):
 
 
 def camera_lighting(chapter: Chapter, image_xml: Tag):
-    out = '<div id="camera-lighting" class="wa-cluster">'
-
-    for aspect in ("direction", "source", "quality"):
-        aspect_value = image_xml.attrs.get(f"lighting_{aspect}", "")
-        out += f"""<wa-select
-            value="{aspect_value}" 
-            hx-put="scene/lighting_{aspect}"
-            hx-swap="none"
-            hx-trigger="change"
-            name="lighting_{aspect}" 
-            id="lighting_{aspect}-select" 
-            label="Lighting {aspect.capitalize()}">"""
-        
-        choices = getattr(scene_const, f"LIGHTING_{aspect.upper()}_CHOICES", [])
-
-        for tag, cosmetic in choices:
-            out += f'<wa-option value="{tag}">{cosmetic}</wa-option>'
-        
-        out += "</wa-select>"
-
-    out += """<wa-button
-        pill
-        style="align-self: flex-end; margin-left: 1em;"
-        hx-post="scene/lighting"
-        hx-target="#camera-lighting"
-        hx-swap="outerHTML transition:true">
-        Generate
-    </wa-button>"""
-    out += "</div>"
-    return out
+    from artifact_editor.chapter.scenes import lighting
+    value = html.escape(', '.join(value for value in lighting(image_xml).values() if value))
+    return f'<div id="camera-lighting"><strong>Scene lighting:</strong> {value}</div>'
 
 
 def camera_direction(chapter, image_xml):

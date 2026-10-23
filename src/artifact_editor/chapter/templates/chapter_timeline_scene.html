@@ -1,0 +1,15 @@
+<details class="chapter-timeline-scene chapter-timeline-image" id="timeline-scene-{{ scene['index'] }}"
+    data-timeline-type="scene" data-timeline-index="{{ scene['index'] }}">
+    <summary draggable="true" aria-label="Edit Scene {{ scene['index'] }}" class="wa-cluster">
+        <span aria-hidden="true">⠿</span><strong>Scene {{ scene['index'] }}</strong>
+        <img{% if scene.get('src') %} data-full-image-url="{{ url_for('library.book.chapter.timeline_scene_image', scene_index=scene['index'], v=scene.get('image_version', ''), **chapter.kwargs) }}"{% endif %} id="timeline-scene-preview-{{ scene['index'] }}" src="{{ url_for('library.book.chapter.timeline_scene_image', scene_index=scene['index'], v=scene.get('image_version', ''), **chapter.kwargs) if scene.get('src') else url_for('static', filename='images/x.png') }}"
+             alt="Scene setting" loading="lazy" draggable="false" style="width:100%;max-height:240px;object-fit:contain">
+    </summary>
+    {% with item_type='scene', item_index=scene['index'] %}{% include "chapter_timeline_delete.html" %}{% endwith %}
+    <div id="timeline-scene-editor-{{ scene['index'] }}" class="wa-stack" hx-sync="this:queue all"
+         data-image-editor-url="{{ url_for('library.book.chapter.timeline_scene_editor', scene_index=scene['index'], **chapter.kwargs) }}"
+         data-image-editor-target="#timeline-scene-editor-{{ scene['index'] }}"
+         hx-ext="ws" ws-connect="{{ websocket_url() }}">
+        {% include "chapter_timeline_scene_editor.html" %}
+    </div>
+</details>

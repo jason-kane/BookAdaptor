@@ -1,3 +1,4 @@
+from artifact_editor.textoviva.workflow import image_workflow_name
 from artifact_editor.props.props import get_all_props
 import copy
 import glob
@@ -193,7 +194,7 @@ def comfyui_workflow_run(image_index: int = 0):
 
     # mode.workflow_template
     if "." in workflow_template:
-        workflow_template = workflow_template.split(".")[-1]
+        workflow_template = image_workflow_name(workflow_template)
         image_xml.attrs["workflow_image_template"] = workflow_template
 
     # is this the first image in the paragraph?  Then we want t2i,
@@ -204,12 +205,15 @@ def comfyui_workflow_run(image_index: int = 0):
     #     mode = "ti2i"
     # we want to always use the ui workflow:
     if workflow_template:
-        workflow_fn = g.chapter.get_workflow(
-            image_xml,
-            workflow_name=workflow_template,
-            video_index=None,
-            template_environment={}
-        )
+        try:
+            workflow_fn = g.chapter.get_workflow(
+                image_xml,
+                workflow_name=workflow_template,
+                video_index=None,
+                template_environment={}
+            )
+        except ValueError as exc:
+            return str(exc), 400
         log.info('Workflow file for image %s: %s', image_index, workflow_fn)
 
         comfy.run_workflow_fn(workflow_fn)
@@ -272,7 +276,7 @@ def comfyui_workflow_open(
         workflow_template = request.args.get("workflow_image_template")
         # Match workflow_run: template selectors may include the mode prefix.
         # get_workflow searches ui.*.<name>*.json and needs the bare name.
-        workflow_template = workflow_template.split(".")[-1]
+        workflow_template = image_workflow_name(workflow_template)
         image_xml.attrs["workflow_image_template"] = workflow_template
 
     elif is_animation:
@@ -284,7 +288,7 @@ def comfyui_workflow_open(
 
         if "." in workflow_template:
             # ui.t2i.LTX23 -> LTX23
-            workflow_template = workflow_template.split(".")[-1]
+            workflow_template = image_workflow_name(workflow_template)
             image_xml.attrs[f"workflow_animation_mode{video_tag}"] = mode
             image_xml.attrs[f"workflow_animation_template{video_tag}"] = (
                 workflow_template
@@ -295,7 +299,7 @@ def comfyui_workflow_open(
         workflow_template = image_xml.attrs.get("workflow_image_template", "")
 
         if "." in workflow_template:
-            workflow_template = workflow_template.split(".")[-1]
+            workflow_template = image_workflow_name(workflow_template)
             image_xml.attrs["workflow_image_mode"] = mode
             image_xml.attrs["workflow_image_template"] = workflow_template
 
@@ -327,13 +331,16 @@ def comfyui_workflow_open(
     log.warning("Generating workflow", workflow_template=workflow_template)
     images.generate_metadata_from_text(g.chapter, image_xml)
     workflow_name = f"{workflow_template}_{g.chapter.nice}_img_{image_xml.attrs['index']}_{video_index:02d}"
-    workflow_fn = g.chapter.get_workflow(
-        image_xml,
-        workflow_name=workflow_template,
-        video_index=video_index if is_animation else None,
-        template_environment={},
-        force_name=workflow_name + ".json",
-    )
+    try:
+        workflow_fn = g.chapter.get_workflow(
+            image_xml,
+            workflow_name=workflow_template,
+            video_index=video_index if is_animation else None,
+            template_environment={},
+            force_name=workflow_name + ".json",
+        )
+    except ValueError as exc:
+        return str(exc), 400
 
     if not workflow_fn:
         return "No workflow available for this image.", 400
@@ -2082,7 +2089,7 @@ def draw_all_missing_images():
 
             # mode.workflow_template
             if "." in workflow_template:
-                workflow_template = workflow_template.split(".")[-1]
+                workflow_template = image_workflow_name(workflow_template)
                 image_xml.attrs["workflow_image_template"] = workflow_template
 
             workflow_fn = g.chapter.get_workflow(

@@ -11,7 +11,7 @@ MAX_ANIMATION_DURATION_SECONDS = Decimal("8")
 
 def delete_timeline_item(chapter, item_type, item_index):
     """Remove a timeline entry while preserving other entries' asset indices."""
-    if item_type not in ("phrase", "image", "silence"):
+    if item_type not in ("phrase", "image", "silence", "scene"):
         raise ValueError("Invalid timeline item")
     soup = chapter.get_xml()
     item = soup.find(item_type, index=str(item_index))
@@ -101,7 +101,7 @@ def add_image_below(chapter, phrase_index):
 
 
 def move_image(chapter, image_index, target_type, target_index, position, library_dir="."):
-    if target_type not in ("phrase", "image", "silence") or position not in ("before", "after"):
+    if target_type not in ("phrase", "image", "silence", "scene") or position not in ("before", "after"):
         raise ValueError("Invalid timeline destination")
     soup = chapter.get_xml()
     image = soup.find("image", attrs={"index": str(image_index)})
@@ -184,7 +184,7 @@ def save_silence(chapter, silence, value, fps):
 
 
 def add_silence(chapter, target_type, target_index, fps):
-    if target_type not in ("phrase", "image", "silence"):
+    if target_type not in ("phrase", "image", "silence", "scene"):
         raise ValueError("Invalid timeline item")
     soup = chapter.get_xml()
     target = soup.find(target_type, index=str(target_index))

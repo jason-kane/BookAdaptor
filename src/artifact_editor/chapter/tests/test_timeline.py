@@ -112,6 +112,7 @@ class TimelineTests(unittest.TestCase):
         silence = module.add_silence(self.chapter, 'phrase', 0, 8)
         self.chapter.kwargs = {}
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'))
+        env.globals['websocket_url'] = lambda: '/ws'
         env.globals['url_for'] = lambda *args, **kwargs: '/silence'
         rendered = env.get_template('chapter_timeline_silence.html').render(
             chapter=self.chapter, silence=silence)
@@ -265,6 +266,7 @@ class TimelineTests(unittest.TestCase):
         from jinja2 import Environment, FileSystemLoader
 
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['websocket_url'] = lambda: '/ws'
         env.globals['url_for'] = lambda endpoint, **kwargs: '/image/' + str(kwargs.get('filename', ''))
         self.chapter.kwargs = {}
         self.chapter.author = SimpleNamespace(name='Author')
@@ -359,6 +361,7 @@ class TimelineTests(unittest.TestCase):
         self.assertTrue(self.saved)
         self.chapter.kwargs = {}
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['websocket_url'] = lambda: '/ws'
         env.globals['url_for'] = lambda endpoint, **kwargs: (
             '/static/' + kwargs['filename'] if endpoint == 'static'
             else '/image/' + str(kwargs.get('image_index', ''))
@@ -416,6 +419,7 @@ class TimelineTests(unittest.TestCase):
 
         self.chapter.kwargs = {}
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['websocket_url'] = lambda: '/ws'
         env.globals['url_for'] = lambda endpoint, **kwargs: '/image?' + urlencode(kwargs)
         template = env.get_template('chapter_timeline_image.html')
         image = self.soup.find('image', index='4')
@@ -434,6 +438,7 @@ class TimelineTests(unittest.TestCase):
 
         self.chapter.kwargs = {}
         env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / 'templates'), autoescape=True)
+        env.globals['websocket_url'] = lambda: '/ws'
         env.globals['url_for'] = lambda endpoint, **kwargs: (
             '/static/' + kwargs['filename'] if endpoint == 'static' else '/image/7'
         )

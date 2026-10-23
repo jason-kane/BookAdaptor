@@ -21,6 +21,7 @@ services:
   #   networks:
   #     - home-network
   redisinsight:
+    profiles: ["on-demand"]
     image: redis/redisinsight:latest
     container_name: redis_dashboard
     ports:
@@ -42,7 +43,6 @@ services:
       - artifactserver
       - comfyui
       - websocket
-      - glances
     networks:
       - home-network
 
@@ -216,8 +216,9 @@ services:
       - home-network
 
   glances:
+    profiles: ["on-demand"]
     image: nicolargo/glances:latest-full
-    restart: always
+    restart: "no"
     pid: "host"
     privileged: false
     volumes:

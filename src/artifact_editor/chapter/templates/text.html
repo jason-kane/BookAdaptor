@@ -115,9 +115,28 @@
         min-height: 2.25rem;
         padding-inline-end: 2.5rem;
     }
+    #chapter-phrase-list > [data-timeline-type="silence"] > .chapter-timeline-delete,
     #chapter-phrase-list > .selected > .chapter-timeline-delete,
     #chapter-phrase-list > details[open] > .chapter-timeline-delete {
         display: inline-block;
+    }
+    .chapter-scene-description,
+    .chapter-scene-time-of-day,
+    .chapter-scene-lighting {
+        position: relative;
+        padding-block-start: 2.5rem;
+    }
+    .chapter-scene-description-generate,
+    .chapter-scene-time-of-day-generate,
+    .chapter-scene-lighting-generate {
+        position: absolute;
+        inset-block-start: 0.25rem;
+        inset-inline-end: 0.25rem;
+    }
+    .chapter-scene-description-generate::part(base),
+    .chapter-scene-time-of-day-generate::part(base),
+    .chapter-scene-lighting-generate::part(base) {
+        border-radius: 50%;
     }
     .chapter-timeline-image {
         position: relative;
@@ -134,6 +153,8 @@
         gap: 0.25rem;
         pointer-events: none;
     }
+    .chapter-timeline-scene { padding: 0.75rem; }
+    .chapter-timeline-scene > [draggable="true"] { cursor: grab; padding-inline-end: 2rem; }
     .chapter-timeline-image:hover {
         border-color: #613737;
     }
@@ -374,7 +395,7 @@
 <script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='3') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='image-viewer-1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-drag-2') }}" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.

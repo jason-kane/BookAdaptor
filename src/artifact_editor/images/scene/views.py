@@ -88,10 +88,11 @@ def save_setting(image_index=0):
 def generate_tod(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
-    tod = scene.generate_tod(image_xml)
-    if tod:
-        image_xml.attrs["tod"] = tod
-        g.chapter.save_xml()
+    from artifact_editor.chapter.scenes import active_scene, generate_time_of_day
+    current_scene = active_scene(image_xml)
+    if current_scene is None:
+        return "Add a Scene panel to set the time of day.", 400
+    generate_time_of_day(g.chapter, current_scene)
 
     return htmx.tod(g.chapter, image_xml)
 
@@ -101,8 +102,14 @@ def save_tod(image_index=0):
     log.info(f"{request.form}")
     image_xml = g.chapter.get_image(image_index)
 
-    image_xml.attrs["tod"] = request.form["tod"]
-
+    from artifact_editor.chapter.scenes import active_scene, save_time_of_day
+    current_scene = active_scene(image_xml)
+    if current_scene is None:
+        return "Add a Scene panel to set the time of day.", 400
+    try:
+        save_time_of_day(current_scene, request.form["tod"])
+    except ValueError as error:
+        return str(error), 400
     g.chapter.save_xml()
     return htmx.tod(g.chapter, image_xml)
 
@@ -163,8 +170,15 @@ def set_lighting(image_index, aspect):
 
     key = f"lighting_{aspect}"
 
+    from artifact_editor.chapter.scenes import active_scene, save_lighting
+    current_scene = active_scene(image_xml)
+    if current_scene is None:
+        return "Add a Scene panel to set lighting.", 400
     value = request.form[key]
-    image_xml.attrs[key] = value
+    try:
+        save_lighting(current_scene, {aspect: value})
+    except ValueError as error:
+        return str(error), 400
     g.chapter.save_xml()
 
     # this is an hx-swap='none', there isn't anything the UI cares about other than success.
@@ -174,8 +188,11 @@ def set_lighting(image_index, aspect):
 def generate_lighting(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
-    scene.generate_lighting(g.chapter, image_xml)
-    g.chapter.save_xml()
+    from artifact_editor.chapter.scenes import active_scene, generate_lighting as generate_scene_lighting
+    current_scene = active_scene(image_xml)
+    if current_scene is None:
+        return "Add a Scene panel to set lighting.", 400
+    generate_scene_lighting(g.chapter, current_scene)
 
     return htmx.camera_lighting(
         chapter=g.chapter,
@@ -376,6 +393,14 @@ def set_character_location(image_index):
         character=character,
         image_xml=image_xml,
     ), 200
+
+@bp.route("regenerate_description", methods=["POST"])
+def regenerate_description(image_index):
+    image_xml = g.chapter.get_image(int(image_index))
+    images.generate_image_description(image_xml, force=True)
+    g.chapter.save_xml()
+    return htmx.description(g.chapter, image_xml), 200
+
 
 # update_description
 @bp.route("update_description", methods=["POST"])

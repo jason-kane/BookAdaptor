@@ -488,7 +488,13 @@ def generate_metadata_setting(image_xml, force=False):
 
     setting = llm.str_prompt(
         prompt,
-        system_prompt="You are a helpful assistant that generates concise and accurate settings for story illustrations.  You prioritize consistency across images and will reuse previous settings when appropriate.",
+        system_prompt=(
+            "Describe only the empty environment: terrain, architecture, sky, vegetation, weather, and atmosphere. "
+            "Exclude all characters, animals, actions, and props, including furniture, signs, pictures, tools, "
+            "weapons, vessels, and decorations. Do not mention excluded subjects or their absence. "
+            "Use only details supported by the story. Reuse previous environmental details only when consistent "
+            "with the current passage; discard any characters or props in the previous setting."
+        ),
         force=force,
     )
     if len(setting) > 5 and len(setting) < MAX_SETTING_LENGTH:
@@ -993,24 +999,38 @@ def generate_metadata_character_action_old(character_dict, image_xml, force=Fals
 
 
 def generate_image_description(image_xml, force=False):
-    """Describe the illustration using its story span and generated metadata."""
+    """Describe the complete illustration, separately from its scene backdrop."""
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
     )
     context = get_image_narration_context(image_xml)
+    from artifact_editor.chapter.scenes import setting_description, time_of_day, lighting
     metadata = {key: value for key, value in image_xml.attrs.items()
-                if key in ("setting", "tod", "camera", "scene_characters", "focus_character")
-                or key.endswith(("_pose", "_location", "_action", "_description"))
+                if key in ("setting", "tod", "camera")
                 or key.startswith("lighting_")}
+    metadata["setting"] = setting_description(image_xml)
+    metadata["tod"] = time_of_day(image_xml)
+    for aspect, value in lighting(image_xml).items():
+        metadata["lighting_" + aspect] = value
     description = llm.str_prompt(
-        "Write a concise, concrete description of a single illustration for this story passage. "
-        "Describe the visible characters, actions, setting, lighting, and composition. "
-        "The passage is authoritative; correct any scene metadata that contradicts it. "
-        "Use explicit spatial relationships rather than ambiguous modifiers such as "
-        "'a painted goblet': say 'a flat signboard with a picture of a water-filled goblet "
-        "painted on its surface' when that is what the passage describes. "
-        "Return only the description.\n\n"
-        f"Passage:\n{text}\n\nSurrounding context:\n{context}\n\nScene metadata:\n{metadata}",
+        "Describe one literal illustration of the current source passage. Fidelity to the text is the first priority. "
+        "Describe the visible characters, animals, props, actions, spatial relationships, setting, lighting, and composition. "
+        "Include only subjects, objects, actions, and relationships supported by the current passage. "
+        "Preserve exactly who acts, what they act upon, and what is real versus depicted. "
+        "Seeing is not approaching, thirst is not drinking, and an intention is not a completed action. "
+        "Do not add later events, inferred outcomes, symbolism, decorative objects, inscriptions, or invented staging. "
+        "Earlier narration may resolve identities and pronouns, but must not supply new action for this image. "
+        "A title or heading is a label, not a physical object or an event: do not put it on a sign, "
+        "invent a painting to illustrate it, or act out the plot from the title. Keep its illustration minimal. "
+        "The shared scene setting describes only the environmental backdrop; it does not restrict which "
+        "characters or props belong in this illustration. Use the passage to determine those subjects and actions. "
+        "Environmental metadata is secondary and may be inaccurate; omit anything that conflicts with the passage "
+        "or adds unsupported narrative content. Leave unspecified details unspecified rather than embellishing. "
+        "Preserve depictions as depictions: a goblet painted on a signboard is a picture on its surface, "
+        "not a separate physical goblet; do not replace the depicted goblet with a picture of the pigeon. "
+        "Before answering, check each subject, action, and object against the passage and remove unsupported additions. "
+        "Return only a short, factual illustration description, with no stylistic embellishment.\n\n"
+        f"CURRENT SOURCE PASSAGE (authoritative):\n{text}\n\nContinuity context and narration constraints:\n{context}\n\nSecondary environmental metadata:\n{metadata}",
         force=force,
     ).strip()
     image_xml["description"] = description
@@ -1040,9 +1060,15 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
     if "style" not in image_xml.attrs or force_all:
         generate_metadata_style(image_xml)
 
+    from artifact_editor.chapter.scenes import active_scene
+    inherited_scene = active_scene(image_xml)
+    # Scene descriptions belong to their timeline panels, not individual images.
+    required_fields = ["camera", "scene_characters", "focus_character"]
+    if inherited_scene is None:
+        required_fields.append("setting")
     # determine if we need to do textual analysis.
     textual_analysis = False
-    for tag in ["setting", "tod", "camera", "scene_characters", "focus_character"]:
+    for tag in required_fields:
         if tag not in image_xml.attrs:
             log.warning(
                 f"Missing {tag} for image {image_xml}, will perform textual analysis."
@@ -1055,20 +1081,12 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
     if textual_analysis or force_all:
         # we need to do textual analysis.
         # use the text_to_next to determine the setting, tod, camera, # focus_character, and scene_characters.
-        if "setting" not in image_xml.attrs or force_all:
+        if inherited_scene is None and ("setting" not in image_xml.attrs or force_all):
             log.info('Generating setting for image %s', image_xml.attrs['index'])
             progress(15, "Generating setting")
             setting = generate_metadata_setting(image_xml)
             log.info('Setting for image %s: %s', image_xml.attrs['index'], setting)
             image_xml.attrs["setting"] = setting
-            chapter.save_xml()
-
-        if "tod" not in image_xml.attrs or force_all:
-            # time of day
-            log.info('Generating TOD for image %s', image_xml.attrs['index'])
-            progress(25, "Generating time of day")
-            tod = scene.generate_tod(image_xml)
-            image_xml.attrs["tod"] = tod
             chapter.save_xml()
 
         if "camera" not in image_xml.attrs or force_all:
@@ -1085,16 +1103,6 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             progress(45, "Finding scene characters")
             scene_characters = scene.generate_scene_characters(chapter, image_xml)
             image_xml.attrs["scene_characters"] = ",".join(sorted(scene_characters))
-            chapter.save_xml()
-
-        if (
-            "lighting_direction" not in image_xml.attrs or
-            "lighting_source" not in image_xml.attrs or
-            "lighting_quality" not in image_xml.attrs or force_all
-        ):
-            log.info('Generating lighting for image %s', image_xml.attrs['index'])
-            progress(55, "Generating lighting")
-            scene.generate_lighting(chapter, image_xml)
             chapter.save_xml()
 
         # if ("scene_characters" in image_xml.attrs) or force_all:
@@ -1224,6 +1232,40 @@ def generate_animation_prompt(chapter, image_xml, force=False):
         "Do not include any preface, explanation, labels such as 'Prompt:', "
         "Markdown formatting, blockquotes, or enclosing quotation marks."
     )
+
+    workflow_fn = str(
+        image_xml.attrs.get("workflow_i2v_template")
+        or image_xml.attrs.get("workflow_animation_template_00")
+        or const.DEFAULT_I2V_TEMPLATE
+    )
+    if "minimax_h3" in workflow_fn:
+        # https://www.piclumen.com/blog/minimax-h3-prompt-guide/
+        prompt = (
+            "Write an image-to-video prompt for MiniMax H3 based on this story excerpt. "
+            f"Current excerpt: {text}. Surrounding context: {surrounding_text}. "
+            f"{duration_instruction}"
+            "Use a concise paragraph of connected, natural sentences. Focus on the current "
+            "excerpt; do not summarize the story or import later events from the context. "
+            "Treat the reference image as the starting state. Explicitly preserve the "
+            "subject's appearance, clothing, visual style, composition, lighting, and original "
+            "background unless the current excerpt requires a change. Do not invent visible "
+            "details that are not supplied. For a title or introductory passage, use quiet "
+            "introductory motion rather than inventing plot action. "
+            "Describe one main action with only a few closely connected movements that fit "
+            "the clip. When movement matters, specify the starting position, how the motion "
+            "develops, and its final state. Make body movement, head direction, gaze, and "
+            "subtle natural expressions explicit where relevant. Describe how a subject "
+            "holds, touches, or moves any important object. "
+            "Specify one clear camera behavior, such as a static camera, slow push-in, "
+            "pull-back, pan, tilt, tracking move, or arc, including direction and speed "
+            "when useful. Add only environment, style, and lighting details that affect "
+            "the shot and remain consistent with the reference. Include brief synchronized "
+            "sound effects or ambience when relevant to the action; do not invent dialogue "
+            "or music. Avoid disconnected keywords, vague cinematic camera instructions, "
+            "unrelated actions, cuts, and scene changes. "
+            "Output only the finished video prompt as plain text, without a preface, "
+            "explanation, labels, Markdown, blockquotes, or enclosing quotation marks."
+        )
 
     animation_prompt = llm.str_prompt(prompt, force=force)
     image_xml.attrs["animation_prompt"] = animation_prompt.strip()

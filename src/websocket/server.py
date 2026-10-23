@@ -111,7 +111,7 @@ def pending_video_progress(pubsub, client):
 
 def run_video_job(client, task):
     job_id = task["job_id"]
-    message = {"timeline_metadata": "Preparing image metadata", "timeline_image": "Preparing timeline image", "character_image": "Preparing character image", "prop_image": "Preparing prop image",
+    message = {"scene_description": "Preparing scene description", "scene_image": "Preparing scene image", "timeline_metadata": "Preparing image metadata", "timeline_image": "Preparing timeline image", "character_image": "Preparing character image", "prop_image": "Preparing prop image",
                "chapter_import": "Preparing chapter import",
                "chapter_missing_metadata": "Preparing missing metadata",
                "chapter_missing_images": "Preparing missing images",
@@ -133,6 +133,21 @@ def run_video_job(client, task):
             number=int(task["chapter_number"]),
             language=task["language"],
         )
+        if task.get("action") in ("scene_description", "scene_image", "scene_tod", "scene_lighting"):
+            from artifact_editor.chapter.scenes import generate_description, generate_image, generate_time_of_day, generate_lighting
+            scene = chapter.get_xml().find("scene", index=str(task["scene_index"]))
+            if scene is None:
+                raise ValueError("Scene no longer exists")
+            if task["action"] == "scene_description":
+                generate_description(chapter, scene)
+            elif task["action"] == "scene_lighting":
+                generate_lighting(chapter, scene)
+            elif task["action"] == "scene_tod":
+                generate_time_of_day(chapter, scene)
+            else:
+                generate_image(chapter, scene, task["description"])
+            publish_progress(client, job_id, 100, "Scene generation complete", "complete")
+            return
         if task.get("action") == "timeline_metadata":
             from artifact_editor.images.jobs import generate_timeline_metadata
             generate_timeline_metadata(chapter, task["image_index"], progress=lambda percent, message: publish_progress(
@@ -212,7 +227,7 @@ def run_video_job(client, task):
         publish_progress(client, job_id, 100, "Video render complete", "complete")
     except Exception as exc:
         log.exception("Video render job %s failed", job_id)
-        label = {"timeline_metadata": "Image metadata generation", "timeline_image": "Image generation", "character_image": "Character image generation", "prop_image": "Prop image generation", "chapter_import": "Chapter import",
+        label = {"scene_description": "Scene description generation", "scene_image": "Scene image generation", "timeline_metadata": "Image metadata generation", "timeline_image": "Image generation", "character_image": "Character image generation", "prop_image": "Prop image generation", "chapter_import": "Chapter import",
                  "chapter_missing_metadata": "Metadata generation",
                  "chapter_missing_images": "Image generation",
                  "chapter_missing_animations": "Animation generation"}.get(

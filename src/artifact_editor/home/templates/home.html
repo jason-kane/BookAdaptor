@@ -248,6 +248,7 @@
       }
     </style>
 
+    <script src="/static/js/home-programs.js" defer></script>
     <title>Home</title>
   </head>
 
@@ -314,7 +315,10 @@
           that will then be the options available in the Library.
       </wa-card>
       
-      <a href="http://localhost:61208" target="_blank">
+      <div class="wa-stack" data-program="glances"
+           data-running-url="{{ url_for('home.program_running', service_name='glances') }}"
+           data-stop-url="{{ url_for('home.stop_program', service_name='glances') }}">
+      <a href="{{ url_for('home.glances') }}" target="_blank" rel="noopener">
         <wa-card class="module-container">   
             <img slot="media" height="200" src="/static/images/glances.png" alt="Glances Image"/>
             <h2>Glances</h2>
@@ -322,6 +326,12 @@
             It is a very useful tool for monitoring the health of your system.
         </wa-card>
       </a>
+        <div data-program-controls hidden>
+          <wa-button type="button" variant="danger" appearance="outlined"
+                     data-program-stop aria-label="Stop Glances">Stop</wa-button>
+          <span data-program-message role="status"></span>
+        </div>
+      </div>
 
       <a href="http://localhost:8188/" target="_blank">
           <wa-card class="module-container">
@@ -330,12 +340,21 @@
           </wa-card>
       </a>
 
-      <a href="http://localhost:5540" target="_blank">
+      <div class="wa-stack" data-program="redisinsight"
+           data-running-url="{{ url_for('home.program_running', service_name='redisinsight') }}"
+           data-stop-url="{{ url_for('home.stop_program', service_name='redisinsight') }}">
+      <a href="{{ url_for('home.redisinsight') }}" target="_blank" rel="noopener">
           <wa-card class="module-container">
               <img slot="media" src="/static/images/redis_insight.png" alt="Redis Insight Image"/>
               <h2>Redis Insight</h2>
           </wa-card>
       </a>
+        <div data-program-controls hidden>
+          <wa-button type="button" variant="danger" appearance="outlined"
+                     data-program-stop aria-label="Stop Redis Insight">Stop</wa-button>
+          <span data-program-message role="status"></span>
+        </div>
+      </div>
 
       <div class="wa-stack">
         <a href="http://localhost/htmlcov/" target="_blank">

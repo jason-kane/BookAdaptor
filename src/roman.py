@@ -2,13 +2,17 @@
 Roman numeral routines, chapters with roman numerals are pretty common.
 """
 import re
-import inflect
+from functools import lru_cache
 import logger
 
 log = logger.log(__name__)
 log.info('Loading Roman numeral support...')
 
-p = inflect.engine()
+@lru_cache(maxsize=1)
+def _spoken_number_engine():
+    # Chapter detection only needs the regex; load inflect when speech is used.
+    import inflect
+    return inflect.engine()
 
 def is_roman_numeral(instr):
     # https://dev.to/alexdjulin/a-python-regex-to-validate-roman-numerals-2g99
@@ -46,6 +50,6 @@ def numeral_to_spoken(numeral):
     Convert a roman numeral to spoken text.
     """
     as_int = roman_to_int(numeral)
-    return p.number_to_words(as_int)
+    return _spoken_number_engine().number_to_words(as_int)
 
 log.info('Roman numeral support loaded')

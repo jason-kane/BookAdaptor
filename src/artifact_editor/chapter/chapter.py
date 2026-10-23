@@ -247,6 +247,7 @@ def get_prompt_workflow_by_filename(
     system_prompt: str | None,
     prompt: str,
     outputfile: str,
+    seed: int | None = None,
 ):
 
     common_string_nodes = {
@@ -266,6 +267,10 @@ def get_prompt_workflow_by_filename(
     # we've got a _lot_ of variables to fill in.
     out_nodes = []
     for node in workflow.get("nodes", []):
+        if node.get("type") == "TextGenerate" and seed is not None:
+            node["widgets_values_named"]["sampling_mode.seed"] = seed
+            widget_names = [item["widget"]["name"] for item in node["inputs"] if "widget" in item]
+            node["widgets_values"][widget_names.index("sampling_mode.seed")] = seed
         if node.get("type") in common_string_nodes:
             if node.get("title") in ["PROMPT", "Prompt"]:
                 node["widgets_values"] = [ prompt ]
@@ -420,7 +425,7 @@ def get_prompt_workflow_by_filename(
     # one shot workflow      
     workflow_fn = os.path.join(
         const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"],
-        "prompt_workflow.json"
+        f"prompt_workflow_{uuid.uuid4().hex}.json"
     )
     with open(workflow_fn, "w") as f:
         json.dump(workflow, f, indent=2)
@@ -592,11 +597,14 @@ class Chapter:
                     timing["animation_frames"] = count
                     timing["animation_shortfall"] = count is not None and count < timing["frames"]
 
-            for tag in self.soup.find_all(["phrase", "image", "silence"]):
+            for tag in self.soup.find_all(["phrase", "image", "silence", "scene"]):
                 if tag.name == "phrase":
                     yield {"type": "phrase", "phrase": Phrase(self, tag),
                            "missing_audio": phrase_audio_missing(self, tag, const.LIBRARY_DIR),
                            "timing": timings.get(str(tag["index"]))}
+                elif tag.name == "scene":
+                    from .scenes import LIGHTING_CHOICES
+                    yield {"type": "scene", "scene": tag, "lighting_choices": LIGHTING_CHOICES}
                 elif tag.name == "silence":
                     yield {"type": "silence", "silence": tag,
                            "timing": silence_times.get(str(tag["index"]))}
@@ -1349,7 +1357,7 @@ class Chapter:
         try:
             workflow_name = os.path.splitext(os.path.basename(workflow_filename))[
                 0
-            ].split(".")[2]
+            ].split(".", 2)[2]
         except IndexError:
             workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
 
@@ -1399,9 +1407,33 @@ class Chapter:
         except KeyError:
             prior_frame = None
 
+        if os.path.basename(workflow_filename).startswith("ui.ref2i."):
+            from artifact_editor.ref2i import reference_inputs, prepare_workflow
+            from artifact_editor.chapter.scenes import active_scene, scene_image_path
+            scene = active_scene(image_xml)
+            reference_scene_image = (
+                (scene_image_path(self, scene, const.LIBRARY_DIR) if scene.get("src") else None)
+                if scene is not None else source_image
+            )
+            references = reference_inputs(
+                reference_scene_image, os.path.join(const.LIBRARY_DIR, self.chapterdir), image_xml
+            )
+            prepare_workflow(
+                workflow, references,
+                const.COMFY_DIRS["artifactserver"]["INPUT_DIR"],
+                template_environment,
+            )
+
         # we've got a _lot_ of variables to fill in.
         out_nodes = []
         for node in workflow.get("nodes", []):
+            if "SEED" in template_environment:
+                named = node.get("widgets_values_named", {})
+                for seed_key in ("seed", "noise_seed"):
+                    if seed_key in named:
+                        seed_index = list(named).index(seed_key)
+                        named[seed_key] = int(template_environment["SEED"])
+                        node["widgets_values"][seed_index] = named[seed_key]
             if node.get("type") == "LoadImage":
                 if node.get("title") in ["INPUT_IMAGE", "FIRST_FRAME"]:
                     if source_image:
@@ -1527,6 +1559,16 @@ class Chapter:
                     )
                     node["widgets_values"] = [system_prompt]
                     node["widgets_values_named"] = {"value": system_prompt}
+
+                elif node.get("title") == "ANIMATION_PROMPT":
+                    video_tag = f"_{int(video_index):02d}" if video_index not in [None, ""] else "_00"
+                    prompt = template_environment.get(
+                        "ANIMATION_PROMPT",
+                        image_xml.attrs.get("animation_prompt")
+                        or image_xml.attrs.get(f"animation_prompt{video_tag}", ""),
+                    )
+                    node["widgets_values"] = [prompt]
+                    node["widgets_values_named"] = {"value": prompt}
 
                 elif node.get("title") in ["PROMPT"]:
                     prompt = template_environment.get(
@@ -2048,6 +2090,7 @@ class Chapter:
         return image_xml.find_next_sibling("image") is None
 
     def get_scene(self, image_xml: Tag) -> dict[str, Any]:
+        from .scenes import setting_description, time_of_day, lighting
         ch = {}
         characters = as_str(image_xml.attrs.get("scene_characters", "")).split(",")
         for character_name in characters:
@@ -2068,14 +2111,10 @@ class Chapter:
         from artifact_editor.props.props import selected_props
         out = {
             "props": selected_props(self, image_xml),
-            "setting": as_str(image_xml.attrs.get("setting", "")),
-            "tod": as_str(image_xml.attrs.get("tod", "")),
+            "setting": as_str(setting_description(image_xml)),
+            "tod": as_str(time_of_day(image_xml)),
             "camera": as_str(image_xml.attrs.get("camera", "")),
-            "lighting": {
-                "direction": as_str(image_xml.attrs.get("lighting_direction", "")),
-                "quality": as_str(image_xml.attrs.get("lighting_quality", "")),
-                "source": as_str(image_xml.attrs.get("lighting_source", "")),
-            },
+            "lighting": lighting(image_xml),
             # Carry source truth through the ComfyUI prompt-rewriting stage too.
             "source_passage": tools.get_text_to_next(image_xml, image_xml.find_next("image")),
             "visual_constraints": tools.get_image_narration_context(image_xml),
@@ -2106,14 +2145,10 @@ class Chapter:
 
         # These fields define the core scene context and should remain present
         # in SCENE even when the source metadata is empty.
-        out["setting"] = as_str(image_xml.attrs.get("setting", ""))
-        out["tod"] = as_str(image_xml.attrs.get("tod", ""))
+        out["setting"] = as_str(setting_description(image_xml))
+        out["tod"] = as_str(time_of_day(image_xml))
         out["camera"] = as_str(image_xml.attrs.get("camera", ""))
-        out["lighting"] = {
-            "direction": as_str(image_xml.attrs.get("lighting_direction", "")),
-            "quality": as_str(image_xml.attrs.get("lighting_quality", "")),
-            "source": as_str(image_xml.attrs.get("lighting_source", "")),
-        }
+        out["lighting"] = lighting(image_xml)
 
         return out
 

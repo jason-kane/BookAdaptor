@@ -420,15 +420,117 @@ def update_timeline_silence(silence_index):
     return chapter_timing_updates(g.chapter)
 
 
+@bp.post("/timeline/add-scene/<int:image_index>")
+def add_timeline_scene(image_index):
+    from .scenes import add_scene
+    try:
+        scene = add_scene(g.chapter, image_index)
+    except ValueError as error:
+        return str(error), 400
+    from artifact_editor.chapter.scenes import LIGHTING_CHOICES
+    return render_template("chapter_timeline_scene.html", chapter=g.chapter, scene=scene, lighting_choices=LIGHTING_CHOICES)
+
+
+@bp.route("/timeline/scene/<int:scene_index>", methods=["GET", "POST"])
+def timeline_scene_editor(scene_index):
+    scene = g.chapter.get_xml().find("scene", index=str(scene_index))
+    if scene is None:
+        return "Scene no longer exists; reload the chapter", 404
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        if action not in ("save", "description", "generate", "tod", "lighting"):
+            return "Invalid scene action", 400
+        lighting_values = {aspect: request.form["lighting_" + aspect]
+                           for aspect in ("direction", "source", "quality") if "lighting_" + aspect in request.form}
+        if lighting_values:
+            from artifact_editor.chapter.scenes import save_lighting
+            try:
+                save_lighting(scene, lighting_values)
+            except ValueError as error:
+                return str(error), 400
+            g.chapter.save_xml()
+        if "tod" in request.form:
+            from .scenes import save_time_of_day
+            try:
+                save_time_of_day(scene, request.form["tod"])
+            except ValueError as error:
+                return str(error), 400
+            g.chapter.save_xml()
+        if "description" in request.form:
+            scene["description"] = request.form["description"].strip()
+            g.chapter.save_xml()
+        if action == "save":
+            return "", 204
+        if action == "generate" and not scene.get("description", "").strip():
+            return "Enter or generate a scene description first.", 400
+        import uuid
+        import redis
+        job_id = uuid.uuid4().hex
+        task = {
+            "action": {"description": "scene_description", "tod": "scene_tod", "generate": "scene_image", "lighting": "scene_lighting"}[action],
+            "job_id": job_id, "author": g.chapter.author.name, "title": g.chapter.title,
+            "chapter_number": g.chapter.number, "language": g.chapter.language,
+            "scene_index": scene_index, "description": scene.get("description", ""),
+        }
+        client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
+        client.lpush("video_render_jobs", json.dumps(task))
+        return f'<div id="video-progress-{job_id}" role="status" aria-live="polite"><wa-progress-bar indeterminate></wa-progress-bar>Scene generation queued.</div>'
+    from artifact_editor.chapter.scenes import LIGHTING_CHOICES
+    return render_template("chapter_timeline_scene_editor.html", chapter=g.chapter, scene=scene, lighting_choices=LIGHTING_CHOICES, scene_preview_oob=True)
+
+
+@bp.get("/timeline/scene/<int:scene_index>/workflow")
+def open_timeline_scene_workflow(scene_index):
+    from .scenes import LIGHTING_CHOICES, save_lighting, TIME_OF_DAY_VALUES
+    from artifact_editor.reference_images import open_reference_workflow
+    scene = g.chapter.get_xml().find("scene", index=str(scene_index))
+    if scene is None:
+        return "Scene no longer exists; reload the chapter", 404
+    description = request.args.get("description", scene.get("description", "")).strip()
+    if not description:
+        return "Enter a description before opening the workflow.", 400
+    tod = request.args.get("tod", scene.get("tod", "unknown"))
+    if tod not in TIME_OF_DAY_VALUES:
+        return "Invalid scene time of day", 400
+    values = {aspect: request.args.get("lighting_" + aspect, scene.get("lighting_" + aspect, ""))
+              for aspect in LIGHTING_CHOICES}
+    try:
+        save_lighting({}, values)
+        return redirect(open_reference_workflow("scenes", description + '\nTime of day: ' + tod + '\nLighting: ' + str(values)))
+    except ValueError as error:
+        return str(error), 400
+
+
+@bp.get("/timeline/scene/<int:scene_index>/image.png")
+def timeline_scene_image(scene_index):
+    from .scenes import scene_image_path
+    scene = g.chapter.get_xml().find("scene", index=str(scene_index))
+    if scene is None or not scene.get("src"):
+        return "Scene image not found", 404
+    path = scene_image_path(g.chapter, scene, const.LIBRARY_DIR)
+    response = send_from_directory(str(path.parent), path.name)
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
 @bp.post("/timeline/move-image")
 def move_timeline_image():
     from .timeline import move_image
+    from .scenes import move_scene
     from artifact_editor.phrases.htmx import chapter_timing_updates
 
     try:
-        move_image(g.chapter, int(request.form["image_index"]),
-                   request.form["target_type"], int(request.form["target_index"]),
-                   request.form["position"], library_dir=const.LIBRARY_DIR)
+        item_type = request.form.get("item_type", "image")
+        if item_type not in ("image", "scene"):
+            raise ValueError("Invalid draggable timeline item")
+        if item_type == "scene":
+            move_scene(g.chapter, int(request.form["image_index"]),
+                       request.form["target_type"], int(request.form["target_index"]),
+                       request.form["position"])
+        else:
+            move_image(g.chapter, int(request.form["image_index"]),
+                       request.form["target_type"], int(request.form["target_index"]),
+                       request.form["position"], library_dir=const.LIBRARY_DIR)
     except (ValueError, KeyError) as error:
         return str(error), 400
     return chapter_timing_updates(g.chapter), 200

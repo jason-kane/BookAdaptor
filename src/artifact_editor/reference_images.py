@@ -22,6 +22,9 @@ def reference_workflow(kind, description):
                   'with strong contrast against the prop so its outline and details are clearly visible. '
                   'No people, no scenery, no text. Prop: ' + description)
         width, height = 1024, 1024
+    elif kind == 'scenes':
+        prompt = ('An establishing view of the empty environment: architecture, terrain, permanent structural features, atmosphere, and lighting only. Exclude all props and movable objects throughout the image, including signboards, signs, boards, posters, paintings, painted pictures, goblets, furniture, tools, weapons, clothing, containers, and decorations, even if mentioned in the setting description. Props will be added separately. No people, characters, animals, or text. Setting: ' + description)
+        width, height = 1536, 1024
     else:
         raise ValueError('Unknown reference kind')
     workflow = comfy.load_workflow_template('api', 't2i', 'zit_style_sample').serialize()

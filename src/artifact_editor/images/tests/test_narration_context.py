@@ -1,9 +1,11 @@
 """Visual generation must not use future paragraphs as surrounding context."""
 import ast
+import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from bs4 import BeautifulSoup, Tag
 
@@ -36,11 +38,15 @@ class NarrationContextTests(unittest.TestCase):
                     'llm': SimpleNamespace(str_prompt=prompt),
                     'const': SimpleNamespace(FPS=25), 'Tag': Tag,
                 }
+                spec = importlib.util.spec_from_file_location('chapter_scenes', root / 'chapter/scenes.py')
+                scenes = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(scenes)
                 function = load_function(root / 'images/images.py', name, namespace)
-                if name == 'generate_animation_prompt':
-                    function(None, image)
-                else:
-                    function(image)
+                with patch.dict(sys.modules, {'artifact_editor.chapter.scenes': scenes}):
+                    if name == 'generate_animation_prompt':
+                        function(None, image)
+                    else:
+                        function(image)
                 sent = prompt.call_args.args[0]
                 self.assertNotIn('dragon', sent)
                 self.assertIn('Do not summarize the story', sent)

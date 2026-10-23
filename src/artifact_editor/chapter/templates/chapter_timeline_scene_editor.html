@@ -1,0 +1,75 @@
+{% set scene_url = url_for('library.book.chapter.timeline_scene_editor', scene_index=scene['index'], **chapter.kwargs) %}
+<button type="button" class="chapter-image-viewer-open" data-view-image="{{ scene['index'] }}" data-view-type="scene"
+    aria-label="View scene {{ scene['index'] }} at full size"{% if not scene.get('src') %} disabled{% endif %}>
+<img src="{{ url_for('library.book.chapter.timeline_scene_image', scene_index=scene['index'], v=scene.get('image_version', ''), **chapter.kwargs) if scene.get('src') else url_for('static', filename='images/x.png') }}"
+     alt="Scene setting" loading="lazy" draggable="false" style="width:100%;max-height:240px;object-fit:contain">
+</button>
+<form class="wa-stack wa-gap-s" onsubmit="return false">
+    <fieldset class="chapter-scene-description">
+        <legend>Description</legend>
+        <wa-button class="chapter-scene-description-generate" type="button" size="small"
+            aria-label="Generate description" title="Generate description"
+            hx-post="{{ scene_url }}" hx-vals='{"action":"description"}' hx-include="closest form"
+            hx-target="#timeline-scene-status-{{ scene['index'] }}" hx-disabled-elt="this">
+            <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+        </wa-button>
+    <wa-textarea aria-label="Description" name="description" value="{{ scene.get('description', '') }}"
+        hx-post="{{ scene_url }}" hx-vals='{"action":"save"}' hx-trigger="change" hx-swap="none"></wa-textarea>
+    </fieldset>
+    <fieldset class="chapter-scene-time-of-day">
+        <legend>Time of day</legend>
+        <wa-button class="chapter-scene-time-of-day-generate" type="button" size="small"
+            aria-label="Generate time of day" title="Generate time of day"
+            hx-post="{{ scene_url }}" hx-vals='{"action":"tod"}' hx-include="closest form"
+            hx-target="#timeline-scene-status-{{ scene['index'] }}" hx-disabled-elt="this">
+            <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+        </wa-button>
+    <div class="wa-cluster">
+    <wa-select aria-label="Time of day" name="tod" value="{{ scene.get('tod', 'unknown') }}"
+        hx-post="{{ scene_url }}" hx-vals='{"action":"save"}' hx-trigger="change" hx-swap="none">
+        {% for value in ['predawn', 'dawn', 'morning', 'day', 'afternoon', 'dusk', 'evening', 'night', 'unknown'] %}
+        <wa-option value="{{ value }}"{% if scene.get('tod', 'unknown') == value %} selected{% endif %}>{{ value|title }}</wa-option>
+        {% endfor %}
+    </wa-select>
+    </div>
+    </fieldset>
+    <fieldset class="chapter-scene-lighting">
+        <legend>Lighting</legend>
+        <wa-button class="chapter-scene-lighting-generate" type="button" size="small"
+            aria-label="Generate lighting" title="Generate lighting"
+            hx-post="{{ scene_url }}" hx-vals='{"action":"lighting"}' hx-include="closest form"
+            hx-target="#timeline-scene-status-{{ scene['index'] }}" hx-disabled-elt="this">
+            <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+        </wa-button>
+        <div class="wa-cluster">
+        {% for aspect, choices in (lighting_choices|default({})).items() %}
+        <wa-select label="{{ aspect|title }}" name="lighting_{{ aspect }}" value="{{ scene.get('lighting_' ~ aspect, '') }}"
+            hx-post="{{ scene_url }}" hx-vals='{"action":"save"}' hx-trigger="change" hx-swap="none">
+            <wa-option value=""{% if not scene.get('lighting_' ~ aspect) %} selected{% endif %}>Unspecified</wa-option>
+            {% for value, label in choices %}
+            <wa-option value="{{ value }}"{% if scene.get('lighting_' ~ aspect) == value %} selected{% endif %}>{{ label }}</wa-option>
+            {% endfor %}
+        </wa-select>
+        {% endfor %}
+        </div>
+    </fieldset>
+    <div class="wa-cluster">
+        <wa-button hx-post="{{ scene_url }}" hx-vals='{"action":"generate"}' hx-include="closest form"
+            hx-target="#timeline-scene-status-{{ scene['index'] }}" hx-disabled-elt="this">Generate image</wa-button>
+        {% set workflow_url = url_for('library.book.chapter.open_timeline_scene_workflow', scene_index=scene['index'], **chapter.kwargs) %}
+        <wa-button href="{{ workflow_url }}" target="_blank" data-workflow-url="{{ workflow_url }}"
+            onclick="const form = this.closest('form'); const params = new URLSearchParams(); for (const name of ['description', 'tod', 'lighting_direction', 'lighting_source', 'lighting_quality']) { params.set(name, form.querySelector('[name=' + name + ']').value); } this.href = this.dataset.workflowUrl + '?' + params"
+            variant="brand" appearance="accent" pill
+            aria-label="Open scene workflow in ComfyUI" title="Open scene workflow in ComfyUI">
+            <wa-icon src="/static/images/comfyui.svg" aria-hidden="true"></wa-icon>
+        </wa-button>
+    </div>
+    <div id="timeline-scene-status-{{ scene['index'] }}" role="status" aria-live="polite"></div>
+</form>
+
+{% if scene_preview_oob|default(false) %}
+<img id="timeline-scene-preview-{{ scene['index'] }}" hx-swap-oob="outerHTML"{% if scene.get('src') %}
+     data-full-image-url="{{ url_for('library.book.chapter.timeline_scene_image', scene_index=scene['index'], v=scene.get('image_version', ''), **chapter.kwargs) }}"{% endif %}
+     src="{{ url_for('library.book.chapter.timeline_scene_image', scene_index=scene['index'], v=scene.get('image_version', ''), **chapter.kwargs) if scene.get('src') else url_for('static', filename='images/x.png') }}"
+     alt="Scene setting" loading="lazy" draggable="false" style="width:100%;max-height:240px;object-fit:contain">
+{% endif %}

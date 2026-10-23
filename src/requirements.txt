@@ -16,6 +16,7 @@ filelock
 spacy
 lxml
 Flask
+PyYAML
 titlecase
 git+https://github.com/mphilli/English-to-IPA
 Flask-Caching

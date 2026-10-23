@@ -121,6 +121,7 @@ def workflow_templates_base():
             "t2json": "Text to JSON: Generate a JSON file from text.",
             "t2t": "Text to Text: Generate text from text.",
             "ti2i": "Text and Image to Image: Generate an image from text and an input image.",
+            "ref2i": "Reference to Image: Use the scene image and selected character and prop references.",
         }
     )
 

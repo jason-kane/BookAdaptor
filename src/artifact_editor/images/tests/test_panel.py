@@ -1,7 +1,10 @@
 """Workshop controls must keep targeting their own expanded image panel."""
 import importlib.util
+import ast
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock
 
 from bs4 import BeautifulSoup
 
@@ -11,6 +14,25 @@ spec.loader.exec_module(module)
 
 
 class PanelTests(unittest.TestCase):
+    def test_regenerated_description_is_scoped_once_by_response_hook(self):
+        image = BeautifulSoup('<image index="4"/>', 'xml').image
+        chapter = SimpleNamespace(get_image=Mock(return_value=image), save_xml=Mock())
+        images = SimpleNamespace(generate_image_description=Mock())
+        markup = '<fieldset><wa-textarea id="4_description" value="New description"></wa-textarea></fieldset>'
+        scope = {'g': SimpleNamespace(chapter=chapter), 'images': images,
+                 'htmx': SimpleNamespace(description=Mock(return_value=markup))}
+        path = Path(__file__).parents[1] / 'scene/views.py'
+        function = next(node for node in ast.parse(path.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and node.name == 'regenerate_description')
+        function.decorator_list = []
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), scope)
+        body, status = scope['regenerate_description']('4')
+        self.assertEqual(status, 200)
+        images.generate_image_description.assert_called_once_with(image, force=True)
+        chapter.save_xml.assert_called_once()
+        panel = self.render(body)
+        self.assertEqual(panel.find('wa-textarea')['id'], 'timeline-prompt-4-4_description')
+
     def render(self, markup, index=4):
         return BeautifulSoup(module.panel_controls(markup, index, f'/chapter/images/{index}/', f'/chapter/timeline/image/{index}'), 'html.parser')
 

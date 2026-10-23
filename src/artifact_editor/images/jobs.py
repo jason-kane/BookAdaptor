@@ -12,7 +12,8 @@ def generate_timeline_image(chapter, image_index):
     if image is None:
         raise ValueError(f"Image {image_index} no longer exists")
     template = image.get('workflow_image_template') or const.DEFAULT_IMAGE_TEMPLATE
-    template = template.rsplit('.', 1)[-1]
+    from artifact_editor.textoviva.workflow import image_workflow_name
+    template = image_workflow_name(template)
     image['workflow_image_template'] = template
     workflow = chapter.get_workflow(
         image, workflow_name=template, video_index=None, template_environment={},
