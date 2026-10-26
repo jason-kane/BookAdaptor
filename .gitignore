@@ -16,3 +16,4 @@ templates/obsolete/*
 src_backup/**/*
 
 venv/*
+coverage/tmp/*
