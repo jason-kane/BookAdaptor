@@ -1,0 +1,14 @@
+pipeline:
+  - fragment: qwen-image-sampler
+    alias: sample
+    params:
+      load_diffusion_model_unet_name: qwen_image_2.1_int8_convrot.safetensors
+      load_clip_clip_name: qwen3vl_8b_int8_convrot.safetensors
+      load_vae_vae_name: qwen_image_2.1_vae_bf16.safetensors
+      prompt: A landscape painting in the style of Vincent van Gogh
+      width: 512
+      height: 512
+      filename_prefix: samples/qwen_sample
+      ksampler_steps: 25
+      ksampler_cfg: 1
+      ksampler_seed: 42

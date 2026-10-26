@@ -1,0 +1,33 @@
+<aside id="styler-job-queue" aria-label="GPU task queue" aria-live="polite">
+    <header class="styler-queue-header">
+    <h2>
+        <span>Task queue</span>
+        <wa-spinner id="styler-queue-loading" aria-label="Refreshing task queue"></wa-spinner>
+        <span id="styler-queue-count" hidden></span>
+        <wa-button id="styler-worker-reset" size="small" appearance="plain"
+            aria-label="Queue worker reset" title="Queue a safe worker reset">
+            <wa-icon name="rotate"></wa-icon>
+        </wa-button>
+        <span id="styler-worker-reset-status" role="status" aria-live="polite"></span>
+        <wa-button id="styler-queue-toggle" size="small" appearance="plain"
+            aria-label="Minimize task queue" aria-expanded="true" title="Minimize task queue">
+            <wa-icon src="/static/fontawesome7/svgs/solid/chevron-down.svg"></wa-icon>
+        </wa-button>
+    </h2>
+    <div class="styler-queue-rate" data-mode="walk">
+        <wa-slider id="styler-maintenance-rate" aria-label="Background task rate"
+            min="0" max="2" step="1" value="1" size="small" with-markers with-tooltip disabled>
+        </wa-slider>
+        <div class="styler-queue-rate-labels" aria-hidden="true">
+            <span data-rate-mode="off">Off</span><span data-rate-mode="walk">Walk</span><span data-rate-mode="run">Run</span>
+        </div>
+    </div>
+    </header>
+    <div class="styler-queue-body">
+        <div class="styler-queue-body-inner">
+            <div id="styler-queue-current"></div>
+            <div id="styler-queue-near"></div>
+            <div id="styler-queue-overflow" hidden></div>
+        </div>
+    </div>
+</aside>

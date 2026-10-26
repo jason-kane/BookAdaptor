@@ -44,7 +44,7 @@ from artifact_editor.chapter.chapter import (
     chapter_url_value_preprocessor,
 )
 
-from artifact_editor.styles import htmx as styles_htmx
+from styler import htmx as styles_htmx
 
 from ncdeltaprocess import TranslatorQuillJS
 from ncdeltaprocess.latex_line_render import LineRenderLaTeX
@@ -307,6 +307,11 @@ def timeline_image_editor(image_index):
         if action == "description":
             return "", 204
         if action in ("metadata", "generate"):
+            from worker_startup import ensure_worker_services
+            try:
+                ensure_worker_services(comfyui=action == "generate")
+            except RuntimeError as exc:
+                return str(exc), 503
             import uuid
             import redis
 

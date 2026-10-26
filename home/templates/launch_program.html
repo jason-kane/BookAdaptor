@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Opening {{ program.name }}</title>
+    <style>
+      body { color-scheme: dark; background: #17151c; color: #eee; font: 1.1rem system-ui; margin: 0; padding: 1rem; }
+      .service-background { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .8; pointer-events: none; }
+      main { position: relative; max-width: 36rem; margin: 15vh auto; padding: 1.5rem; background: rgb(23 21 28 / 85%); border-radius: .75rem; }
+      a { color: #cbb5ff; }
+      button { font: inherit; padding: .5rem 1rem; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <img class="service-background" src="{{ service_image }}" alt="" aria-hidden="true">
+    <main>
+    <h1>{{ program.name }}</h1>
+    <p id="status" role="status">Starting {{ program.name }}…</p>
+    <button id="retry" hidden>Try again</button>
+    <p><a href="/">Back to home</a></p>
+    <noscript>JavaScript is needed to start {{ program.name }} from this page.</noscript>
+    </main>
+    <script>
+      const status = document.getElementById('status');
+      const retry = document.getElementById('retry');
+      async function launch() {
+        retry.hidden = true;
+        status.textContent = {{ ('Starting ' ~ program.name ~ '…') | tojson }};
+        try {
+          {% if program.name == 'Comfy UI' %}
+          const current = await fetch({{ status_url | tojson }}, {cache: 'no-store'});
+          const alreadyReady = current.ok && (await current.json()).ready;
+          {% else %}
+          const alreadyReady = false;
+          {% endif %}
+          const started = alreadyReady ? {ok: true} : await fetch({{ start_url | tojson }}, {method: 'POST'});
+          if (!started.ok) {
+            const result = await started.json();
+            throw new Error(result.error || {{ ('Unable to start ' ~ program.name ~ '. Please try again.') | tojson }});
+          }
+          const deadline = Date.now() + {{ program.get("timeout", 90) * 1000 }};
+          while (Date.now() < deadline) {
+            const response = await fetch({{ status_url | tojson }}, {cache: 'no-store'});
+            if (!response.ok) throw new Error({{ ('Unable to check ' ~ program.name ~ '. Please try again.') | tojson }});
+            if ((await response.json()).ready) {
+              const destination = new URL(window.location.href);
+              destination.port = {{ program.port | string | tojson }};
+              destination.pathname = {{ program.get("path", "/") | tojson }};
+              destination.search = '';
+              {% if workflow %}
+              destination.searchParams.set('workflow', {{ workflow | tojson }});
+              {% endif %}
+              destination.hash = '';
+              window.location.replace(destination.href);
+              return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          throw new Error({{ (program.name ~ ' is taking longer than expected. Please try again.') | tojson }});
+        } catch (error) {
+          status.textContent = error.message;
+          retry.hidden = false;
+        }
+      }
+      retry.addEventListener('click', launch);
+      launch();
+    </script>
+  </body>
+</html>

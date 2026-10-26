@@ -9,7 +9,7 @@ from flask import (
     url_for,
 )
 
-import artifact_editor.styles.htmx as styles_htmx
+import styler.htmx as styles_htmx
 import const
 import logger
 import roman

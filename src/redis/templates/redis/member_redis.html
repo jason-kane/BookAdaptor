@@ -1,0 +1,8 @@
+<p>Shared data and job queues.</p>
+<div class="wa-split">
+  <span>Server status</span>
+  <span role="status" aria-live="polite" hx-get="{{ url_for('redis_panel.status') }}"
+        hx-trigger="load, every 60s" hx-swap="innerHTML">
+    <wa-badge variant="neutral">Checking…</wa-badge>
+  </span>
+</div>

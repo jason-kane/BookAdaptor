@@ -7,7 +7,7 @@ from flask import request, url_for
 
 import logger
 from artifact_editor.characters import characters
-from artifact_editor.styles import htmx as styles_htmx
+from styler import htmx as styles_htmx
 from artifact_editor.tools import generic_button
 
 if TYPE_CHECKING:

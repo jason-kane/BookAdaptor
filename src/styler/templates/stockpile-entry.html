@@ -1,0 +1,37 @@
+<div class="wa-stack card-overview stockpile-entry" data-stockpile-entry
+     hx-get="{{ url_for('styles.stockpile_page', tag=tag, page=page) }}"
+     hx-trigger="stockpile-refresh from:body" hx-swap="outerHTML">
+    <div class="wa-cluster wa-gap-s">
+        <h2 class="styler-style-name" style="margin-bottom:0">Stockpile</h2>
+        <wa-button appearance="plain" size="small" aria-label="Previous three stockpile images"
+            {% if has_previous %}
+            hx-get="{{ url_for('styles.stockpile_page', tag=tag, page=page - 1) }}"
+            hx-target="closest [data-stockpile-entry]" hx-swap="outerHTML"
+            {% else %}disabled{% endif %}>❮</wa-button>
+        <wa-button appearance="plain" size="small" aria-label="Next three stockpile images"
+            {% if has_next %}
+            hx-get="{{ url_for('styles.stockpile_page', tag=tag, page=page + 1) }}"
+            hx-target="closest [data-stockpile-entry]" hx-swap="outerHTML"
+            {% else %}disabled{% endif %}>❯</wa-button>
+        {% if total %}<span style="font-size:0.8rem;color:var(--wa-color-text-quiet)">{{ start + 1 }}–{{ start + images|length }} of {{ total }}</span>{% endif %}
+    </div>
+    {% if images %}
+    <div class="wa-cluster wa-align-items-start">
+        {% for image in images %}
+        <div class="wa-stack wa-gap-s" style="width:256px">
+            <div class="wa-frame:square stylesample" style="width:256px;height:256px">
+                <button type="button" class="styler-image-open" data-style-viewer
+                        aria-label="{{ image.description }}">
+                    <img loading="lazy" decoding="async" class="image_sample"
+                         data-stockpile-filename="{{ image.filename }}"
+                         src="{{ url_for('styles.stockpile_image', filename=image.filename) }}"
+                         alt="{{ image.description }}">
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No stockpile images with this tag.</p>
+    {% endif %}
+</div>

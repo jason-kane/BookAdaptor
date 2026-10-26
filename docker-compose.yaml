@@ -1,5 +1,22 @@
 services:
+  home:
+    build:
+      context: ./home
+      additional_contexts:
+        redis_panel: ./src/redis
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./home:/app/home:ro
+      - ./src/redis:/app/src/redis:ro
+      - ./src/todo:/data/todo
+      - ./docker-compose.yaml:/docker-compose.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - home-network
+
   redis:
+    profiles: ["on-demand", "test"]
     image: redis:8.8
     ports:
       - "6379:6379"
@@ -31,6 +48,7 @@ services:
     networks:
       - home-network
   nginx:
+    profiles: ["on-demand"]
     image: nginx:latest
     ports:
       - "80:80"
@@ -41,12 +59,14 @@ services:
       - ./htmlcov:/var/www/htmlcov
     depends_on:
       - artifactserver
+      - home
       - comfyui
       - websocket
     networks:
       - home-network
 
   test:
+    image: bookadaptor-app:latest
     # This runs _from_ the artifactserver container
     # (not kidding)
     profiles: ["test"]
@@ -85,6 +105,7 @@ services:
       - home-network
 
   artifactserver:
+    profiles: ["on-demand"]
     image: bookadaptor-app:latest
     build:
       context: ./src/
@@ -92,7 +113,7 @@ services:
     depends_on:
       - redis
     ports:
-      - "8080:8080"
+      - "8082:8080"
     entrypoint: [ "gunicorn", "--reload", "--timeout", "600", "-w", "4", "--log-level", "info", "--capture-output", "--error-logfile", "-", "--access-logfile", "-" ]
     command: [ "--bind", "0.0.0.0:8080", "artifact_editor.app:create_app()" ]
 
@@ -107,7 +128,6 @@ services:
       - ./templates:/templates
       - ./comfy/ComfyUI/custom_nodes:/custom_nodes
       - ./configuration.toml:/app/configuration.toml
-      - ./docker-compose.yaml:/docker-compose.yaml
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - FLASK_ENV=development
@@ -125,6 +145,7 @@ services:
       - home-network
 
   comfyui:
+    profiles: ["on-demand"]
     init: true
     container_name: comfyui-megapak
     image: "comfyui-boot:cu130-megapak-pt211"
@@ -152,7 +173,7 @@ services:
     environment:
       # Avoid dynamic allocator failures on tiny allocations with this image.
       # The entrypoint reads CLI_ARGS rather than forwarding command arguments.
-      - CLI_ARGS=--enable-cors-header "*" --disable-dynamic-vram
+      - CLI_ARGS=--enable-cors-header "*" --disable-dynamic-vram --fp8_e4m3fn-text-enc
     security_opt:
       # - "label=type:nvidia_container_t"
       - "label=disable"
@@ -168,6 +189,7 @@ services:
       - home-network
 
   websocket:
+    profiles: ["on-demand"]
     image: bookadaptor-app:latest
     depends_on:
       - redis
@@ -175,11 +197,13 @@ services:
       - "5001:5001"
     volumes:
       - ./src/:/app
+      - ./active:/active:ro
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
     networks:
       - home-network
 
   video_worker:
+    profiles: ["on-demand"]
     image: bookadaptor-app:latest
     depends_on:
       redis:
@@ -217,7 +241,7 @@ services:
 
   glances:
     profiles: ["on-demand"]
-    image: nicolargo/glances:latest-full
+    image: nicolargo/glances:ubuntu-latest-full
     restart: "no"
     pid: "host"
     privileged: false
@@ -232,9 +256,16 @@ services:
       - "61208:61208"
       - "61209:61209"
     environment:
-      - GLANCES_OPT=-C /app/glances/conf/glances.conf -w --disable-plugin ip --enable-mcp --enable-plugin smart
+      - GLANCES_OPT=-C /app/glances/conf/glances.conf -w --disable-plugin ip --enable-mcp --enable-plugin gpu,smart
       - TZ=America/Los_Angeles
       - PYTHONPYCACHEPREFIX=/tmp/py_caches
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     networks:
       - home-network
 

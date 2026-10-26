@@ -1,0 +1,67 @@
+{% macro service_panel(panel_id, title, thumbnail='', status='', version_service='') %}
+<section class="service-panel" data-panel-id="{{ panel_id }}" data-expanded="false" aria-label="{{ title }}">
+  <div class="service-panel-heading" data-panel-expand role="button" tabindex="0"
+       aria-label="Toggle {{ title }} details" aria-description="Click to toggle details. Drag to reorder. Alt plus arrow keys moves this panel." aria-expanded="false" aria-controls="{{ panel_id }}-contents"{% if thumbnail %} style="--panel-thumbnail: url('{{ url_for('static', filename='images/' ~ thumbnail) }}');"{% endif %}>
+    <div class="panel-name">
+      <h2>{{ title }}</h2>
+      <div class="panel-version" data-service-version="{{ version_service or panel_id }}" aria-live="polite">Checking version…</div>
+    </div>
+    {% if status %}<wa-badge class="panel-status" variant="{{ 'danger' if status == 'Broken' else 'warning' }}" appearance="accent" pill>{{ status }}</wa-badge>{% endif %}
+  </div>
+  <wa-tab-group id="{{ panel_id }}-contents" active="open" aria-label="{{ title }} panel" data-service-info
+                data-info-url="{{ url_for('home.panel_info', panel_id=panel_id) }}">
+    <wa-tab panel="open">Open</wa-tab>
+    <wa-tab panel="info">Info</wa-tab>
+    <wa-tab-panel name="open" active>
+      <div class="service-members" data-service-members>
+        {% for member in panel_members(panel_id, title, thumbnail) %}
+        <div class="member-row" data-member-row="{{ member.service }}">
+          <div class="member-action">
+            <button type="button" class="member-launch" data-member-start="{{ member.service }}"
+                    data-start-url="{{ url_for('home.start_member', panel_id=panel_id, service_name=member.service) }}"
+                    data-stop-url="{{ url_for('home.stop_member', panel_id=panel_id, service_name=member.service) }}"
+                    data-member-name="{{ member.name }}"
+                    aria-label="Start {{ member.name }}" title="Start {{ member.name }}">
+              <img src="{{ url_for('static', filename='images/' ~ member.image) }}" alt="">
+              <span class="member-launch-action" aria-hidden="true"><span class="member-launch-play">&#9654;</span><span class="member-launch-label">Start</span></span>
+            </button>
+          </div>
+          <section class="member-details" id="{{ panel_id }}-member-{{ member.service }}"
+                   data-member-detail="{{ member.service }}" aria-label="{{ member.name }}">
+            <h3>{{ member.name }}</h3>
+            <div class="panel-version" data-service-version="{{ member.service }}">Checking version…</div>
+            <p data-member-message role="status" aria-live="polite"></p>
+            {% if member.template %}{% include member.template %}
+            {% elif loop.first %}{{ caller() }}
+            {% else %}
+              <p>{{ member.description }}</p>
+              {% if member.path %}<a href="{{ member.path }}" data-service-port="{{ member.port }}">Open {{ member.name }}</a>{% endif %}
+            {% endif %}
+          </section>
+        </div>
+        {% endfor %}
+      </div>
+    </wa-tab-panel>
+    <wa-tab-panel name="info">
+      <div class="wa-stack">
+        <wa-button type="button" size="s" appearance="outlined" data-info-refresh>Refresh</wa-button>
+        <span data-info-message role="status" aria-live="polite">Open Info to load current service data.</span>
+        <div data-info-content></div>
+      </div>
+    </wa-tab-panel>
+  </wa-tab-group>
+  {% set destination = panel_destination(panel_id) %}
+  {% if destination %}
+  <a class="service-icon" href="{{ url_for('home.program_page', service_name=destination.program) if destination.program else destination.path }}"
+     {% if destination.port %}data-service-port="{{ destination.port }}"{% endif %}>
+    <img src="{{ url_for('static', filename='images/' ~ thumbnail) }}" alt="">
+    <span class="service-icon-label">{{ title }}</span>
+    <span class="panel-version" data-service-version="{{ version_service or panel_id }}">Checking version…</span>
+  </a>
+  {% endif %}
+  {% for corner, label in [('nw', 'top left'), ('ne', 'top right'), ('sw', 'bottom left'), ('se', 'bottom right'), ('w', 'left edge'), ('e', 'right edge'), ('n', 'top edge'), ('s', 'bottom edge')] %}
+  <button type="button" class="panel-resize" data-resize-corner="{{ corner }}"
+          aria-label="Resize {{ title }} from {{ label }}" aria-description="Drag to resize; arrow keys adjust by grid slots"></button>
+  {% endfor %}
+</section>
+{% endmacro %}

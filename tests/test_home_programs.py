@@ -1,10 +1,10 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("home_programs", ROOT / "src/artifact_editor/home/programs.py")
+spec = importlib.util.spec_from_file_location("home_programs", ROOT / "home/programs.py")
 programs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(programs)
 
@@ -16,35 +16,31 @@ class GlancesTests(unittest.TestCase):
             "com.docker.compose.project.working_dir": "/host/BookAdaptor",
         }}, "NetworkSettings": {"Networks": {"bookadaptor_home-network": {}}}}
 
-    def test_existing_container_is_started_idempotently(self):
-        with patch.object(programs, "_docker", side_effect=[self.app, [{"Id": "existing"}], None]) as docker:
-            programs.start_glances()
-        self.assertEqual(docker.call_count, 3)
-        self.assertIn("all=1", docker.call_args_list[1].args[1])
-        self.assertEqual(docker.call_args.args, ("POST", "/containers/existing/start"))
-        self.assertEqual(docker.call_args.kwargs["allowed"], (204, 304))
+    def test_launch_uses_compose_project_and_host_directory(self):
+        for service in programs.PROGRAMS:
+            with self.subTest(service=service), patch.object(programs, "_docker", return_value=self.app), patch.object(
+                programs.subprocess, "run"
+            ) as run:
+                programs.start_program(service)
+            command = run.call_args.args[0]
+            self.assertEqual(command, [
+                "docker", "compose", "--file", "/docker-compose.yaml",
+                "--project-directory", "/host/BookAdaptor",
+                "--project-name", "bookadaptor", "--profile", "on-demand",
+                "up", "-d", "--no-build", service,
+            ])
+            self.assertTrue(run.call_args.kwargs["check"])
+            self.assertEqual(run.call_args.kwargs["timeout"], 120)
 
-    def test_first_launch_uses_host_paths_ports_and_network_alias(self):
-        config = (ROOT / "docker-compose.yaml").read_text()
-        with patch("builtins.open", mock_open(read_data=config)), patch.object(
-            programs, "_docker", side_effect=[self.app, [], {"Id": "new"}, None]
-        ) as docker:
-            programs.start_glances()
-        body = docker.call_args_list[2].args[2]
-        host = body["HostConfig"]
-        self.assertIn("/host/BookAdaptor/glances.conf:/app/glances/conf/glances.conf", host["Binds"])
-        self.assertIn("/:/rootfs:ro", host["Binds"])
-        self.assertEqual(host["RestartPolicy"], {"Name": "no"})
-        self.assertEqual(host["PortBindings"]["61208/tcp"], [{"HostPort": "61208"}])
-        self.assertEqual(body["NetworkingConfig"]["EndpointsConfig"]["bookadaptor_home-network"]["Aliases"], ["glances"])
-
-    def test_simultaneous_creation_uses_existing_name(self):
-        config = (ROOT / "docker-compose.yaml").read_text()
-        with patch("builtins.open", mock_open(read_data=config)), patch.object(
-            programs, "_docker", side_effect=[self.app, [], {"message": "already exists"}, None]
-        ) as docker:
-            programs.start_glances()
-        self.assertEqual(docker.call_args.args[1], "/containers/bookadaptor-glances-1/start")
+    def test_compose_errors_and_timeouts_are_reported(self):
+        errors = [programs.subprocess.CalledProcessError(1, "docker", stderr="launch failed"),
+                  programs.subprocess.TimeoutExpired("docker", 120)]
+        for error in errors:
+            with self.subTest(error=error), patch.object(programs, "_docker", return_value=self.app), patch.object(
+                programs.subprocess, "run", side_effect=error
+            ):
+                with self.assertRaises(RuntimeError):
+                    programs.start_program("artifactserver")
 
     def test_readiness_handles_connection_refused(self):
         with patch.object(programs.http.client, "HTTPConnection") as connection:
@@ -52,26 +48,18 @@ class GlancesTests(unittest.TestCase):
             self.assertFalse(programs.glances_ready())
             connection.return_value.close.assert_called_once()
 
-    def test_redisinsight_creation_preserves_name_and_uses_optional_defaults(self):
-        config = (ROOT / "docker-compose.yaml").read_text()
-        with patch("builtins.open", mock_open(read_data=config)), patch.object(
-            programs, "_docker", side_effect=[self.app, [], {"Id": "insight"}, None]
-        ) as docker:
-            programs.start_program("redisinsight")
-        create = docker.call_args_list[2]
-        self.assertEqual(create.args[1], "/containers/create?name=redis_dashboard")
-        body = create.args[2]
-        self.assertEqual(body["HostConfig"]["Binds"], [])
-        self.assertEqual(body["HostConfig"]["PidMode"], "")
-        self.assertEqual(body["HostConfig"]["Tmpfs"], {})
-        self.assertEqual(body["HostConfig"]["PortBindings"]["5540/tcp"], [{"HostPort": "5540"}])
-        self.assertEqual(body["NetworkingConfig"]["EndpointsConfig"]["bookadaptor_home-network"]["Aliases"], ["redisinsight"])
-
     def test_redisinsight_readiness_uses_its_own_service_and_port(self):
         with patch.object(programs.http.client, "HTTPConnection") as connection:
             connection.return_value.getresponse.return_value.status = 200
             self.assertTrue(programs.program_ready("redisinsight"))
         connection.assert_called_once_with("redisinsight", 5540, timeout=1)
+
+    def test_library_readiness_uses_internal_port_and_library_route(self):
+        with patch.object(programs.http.client, "HTTPConnection") as connection:
+            connection.return_value.getresponse.return_value.status = 200
+            self.assertTrue(programs.program_ready("artifactserver"))
+        connection.assert_called_once_with("artifactserver", 8080, timeout=10)
+        connection.return_value.request.assert_called_once_with("GET", "/library/")
 
     def test_only_known_programs_can_be_started(self):
         with patch.object(programs, "_docker") as docker:

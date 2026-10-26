@@ -13,6 +13,9 @@ logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.DEBUG
 # pillow is noisy as hell.
 logging.getLogger("PIL").setLevel(logging.INFO)
 
+# Keep httpcore's per-connection debug events out of normal worker logs.
+logging.getLogger("httpcore").setLevel(logging.INFO)
+
 # if const.DEBUG:
 #     level = logging.DEBUG
 # else:

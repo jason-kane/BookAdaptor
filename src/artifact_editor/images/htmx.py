@@ -23,8 +23,8 @@ from artifact_editor import (
     tools,
 )
 from artifact_editor.characters import characters
-from artifact_editor.styles import htmx as styles_htmx
-from artifact_editor.styles import styles as styles
+from styler import htmx as styles_htmx
+from styler import styles as styles
 
 from .camera import htmx as camera_htmx
 from .scene import const as scene_const

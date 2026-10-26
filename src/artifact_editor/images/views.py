@@ -32,6 +32,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import HtmlLexer
 
 import comfy
+from comfy_launcher import workflow_destination
 import const
 import logger
 from animations.registry import registry as animation_registry
@@ -55,7 +56,7 @@ from artifact_editor.images import (
     images,
     scene,
 )
-from artifact_editor.styles import styles
+from styler import styles
 from artifact_editor.tools import (
     get_bookdir,
     get_surrounding_paragraphs,
@@ -346,7 +347,10 @@ def comfyui_workflow_open(
         return "No workflow available for this image.", 400
 
     # 2. Redirect to the workflow page for that workflow in comfyui.
-    workflow_url = const.COMFYUI_UI_URL + f"?workflow={workflow_fn}"
+    workflow_url = workflow_destination(
+        workflow_fn, const.COMFYUI_API_URL, const.COMFYUI_UI_URL,
+        request.host_url, os.environ.get("HOME_UI_URL"),
+    )
 
     # 3. This workflow needs to become the one we use from now on for this image.
     # image_xml.attrs["workflow_name"] = workflow_name

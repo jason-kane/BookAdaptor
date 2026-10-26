@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from flask import g, request, url_for
 
 import artifact_editor.images.htmx as images_htmx
-import artifact_editor.styles.htmx as styles_htmx
+import styler.htmx as styles_htmx
 from artifact_editor.author.author import Author
 import const
 import logger

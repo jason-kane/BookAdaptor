@@ -29,7 +29,7 @@ from artifact_editor.masterplan import masterplan
 from artifact_editor.phrases.pronunciation.pronunciation import (
     get_global_pronunciations,
 )
-from artifact_editor.styles import styles
+from styler import styles
 from artifact_editor.textoviva.textoviva import Textoviva
 from artifact_editor.tools import as_float, as_int, as_str, tags_to_dict
 from artifact_editor.types import aspect
@@ -1374,7 +1374,10 @@ class Chapter:
 
         duration_in_seconds = duration_in_frames / const.FPS
 
-        source_image = self.get_image_filename(image_xml)
+        # Global samplers pass a chapter stub rather than a paragraph image.
+        source_image = (
+            self.get_image_filename(image_xml) if image_xml.name == "image" else None
+        )
         if video_index not in [None, ""] and not use_image_source:
             source_image = self.get_last_frame(image_xml, video_index=video_index)
 
@@ -1540,7 +1543,8 @@ class Chapter:
 
             elif node.get("type") == "PrimitiveStringMultiline":
                 if node.get("title") in ["META"]:
-                    value = json.dumps(self.get_meta_dict(), indent=2).replace(
+                    metadata = self.get_meta_dict() if image_xml.name == "image" else {}
+                    value = json.dumps(metadata, indent=2).replace(
                         "\n", r"\n"
                     )
                     node["widgets_values"] = [value]
@@ -1571,15 +1575,18 @@ class Chapter:
                     node["widgets_values_named"] = {"value": prompt}
 
                 elif node.get("title") in ["PROMPT"]:
-                    prompt = template_environment.get(
-                        "PROMPT",
-                        self.get_prompt(image_xml),
+                    prompt = (
+                        template_environment["PROMPT"]
+                        if "PROMPT" in template_environment
+                        else self.get_prompt(image_xml)
                     )
                     node["widgets_values"] = [prompt]
                     node["widgets_values_named"] = {"value": prompt}
 
                 elif node.get("title") in ["SCENE"]:
-                    value = json.dumps(self.get_scene(image_xml), indent=2).replace(
+                    # Global style samples have no book scene or source passage.
+                    scene = self.get_scene(image_xml) if image_xml.name == "image" else {}
+                    value = json.dumps(scene, indent=2).replace(
                         "\n", r"\n"
                     )
                     node["widgets_values"] = [value]
@@ -1618,7 +1625,7 @@ class Chapter:
                     node["widgets_values_named"] = {"value": value}
 
             elif node.get("type") == "CustomStyler":
-                if node.get("title") in ["STYLE"]:
+                if node.get("title") in ["STYLE"] and image_xml.name == "image":
                     style_tag = self.get_image_style(image_xml)
                     style = styles.Style(style_tag)
                     log.warning(

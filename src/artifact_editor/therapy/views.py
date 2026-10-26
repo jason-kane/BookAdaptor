@@ -31,7 +31,7 @@ from artifact_editor import (
 )
 from artifact_editor.characters import characters
 from artifact_editor.images import htmx, images, selector
-from artifact_editor.styles import styles
+from styler import styles
 from artifact_editor.tools import (
     get_bookdir,
     get_bookurl,

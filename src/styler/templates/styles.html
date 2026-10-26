@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+
+{% block title %}<title>Styles</title>{% endblock %}
+
+{% block breadcrumbs %}
+<wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
+<wa-breadcrumb-item>Styler</wa-breadcrumb-item>
+{% endblock %}
+
+{% block scripts %}
+<script defer src="/static/js/styler-tags.js?v=12"></script>
+<script defer src="/static/js/styler-tier-sliders.js?v=1"></script>
+<script defer src="/static/js/styler-samples.js?v=20261026-80" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .styler-style-name { margin: 0 0 0.75rem; font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+    .styler-historical-description { max-width: 78ch; line-height: 1.6; }
+    .styler-style-heading { margin-bottom: 0.75rem; }
+    .styler-style-name-view { display: flex; align-items: center; gap: 0.35rem; }
+    .styler-style-heading .styler-style-name { margin: 0; }
+    .styler-style-name-view [data-style-name-edit] { display: none; }
+    wa-details[open] .styler-style-name-view [data-style-name-edit] { display: inline-flex; }
+    .styler-name-editor { display: flex; align-items: center; gap: 0.4rem; width: 100%; }
+    .styler-style-heading [hidden] { display: none !important; }
+    .styler-name-editor input[type="text"] { box-sizing: border-box; flex: 1; min-width: 8rem; padding: 0.45rem 0.6rem; color: inherit; background: var(--wa-color-surface-default); border: 1px solid var(--wa-color-surface-border); border-radius: var(--wa-border-radius-m); font: inherit; }
+    [data-style-name-status] { min-width: 3rem; color: var(--wa-color-text-quiet, #888); font-size: 0.8rem; }
+    .style-tag-picker-label { display: grid; gap: 0.35rem; width: 100%; }
+    .style-tag-picker { font: inherit; color: inherit; background: var(--wa-color-surface-default); border: 1px solid var(--wa-color-surface-border); border-radius: var(--wa-border-radius-m); padding: 0.65rem; width: 100%; box-sizing: border-box; }
+    .stockpile-entry { box-sizing: border-box; padding-inline: clamp(0.5rem, 2vw, 1rem); }
+
+    .style-tier-slider { display: block; margin: 0 0.75rem; }
+    .style-tier-slider::part(references) { position: relative; min-height: 2.75rem; }
+    .style-tier-slider [slot="reference"] {
+        position: absolute;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+        font-size: 0.7rem;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+
+    .history-item {
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .image_sample {
+        max-width: 300px;
+        display: block;
+        margin-bottom: 10px;
+    }
+    .card-overview {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 320px;
+        width: min(100%, 56rem);
+        position: relative;
+    }
+    .delete-style-button {
+        position: absolute;
+        z-index: 2;
+        top: 0.35rem;
+        right: 0.35rem;
+    }
+    .lost-style-dissolving {
+        opacity: 0;
+        filter: blur(14px) saturate(0.25);
+        transform: translateY(-8px) scale(0.97);
+        pointer-events: none;
+        transition: height 650ms cubic-bezier(0.22, 1, 0.36, 1),
+                    margin-block 650ms cubic-bezier(0.22, 1, 0.36, 1),
+                    padding-block 650ms cubic-bezier(0.22, 1, 0.36, 1),
+                    opacity 420ms ease, filter 560ms ease, transform 560ms ease;
+    }
+    [data-image-tags] wa-tag[role="button"] { cursor: pointer; }
+    .styler-image-tag-wall {
+        display: flex;
+        flex-flow: row wrap;
+        align-items: flex-start;
+        align-content: flex-start;
+        gap: 0.2rem 0.25rem;
+        width: 100%;
+    }
+    .styler-image-tag-wall wa-tag { flex: 0 1 auto; max-width: 100%; margin: 0; }
+    .styler-engine-heading { color: var(--wa-color-text-quiet, #888); font-size: 0.75rem; font-weight: 400; line-height: 1.3; }
+    .styler-engine-grid, .styler-engine-controls, .styler-tier-controls, .styler-retag-controls {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: start;
+        gap: 0.5rem;
+    }
+    .styler-engine-cell, .styler-engine-control { min-width: 0; }
+    .styler-character-placement { color: var(--wa-color-text-quiet, #888); font-size: 0.7rem; line-height: 1.2; }
+    .card-overview wa-details:not([open]) .styler-character-placement { display: none; }
+    .styler-engine-grid { grid-template-columns: repeat(3, 512px); max-width: 100%; overflow-x: auto; }
+    .styler-engine-grid .stylesample {
+        position: relative;
+        display: block;
+        box-sizing: border-box;
+        width: 512px;
+        height: 512px;
+        overflow: hidden;
+        background: var(--wa-color-surface-raised, #222);
+    }
+    .styler-engine-grid .stylesample > img,
+    .styler-engine-grid .stylesample > .styler-image-open,
+    .styler-engine-grid .stylesample > .styler-sample-placeholder {
+        position: absolute;
+        inset: 0;
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+    }
+    .styler-engine-grid .stylesample > img { max-width: none; object-fit: contain; }
+    .styler-engine-grid .styler-sample-placeholder { aspect-ratio: 1 / 1; }
+    .card-overview wa-details:not([open]) .styler-engine-grid .stylesample {
+        width: 256px;
+        height: 256px;
+    }
+    .card-overview wa-details:not([open]) .styler-engine-grid { grid-template-columns: repeat(3, 256px); }
+    .styler-engine-control { gap: 0.35rem; }
+    .styler-retag-controls .retag-status { min-height: 1.2em; }
+    .card-overview wa-details:not([open]) .styler-engine-heading,
+    .card-overview wa-details:not([open]) [data-image-tags],
+    .card-overview wa-details:not([open]) .styler-historical-description {
+        display: none;
+    }
+    .stylesample { width: 100%; aspect-ratio: 1; height: auto; }
+    ::part(body) {
+        padding: 0;
+    }
+    ::part(footer) {
+        padding: 0.25em;
+    }
+    .ranking {
+        background-color: rgb(74, 74, 74);
+        color: white;
+        border-radius: 8px;
+    }
+    .ranking wa-button {
+        height: 46px;
+    }
+    #rating_filter {
+        margin-left: 50px;
+        margin-right: 50px;
+    }
+    .chosen {
+        border: 4px solid red;
+    }
+    #styler-job-queue {
+        position: fixed;
+        z-index: 10000;
+        top: auto;
+        right: max(1rem, env(safe-area-inset-right));
+        bottom: max(1rem, env(safe-area-inset-bottom));
+        width: min(19rem, calc(100vw - 2rem));
+        height: min(70vh, 48rem);
+        max-height: calc(100dvh - 2rem);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
+        padding: 0.65rem;
+        border: 1px solid var(--wa-color-surface-border);
+        border-radius: var(--wa-border-radius-m);
+        background: color-mix(in srgb, var(--wa-color-surface-default) 92%, transparent);
+        box-shadow: 0 0.4rem 1.4rem rgb(0 0 0 / 28%);
+        backdrop-filter: blur(8px);
+        transition: height 380ms cubic-bezier(0.2, 0.8, 0.2, 1), width 380ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    padding 380ms ease, border-radius 380ms ease, box-shadow 380ms ease,
+                    grid-template-rows 380ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    #styler-job-queue h2 { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; margin: 0 0 0.5rem; transition: margin 250ms ease; }
+    .styler-queue-rate { padding: 0.1rem 0.2rem 0.5rem; }
+    #styler-maintenance-rate { display: block; width: 100%; --track-size: 0.22rem; --thumb-width: 0.85rem; --thumb-height: 0.85rem; }
+    .styler-queue-rate-labels { display: flex; justify-content: space-between; font-size: 0.68rem; line-height: 1rem; color: var(--wa-color-text-quiet, #aaa); }
+    .styler-queue-rate[data-mode="off"] [data-rate-mode="off"], .styler-queue-rate[data-mode="walk"] [data-rate-mode="walk"], .styler-queue-rate[data-mode="run"] [data-rate-mode="run"] { color: var(--wa-color-brand-fill-loud, #f89b7f); font-weight: 700; }
+    #styler-job-queue.is-minimized .styler-queue-rate { display: none; }
+    #styler-queue-count { color: var(--wa-color-text-quiet, #aaa); font-weight: 400; }
+    #styler-worker-reset-status { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; color: var(--wa-color-text-quiet, #888); }
+    #styler-queue-loading { width: 1rem; height: 1rem; }
+    #styler-queue-toggle { margin-inline-start: auto; }
+    #styler-queue-toggle wa-icon { display: inline-flex; transition: transform 300ms ease; }
+    #styler-job-queue.is-minimized { height: 3.25rem; width: min(15rem, calc(100vw - 2rem)); padding-block: 0.25rem; border-radius: 999px; box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 30%); grid-template-rows: auto 0fr; }
+    #styler-job-queue.is-minimized h2 { margin: 0; }
+    #styler-job-queue.is-minimized #styler-queue-toggle wa-icon { transform: rotate(180deg); }
+    .styler-queue-body { min-height: 0; overflow: hidden; opacity: 1; transform: translateY(0); transition: opacity 180ms ease, transform 260ms ease, visibility 0s linear; }
+    .styler-queue-body-inner { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+    #styler-queue-overflow { margin-top: auto; flex: none; }
+    #styler-queue-overflow[hidden], #styler-queue-count[hidden] { display: none; }
+    #styler-job-queue.is-minimized .styler-queue-body { visibility: hidden; opacity: 0; transform: translateY(0.5rem); pointer-events: none; transition-delay: 0s, 0s, 380ms; }
+    #styler-queue-current { display: flex; flex: none; flex-direction: column; min-height: 0; overflow: hidden; }
+    #styler-queue-current > .styler-queue-task, #styler-queue-near > .styler-queue-task { flex-shrink: 0; }
+    #styler-queue-near { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+    .styler-queue-task { position: relative; isolation: isolate; box-sizing: border-box; height: 2.25rem; flex: none; line-height: 1.25rem; display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 2.6rem 1.2rem 1.2rem; align-items: center; gap: 0.15rem; padding: 0.3rem 0.4rem 0.65rem; margin-bottom: 0.2rem; border-radius: 0; border-bottom: 1px solid var(--wa-color-surface-border); background: transparent; font-size: 0.78rem; }
+    .styler-queue-task:focus-visible { outline: 2px solid var(--wa-color-brand-fill-loud, #f89b7f); outline-offset: -2px; }
+    .styler-queue-find { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
+    .styler-queue-find::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
+    .styler-queue-find wa-icon { font-size: 0.85rem; }
+    .styler-queue-retry { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
+    .styler-queue-retry::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
+    .styler-queue-retry wa-icon { font-size: 0.85rem; }
+    .styler-queue-delete { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; color: var(--wa-color-danger-text, #f3a1a6); }
+    .styler-queue-delete::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
+    .styler-queue-delete wa-icon { font-size: 0.85rem; }
+    .styler-queue-task-type { min-width: 0; display: flex; align-items: center; justify-content: center; color: var(--wa-color-text-quiet, #aaa); }
+    .styler-queue-task-type wa-icon { font-size: 0.9rem; }
+    .styler-queue-task-content { display: grid; min-width: 0; gap: 0.2rem; }
+    .styler-queue-target-slot { grid-column: 4; }
+    .styler-queue-other-slot { grid-column: 5; }
+    .styler-queue-target-slot, .styler-queue-other-slot { display: flex; align-items: center; justify-content: center; width: 1.2rem; min-height: 1.5rem; }
+    .styler-queue-task-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .styler-queue-task wa-progress-bar { z-index: 1; position: absolute; inset-inline: 0.4rem; bottom: 0.15rem; display: block; width: auto; height: 0.3rem; min-height: 0.3rem; --track-height: 0.3rem; }
+    .styler-queue-task-state { min-width: 0; white-space: nowrap; text-align: right; color: var(--wa-color-text-quiet, #aaa); font-size: 0.68rem; text-transform: capitalize; }
+    .styler-queue-task[data-state="complete"] { background: color-mix(in srgb, #a5c9ae 20%, var(--wa-color-surface-default, #222)); }
+    .styler-queue-task[data-state="preparing"], .styler-queue-task[data-state="clearing_vram"], .styler-queue-task[data-state="running"] { background: color-mix(in srgb, #a9c8e8 20%, var(--wa-color-surface-default, #222)); }
+    .styler-queue-task[data-next="true"] { background: color-mix(in srgb, #e7d28a 22%, var(--wa-color-surface-default, #222)); }
+    .styler-queue-task[data-state="failed"] { background: color-mix(in srgb, #d99499 20%, var(--wa-color-surface-default, #222)); }
+    .styler-queue-task[data-state="failed"] .styler-queue-task-state { color: #f3a1a6; font-weight: 700; }
+    .styler-queue-task-expiring { isolation: isolate; overflow: hidden; transform-origin: center; animation: styler-queue-dissolve 1.2s cubic-bezier(.25,.7,.2,1) forwards; }
+    .styler-queue-task.styler-queue-task-expiring::before, .styler-queue-task.styler-queue-task-expiring::after { content: ""; position: absolute; z-index: 5; pointer-events: none; }
+    .styler-queue-task.styler-queue-task-expiring::before { inset: -30%; opacity: 0; background-image: radial-gradient(circle, rgb(255 228 176 / 95%) 0 1px, transparent 1.7px), radial-gradient(circle, rgb(160 210 255 / 80%) 0 1px, transparent 1.8px), radial-gradient(circle, rgb(255 255 255 / 90%) 0 .8px, transparent 1.5px); background-size: 13px 17px, 19px 23px, 11px 29px; background-position: 0 0, 6px 9px, 3px 14px; mix-blend-mode: screen; animation: styler-queue-dissolve-dust 1.2s ease-out forwards; }
+    .styler-queue-task.styler-queue-task-expiring::after { inset: -100% -40%; opacity: 0; background: linear-gradient(115deg, transparent 43%, rgb(255 241 208 / 12%) 48%, rgb(255 255 255 / 85%) 50%, rgb(255 202 135 / 28%) 52%, transparent 58%); transform: translateX(-65%) rotate(-8deg); animation: styler-queue-dissolve-flare 1.2s ease-out forwards; }
+    @keyframes styler-queue-dissolve { 0% { opacity: 1; filter: blur(0) saturate(1); transform: translate3d(0,0,0) rotate(0) scale(1); clip-path: inset(0 round .25rem); } 24% { opacity: 1; filter: blur(.2px) saturate(1.5); transform: translate3d(0,-2px,0) rotate(.25deg) scale(1.015); clip-path: inset(0 round .25rem); } 62% { opacity: .68; filter: blur(2px) saturate(1.25); transform: translate3d(7px,-7px,0) rotate(-1deg) scale(.97); clip-path: inset(8% 2% 11% 4% round .35rem); } 100% { opacity: 0; filter: blur(11px) saturate(.2); transform: translate3d(20px,-17px,0) rotate(3deg) scale(.78); clip-path: inset(47% 27% 42% 31% round 1rem); } }
+    @keyframes styler-queue-dissolve-dust { 0%, 18% { opacity: 0; transform: translateY(8px) scale(.85); } 42% { opacity: .9; } 100% { opacity: 0; transform: translate(24px,-24px) scale(1.25); } }
+    @keyframes styler-queue-dissolve-flare { 0%, 20% { opacity: 0; } 42% { opacity: .95; } 60% { opacity: .25; } 100% { opacity: 0; transform: translateX(75%) rotate(-8deg); } }
+    .styler-queue-overflow-block { display: grid; place-items: center; min-height: 2rem; margin-top: auto; border: 1px solid var(--wa-color-surface-border); border-radius: var(--wa-border-radius-m); background: var(--wa-color-surface-raised, #333); color: var(--wa-color-text-quiet, #aaa); font-size: 0.78rem; }
+    .styler-queue-destination-focus { animation: styler-destination-pulse 1.5s ease-out; }
+    @keyframes styler-destination-pulse { 0% { outline: 2px solid #ffb454; box-shadow: 0 0 0 0 rgb(255 180 84 / 65%); } 100% { outline-color: transparent; box-shadow: 0 0 0 0.8rem transparent; } }
+    @media (prefers-reduced-motion: reduce) { .styler-queue-destination-focus { animation: none; outline: 2px solid #ffb454; } }
+    @media (prefers-reduced-motion: reduce) { #styler-job-queue, #styler-job-queue *, #styler-queue-toggle wa-icon { transition-duration: 1ms !important; } }
+
+</style>
+{% endblock %}
+
+{% block body %}
+{% include "job-queue.html" %}
+{% include "sample-viewer.html" %}
+<div class="wa-cluster" style="margin-bottom:1rem">
+    <wa-button data-stockpile-scan>Scan Stockpile</wa-button>
+    <wa-button data-styles-scan>Scan Styles</wa-button>
+    <wa-button data-style-duplicate-scan>Scan Style Duplicates</wa-button>
+    <span data-stockpile-status role="status" aria-live="polite"></span>
+    <span data-styles-status role="status" aria-live="polite"></span>
+    <span data-style-duplicate-status role="status" aria-live="polite"></span>
+</div>
+
+<wa-slider 
+    id="rating_filter" 
+    name="rating_filter"
+    range
+    min="0" 
+    max="7"
+    hx-get="history"
+    hx-vals="js:{min_tier: this.minValue, max_tier: this.maxValue}"
+    hx-target="#history"
+    hx-swap="innerHTML"
+    min-value="{{ min_tier }}"
+    max-value="{{ max_tier }}"
+    step="1"
+>
+    <span slot="reference">F{{ count[0] }} ({{ fcount[0] }})</span>
+    <span slot="reference">D{{ count[1] }} ({{ fcount[1] }})</span>
+    <span slot="reference">C{{ count[2] }} ({{ fcount[2] }})</span>
+    <span slot="reference">B{{ count[3] }} ({{ fcount[3] }})</span>
+    <span slot="reference">A{{ count[4] }} ({{ fcount[4] }})</span>
+    <span slot="reference">S{{ count[5] }} ({{ fcount[5] }})</span>
+    <span slot="reference">SS{{ count[6] }} ({{ fcount[6] }})</span>
+    <span slot="reference">SSS{{ count[7] }} ({{ fcount[7] }})</span>
+</wa-slider>
+
+<div class="wa-cluster" id="history">{{ history|safe }}</div>
+
+<div class="wa-cluster">
+    <div class="wa-stack">
+        <h1>Styles!</h1>    
+        <form>
+            <textarea name="prompt" rows="4" cols="50">{{ base_prompt }}</textarea>
+            <br>
+            <wa-select name="style">
+            {% for style in chosen_styles %}
+                <wa-option value="{{ style }}">{{ style }}</wa-option>
+            {% endfor %}
+            </wa-select>
+            <wa-button 
+                hx-post="draw_sample"
+                variant="danger"
+                hx-swap="none">Draw Sample</wa-button>
+            <wa-button 
+                hx-post="draw_all_styles"
+                variant="danger"
+                hx-swap="none">Draw ALL Samples</wa-button>                
+        </form>
+        
+        <form>
+            <div class="wa-cluster">
+                <wa-select name="style">
+                    {% for style in all_styles %}
+                        {% if style not in chosen_styles %}
+                        <wa-option value="{{ as_id(style['name']) }}">{{ style['name'] }}</wa-option>
+                        {% endif %}
+                    {% endfor %}
+                </wa-select>
+                <wa-button 
+                    hx-post="add_style"
+                    variant="primary"
+                    hx-swap="none">Add Style</wa-button>    
+            </div>
+        </form>
+        
+        <form>
+            <div class="wa-cluster">
+                <wa-select name="style">
+                    {% for style in chosen_styles %}
+                        <wa-option value="{{ style['name'] }}">{{ style['name'] }}</wa-option>
+                    {% endfor %}
+                </wa-select>
+                <wa-button 
+                    hx-post="remove_style"
+                    variant="primary"
+                    hx-swap="none">Remove Style</wa-button>            
+            </div>
+        </form>
+    </div>
+
+    <div class="wa-stack">
+        <h1>Loras!</h1>
+        <form>
+            <textarea
+                name="prompt"
+                rows="4"
+                cols="50"
+            >{{ base_prompt }}</textarea>
+            <br>
+            {{ lora_selector|safe }}
+            <wa-button 
+                hx-post="draw_sample"
+                variant="danger"
+                hx-swap="none">Draw Sample</wa-button> 
+            <wa-button 
+                hx-post="draw_all_lora"
+                variant="danger"
+                hx-swap="none">Draw ALL Lora</wa-button>                    
+        </form>
+    </div>
+
+    <wa-button 
+        hx-post="export_styles"
+        variant="danger"
+        hx-swap="none">Export Styles as Pages</wa-button>
+
+</div>
+
+{% endblock %}

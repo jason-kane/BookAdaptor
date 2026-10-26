@@ -21,7 +21,7 @@ import flask
 
 from text_to_image.registry import registry as t2i_registry
 
-import artifact_editor.styles.styles as styles
+import styler.styles as styles
 import artifact_editor.images.images as images
 import artifact_editor.chapter.chapter as chapter
 
@@ -34,7 +34,7 @@ from flask import (
     url_for,
 )
 
-import artifact_editor.styles.htmx as htmx
+import styler.htmx as htmx
 import artifact_editor.images.htmx as images_htmx
 import const
 import logger

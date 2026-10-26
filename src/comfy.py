@@ -25,6 +25,56 @@ log = logger.log(__name__)
 workflow_progress = ContextVar("comfy_workflow_progress", default=None)
 
 
+def free_vram(minimum_free_gib: float = 8.0, timeout_seconds: float = 90.0):
+    """Unload ComfyUI models and wait until enough VRAM is actually available."""
+    api_url = const.COMFYUI_API_URL.rstrip("/")
+    minimum_free = minimum_free_gib * 1024 ** 3
+    deadline = time.monotonic() + timeout_seconds
+    restarted = False
+    with httpx.Client(timeout=httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)) as client:
+        response = client.post(api_url + "/free", json={"unload_models": True, "free_memory": True})
+        response.raise_for_status()
+        free_values = []
+        while True:
+            try:
+                response = client.get(api_url + "/system_stats")
+                response.raise_for_status()
+                devices = response.json().get("devices", [])
+                free_values = [device.get("vram_free") for device in devices
+                               if device.get("type") == "cuda" and isinstance(device.get("vram_free"), (int, float))]
+            except httpx.HTTPError:
+                if not restarted:
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(1, remaining))
+                continue
+            if free_values and max(free_values) >= minimum_free:
+                log.info("ComfyUI GPU models unloaded", free_vram_gib=round(max(free_values) / 1024 ** 3, 2))
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if not restarted:
+                    restarted = True
+                    log.warning("ComfyUI retained GPU memory after unloading models; restarting it",
+                                free_vram_gib=round(max(free_values, default=0) / 1024 ** 3, 2),
+                                required_free_vram_gib=minimum_free_gib)
+                    from comfy_recovery import restart_comfyui
+                    recovery = restart_comfyui()
+                    log.info("ComfyUI VRAM recovery result", result=recovery)
+                    # A restart clears custom-node caches that the /free endpoint
+                    # cannot reach. Give the restarted API a fresh readiness window.
+                    deadline = time.monotonic() + timeout_seconds
+                    continue
+                available = max(free_values, default=0) / 1024 ** 3
+                raise TimeoutError(
+                    f"ComfyUI did not free enough VRAM for image tagging "
+                    f"({available:.2f} GiB free; need {minimum_free_gib:.2f} GiB)"
+                )
+            time.sleep(min(0.5, remaining))
+
+
 class Workflow:
     """
     Represents a specific comfyui workflow.  Workflows are read from JSON files
@@ -87,6 +137,7 @@ def ui_to_api_workflow(workflow: Workflow) -> Workflow:
     # A worker can resume while ComfyUI is still restarting after a failed
     # render. Only retry conversion, which does not submit a render job.
     deadline = time.monotonic() + 60
+    comfyui_start_requested = False
     try:
         while True:
             output = subprocess.run(command, capture_output=True)
@@ -112,6 +163,14 @@ def ui_to_api_workflow(workflow: Workflow) -> Workflow:
             remaining = deadline - time.monotonic()
             if error.get("code") != "connection_error" or remaining <= 0:
                 raise RuntimeError(f"ComfyUI workflow conversion failed: {message}")
+            if not comfyui_start_requested:
+                comfyui_start_requested = True
+                log.warning("ComfyUI is unavailable; requesting service startup", error=message)
+                try:
+                    from worker_startup import ensure_worker_services
+                    ensure_worker_services(comfyui=True)
+                except Exception:
+                    log.exception("Unable to start ComfyUI after a workflow conversion connection failure")
             log.warning("Waiting for ComfyUI before workflow conversion", error=message)
             time.sleep(min(2, remaining))
     finally:

@@ -1,6 +1,7 @@
 import typing as t
+from urllib.parse import urlsplit, urlunsplit
 
-from flask import Flask, g
+from flask import Flask, g, redirect, request
 from flask_cors import CORS
 from redis.maint_notifications import MaintNotificationsConfig
 from werkzeug.routing import BaseConverter
@@ -22,7 +23,6 @@ from artifact_editor.chapter.views import bp as chapter
 from artifact_editor.characters.views import bp as characters
 from artifact_editor.props.views import bp as props
 from artifact_editor.frames.views import bp as frames
-from artifact_editor.home.views import bp as home
 from artifact_editor.images.views import bp as images
 from artifact_editor.library.views import bp as library
 from artifact_editor.masterplan.views import bp as masterplan
@@ -31,7 +31,7 @@ from artifact_editor.publish.views import bp as publish
 from artifact_editor.publish.youtube.oauth import bp as youtube_oauth
 from artifact_editor.publish.tiktok.oauth import bp as tiktok_oauth
 from artifact_editor.static import bp as static
-from artifact_editor.styles.views import bp as styles
+from styler.views import bp as styles
 from artifact_editor.therapy.views import bp as therapy
 from artifact_editor.workflow_templates.views import bp as workflow_templates
 from artifact_editor.todo.views import bp as todo
@@ -140,6 +140,17 @@ class RegexConverter(BaseConverter):
 
 def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     app = Flask(__name__)
+
+    @app.get("/")
+    def home_redirect():
+        # Keep existing Home breadcrumbs working on the editor's own port.
+        host = urlsplit(request.host_url).hostname
+        if ":" in host:
+            host = f"[{host}]"
+        return redirect(app.config.get("HOME_URL") or urlunsplit(
+            (request.scheme, f"{host}:8080", "/", "", "")
+        ))
+
     from artifact_editor.websocket_url import websocket_url
     app.jinja_env.globals["websocket_url"] = websocket_url
     app.register_blueprint(youtube_oauth)
@@ -199,10 +210,6 @@ def create_app(config_dict: t.Optional[dict] = None) -> Flask:
         url_prefix="/todo"
     )
 
-    app.register_blueprint(
-        home,
-        url_prefix="/"
-    )
 
     #print(app.url_map)
     print('Finished importing blueprints.')

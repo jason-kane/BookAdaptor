@@ -1,0 +1,125 @@
+{
+  "_fragment": {
+    "name": "sample-image-tags",
+    "description": "Vision tagging using the existing Qwen 3.5 LLM and an explicit sample image input.",
+    "terminal": true,
+    "source": "templates/chat.qwen35-json.Qwen 3.5 4b bf16.json",
+    "inputs": {},
+    "outputs": {},
+    "params": {
+      "load_clip_clip_name": {
+        "type": "STRING",
+        "binds": "1.clip_name"
+      },
+      "load_clip_type": {
+        "type": "STRING",
+        "binds": "1.type",
+        "default": "stable_diffusion"
+      },
+      "load_clip_device": {
+        "type": "STRING",
+        "binds": "1.device",
+        "default": "default"
+      },
+      "generate_text_max_length": {
+        "type": "INT",
+        "binds": "3.max_length",
+        "default": 256
+      },
+      "generate_text_sampling_mode": {
+        "type": "STRING",
+        "binds": "3.sampling_mode",
+        "default": "on"
+      },
+      "generate_text_thinking": {
+        "type": "BOOLEAN",
+        "binds": "3.thinking",
+        "default": false
+      },
+      "generate_text_use_default_template": {
+        "type": "BOOLEAN",
+        "binds": "3.use_default_template",
+        "default": true
+      },
+      "generate_text_mtp": {
+        "type": "STRING",
+        "binds": "3.mtp",
+        "default": "auto"
+      },
+      "save_text_format": {
+        "type": "STRING",
+        "binds": "8.format",
+        "default": "txt"
+      },
+      "image": {
+        "type": "STRING",
+        "binds": "20.image",
+        "default": "{{IMAGE}}"
+      },
+      "output_prefix": {
+        "type": "STRING",
+        "binds": "8.filename_prefix",
+        "default": "{{OUTPUT_PREFIX}}"
+      },
+      "prompt": {
+        "type": "STRING",
+        "binds": "3.prompt",
+        "default": "Describe the visible artistic style of this image using exactly 4 or 5 distinct short tags. Prefer medium, technique, palette, texture, lighting or composition; avoid subject names and artist guesses. Return only a JSON object with a tags array, for example {\"tags\":[\"watercolor\",\"muted palette\",\"loose brushwork\",\"soft edges\"]}. Each tag should be 1-4 words, lowercase. If the image cannot be assessed or no reliable visual style tags can be identified, return {\"tags\":[]} instead of inventing tags."
+      }
+    }
+  },
+  "1": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "3": {
+    "inputs": {
+      "max_length": 256,
+      "sampling_mode": "off",
+      "thinking": false,
+      "use_default_template": true,
+      "mtp": "auto",
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": "Describe the visible artistic style of this image using exactly 4 or 5 distinct short tags. Prefer medium, technique, palette, texture, lighting or composition; avoid subject names and artist guesses. Return only a JSON object with a tags array, for example {\"tags\":[\"watercolor\",\"muted palette\",\"loose brushwork\",\"soft edges\"]}. Each tag should be 1-4 words, lowercase. If the image cannot be assessed or no reliable visual style tags can be identified, return {\"tags\":[]} instead of inventing tags.",
+      "system_prompt": "You label images for a style reference library. Inspect the actual image. Return valid JSON only.",
+      "image": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "8": {
+    "inputs": {
+      "format": "txt",
+      "text": [
+        "3",
+        0
+      ],
+      "filename_prefix": "{{OUTPUT_PREFIX}}"
+    },
+    "class_type": "SaveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{IMAGE}}"
+    }
+  }
+}

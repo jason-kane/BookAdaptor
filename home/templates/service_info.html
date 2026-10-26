@@ -1,0 +1,42 @@
+<p class="service-info-time">Checked <time datetime="{{ checked_at }}">{{ checked_at }}</time></p>
+{% for service in services %}
+<section class="service-info-section" aria-label="{{ service.name }} service information">
+  <h3>{{ service.name }}</h3>
+  {% for container in service.containers %}
+    <dl class="service-info-fields">
+      <dt>Container</dt><dd>{{ container.Name or container.ID }}</dd>
+      <dt>State</dt><dd>{{ container.State }}</dd>
+      <dt>Status</dt><dd>{{ container.Status or '—' }}</dd>
+      <dt>Health</dt><dd>{{ container.Health or 'Not configured' }}</dd>
+      <dt>Image</dt><dd>{{ container.Image }}</dd>
+      <dt>Command</dt><dd>{{ container.Command or '—' }}</dd>
+      <dt>Networks</dt><dd>{{ container.Networks or '—' }}</dd>
+      {% if container.CreatedAt %}<dt>Created</dt><dd>{{ container.CreatedAt }}</dd>{% endif %}
+      {% if container.RunningFor %}<dt>Age</dt><dd>{{ container.RunningFor }}</dd>{% endif %}
+      <dt>Exit code</dt><dd>{{ container.ExitCode }}</dd>
+      <dt>Ports</dt><dd>
+        {% for port in container.Publishers or [] %}
+          <div>{{ port.URL }}{% if port.PublishedPort %}:{{ port.PublishedPort }} → {% else %} → {% endif %}{{ port.TargetPort }}/{{ port.Protocol }}</div>
+        {% else %}None published{% endfor %}
+      </dd>
+    </dl>
+  {% else %}
+    <p>No container created.</p>
+  {% endfor %}
+  {% for stat in service.stats %}
+    <dl class="service-info-fields">
+      <dt>Resource usage</dt><dd>{{ stat.Name or stat.Container }}</dd>
+      <dt>CPU</dt><dd>{{ stat.CPUPerc or '—' }}</dd>
+      <dt>Memory</dt><dd>{{ stat.MemUsage or '—' }} ({{ stat.MemPerc or '—' }})</dd>
+      <dt>Network I/O</dt><dd>{{ stat.NetIO or '—' }}</dd>
+      <dt>Disk I/O</dt><dd>{{ stat.BlockIO or '—' }}</dd>
+      <dt>Processes</dt><dd>{{ stat.PIDs or '—' }}</dd>
+    </dl>
+  {% endfor %}
+  {% if service.stats_error %}<p role="status">{{ service.stats_error }}</p>{% endif %}
+  <details>
+    <summary>Raw Compose data</summary>
+    <pre>{{ {'containers': service.containers, 'stats': service.stats} | tojson(indent=2) }}</pre>
+  </details>
+</section>
+{% endfor %}

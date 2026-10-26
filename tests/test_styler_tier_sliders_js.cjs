@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+(async () => {
+    const dom = new JSDOM('<wa-slider class="style-tier-slider"></wa-slider>', {runScripts:'outside-only'});
+    const {window} = dom;
+    window.customElements.define('wa-slider', class extends window.HTMLElement {});
+    window.eval(fs.readFileSync('src/artifact_editor/static/js/styler-tier-sliders.js','utf8'));
+    await new Promise(resolve=>setImmediate(resolve));
+    const slider = window.document.querySelector('wa-slider');
+    assert.equal(slider.valueFormatter(0),'F Tier');
+    assert.equal(slider.valueFormatter(4),'A Tier');
+    assert.equal(slider.valueFormatter(7),'SSS Tier');
+    const added = window.document.createElement('wa-slider');
+    added.className = 'style-tier-slider';
+    window.document.body.append(added);
+    window.document.dispatchEvent(new window.CustomEvent('htmx:load',{detail:{elt:added}}));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(added.valueFormatter(2),'C Tier');
+    dom.window.close();
+    console.log('Styler tier tooltip formatting passed');
+})();

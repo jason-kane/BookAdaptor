@@ -1,0 +1,87 @@
+{
+  "_fragment": {
+    "name": "sample-image-tags-qwenvl",
+    "description": "Style tagging with Qwen2.5-VL 7B Q4_K_M through llama.cpp.",
+    "terminal": true,
+    "inputs": {},
+    "outputs": {},
+    "params": {
+      "model": {
+        "type": "STRING",
+        "binds": "1.model"
+      },
+      "max_tokens": {
+        "type": "INT",
+        "binds": "3.max_tokens"
+      },
+      "prompt": {
+        "type": "STRING",
+        "binds": "3.prompt"
+      },
+      "image": {
+        "type": "STRING",
+        "binds": "20.image",
+        "default": "{{IMAGE}}"
+      },
+      "output_prefix": {
+        "type": "STRING",
+        "binds": "8.filename_prefix",
+        "default": "{{OUTPUT_PREFIX}}"
+      }
+    }
+  },
+  "1": {
+    "inputs": {
+      "model": "Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+      "mmproj_path": "",
+      "n_ctx": 2048,
+      "n_gpu_layers": -1
+    },
+    "class_type": "LoadQwen2_5_VL_GGUF",
+    "_meta": {
+      "title": "Load Qwen2.5-VL 7B Q4_K_M"
+    }
+  },
+  "3": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "image": [
+        "20",
+        0
+      ],
+      "prompt": "Describe the visible artistic style of this image using 4 or 5 distinct short tags. Prefer medium, technique, palette, texture, lighting or composition; avoid subject names and artist guesses. Return only a JSON object with a tags array, for example {\"tags\":[\"watercolor\",\"muted palette\",\"loose brushwork\",\"soft edges\"]}. Each tag should be 1-4 words, lowercase. If the image cannot be assessed or no reliable visual style tags can be identified, return {\"tags\":[]} instead of inventing tags.",
+      "max_tokens": 128,
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "top_k": 1,
+      "seed": 0
+    },
+    "class_type": "Qwen2_5_VL_GGUF_Describe_Image",
+    "_meta": {
+      "title": "Generate Style Tags"
+    }
+  },
+  "8": {
+    "inputs": {
+      "format": "txt",
+      "text": [
+        "3",
+        0
+      ],
+      "filename_prefix": "{{OUTPUT_PREFIX}}"
+    },
+    "class_type": "SaveText",
+    "_meta": {
+      "title": "Save Tags"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{IMAGE}}"
+    }
+  }
+}

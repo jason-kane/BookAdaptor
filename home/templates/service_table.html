@@ -1,0 +1,51 @@
+<div id="service-table-view" class="service-table-view">
+  <div class="table-tools" data-table-tools hidden>
+    <button type="button" data-table-copy>Copy filtered rows</button>
+    <button type="button" data-table-csv>Download CSV</button>
+    <button type="button" data-table-reset>Reset table</button>
+    <span data-table-export-status role="status" aria-live="polite"></span>
+  </div>
+  <table class="service-table">
+    <caption>Services <small class="service-table-hint">Click headers to sort; drag headers to rearrange columns.</small></caption>
+    <thead><tr>
+      <th scope="col">Name</th><th scope="col">Compose service</th>
+      <th scope="col">Version</th><th scope="col">State</th>
+      <th scope="col">Image</th><th scope="col">Ports</th>
+      <th scope="col">Status</th><th scope="col" class="table-actions-heading">Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for row in service_table_rows %}
+      <tr>
+        <th scope="row">{{ row.name }}</th>
+        <td><code>{{ row.service }}</code></td>
+        <td data-service-version="{{ row.service }}">Checking…</td>
+        <td data-service-state="{{ row.service }}">Checking…</td>
+        <td data-service-image="{{ row.service }}">Checking…</td>
+        <td data-service-ports="{{ row.service }}">Checking…</td>
+        <td>{% if row.status %}<wa-badge variant="{{ 'danger' if row.status == 'Broken' else 'warning' }}" appearance="accent" pill>{{ row.status }}</wa-badge>{% else %}—{% endif %}</td>
+        <td class="table-actions">
+          {% if row.program %}<a href="{{ url_for('home.program_page', service_name=row.program) }}">Open</a>
+          {% elif row.path %}<a href="{{ row.path }}" data-service-port="{{ row.port }}">Open</a>{% endif %}
+          <button type="button" class="table-info-toggle" data-table-info="service-table-detail-{{ loop.index }}"
+                  aria-expanded="false" aria-controls="service-table-detail-{{ loop.index }}">Info</button>
+        </td>
+      </tr>
+      <tr id="service-table-detail-{{ loop.index }}" class="table-detail" hidden>
+        <td colspan="8">
+          <div data-service-info data-info-url="{{ url_for('home.panel_info', panel_id=row.panel) }}">
+            <button type="button" data-info-refresh>Refresh</button>
+            <span data-info-message role="status" aria-live="polite"></span>
+            <div data-info-content></div>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr>
+      {% for label in ['Name', 'Compose service', 'Version', 'State', 'Image', 'Ports', 'Status'] %}
+      <th data-label="{{ label }}" data-column="{{ label | lower | replace(' ', '-') }}"></th>
+      {% endfor %}
+      <th data-filter="false"></th>
+    </tr></tfoot>
+  </table>
+</div>

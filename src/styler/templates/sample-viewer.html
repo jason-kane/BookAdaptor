@@ -1,0 +1,53 @@
+<style>
+    .styler-image-open {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        appearance: none;
+        background-image: none;
+        box-shadow: none;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        cursor: zoom-in;
+        line-height: 0;
+    }
+    .styler-image-open::before,
+    .styler-image-open::after { content: none; display: none; }
+    .styler-image-open:focus-visible { outline: 2px solid var(--wa-color-brand-fill-loud); outline-offset: 3px; }
+    .styler-image-open > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .styler-image-viewer-layout { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
+    #styler-image-full { width: 100%; height: 78vh; object-fit: contain; }
+    #styler-viewer-progress {
+        min-width: 0;
+        margin: 0 1rem 1rem;
+        padding: 0.75rem 1rem 1rem;
+        border: 1px solid var(--wa-color-surface-border);
+        border-radius: var(--wa-border-radius-m);
+    }
+    #styler-viewer-progress[hidden] { display: none; }
+    #styler-viewer-progress legend { padding: 0 0.5rem; font-weight: 600; }
+    #styler-viewer-progress-tags { align-items: flex-start; }
+    #styler-viewer-progress { opacity: 1; transform: scale(1); filter: blur(0); transition: opacity 600ms ease, transform 600ms ease, filter 600ms ease; transform-origin: center; }
+    #styler-viewer-progress.styler-progress-dissolving { opacity: 0; transform: scale(0.96); filter: blur(10px) saturate(0.3); }
+    @media (prefers-reduced-motion: reduce) { #styler-viewer-progress { transition-duration: 1ms; } }
+</style>
+<wa-dialog id="styler-image-viewer" label="Style sample" style="--width: 96vw;">
+    <fieldset id="styler-viewer-progress" hidden>
+        <legend>Now generating...</legend>
+        <div class="wa-stack wa-gap-s">
+            <span id="styler-viewer-progress-label"></span>
+            <div id="styler-viewer-progress-tags" class="wa-cluster" aria-label="Style tags"></div>
+            <wa-progress-bar id="styler-viewer-progress-bar" label="Sample generation progress"></wa-progress-bar>
+        </div>
+    </fieldset>
+    <div class="styler-image-viewer-layout">
+        <wa-button id="styler-image-previous" aria-label="Previous image" appearance="plain">❮</wa-button>
+        <img id="styler-image-full" alt="Style sample">
+        <wa-button id="styler-image-next" aria-label="Next image" appearance="plain">❯</wa-button>
+    </div>
+</wa-dialog>
+<script defer src="/static/js/styler-image-viewer.js?v=7"></script>

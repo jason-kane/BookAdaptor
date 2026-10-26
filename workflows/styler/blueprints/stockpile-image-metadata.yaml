@@ -1,0 +1,9 @@
+pipeline:
+  - fragment: sample-image-tags
+    alias: metadata
+    params:
+      load_clip_clip_name: qwen3.5_4b_bf16.safetensors
+      generate_text_max_length: 768
+      generate_text_thinking: false
+      generate_text_sampling_mode: 'off'
+      prompt: 'Inspect the actual image. Return only a JSON object with description and tags. The description must be a concise, specific account of visible subjects, setting, composition, colors, lighting, medium and style. Describe what is visible without inventing identities or hidden context. The tags array must contain 1 to 8 distinct short lowercase tags useful for finding this stock image, including subjects and visual characteristics. Use 1-4 words per tag. Example: {"description":"A small red boat on a calm lake beneath misty mountains, rendered in soft watercolor.","tags":["red boat","lake","misty mountains","watercolor","soft light"]}.'

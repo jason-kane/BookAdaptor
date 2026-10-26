@@ -5,6 +5,10 @@ import os
 import time
 import uuid
 
+from styler.queue_history import publish_queue_event, recent_completions, recent_failures
+from styler.queue_priority import promote_job
+from styler.idle_maintenance import IdleMaintenance, QUEUE as IDLE_QUEUE, mark_activity, pop_idle_job, get_mode, set_mode, background_ready
+
 import redis
 from redis.maint_notifications import MaintNotificationsConfig
 from flask import Flask
@@ -35,7 +39,7 @@ def redis_connection():
     )
 
 
-def publish_progress(client, job_id, percent, message, state="running"):
+def publish_progress(client, job_id, percent, message, state="running", action=None):
     event = {
         "job_id": job_id,
         "percent": max(0, min(100, int(percent))),
@@ -44,9 +48,12 @@ def publish_progress(client, job_id, percent, message, state="running"):
     }
     previous = client.hgetall(f"video_job:{job_id}")
     event.update({key: value for key, value in previous.items() if key.startswith("comfy_")})
+    action = action or previous.get('action')
+    if action:
+        event['action'] = action
     client.hset(f"video_job:{job_id}", mapping=event)
     client.expire(f"video_job:{job_id}", 86400)
-    client.publish(VIDEO_EVENTS, json.dumps(event))
+    publish_queue_event(client, VIDEO_EVENTS, event)
 
 
 def publish_comfy_progress(client, job_id, percent, message):
@@ -117,7 +124,7 @@ def run_video_job(client, task):
                "chapter_missing_images": "Preparing missing images",
                "chapter_missing_animations": "Preparing missing animations"}.get(
                    task.get("action"), "Preparing video render")
-    publish_progress(client, job_id, 0, message)
+    publish_progress(client, job_id, 0, message, action=task.get('action'))
     from comfy import workflow_progress
     progress_token = workflow_progress.set(
         lambda percent, message: publish_comfy_progress(client, job_id, percent, message)
@@ -241,20 +248,429 @@ def video_worker():
     os.environ["VIDEO_WORKER_PROCESS"] = "1"
     client = redis_connection()
     log.info("Video render worker started; waiting on Redis queue %s", VIDEO_QUEUE)
+    reset_job_id = client.get('styler:worker-reset-ready')
+    if reset_job_id:
+        client.delete('styler:worker-reset-ready', 'styler:worker-reset-pending')
+        from styler.jobs import EVENTS
+        client.publish(EVENTS, json.dumps(dict(
+            job_id=reset_job_id, action='worker_reset', state='worker_ready',
+            job_type='Worker reset', message='Worker restarted and ready')))
+    client.delete('styler:worker-running')
+    client.delete('styler:worker-model')
+    styler_engine = None
+    tag_style = None
+    import const
+    from styler.image_tags import PRIORITY_QUEUE, QUEUE as TAG_QUEUE
+    maintenance = IdleMaintenance(client, const.LIBRARY_DIR, VIDEO_QUEUE, PRIORITY_QUEUE, TAG_QUEUE)
+    mark_activity(client)
     while True:
         try:
-            queued = client.brpop(VIDEO_QUEUE, timeout=5)
-            if queued is None:
+            client.set('styler:worker-model-batching', '1', ex=30)
+            from styler.image_tags import PRIORITY_QUEUE, pop_tag_job, run_job as run_tag_job
+            from styler.jobs import pop_engine_sample, pop_interactive_job
+            from styler.style_scan import pop_scan_job
+            payload = None
+            if payload is None:
+                priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                if priority_tag:
+                    styler_engine = None
+                    client.delete('styler:worker-model')
+                    if handle_worker_reset_task(client, priority_tag):
+                        return
+                    if priority_tag.get('action') == 'styler_tag_sample':
+                        tag_style = priority_tag['style_tag']
+                    styler_engine = run_priority_task(client, priority_tag)
+                    continue
+            # Continue work for the loaded generation model before switching
+            # to another non-priority task. Priority tag jobs were checked above.
+            if styler_engine:
+                payload = pop_engine_sample(client, VIDEO_QUEUE, styler_engine)
+            if payload is None:
+                payload = pop_interactive_job(client, VIDEO_QUEUE)
+            if payload is None:
+                payload = pop_scan_job(client, VIDEO_QUEUE)
+            if payload is None:
+                from styler.backfill import STATE as BACKFILL_STATE
+                backfill_ready = background_ready(client)
+                if client.exists(BACKFILL_STATE) and backfill_ready:
+                    pending_payload = client.rpop(VIDEO_QUEUE)
+                    queued = (VIDEO_QUEUE, pending_payload) if pending_payload else None
+                else:
+                    tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                    if tag_payload:
+                        styler_engine = None
+                        client.delete('styler:worker-model')
+                        tag_style = tag_payload['style_tag']
+                        run_tracked_task(client, run_tag_job, client, tag_payload)
+                        continue
+                    queued = client.brpop(VIDEO_QUEUE, timeout=5)
+                if queued is None:
+                    # A priority request may have arrived while BRPOP waited.
+                    priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                    if priority_tag:
+                        styler_engine = None
+                        client.delete('styler:worker-model')
+                        if handle_worker_reset_task(client, priority_tag):
+                            return
+                        if priority_tag.get('action') == 'styler_tag_sample':
+                            tag_style = priority_tag['style_tag']
+                        styler_engine = run_priority_task(client, priority_tag)
+                        continue
+                    # Backfill can mint new sample work on demand. Drain an
+                    # already queued image-tag task before creating that work,
+                    # so hidden maintenance jobs cannot jump ahead of the
+                    # queue's visible next task.
+                    tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                    if tag_payload:
+                        styler_engine = None
+                        client.delete('styler:worker-model')
+                        tag_style = tag_payload['style_tag']
+                        run_tracked_task(client, run_tag_job, client, tag_payload)
+                        continue
+                    import const
+                    from styler.backfill import next_sample, next_tag_sample
+                    backfill_ready = background_ready(client)
+                    background = next_sample(client, VIDEO_QUEUE, const.LIBRARY_DIR, styler_engine) if backfill_ready else None
+                    if background:
+                        payload = json.dumps(background)
+                    else:
+                        from styler.backfill import STATE as BACKFILL_STATE
+                        from styler.image_tags import QUEUE as TAG_QUEUE, run_job as run_tag_job
+                        tag_task = next_tag_sample(client, VIDEO_QUEUE, const.LIBRARY_DIR) if backfill_ready else None
+                        if tag_task:
+                            priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                            if priority_tag:
+                                client.lpush(TAG_QUEUE, json.dumps(tag_task))
+                                styler_engine = None
+                                client.delete('styler:worker-model')
+                                if handle_worker_reset_task(client, priority_tag):
+                                    return
+                                if priority_tag.get('action') == 'styler_tag_sample':
+                                    tag_style = priority_tag['style_tag']
+                                styler_engine = run_priority_task(client, priority_tag)
+                                continue
+                            styler_engine = None
+                            client.delete('styler:worker-model')
+                            tag_style = tag_task['style_tag']
+                            run_tracked_task(client, run_tag_job, client, tag_task)
+                        elif not client.exists(BACKFILL_STATE) or not backfill_ready:
+                            tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                            if tag_payload:
+                                priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                                if priority_tag:
+                                    client.lpush(TAG_QUEUE, json.dumps(tag_payload))
+                                    styler_engine = None
+                                    client.delete('styler:worker-model')
+                                    if handle_worker_reset_task(client, priority_tag):
+                                        return
+                                    if priority_tag.get('action') == 'styler_tag_sample':
+                                        tag_style = priority_tag['style_tag']
+                                    styler_engine = run_priority_task(client, priority_tag)
+                                    continue
+                                styler_engine = None
+                                client.delete('styler:worker-model')
+                                tag_style = tag_payload['style_tag']
+                                run_tracked_task(client, run_tag_job, client, tag_payload)
+                            else:
+                                idle_task = pop_idle_job(client, VIDEO_QUEUE, PRIORITY_QUEUE, TAG_QUEUE)
+                                if idle_task:
+                                    styler_engine = None
+                                    client.delete('styler:worker-model')
+                                    if idle_task.get('action') == 'styler_tag_sample':
+                                        tag_style = idle_task['style_tag']
+                                    styler_engine = run_priority_task(client, idle_task)
+                                else:
+                                    maintenance.tick()
+                        continue
+                else:
+                    _, payload = queued
+            # A priority request may arrive while we wait for another queue.
+            priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+            if priority_tag:
+                client.rpush(VIDEO_QUEUE, payload)
+                styler_engine = None
+                client.delete('styler:worker-model')
+                if handle_worker_reset_task(client, priority_tag):
+                    return
+                if priority_tag.get('action') == 'styler_tag_sample':
+                    tag_style = priority_tag['style_tag']
+                styler_engine = run_priority_task(client, priority_tag)
                 continue
-            _, payload = queued
             task = json.loads(payload)
-            if task.get("action") == "worker_rpc":
-                run_worker_rpc(client, task)
+            if task.get("action") == "styler_sample":
+                from styler.jobs import run_sample_job
+                styler_engine = task['engine']
+                client.set('styler:worker-model', styler_engine, ex=86400)
+                run_tracked_task(client, run_sample_job, client, task)
+            elif task.get("action") == "worker_rpc":
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_worker_rpc, client, task)
+            elif task.get('action') == 'stockpile_image_metadata':
+                import const
+                from stockpile import run_job as run_stockpile_job
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_stockpile_job, client, task, const.LIBRARY_DIR)
+            elif task.get('action') == 'styler_scan_image_tags':
+                import const
+                from styler.style_scan import run_job as run_style_scan_job
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_style_scan_job, client, task, const.LIBRARY_DIR)
+            elif task.get('action') == 'styler_style_description':
+                from styler.style_description import run_job as run_style_description_job
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_style_description_job, client, task)
+            elif task.get('action') == 'styler_style_duplicate_scan':
+                import const
+                from styler.style_duplicates import run_job as run_style_duplicate_scan_job
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_style_duplicate_scan_job, client, task, const.LIBRARY_DIR)
+            elif task.get('action') == 'styler_topic_llm':
+                from styler.topic_jobs import run_job as run_topic_llm_job
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_topic_llm_job, client, task)
             else:
-                run_video_job(client, task)
+                styler_engine = None
+                client.delete('styler:worker-model')
+                run_tracked_task(client, run_video_job, client, task)
         except Exception:
             log.exception("Video render worker loop failed")
             time.sleep(2)
+
+
+def run_priority_task(client, task):
+    """Dispatch a promoted job through its original handler, before model batching."""
+    action = task.get('action')
+    if action == 'styler_sample':
+        from styler.jobs import run_sample_job
+        client.set('styler:worker-model', task['engine'], ex=86400)
+        run_tracked_task(client, run_sample_job, client, task)
+        return task['engine']
+    if action == 'styler_tag_sample':
+        from styler.image_tags import run_job
+        run_tracked_task(client, run_job, client, task)
+    elif action == 'stockpile_image_metadata':
+        import const
+        from stockpile import run_job
+        run_tracked_task(client, run_job, client, task, const.LIBRARY_DIR)
+    elif action == 'styler_scan_image_tags':
+        import const
+        from styler.style_scan import run_job
+        run_tracked_task(client, run_job, client, task, const.LIBRARY_DIR)
+    elif action == 'styler_style_description':
+        from styler.style_description import run_job
+        run_tracked_task(client, run_job, client, task)
+    elif action == 'styler_style_duplicate_scan':
+        import const
+        from styler.style_duplicates import run_job
+        run_tracked_task(client, run_job, client, task, const.LIBRARY_DIR)
+    elif action == 'styler_topic_llm':
+        from styler.topic_jobs import run_job
+        run_tracked_task(client, run_job, client, task)
+    elif action == 'styler_topic_taxonomy_rebuild':
+        from styler.topic_jobs import run_taxonomy_rebuild
+        run_tracked_task(client, run_taxonomy_rebuild, client, task)
+    elif action == 'worker_rpc':
+        run_tracked_task(client, run_worker_rpc, client, task)
+    else:
+        run_tracked_task(client, run_video_job, client, task)
+    return None
+
+
+def run_tracked_task(client, callback, *args):
+    task = next((value for value in args if isinstance(value, dict)
+                 and isinstance(value.get('job_id'), str)), None)
+    if task:
+        from styler.queue_history import clear_failed_job
+        clear_failed_job(client, task['job_id'])
+        client.delete(f"styler:retry-pending:{task['job_id']}")
+    mark_activity(client)
+    current_task = {**task, 'queue_started_at': time.time()} if task else None
+    if current_task and current_task.get('action') == 'styler_tag_sample':
+        current_task.update(state='preparing', message='Preparing image tags')
+    current = json.dumps(current_task) if current_task else '1'
+    client.set('styler:worker-running', current, ex=86400)
+    try:
+        if task and task.get('action') in ('styler_sample', 'styler_tag_sample',
+                                           'styler_scan_image_tags', 'styler_style_description'):
+            from styler.tag_consensus import style_key
+            style_tag = task.get('style_tag')
+            style_key_value = style_key(style_tag) if isinstance(style_tag, str) else ''
+            if not style_key_value or client.type(style_key_value) not in ('hash', b'hash'):
+                discard_missing_style_task(client, task)
+                return None
+        if task and task.get('idle_maintenance'):
+            from worker_startup import ensure_worker_services
+            ensure_worker_services(comfyui=True)
+        return callback(*args)
+    except Exception as exc:
+        if task:
+            publish_queue_event(client, 'styler_sample_events', {**task, 'state': 'failed', 'message': str(exc)})
+        raise
+    finally:
+        client.delete('styler:worker-running')
+        if task and task.get('idle_maintenance'):
+            from styler.idle_maintenance import RETRY_SECONDS
+            client.set(IdleMaintenance._retry_key(task), '1', ex=RETRY_SECONDS)
+        mark_activity(client)
+        if task:
+            client.publish('styler_sample_events', json.dumps(dict(state='queue_changed', job_id=task['job_id'])))
+
+
+def handle_worker_reset_task(client, task):
+    """Exit cleanly after the current task when a priority reset is dequeued."""
+    if task.get('action') != 'worker_reset':
+        return False
+    from styler.jobs import EVENTS
+    job_id = task['job_id']
+    client.set('styler:worker-reset-ready', job_id, ex=300)
+    client.publish(EVENTS, json.dumps(dict(
+        job_id=job_id, action='worker_reset', state='complete',
+        job_type='Worker reset', message='Current task finished; restarting worker')))
+    log.warning('Priority worker reset %s reached a safe restart point', job_id)
+    return True
+
+
+def retry_failed_task(client, job_id):
+    """Requeue one recently completed or failed task at the priority queue head."""
+    if not isinstance(job_id, str) or not job_id or len(job_id) > 256:
+        return dict(state='retry_rejected', job_id=job_id, message='Invalid task ID')
+    outcome = next((entry for entry in recent_failures(client)
+                    if entry.get('job_id') == job_id), None)
+    if not outcome:
+        outcome = next((entry for entry in recent_completions(client)
+                        if entry.get('job_id') == job_id), None)
+    if not outcome:
+        return dict(state='retry_rejected', job_id=job_id,
+                    message='Completed or failed task is no longer available')
+    task = dict(outcome)
+    for key in ('state', 'completed_at', 'message', 'percent', 'queue_failed', 'queue_completed',
+                'job_type', 'label', 'queue_started_at', 'promoted', 'priority_removed'):
+        task.pop(key, None)
+    action = task.get('action')
+    if not isinstance(action, str) or not action:
+        return dict(state='retry_rejected', job_id=job_id, message='Task cannot be retried')
+    task['priority'] = True
+
+    raw_running = client.get('styler:worker-running')
+    if raw_running:
+        try:
+            running = json.loads(raw_running)
+        except (TypeError, ValueError):
+            running = {}
+        if isinstance(running, dict) and running.get('job_id') == job_id:
+            return dict(state='retry_rejected', job_id=job_id, message='Task is already running')
+
+    from styler.image_tags import PRIORITY_QUEUE, QUEUE as TAG_QUEUE
+    queues = (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE, IDLE_QUEUE)
+    for queue in queues:
+        for raw in client.lrange(queue, 0, -1):
+            try:
+                queued = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(queued, dict) and queued.get('job_id') == job_id:
+                from styler.queue_history import clear_job_outcome
+                clear_job_outcome(client, job_id)
+                return dict(state='retry_queued', job_id=job_id,
+                            job=styler_queue_entry(queued, priority=queue == PRIORITY_QUEUE))
+
+    retry_key = f'styler:retry-pending:{job_id}'
+    if not client.set(retry_key, '1', nx=True, ex=86400):
+        return dict(state='retry_rejected', job_id=job_id, message='Retry is already queued')
+    try:
+        client.lpush(PRIORITY_QUEUE, json.dumps(task, ensure_ascii=False))
+        from styler.queue_history import clear_job_outcome
+        clear_job_outcome(client, job_id)
+        event = dict(state='job_queued', job_id=job_id, job_type=styler_queue_entry(task, True)['job_type'],
+                     action=action, priority=True)
+        for key in ('style_tag', 'engine', 'filename'):
+            if key in task:
+                event[key] = task[key]
+        client.publish('styler_sample_events', json.dumps(event, ensure_ascii=False))
+    except Exception:
+        client.delete(retry_key)
+        raise
+    return dict(state='retry_queued', job_id=job_id,
+                job=styler_queue_entry(task, priority=True))
+
+
+def discard_missing_style_task(client, task):
+    """Drop a queued Styler job whose style was deleted before dispatch."""
+    from styler.image_tags import EVENTS
+    from styler.queue_history import publish_queue_event
+    action = task.get('action')
+    job_id = task['job_id']
+    event = {key: task[key] for key in ('job_id', 'style_tag', 'engine', 'style_key') if key in task}
+    event['message'] = 'Style no longer exists; queued task was discarded'
+    if action == 'styler_sample':
+        client.delete(f"styler_pending:{job_id}", f"styler_progress:{job_id}")
+        event.update(state='failed', job_type='Sample image', action=action)
+    elif action == 'styler_tag_sample':
+        from styler.image_tags import ANALYSIS_VERSION
+        pending = (f"styler:tag-pending:{job_id}:{task.get('sha256', '')}:"
+                   f"{task.get('analysis_version', ANALYSIS_VERSION)}")
+        client.delete(pending)
+        event.update(state='tag_failed', job_type='Image tags', action=action,
+                     priority=bool(task.get('priority')))
+    elif action == 'styler_scan_image_tags':
+        client.delete(f"styler:styles-scan:pending:{job_id}")
+        event.update(state='styles_scan_image_failed', job_type='Tag normalization', action=action)
+        try:
+            from styler.style_scan import _finish_scan_job
+            _finish_scan_job(client, task)
+        except Exception:
+            log.exception('Unable to finalize stale style scan task %s', job_id)
+    elif action == 'styler_style_description':
+        client.delete(f"styler:description-pending:{job_id}")
+        event.update(state='style_description_failed', job_type='Historical description', action=action,
+                     priority=True)
+    else:
+        return
+    log.warning('Discarding queued %s task %s because style %s no longer exists',
+                action, job_id, task.get('style_tag'))
+    publish_queue_event(client, EVENTS, event)
+
+
+def clear_removed_task_markers(client, task):
+    """Clear enqueue guards and durable bookkeeping for a removed queued task."""
+    action = task.get('action')
+    job_id = task['job_id']
+    client.delete(f'styler:retry-pending:{job_id}')
+    if action == 'styler_sample':
+        client.delete(f'styler_pending:{job_id}', f'styler_progress:{job_id}')
+    elif action == 'styler_tag_sample':
+        from styler.image_tags import ANALYSIS_VERSION
+        client.delete(f"styler:tag-pending:{job_id}:{task.get('sha256', '')}:{task.get('analysis_version', ANALYSIS_VERSION)}")
+    elif action == 'styler_scan_image_tags':
+        client.delete(f'styler:styles-scan:pending:{job_id}')
+        from styler.style_scan import _finish_scan_job
+        _finish_scan_job(client, task)
+    elif action == 'styler_style_description':
+        client.delete(f'styler:description-pending:{job_id}')
+    elif action == 'styler_style_duplicate_scan':
+        key = 'styler:style-duplicate-scan:pending'
+        if client.get(key) == job_id or client.get(key) == job_id.encode():
+            client.delete(key)
+    elif action == 'styler_topic_llm':
+        client.delete(f'styler:topic-llm-pending:{job_id}')
+        client.set(f'styler:topic-llm-result:{job_id}',
+                   json.dumps({'state': 'failed', 'error': 'Category LLM task was removed from the queue'}),
+                   ex=3600)
+    elif action == 'styler_topic_taxonomy_rebuild':
+        if client.get('styler:topic-tree:pending') in (job_id, job_id.encode()):
+            client.delete('styler:topic-tree:pending')
+    elif action == 'stockpile_image_metadata':
+        client.delete(f'stockpile:pending:{job_id}')
+    elif action == 'worker_reset':
+        key = 'styler:worker-reset-pending'
+        if client.get(key) in (job_id, job_id.encode()):
+            client.delete(key)
 
 
 def run_worker_rpc(client, task):
@@ -319,6 +735,367 @@ def websocket(ws):
     handle_websocket(ws)
 
 
+@sock.route("/styler-ws")
+def styler_websocket(ws):
+    from styler.jobs import EVENTS, sample_task, request_sample
+    from styler.image_tags import PRIORITY_QUEUE, QUEUE as TAG_QUEUE
+    import const
+    client = redis_connection()
+    pubsub = client.pubsub()
+    pubsub.subscribe(EVENTS, VIDEO_EVENTS)
+    requested = set()
+    queue_capacity = 10
+    queue_dirty = True
+    last_queue_state = None
+    last_queue_sent = 0.0
+    last_running_id = None
+
+    def send_queue_plan(completed_job_id=None):
+        nonlocal queue_dirty, last_queue_state, last_queue_sent, last_running_id
+        plan = styler_queue_snapshot(client, PRIORITY_QUEUE, TAG_QUEUE, queue_capacity)
+        plan['state'] = 'queue_plan'
+        if completed_job_id:
+            plan['completed_job_id'] = completed_job_id
+        signature = json.dumps(plan, sort_keys=True)
+        if signature != last_queue_state or completed_job_id:
+            ws.send(json.dumps(plan))
+            last_queue_state = signature
+            last_queue_sent = time.monotonic()
+            last_running_id = (plan.get('running') or {}).get('job_id')
+        queue_dirty = False
+
+    try:
+        send_queue_plan()
+        while True:
+            incoming = ws.receive(timeout=0.1)
+            if incoming:
+                message = None
+                try:
+                    message = json.loads(incoming)
+                    if not isinstance(message, dict):
+                        raise ValueError('Invalid request')
+                    if message.get('action') == 'queue_capacity':
+                        queue_capacity = max(0, min(200, int(message.get('rows', 10))))
+                        queue_dirty = True
+                    elif message.get('action') == 'maintenance_mode':
+                        mode = set_mode(client, message.get('mode'))
+                        ws.send(json.dumps(dict(state='maintenance_mode', mode=mode)))
+                        queue_dirty = True
+                    elif message.get('action') == 'queue_promote':
+                        result = promote_job(client, message.get('job_id'), PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE,
+                                             enabled=message.get('priority', True))
+                        if result:
+                            response = dict(state='job_promoted' if result['job'].get('promoted') else 'job_demoted',
+                                            job_id=message['job_id'], promoted=bool(result['job'].get('promoted')),
+                                            priority=bool(result['job'].get('priority')))
+                        else:
+                            response = dict(state='job_promote_failed', job_id=message.get('job_id'),
+                                            message='Task is no longer pending')
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'queue_delete':
+                        from styler.queue_priority import remove_queued_job
+                        result = remove_queued_job(client, message.get('job_id'), PRIORITY_QUEUE,
+                                                   VIDEO_QUEUE, TAG_QUEUE)
+                        if result and result.get('state') == 'queue_removed':
+                            task = result['task']
+                            clear_removed_task_markers(client, task)
+                            response = dict(state='queue_task_removed', job_id=task['job_id'],
+                                            label=styler_queue_entry(task)['label'])
+                        elif result and result.get('state') == 'running':
+                            response = dict(state='queue_delete_rejected', job_id=message.get('job_id'),
+                                            message='Task has already started')
+                        else:
+                            response = dict(state='queue_delete_rejected', job_id=message.get('job_id'),
+                                            message='Task is no longer queued')
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'retry_job':
+                        response = retry_failed_task(client, message.get('job_id'))
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'worker_reset':
+                        reset_key = 'styler:worker-reset-pending'
+                        existing = client.get(reset_key)
+                        if existing:
+                            response = dict(state='worker_reset_queued', job_id=existing, already_queued=True)
+                        else:
+                            task = {'job_id': uuid.uuid4().hex, 'action': 'worker_reset',
+                                    'priority': True}
+                            if client.set(reset_key, task['job_id'], nx=True, ex=86400):
+                                try:
+                                    client.lpush(PRIORITY_QUEUE, json.dumps(task))
+                                    client.publish(EVENTS, json.dumps(dict(
+                                        state='job_queued', job_id=task['job_id'],
+                                        job_type='Worker reset', action='worker_reset', priority=True)))
+                                except Exception:
+                                    client.delete(reset_key)
+                                    raise
+                                response = dict(state='worker_reset_queued', job_id=task['job_id'])
+                            else:
+                                response = dict(state='worker_reset_queued',
+                                                job_id=client.get(reset_key), already_queued=True)
+                        requested.add(response['job_id'])
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'stockpile_scan':
+                        from stockpile import scan_stockpile
+                        response = scan_stockpile(client, const.LIBRARY_DIR, VIDEO_QUEUE)
+                        requested.update(response['jobs'])
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'styles_scan':
+                        from styler.style_scan import scan_styles
+                        response = scan_styles(client, const.LIBRARY_DIR, VIDEO_QUEUE)
+                        requested.update(response['jobs'])
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') == 'style_duplicate_scan':
+                        from styler.style_duplicates import request as request_style_duplicate_scan
+                        response = request_style_duplicate_scan(client)
+                        requested.add(response['job_id'])
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get('action') in ('retag', 'missing_tags'):
+                        from styler.image_tags import request_retag, request_missing_tags
+                        request_tags = request_missing_tags if message['action'] == 'missing_tags' else request_retag
+                        if message['action'] == 'retag':
+                            tasks = request_tags(client, message.get('style_tag'), const.LIBRARY_DIR,
+                                                 message.get('engine'),
+                                                 message.get('base_style_prompt', 'classic'))
+                        else:
+                            tasks = request_tags(client, message.get('style_tag'), const.LIBRARY_DIR)
+                        requested.update(task['job_id'] for task in tasks)
+                        if message['action'] == 'missing_tags' and not tasks:
+                            from styler.image_tags import reconcile_style_on_detail
+                            status = reconcile_style_on_detail(client, message['style_tag'], const.LIBRARY_DIR)
+                            if status:
+                                ws.send(json.dumps(status))
+                                continue
+                        ws.send(json.dumps(dict(state='retag_queued', style_tag=message['style_tag'],
+                                                engines=[task['engine'] for task in tasks],
+                                                engine=message.get('engine'))))
+                        queue_dirty = True
+                    else:
+                        task = sample_task(message)
+                        requested.add(task['job_id'])
+                        ws.send(json.dumps(request_sample(client, task, VIDEO_QUEUE, const.LIBRARY_DIR)))
+                        queue_dirty = True
+                except (ValueError, TypeError, KeyError):
+                    failure = {'retag': 'retag_failed', 'missing_tags': 'retag_failed', 'stockpile_scan': 'stockpile_scan_failed',
+                               'styles_scan': 'styles_scan_failed',
+                               'style_duplicate_scan': 'style_duplicate_scan_failed',
+                               'queue_delete': 'queue_delete_rejected'}.get(
+                        message.get('action') if isinstance(message, dict) else None, 'failed')
+                    ws.send(json.dumps({'state': failure,
+                                        'job_id': message.get('job_id') if isinstance(message, dict) else None,
+                                        'style_tag': message.get('style_tag') if isinstance(message, dict) else None,
+                                        'engine': message.get('engine') if isinstance(message, dict) else None,
+                                        'message': 'Invalid request or no sample images found'}))
+                except Exception:
+                    log.exception('Styler WebSocket request failed')
+                    failure = {'retag': 'retag_failed', 'missing_tags': 'retag_failed',
+                               'stockpile_scan': 'stockpile_scan_failed',
+                               'styles_scan': 'styles_scan_failed',
+                               'style_duplicate_scan': 'style_duplicate_scan_failed',
+                               'queue_delete': 'queue_delete_rejected'}.get(
+                        message.get('action') if isinstance(message, dict) else None, 'failed')
+                    ws.send(json.dumps({'state': failure,
+                                        'job_id': message.get('job_id') if isinstance(message, dict) else None,
+                                        'style_tag': message.get('style_tag') if isinstance(message, dict) else None,
+                                        'engine': message.get('engine') if isinstance(message, dict) else None,
+                                        'message': 'Unable to queue request'}))
+            # Drain each burst, preserve all semantic events, and collapse noisy
+            # progress updates to the latest value for each job.
+            progress_latest = {}
+            semantic_events = []
+            for _ in range(500):
+                event = pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
+                if not event:
+                    break
+                if event['type'] != 'message':
+                    continue
+                try:
+                    payload = json.loads(event['data'])
+                except (ValueError, TypeError):
+                    continue
+                if (isinstance(payload, dict)
+                        and payload.get('state') in ('lost_resolved', 'style_tags_reconciled', 'maintenance_mode')):
+                    semantic_events.append(payload)
+                elif (isinstance(payload, dict)
+                        and isinstance(payload.get('job_id'), str)):
+                    state = payload.get('state')
+                    terminal_states = ('complete', 'failed', 'prompt_tagged', 'tag_failed', 'tag_abyss',
+                                        'stockpile_complete', 'stockpile_failed',
+                                        'styles_scan_image_complete', 'styles_scan_image_failed',
+                                        'style_description_complete', 'style_description_failed',
+                                        'style_duplicate_scan_complete', 'style_duplicate_scan_failed')
+                    if state in ('job_queued', 'job_promoted', 'job_demoted', 'queue_changed', 'queued',
+                                 'preparing', 'clearing_vram', 'running', *terminal_states):
+                        queue_dirty = True
+                    if state == 'running':
+                        progress_latest[payload['job_id']] = payload
+                        continue
+                    toast_event = state in ('complete', 'failed', 'prompt_tagged', 'tag_failed', 'tag_abyss',
+                                            'stockpile_complete', 'stockpile_failed',
+                                            'styles_scan_image_complete', 'styles_scan_image_failed',
+                                            'style_description_complete', 'style_description_failed',
+                                            'style_duplicate_scan_complete', 'style_duplicate_scan_failed',
+                                            'worker_ready')
+                    if toast_event or payload['job_id'] in requested:
+                        semantic_events.append(payload)
+            for payload in progress_latest.values():
+                if payload.get('job_id') in requested:
+                    semantic_events.append(payload)
+            completed_ids = []
+            queue_terminal_seen = False
+            for payload in semantic_events:
+                ws.send(json.dumps(payload))
+                state = payload.get('state')
+                if state in ('complete', 'failed', 'prompt_tagged', 'tag_failed', 'tag_abyss',
+                             'stockpile_complete', 'stockpile_failed',
+                         'styles_scan_image_complete', 'styles_scan_image_failed',
+                         'style_description_complete', 'style_description_failed',
+                         'style_duplicate_scan_complete', 'style_duplicate_scan_failed'):
+                    queue_terminal_seen = True
+                    if state in ('complete', 'prompt_tagged', 'stockpile_complete',
+                             'styles_scan_image_complete', 'style_description_complete',
+                             'style_duplicate_scan_complete'):
+                        completed_ids.append(payload['job_id'])
+            if queue_terminal_seen:
+                completed_job_id = next((job_id for job_id in completed_ids
+                                         if job_id == last_running_id), None)
+                send_queue_plan(completed_job_id=completed_job_id)
+            if queue_dirty and (time.monotonic() - last_queue_sent >= 0.075):
+                send_queue_plan()
+    finally:
+        pubsub.close()
+        client.close()
+
+
+def styler_queue_entry(task, priority=False):
+    if not isinstance(task, dict) or not isinstance(task.get('job_id'), str):
+        return None
+    action = task.get('action') or ''
+    labels = {
+        'styler_tag_sample': 'Image tags',
+        'styler_sample': 'Sample image',
+        'styler_scan_image_tags': 'Tag normalization',
+        'styler_style_description': 'Historical description',
+        'styler_style_duplicate_scan': 'Style duplicate scan',
+        'styler_topic_llm': 'Category grouping',
+        'styler_topic_taxonomy_rebuild': 'Category taxonomy rebuild',
+        'worker_reset': 'Worker reset',
+        'stockpile_image_metadata': 'Stockpile tags',
+        'chapter_import': 'Chapter import',
+        'chapter_missing_metadata': 'Metadata generation',
+        'chapter_missing_images': 'Image generation',
+        'chapter_missing_animations': 'Animation generation',
+        'timeline_metadata': 'Image metadata',
+        'timeline_image': 'Image generation',
+        'character_image': 'Character image',
+        'prop_image': 'Prop image',
+        'scene_description': 'Scene description',
+        'scene_image': 'Scene image',
+    }
+    job_type = labels.get(action, action.replace('_', ' ').strip().title() or 'GPU task')
+    if action == 'worker_rpc':
+        job_type = task.get('operation', 'Worker task').replace('_', ' ').title()
+    item = {key: task[key] for key in ('job_id', 'style_tag', 'engine', 'filename', 'background_category', 'operation', 'promoted', 'priority_removed', 'idle_maintenance', 'queue_started_at', 'topic_level', 'topic_parent') if key in task} | {
+        'job_type': job_type, 'priority': bool(priority), 'action': action, 'state': 'queued'
+    }
+    subject = str(item.get('style_tag') or item.get('filename') or '').replace('_', ' ').split('/')[-1]
+    if action == 'styler_topic_llm':
+        subject = item.get('topic_parent') or str(item.get('topic_level') or 'topics').replace('-', ' ')
+    engine = {'zit': 'Z-Image', 'krea2': 'Krea 2', 'qwen': 'Qwen 2.1'}.get(item.get('engine'))
+    item['label'] = ' · '.join(part for part in (job_type, subject, engine) if part)
+    return item
+
+
+def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
+    """Return a bounded, worker-ordered queue view for the styler UI."""
+    running = None
+    raw_running = client.get('styler:worker-running')
+    if raw_running:
+        try:
+            task = json.loads(raw_running)
+            if isinstance(task, dict) and task.get('job_id'):
+                running = styler_queue_entry(task, priority=bool(task.get('priority')))
+                running['state'] = task.get('state', 'running')
+                progress = client.get(f"styler_progress:{task['job_id']}")
+                if progress:
+                    try:
+                        detail = json.loads(progress)
+                        if isinstance(detail, dict):
+                            running.update({key: detail[key] for key in ('percent', 'message') if key in detail})
+                    except (TypeError, ValueError):
+                        pass
+                video_progress = client.hgetall(f"video_job:{task['job_id']}")
+                running.update({key: value for key, value in video_progress.items() if key in ('percent', 'message')})
+                if task.get('message'):
+                    running['message'] = task['message']
+        except (TypeError, ValueError):
+            pass
+    loaded_engine = client.get('styler:worker-model')
+    model_batching = bool(loaded_engine)
+    sources = ((priority_queue, False, True), (VIDEO_QUEUE, True, False),
+               (tag_queue, False, False), (IDLE_QUEUE, False, False))
+    queued = []
+    seen = {running['job_id']} if running else set()
+    for queue, reverse, priority in sources:
+        payloads = client.lrange(queue, 0, -1)
+        if reverse:
+            payloads.reverse()
+        for payload in payloads:
+            try:
+                task = json.loads(payload)
+                item = styler_queue_entry(task, priority=priority or bool(task.get('priority')))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if not item or item['job_id'] in seen:
+                continue
+            seen.add(item['job_id'])
+            queued.append(item)
+
+    def rank(job):
+        if job['priority']:
+            return 0
+        if job.get('idle_maintenance'):
+            return 5
+        action = job['action']
+        if model_batching and action == 'styler_sample' and job.get('engine') == loaded_engine and not job.get('priority_removed'):
+            return 1
+        if action == 'styler_tag_sample' or (action == 'styler_sample' and job.get('background_category')):
+            return 4
+        if action == 'styler_scan_image_tags':
+            return 3
+        if action == 'stockpile_image_metadata':
+            return 4
+        if action == 'styler_sample' or action:
+            return 2
+        return 4
+
+    queued.sort(key=rank)
+    capacity = max(0, min(200, int(capacity)))
+    visible = queued[:capacity]
+    for index, item in enumerate(visible):
+        item['isNext'] = index == 0
+    queued_ids = {job['job_id'] for job in queued}
+    failures = [entry for entry in recent_failures(client)
+                if entry['job_id'] not in queued_ids and not (
+                    running and running['job_id'] == entry['job_id']
+                    and float(running.get('queue_started_at') or 0) > entry['completed_at'])]
+    return {'running': running, 'jobs': visible,
+            'queue_count': len(queued) + int(running is not None),
+            'overflow_count': max(0, len(queued) - len(visible)),
+            'completed': [{**entry, 'label': styler_queue_entry(entry)['label']}
+                          for entry in recent_completions(client)],
+            'failed': [{**entry, 'label': styler_queue_entry(entry)['label']}
+                       for entry in failures],
+            'maintenance_mode': get_mode(client),
+            'worker_reset_pending': bool(client.exists('styler:worker-reset-pending'))}
+
+
 def handle_websocket(ws):
     client = redis_connection()
     pubsub = client.pubsub()
@@ -362,7 +1139,8 @@ def handle_websocket(ws):
                             label = "Queued for missing metadata"
                         elif task["action"] in ("chapter_missing_images", "chapter_missing_animations"):
                             label = "Queued for missing " + task["action"].removeprefix("chapter_missing_")
-                        publish_progress(client, task["job_id"], 0, label, "queued")
+                        publish_progress(client, task["job_id"], 0, label, "queued",
+                                         action=task.get('action'))
                         client.lpush(VIDEO_QUEUE, json.dumps(task))
                 except (ValueError, TypeError, KeyError, AttributeError):
                     log.exception("Invalid WebSocket render command")

@@ -239,6 +239,7 @@
   <div class="wa-stack">
     <div class="wa-split">
       <wa-breadcrumb>
+        {% block breadcrumbs %}
         <wa-breadcrumb-item href="/">Home</wa-breadcrumb-item>
         <wa-breadcrumb-item href="/library/">Library</wa-breadcrumb-item>
         {% if author %}<wa-breadcrumb-item
@@ -417,7 +418,9 @@
         </wa-breadcrumb-item>
         {% endif %}
         
+        {% endblock %}
       </wa-breadcrumb>
+      {% block navbar_center %}{% endblock %}
       <wa-button id="todo" appearance="outlined" variant="neutral">Dev TODO</wa-button>
     </div>
 

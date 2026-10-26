@@ -1,0 +1,56 @@
+{
+  "101": {
+    "inputs": {
+      "clip_name": "qwen3.5_4b_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "103": {
+    "inputs": {
+      "max_length": 768,
+      "sampling_mode": "off",
+      "thinking": false,
+      "use_default_template": true,
+      "mtp": "auto",
+      "clip": [
+        "101",
+        0
+      ],
+      "prompt": "Inspect the actual image. Return only a JSON object with description and tags. The description must be a concise, specific account of visible subjects, setting, composition, colors, lighting, medium and style. Describe what is visible without inventing identities or hidden context. The tags array must contain 1 to 8 distinct short lowercase tags useful for finding this stock image, including subjects and visual characteristics. Use 1-4 words per tag. Example: {\"description\":\"A small red boat on a calm lake beneath misty mountains, rendered in soft watercolor.\",\"tags\":[\"red boat\",\"lake\",\"misty mountains\",\"watercolor\",\"soft light\"]}.",
+      "system_prompt": "You label images for a style reference library. Inspect the actual image. Return valid JSON only.",
+      "image": [
+        "120",
+        0
+      ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "Generate Text"
+    }
+  },
+  "108": {
+    "inputs": {
+      "format": "txt",
+      "text": [
+        "103",
+        0
+      ],
+      "filename_prefix": "{{OUTPUT_PREFIX}}"
+    },
+    "class_type": "SaveText",
+    "_meta": {
+      "title": "Save Text"
+    }
+  },
+  "120": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{IMAGE}}"
+    }
+  }
+}
