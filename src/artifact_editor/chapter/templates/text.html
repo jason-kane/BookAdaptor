@@ -328,6 +328,31 @@
     .chapter-rendered-scroll:has(> img) {
         background-color: #fffdf5;
     }
+    .chapter-rainbow-overlay {
+        position: relative;
+        width: 100%;
+        min-height: 100%;
+        background-color: #fffdf5;
+    }
+    .chapter-rainbow-overlay > .chapter-rainbow-background {
+        position: absolute;
+        inset: 0;
+        background-color: #fffdf5;
+    }
+    .chapter-rainbow-overlay > img {
+        display: block;
+        width: 100%;
+        height: auto;
+        position: relative;
+    }
+    .chapter-rainbow-overlay > img + img {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        opacity: 0.5;
+        mix-blend-mode: multiply;
+        pointer-events: none;
+    }
     .phrase-container {
         position: relative;
         border: 1px solid #5c5b5b;
@@ -960,12 +985,16 @@
             </wa-tab-panel>
             <wa-tab-panel name="image">
                 <div class="chapter-rendered-scroll">
-                    <img src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
+                    <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="rainbow">
                 <div class="chapter-rendered-scroll">
-                    <img src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
+                    <div class="chapter-rainbow-overlay">
+                        <div class="chapter-rainbow-background" aria-hidden="true"></div>
+                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
+                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Plain text overlay for comparing rainbow alignment" loading="lazy">
+                    </div>
                 </div>
             </wa-tab-panel>
         </wa-tab-group>
