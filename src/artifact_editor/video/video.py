@@ -183,7 +183,7 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                         log.error("No word found for frame %s", current_frame)
                         continue
                     word = word_plan.as_dict()
-                    phrase_id = int(word['index'])
+                    phrase_id = word.get('id') or word['index']
                     paragraph_index = int(word['paragraph_index'])
                     # paragraph_index, phrase_id = word["id"].split("_")
 

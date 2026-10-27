@@ -432,7 +432,7 @@ def redraw_frame(aspect="_widescreen"):
                         {},
                         animate_lock,
                         word_dict["paragraph_index"],
-                        word_dict["index"],
+                        word_dict.get("id") or word_dict["index"],
                     ),
                     kwds={"force": force},
                 )
@@ -451,7 +451,7 @@ def redraw_frame(aspect="_widescreen"):
             previous_image_dict={},
             animate_lock=animate_lock,
             paragraph_index=word_dict["paragraph_index"],
-            phrase_id=word_dict["index"],
+            phrase_id=word_dict.get("id") or word_dict["index"],
             force=force,
         )
 

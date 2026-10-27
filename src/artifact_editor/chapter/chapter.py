@@ -673,14 +673,15 @@ class Chapter:
         return highlight_mask, y_min, x_min, y_max, x_max
 
     def get_bottom_height(self, force: bool = False) -> int:
-        for phrase in reversed(list(self.phrases())):
-            phrase_xml = phrase.phrase_xml
-            if not phrase_xml.get_text().strip():
-                continue
-            mask, _, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
-            if mask.any():
-                return int(y_max)
-        return 0
+        text_layer_fn = os.path.join(
+            const.LIBRARY_DIR,
+            self.chapterdir,
+            self.language,
+            "chapter-1.png",
+        )
+        with Image.open(text_layer_fn) as text_layer:
+            bounds = text_layer.getchannel("A").getbbox()
+        return max(0, bounds[3] - 1) if bounds else 0
 
     def get_text_height(self, force: bool = False) -> int:
         all_phrases = list(self.phrases())
@@ -735,7 +736,7 @@ class Chapter:
         )
 
     def index_to_highlight_color(self, index: int) -> tuple[int, int, int]:
-        index += 10  # stay away from the black end
+        index = 10 + 2654435 * index  # reversible hop through the 24-bit color space
         rainbow_int = index % 16777216  # limit to 24 bits
 
         rainbow_bytes = rainbow_int.to_bytes(3, "big")
@@ -2174,12 +2175,25 @@ class Chapter:
             "theme": self.theme,
         }
 
-    def get_phrase(self, phrase_index: int) -> Tag | None:
+    def get_phrase(self, phrase_index: int | str) -> Tag | None:
         """
-        Get a specific phrase by index
+        Get a specific phrase by XML index or stable phrase id.
+
+        Masterplan entries carry the source phrase id, while rainbow colors
+        are keyed by the phrase's numeric XML index. Resolve the source tag
+        first so callers do not accidentally treat a per-paragraph id as a
+        rainbow index.
         """
         self.load_xml()  # cached load
-        return self.soup.find("phrase", index=str(phrase_index))
+        identifier = str(phrase_index)
+        if isinstance(phrase_index, str):
+            phrase = self.soup.find("phrase", id=identifier)
+            if phrase is not None:
+                return phrase
+        phrase = self.soup.find("phrase", index=identifier)
+        if phrase is not None:
+            return phrase
+        return self.soup.find("phrase", id=identifier)
 
     def get_sound(self, sound_index: int) -> Tag | None:
         """
@@ -2596,53 +2610,78 @@ class Chapter:
             return
 
         last_frame = mplan.words[-1].end_frame
-        # slots for every frame, we want the scroll_lock value for each frame.
+        # Slots for every frame, we want the scroll_lock value for each frame.
         _frame_to_camera: list[float|None] = [None] * (last_frame + 1)
-
-        current_frame = 0
-
-        self.scrolling_rate = None
-        # set scrolling rate to the average required to place the bottom of the last
-        # line in the center of the screen when the audio finishes.
-
-        # adjusted because we start half way down the screen
-        # ^ ballpark, we hate ballpark.
-        # height = chapter.get_text_height(force=force)
-
         G = const.GEOMETRY[aspect]
-        # the text begins halfway down the screen.
-        height = self.get_bottom_height(force=force) - (G["TEXT_HEIGHT"] // 2)
+        viewport_center = G["TEXT_HEIGHT"] / 2
+        max_scroll = max(0, self.get_bottom_height(force=force) - int(viewport_center))
 
-        scrolled_frames = 0
-        for current_frame in range(last_frame + 1):
-            word = self.frame_to_word(mplan, current_frame)
-            # log.info(f'[{current_frame}] {word=}')
-            if word.fullscreen:
-                continue
-            scrolled_frames += 1
-
-        self.scrolling_rate = max(0, height) / float(scrolled_frames) if scrolled_frames else 0.0
-        log.info(
-            "In order to traverse %s pixels of text height in %s frames",
-            height,
-            scrolled_frames,
-        )
-        log.info(
-            "Setting initial scrolling rate to %s pixels per frame",
-            self.scrolling_rate,
-        )
-
-        scroll_lock: float = 0.0
-        for current_frame in range(last_frame + 1):
-            word = self.frame_to_word(mplan, current_frame)
-
-            # skip over any fullscreen frames, they will fall-through to None
-            # and we don't want to advance scroll lock.
+        # A chapter's phrases are irregular in both line count and spoken
+        # duration. Distributing the complete text height uniformly across
+        # frames makes later highlights drift away from their actual lines.
+        # Use each phrase's exact rainbow-color mask to find its vertical text
+        # bounds, then smoothly interpolate camera positions through those
+        # phrase centers.
+        camera_keyframes: list[tuple[float, float]] = []
+        for word in mplan.words:
             if word.fullscreen:
                 continue
 
-            _frame_to_camera[current_frame] = scroll_lock
-            scroll_lock += self.scrolling_rate
+            phrase_identifier = word.id if word.id is not None else word.index
+            phrase_xml = self.get_phrase(phrase_identifier)
+            if phrase_xml is None:
+                log.warning(
+                    "No XML phrase found while building camera",
+                    phrase_id=phrase_identifier,
+                    phrase_index=word.index,
+                )
+                continue
+
+            phrase_mask, y_min, _, y_max, _ = self.get_phrase_rainbow(phrase_xml)
+            if not phrase_mask.any():
+                log.warning(
+                    "No rainbow geometry found while building camera",
+                    phrase_id=phrase_identifier,
+                    phrase_index=phrase_xml.attrs.get("index"),
+                )
+                continue
+
+            phrase_center = (y_min + y_max) / 2
+            scroll_target = min(
+                max_scroll,
+                max(0.0, phrase_center - viewport_center),
+            )
+            midpoint = (word.start_frame + word.end_frame) / 2
+            camera_keyframes.append((midpoint, scroll_target))
+
+        camera_keyframes.sort(key=lambda item: item[0])
+        if not camera_keyframes:
+            # Preserve a usable fallback if typesetting has not produced the
+            # rainbow layer yet. Normal video renders should use phrase masks.
+            active_frames = [
+                frame
+                for frame in range(last_frame + 1)
+                if not self.frame_to_word(mplan, frame).fullscreen
+            ]
+            rate = max_scroll / len(active_frames) if active_frames else 0.0
+            log.warning("Falling back to uniform camera movement; no phrase masks were found")
+            for position, frame in enumerate(active_frames):
+                _frame_to_camera[frame] = min(max_scroll, position * rate)
+        else:
+            key_times = np.array([frame for frame, _ in camera_keyframes], dtype=float)
+            key_offsets = np.array([offset for _, offset in camera_keyframes], dtype=float)
+            for current_frame in range(last_frame + 1):
+                word = self.frame_to_word(mplan, current_frame)
+                if word.fullscreen:
+                    continue
+                _frame_to_camera[current_frame] = float(
+                    np.interp(current_frame, key_times, key_offsets)
+                )
+
+        log.info(
+            "Built phrase-aligned camera using %s rainbow geometry keyframes",
+            len(camera_keyframes),
+        )
 
         log.info("Frame to camera built with %s frames", len(_frame_to_camera))
         camera.set_frame_to_camera(_frame_to_camera)

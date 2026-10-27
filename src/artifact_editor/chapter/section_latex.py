@@ -74,7 +74,7 @@ def quill_lines(operations):
         yield runs, {}
 
 
-def _inline(text, attributes):
+def _inline_parts(parts, attributes):
     attributes = dict(attributes)
     attributes.pop("align", None)
     points = _run_size(attributes)
@@ -82,11 +82,20 @@ def _inline(text, attributes):
     command = FONT_FAMILIES.get(font, FONT_FAMILIES["Helvetica"])[0]
     attributes.pop("size", None)
     host = _Run(attributes)
-    rendered = LineRenderLaTeX(host).process_line_with_attributes(text)
-    rendered = rendered.replace("\t", r"\hspace*{2em}")
+    rendered_parts = []
+    for color, text in parts:
+        rendered = LineRenderLaTeX(host).process_line_with_attributes(text)
+        rendered = rendered.replace("\t", r"\hspace*{2em}")
+        if color:
+            rendered = "{" + rf"\color{{{color}}}\highLight[{color}]{{{rendered}}}" + "}"
+        rendered_parts.append(rendered)
     # CSS uses 96 pixels/inch; TeX's bp is exactly 1/72 inch (pt is smaller).
     # Set a size even on unformatted runs so a large neighbor cannot leak into it.
-    return rf"{{\{command}\fontsize{{{points:g}bp}}{{{points * 1.42:g}bp}}\selectfont {rendered}}}"
+    return rf"{{\{command}\fontsize{{{points:g}bp}}{{{points * 1.42:g}bp}}\selectfont {''.join(rendered_parts)}}}"
+
+
+def _inline(text, attributes):
+    return _inline_parts([(None, text)], attributes)
 
 
 def render_sections(sections, phrases=None):
@@ -98,7 +107,7 @@ def render_sections(sections, phrases=None):
     phrase_characters = []
     if phrases is not None:
         for index, phrase in enumerate(phrases):
-            color = f"B{(int(phrase.get('index', index)) + 10) % 16777216:X}"
+            color = f"B{(10 + 2654435 * int(phrase.get('index', index))) % 16777216:X}"
             phrase_characters.extend(
                 (character, color)
                 for character in phrase["spoken"]
@@ -146,13 +155,9 @@ def render_sections(sections, phrases=None):
                         colored_runs[-1][1] += character
                     else:
                         colored_runs.append([color, character])
-                for color, text in colored_runs:
-                    rendered = _inline(text, attributes)
-                    if color:
-                        rendered = "{" + rf"\color{{{color}}}\highLight[{color}]{{{rendered}}}" + "}"
-                    segments.append(rendered)
+                segments.append(_inline_parts(colored_runs, attributes))
 
-            alignment = block_attributes.get("align", "")
+            alignment = block_attributes.get("align") or ("justify" if method == "plain" else "")
             if alignment == "center":
                 align = r"\leftskip=0pt plus 1fil\rightskip=0pt plus 1fil\parfillskip=0pt"
             elif alignment == "right":
@@ -179,15 +184,16 @@ def render_sections(sections, phrases=None):
     return "\n".join(output) + "\n"
 
 
-def render_chapter_xml(soup, text_width):
+def render_chapter_xml(soup, text_width, sections=None):
     """Build both documents from saved phrases, without modifying chapter XML."""
     import json
 
+    saved_sections = sections
     sections, phrases = [], []
     for paragraph in soup.find_all("paragraph"):
         if "has-text=false" in paragraph.get("tags", "").replace(" ", "").lower():
             continue
-        operations = []
+        current_section = None
         for phrase in paragraph.find_all("phrase"):
             text = phrase.get_text()
             delta = phrase.get("delta")
@@ -200,18 +206,22 @@ def render_chapter_xml(soup, text_width):
             # the saved delta while checking that the actual words still match.
             if "".join(formatted_text.split()) != "".join(text.split()):
                 raise ValueError(f"Saved formatting differs from phrase {phrase['index']} text")
-            operations.extend(ops)
+            method = phrase.get('typesetting_method', paragraph.get('typesetting_method', 'verse'))
+            if current_section is None or current_section['typesetting_method'] != method:
+                current_section = {'typesetting_method': method, 'ops': []}
+                sections.append(current_section)
+            current_section['ops'].extend(ops)
             phrases.append({"index": phrase["index"], "spoken": formatted_text})
-        if operations:
-            sections.append({
-                "typesetting_method": paragraph.get("typesetting_method", "verse"),
-                "ops": operations,
-            })
     if not phrases:
         raise ValueError("Chapter XML has no visible phrases to typeset")
+    # Editor sections retain layout choices that older XML imports discarded.
+    # Phrase-span validation below rejects text changes that would desynchronize
+    # the page and its rainbow map from the existing narration.
+    if saved_sections is not None:
+        sections = saved_sections
     colors = []
     for phrase in phrases:
-        number = (int(phrase["index"]) + 10) % 16777216
+        number = (10 + 2654435 * int(phrase["index"])) % 16777216
         red, green, blue = number.to_bytes(3, "big")
         colors.append(rf"\definecolor{{B{number:X}}}{{RGB}}{{{red},{green},{blue}}}")
     header = "\n".join([

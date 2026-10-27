@@ -889,8 +889,11 @@ def from_offset(
     text_revision = os.stat(os.path.join(
         const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
     )).st_mtime_ns
+    rainbow_revision = os.stat(os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter.rainbow-1.png"
+    )).st_mtime_ns
     for segment_top in range(adjusted_top, adjusted_bottom, SEGMENT_HEIGHT):
-        cache_key = f"segment:chapter-png-native-v1:{text_revision}:{G['TEXT_WIDTH']}:{chapter.language}:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
+        cache_key = f"segment:chapter-png-native-v1:{text_revision}:{rainbow_revision}:{G['TEXT_WIDTH']}:{chapter.language}:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
 
         image_segment = redis_cache.get(cache_key)
         if force:

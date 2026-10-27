@@ -1549,8 +1549,8 @@ def import_chapter_small_phrase():
             phrase.attrs["index"] = index
             phrase.attrs["delta"] = json.dumps(compress_ops(p["delta"]))
 
-            # limit to 24 bits, 10 offset to keep us away from pure black
-            rainbow_int = (index + 10) % 16777216
+            # Step by 2654435 per phrase, wrapping through the 24-bit color space.
+            rainbow_int = (10 + 2654435 * index) % 16777216
             phrase.attrs["latex"] = html.escape(p["latex"].replace("\n", r"\n"))
 
             prior_whitespace = p["latex"][: len(p["latex"]) - len(p["latex"].lstrip())]
@@ -2209,10 +2209,11 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             phrase.string = p["spoken"]
             phrase.attrs["speaker"] = "Narrator"
             phrase.attrs["index"] = index
+            phrase.attrs["typesetting_method"] = p["typesetting_method"]
             phrase.attrs["delta"] = json.dumps(compress_ops(p["delta"]))
 
-            # limit to 24 bits, 10 offset to keep us away from pure black
-            rainbow_int = (index + 10) % 16777216
+            # Step by 2654435 per phrase, wrapping through the 24-bit color space.
+            rainbow_int = (10 + 2654435 * index) % 16777216
             phrase.attrs["latex"] = html.escape(p["latex"].replace("\n", r"\n"))
 
             prior_whitespace = p["latex"][: len(p["latex"]) - len(p["latex"].lstrip())]

@@ -911,7 +911,7 @@ class NovelToLatex(XmlToLatex):
                 # highlight_phrase as the soup obj
                 if rainbow:
                     # convert the phrase_id unique to hex pairs
-                    index = 10 + int(phrase_xml.attrs.get('index', '0'))
+                    index = 10 + 2654435 * int(phrase_xml.attrs.get('index', '0'))
                     rainbow_int = index % 16777216  # limit to 24 bits
 
                     log.info('index: %s', index)
@@ -1358,7 +1358,7 @@ class VerseToLatex(XmlToLatex):
 
                 if rainbow:
                     # convert the phrase_id unique to hex pairs
-                    index = 10 + int(phrase_xml.attrs.get('index', '0'))
+                    index = 10 + 2654435 * int(phrase_xml.attrs.get('index', '0'))
                     rainbow_int = index % 16777216  # limit to 24 bits
 
                     log.info('index: %s', index)
@@ -1700,7 +1700,7 @@ class RichTextToLatex(XmlToLatex):
 
                 if rainbow:
                     # convert the phrase_id unique to hex pairs
-                    index = 10 + int(phrase_xml.attrs.get('index', '0'))
+                    index = 10 + 2654435 * int(phrase_xml.attrs.get('index', '0'))
                     rainbow_int = index % 16777216  # limit to 24 bits
 
                     log.info('index: %s', index)

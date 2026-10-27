@@ -354,6 +354,9 @@ def draw_frame(
                 "text_revision": os.stat(os.path.join(
                     const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
                 )).st_mtime_ns if not fullscreen else None,
+                "rainbow_revision": os.stat(os.path.join(
+                    const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter.rainbow-1.png"
+                )).st_mtime_ns if not fullscreen else None,
                 "frame_index": frame_index,
                 "image_filename": os.path.basename(image_pfn),
                 "image_path": os.path.abspath(image_pfn),
