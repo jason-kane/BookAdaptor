@@ -2,11 +2,13 @@
 import ast
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'src'))
 
 
 def load_definitions(path, names, namespace):
@@ -34,8 +36,14 @@ class ComfyProgressTests(unittest.TestCase):
                   const=SimpleNamespace(COMFYUI_JOB_TIMEOUT_SECONDS=30, COMFYUI_API_URL='http://comfy:8188/'),
                   httpx=SimpleNamespace(Client=lambda **kw: client, Timeout=lambda **kw: None),
                   simple_websocket=SimpleNamespace(Client=SimpleNamespace(connect=lambda *a, **kw: connection)),
-                  workflow_type=lambda workflow: 'api')
-        load_definitions(ROOT/'src/comfy.py', {'Workflow', 'run_workflow'}, ns)
+                  workflow_type=lambda workflow: 'api',
+                  WORKFLOW_HTTP_TIMEOUT=None, WEBSOCKET_PING_INTERVAL_SECONDS=25,
+                  _websocket_url=lambda url, client_id: 'ws://comfy/ws?clientId=' + client_id,
+                  log=MagicMock())
+        load_definitions(ROOT/'src/comfy.py', {
+            'Workflow', 'run_workflow', '_report_workflow_event', '_node_title',
+            '_handle_execution_failure',
+        }, ns)
         return ns['run_workflow'], connection, client, reports
 
     def test_progress_is_filtered_and_finishes_without_polling(self):
@@ -91,11 +99,61 @@ class ComfyProgressTests(unittest.TestCase):
             run({'1': {}})
         ws.close.assert_called_once()
 
+    def test_execution_start_and_zero_max_progress(self):
+        run, _, _, reports = self.runner([
+            {'type': 'execution_start', 'data': {'prompt_id': 'ours'}},
+            {'type': 'progress', 'data': {'prompt_id': 'ours', 'node': '1', 'value': 3, 'max': 0}},
+            {'type': 'progress', 'data': {'prompt_id': 'ours', 'node': '1', 'value': 5, 'max': 4}},
+            {'type': 'execution_success', 'data': {'prompt_id': 'ours'}},
+        ])
+        run({'1': {'class_type': 'KSampler'}})
+        self.assertIn((0, 'ComfyUI: Starting workflow'), reports)
+        self.assertIn((0, 'ComfyUI: KSampler (3/0)'), reports)
+        self.assertIn((100, 'ComfyUI: KSampler (5/4)'), reports)
+
+    def test_interrupted_execution_is_reported_as_failure(self):
+        run, ws, _, reports = self.runner([{'type': 'execution_interrupted', 'data': {
+            'prompt_id': 'ours', 'exception_message': 'Cancelled by user'}}])
+        with self.assertRaisesRegex(RuntimeError, 'execution_interrupted: Cancelled by user'):
+            run({'1': {}})
+        self.assertIn((0, 'ComfyUI: Cancelled by user'), reports)
+        ws.close.assert_called_once()
+
+    def test_unrecognized_matching_events_are_ignored(self):
+        run, _, _, reports = self.runner([
+            {'type': 'queue_remaining', 'data': {'prompt_id': 'ours'}},
+            {'type': 'execution_success', 'data': {'prompt_id': 'ours'}},
+        ])
+        run({'1': {}})
+        self.assertEqual(reports, [
+            (0, 'ComfyUI: Queued'), (100, 'ComfyUI: Task complete')
+        ])
+
+    def test_deadline_expired_before_receive_times_out(self):
+        run, ws, _, _ = self.runner([])
+        run.__globals__['time'] = SimpleNamespace(monotonic=MagicMock(side_effect=[0, 31]))
+        with self.assertRaises(TimeoutError):
+            run({'1': {}})
+        ws.receive.assert_not_called()
+        ws.close.assert_called_once()
+
+    def test_oom_recovery_exception_is_included_in_reported_failure(self):
+        error = ('Allocation on device 0 would exceed allowed memory. (out of memory)\n'
+                 'Currently allocated: 0 bytes\nRequested: 1.18 GiB\n'
+                 'Device limit: 11.63 GiB\nFree (according to CUDA): 10.94 GiB')
+        run, ws, _, _ = self.runner([{'type': 'execution_error', 'data': {
+            'prompt_id': 'ours', 'exception_message': error}}])
+        with patch('comfy_recovery.restart_comfyui', side_effect=OSError('docker unavailable')):
+            with self.assertRaisesRegex(RuntimeError, 'restart failed: docker unavailable'):
+                run({'1': {}})
+        ws.close.assert_called_once()
+
     def test_secondary_progress_preserves_primary(self):
         ns = {'json': json}
         load_definitions(ROOT/'src/websocket/server.py',
                          {'publish_progress', 'publish_comfy_progress', 'progress_html'}, ns)
         ns['VIDEO_EVENTS'] = 'events'
+        ns['publish_queue_event'] = lambda *args: None
         saved = {}
         client = MagicMock()
         client.hgetall.side_effect = lambda key: saved.copy()

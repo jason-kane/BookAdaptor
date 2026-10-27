@@ -21,7 +21,7 @@ def image_tags(path):
         tags = metadata.get('tags', [])
         if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
             return []
-        return tags[:8]
+        return tags
     except (OSError, ValueError):
         return []
 
@@ -40,6 +40,22 @@ def character_placement(path):
         if placement == 'in_front':  # Legacy v5 metadata.
             placement = 'outside_image'
         return placement if placement in ('in_image', 'outside_image', 'not_visible', 'uncertain') else None
+    except (OSError, ValueError):
+        return None
+
+
+def primary_category(path):
+    """Return the saved primary topic chosen for this generated sample."""
+    path = Path(path)
+    try:
+        metadata = json.loads(path.with_suffix('.json').read_text())
+        if not isinstance(metadata, dict):
+            return None
+        digest = metadata.get('sha256')
+        if digest and digest != hashlib.sha256(path.read_bytes()).hexdigest():
+            return None
+        category = metadata.get('primary_category')
+        return category if isinstance(category, str) else None
     except (OSError, ValueError):
         return None
 
@@ -106,7 +122,7 @@ def write_metadata(path, task, *, prompt=None, record=None, digest=None):
     if isinstance(record, dict) and record.get('sha256') == digest:
         metadata.update({key: record[key] for key in (
             'tags', 'analysis_version', 'prompt_sha256', 'raw_tags', 'tag_matches',
-            'character_placement', 'image_tier',
+            'character_placement', 'primary_category', 'image_tier',
             'tag_matching_version', 'tag_matching_tags_sha256', 'tag_vocabulary_sha256') if key in record})
     temporary = None
     try:

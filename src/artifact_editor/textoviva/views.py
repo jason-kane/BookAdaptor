@@ -61,6 +61,7 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
@@ -98,39 +99,49 @@ def pause():
 
     # a masterplan image object gives us lots good stuff.
     # in this case:
-    image_xml = g.chapter.get_image(index=mp_image['index'])
+    image_xml = g.chapter.get_image(index=mp_image["index"])
 
     # return the image path as JSON
     if image_xml is None:
         # index and masterplan are out of sync.  This is critical.
-        log.critical(f"Masterplan image index {mp_image['index']} was not found in chapter_xml for {g.chapter.title}")
-        raise IndexError(f"Masterplan image index {mp_image['index']} was not found in chapter_xml for {g.chapter.title}")
-        return "No image found for index %s" % mp_image['index'], 404
-    
+        log.critical(
+            f"Masterplan image index {mp_image['index']} was not found in chapter_xml for {g.chapter.title}"
+        )
+        raise IndexError(
+            f"Masterplan image index {mp_image['index']} was not found in chapter_xml for {g.chapter.title}"
+        )
+        return "No image found for index %s" % mp_image["index"], 404
+
     out = small_image_workshop(image_xml) + animation_panel(image_xml, oob=True)
     return out, 200
 
 
 def animation_panel(image_xml, oob=False):
-    swap = ' hx-swap-oob="true"' if oob else ''
+    swap = ' hx-swap-oob="true"' if oob else ""
     if image_xml is None:
         return f'<section id="video-base"{swap}>Pause on an image to edit its animation.</section>'
-    index = int(image_xml.attrs['index'])
+    index = int(image_xml.attrs["index"])
     duration = g.chapter.get_image_frames(image_xml) / const.FPS
     phrase_indices = []
     for point in image_xml.next_elements:
         if not isinstance(point, Tag):
             continue
-        if point.name == 'image':
+        if point.name == "image":
             break
-        if point.name == 'phrase':
-            phrase_indices.append(str(point.attrs['index']))
+        if point.name == "phrase":
+            phrase_indices.append(str(point.attrs["index"]))
     phrase_indices_attr = escape(json.dumps(phrase_indices), quote=True)
-    prompt = escape(image_xml.attrs.get('animation_prompt', ''), quote=True)
-    action = url_for('library.book.chapter.textoviva.regenerate_animation', image_index=index)
-    save_action = url_for('library.book.chapter.textoviva.save_animation_description', image_index=index)
-    workflow_action = url_for('library.book.chapter.textoviva.open_animation_workflow', image_index=index)
-    return f'''<section id="video-base" class="wa-stack" data-phrase-indices="{phrase_indices_attr}"{swap}>
+    prompt = escape(image_xml.attrs.get("animation_prompt", ""), quote=True)
+    action = url_for(
+        "library.book.chapter.textoviva.regenerate_animation", image_index=index
+    )
+    save_action = url_for(
+        "library.book.chapter.textoviva.save_animation_description", image_index=index
+    )
+    workflow_action = url_for(
+        "library.book.chapter.textoviva.open_animation_workflow", image_index=index
+    )
+    return f"""<section id="video-base" class="wa-stack" data-phrase-indices="{phrase_indices_attr}"{swap}>
         <strong>Animation · Image {index}</strong>
         <div>Visualization duration: {duration:.2f} seconds</div>
         <wa-textarea id="animation-description" label="Animation description"
@@ -152,77 +163,97 @@ def animation_panel(image_xml, oob=False):
         </wa-button>
         </div>
         <div id="animation-status" role="status" aria-live="polite"></div>
-    </section>'''
+    </section>"""
 
 
-@bp.route('/animation/<int:image_index>/workflow')
+@bp.route("/animation/<int:image_index>/workflow")
 def open_animation_workflow(image_index):
     g.chapter.load_xml(force=True)
     image_xml = g.chapter.get_image(index=image_index)
     if image_xml is None:
-        return 'Image not found', 404
-    prompt = request.args.get('animation_prompt', image_xml.attrs.get('animation_prompt', ''))
+        return "Image not found", 404
+    prompt = request.args.get(
+        "animation_prompt", image_xml.attrs.get("animation_prompt", "")
+    )
     workflow_template = animation_workflow_name(
-        request.args.get('workflow_i2v_template') or image_xml.attrs.get('workflow_i2v_template') or const.DEFAULT_I2V_TEMPLATE
+        request.args.get("workflow_i2v_template")
+        or image_xml.attrs.get("workflow_i2v_template")
+        or const.DEFAULT_I2V_TEMPLATE
     )
     workflow_fn = g.chapter.get_workflow(
         image_xml,
         workflow_name=workflow_template,
         video_index=0,
-        template_environment={'ANIMATION_PROMPT': prompt},
+        template_environment={"ANIMATION_PROMPT": prompt},
         use_image_source=True,
     )
     if not workflow_fn:
-        return 'No workflow available for this image.', 400
-    return flask.redirect(const.COMFYUI_UI_URL + f'?workflow={workflow_fn}', code=302)
+        return "No workflow available for this image.", 400
+    return flask.redirect(const.COMFYUI_UI_URL + f"?workflow={workflow_fn}", code=302)
 
 
-@bp.route('/animation/<int:image_index>/description', methods=['PUT'])
+@bp.route("/animation/<int:image_index>/description", methods=["PUT"])
 def save_animation_description(image_index):
     g.chapter.load_xml(force=True)
     image_xml = g.chapter.get_image(index=image_index)
     if image_xml is None:
-        return 'Image not found', 404
-    if 'animation_prompt' not in request.form:
-        return 'Missing animation description', 400
-    image_xml.attrs['animation_prompt'] = request.form['animation_prompt']
+        return "Image not found", 404
+    if "animation_prompt" not in request.form:
+        return "Missing animation description", 400
+    image_xml.attrs["animation_prompt"] = request.form["animation_prompt"]
     g.chapter.save_xml()
-    return 'Description saved.'
+    return "Description saved."
 
 
-@bp.route('/animation/<int:image_index>/regenerate', methods=['POST'])
+@bp.route("/animation/<int:image_index>/regenerate", methods=["POST"])
 def regenerate_animation(image_index):
     g.chapter.load_xml(force=True)
     image_xml = g.chapter.get_image(index=image_index)
     if image_xml is None:
-        return 'Image not found', 404
-    prompt = request.form.get('animation_prompt', '')
+        return "Image not found", 404
+    prompt = request.form.get("animation_prompt", "")
     if not prompt.strip():
-        return 'Enter an animation description.'
-    image_xml.attrs['animation_prompt'] = prompt
-    if request.form.get('workflow_i2v_template'):
-        image_xml.attrs['workflow_i2v_template'] = request.form['workflow_i2v_template']
+        return "Enter an animation description."
+    image_xml.attrs["animation_prompt"] = prompt
+    if request.form.get("workflow_i2v_template"):
+        image_xml.attrs["workflow_i2v_template"] = request.form["workflow_i2v_template"]
     g.chapter.save_xml()
 
     job_id = uuid.uuid4().hex
     task = {
-        'action': 'textoviva_regenerate_animation', 'job_id': job_id,
-        'author': g.chapter.author.name, 'title': g.chapter.title,
-        'chapter_number': g.chapter.number, 'language': g.chapter.language,
-        'image_index': image_index, 'animation_prompt': prompt,
+        "action": "textoviva_regenerate_animation",
+        "job_id": job_id,
+        "author": g.chapter.author.name,
+        "title": g.chapter.title,
+        "chapter_number": g.chapter.number,
+        "language": g.chapter.language,
+        "image_index": image_index,
+        "animation_prompt": prompt,
     }
-    client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
-    client.lpush("video_render_jobs", json.dumps(task))
+    client = redis.Redis(
+        host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+    )
+    from task_queue import VIDEO_QUEUE, enqueue_task
+
+    enqueue_task(client, VIDEO_QUEUE, task)
     return f'<div id="video-progress-{job_id}">Animation queued. The chapter video will be rebuilt.</div>'
 
 
 def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     job_id = uuid.uuid4().hex
-    task = escape(json.dumps({
-        "action": "textoviva_rerender", "job_id": job_id,
-        "author": chapter.author.name, "title": chapter.title,
-        "chapter_number": chapter.number, "language": chapter.language,
-    }), quote=True)
+    task = escape(
+        json.dumps(
+            {
+                "action": "textoviva_rerender",
+                "job_id": job_id,
+                "author": chapter.author.name,
+                "title": chapter.title,
+                "chapter_number": chapter.number,
+                "language": chapter.language,
+            }
+        ),
+        quote=True,
+    )
     notice = f"""<div id="video-generation-notice" class="wa-stack"
         hx-ext="ws" ws-connect="{websocket_url()}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
@@ -230,7 +261,11 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 
-    pause_url = "" if embedded else url_for('library.book.chapter.textoviva.pause', **chapter.kwargs)
+    pause_url = (
+        ""
+        if embedded
+        else url_for("library.book.chapter.textoviva.pause", **chapter.kwargs)
+    )
     return f"""<div id="player-stack" class="wa-stack">
     <video
         id="chapter-video"
@@ -248,16 +283,24 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
 </div>"""
 
 
-@bp.get('/playback-timeline')
+@bp.get("/playback-timeline")
 def playback_timeline():
     plan = g.chapter.get_masterplan()
+
     def entries(items):
-        return [{"index": str(item.index), "start": item.start_frame, "end": item.end_frame}
-                for item in items]
-    return {"fps": const.FPS, "phrases": entries(plan.words), "images": entries(plan.images)}
+        return [
+            {"index": str(item.index), "start": item.start_frame, "end": item.end_frame}
+            for item in items
+        ]
+
+    return {
+        "fps": const.FPS,
+        "phrases": entries(plan.words),
+        "images": entries(plan.images),
+    }
 
 
-@bp.get('/player')
+@bp.get("/player")
 def player():
     return player_stack(g.chapter, None, embedded=True)
 
@@ -305,12 +348,12 @@ def shrink_image_workshop():
 def large_image_workshop(image_xml: Tag, chapter: Chapter) -> str:
     # take over main
 
-            # <img
-            #     src="{url_for('library.book.chapter.images.show_image_by_index', height=512, image_index=image_xml.attrs['index'])}"
-            #     alt="Chapter image {image_xml.attrs['index']}"
-            #     style="max-height: 50vh; max-width: 100%; object-fit: contain"
-            # />
-    
+    # <img
+    #     src="{url_for('library.book.chapter.images.show_image_by_index', height=512, image_index=image_xml.attrs['index'])}"
+    #     alt="Chapter image {image_xml.attrs['index']}"
+    #     style="max-height: 50vh; max-width: 100%; object-fit: contain"
+    # />
+
     return f"""
     <main
         id="main"
@@ -375,5 +418,3 @@ def base():
             "language": g.chapter.language,
         },
     )
-
-

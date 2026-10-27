@@ -20,6 +20,7 @@ from flask import (
     url_for,
     g,
 )
+from task_queue import VIDEO_QUEUE, enqueue_task
 
 import const
 import logger
@@ -36,7 +37,14 @@ from artifact_editor.tools import (
 )
 
 from . import htmx
-from .section_latex import RASTER_DPI, font_preamble, render_sections, video_page_geometry, typeset_chapter_xml, crop_chapter_text_images
+from .section_latex import (
+    RASTER_DPI,
+    font_preamble,
+    render_sections,
+    video_page_geometry,
+    typeset_chapter_xml,
+    crop_chapter_text_images,
+)
 
 from artifact_editor.chapter.chapter import (
     Chapter,
@@ -74,13 +82,15 @@ bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
+
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values) 
+    chapter_url_value_preprocessor(endpoint, values)
 
 
 # PUT /Oscar%20Wilde/The%20Picture%20of%20Dorian%20Gray/1/set_chapter_cover
@@ -94,7 +104,7 @@ def set_chapter_cover():
 
     source = os.path.join(
         tools.const.LIBRARY_DIR,
-        g.chapter.get_paragraph_dir(paragraph_xml['index']),
+        g.chapter.get_paragraph_dir(paragraph_xml["index"]),
         filename,
     )
 
@@ -121,7 +131,7 @@ def set_chapter_cover():
 @bp.route("/set_mood", methods=["PUT"])
 def set_mood():
     new_mood = request.form.get("mood")
-    
+
     g.chapter.mood = new_mood
     log.info(f"Setting g.chapter.config['mood'] to {new_mood}")
     g.chapter.config["mood"] = new_mood
@@ -154,7 +164,9 @@ def generate_mood():
 def generate_chapter_mood(chapter):
     from artifact_editor import llm
 
-    chapter_text = "\n".join(phrase.simple_text() for phrase in chapter.phrases()).strip()
+    chapter_text = "\n".join(
+        phrase.simple_text() for phrase in chapter.phrases()
+    ).strip()
     if not chapter_text:
         raise ValueError("Import chapter text before generating mood.")
 
@@ -171,9 +183,13 @@ def generate_chapter_mood(chapter):
     try:
         result = llm.json_prompt(prompt, force=True)
         descriptors = result.get("moods") if isinstance(result, dict) else None
-        if not isinstance(descriptors, list) or not descriptors or not all(
-            isinstance(item, str) and item.strip() and "," not in item
-            for item in descriptors
+        if (
+            not isinstance(descriptors, list)
+            or not descriptors
+            or not all(
+                isinstance(item, str) and item.strip() and "," not in item
+                for item in descriptors
+            )
         ):
             raise ValueError("Invalid mood descriptors returned by the LLM")
         mood = ", ".join(dict.fromkeys(" ".join(item.split()) for item in descriptors))
@@ -201,7 +217,9 @@ def generate_theme():
 def generate_chapter_theme(chapter):
     from artifact_editor import llm
 
-    chapter_text = "\n".join(phrase.simple_text() for phrase in chapter.phrases()).strip()
+    chapter_text = "\n".join(
+        phrase.simple_text() for phrase in chapter.phrases()
+    ).strip()
     if not chapter_text:
         raise ValueError("Import chapter text before generating theme.")
 
@@ -223,9 +241,13 @@ def generate_chapter_theme(chapter):
     try:
         result = llm.json_prompt(prompt, force=True)
         themes = result.get("themes") if isinstance(result, dict) else None
-        if not isinstance(themes, list) or not themes or not all(
-            isinstance(item, str) and item.strip() and "," not in item
-            for item in themes
+        if (
+            not isinstance(themes, list)
+            or not themes
+            or not all(
+                isinstance(item, str) and item.strip() and "," not in item
+                for item in themes
+            )
         ):
             raise ValueError("Invalid theme phrases returned by the LLM")
         theme = ", ".join(dict.fromkeys(" ".join(item.split()) for item in themes))
@@ -250,6 +272,7 @@ def update_phrase():
 
     return "", 200
 
+
 @bp.route("/timeline/image/<int:image_index>", methods=["GET", "POST"])
 def timeline_image_editor(image_index):
     from pathlib import Path
@@ -260,13 +283,22 @@ def timeline_image_editor(image_index):
     if image is None:
         return "Image no longer exists; reload the chapter", 404
     paragraph_dir = Path(const.LIBRARY_DIR) / g.chapter.get_paragraph_dir(
-        image.find_parent("paragraph")["index"])
+        image.find_parent("paragraph")["index"]
+    )
     candidates = gather_candidate_images(image, g.chapter)
-    current_path = paragraph_dir / image['src'] if image.get('src') else None
+    current_path = paragraph_dir / image["src"] if image.get("src") else None
     thumbnails = recent_image_candidates(candidates, current_path)
     if request.method == "POST":
         action = request.form.get("action", "description")
-        if action not in ("description", "metadata", "generate", "select", "animation_description", "regenerate_animation_description", "animation_workflow"):
+        if action not in (
+            "description",
+            "metadata",
+            "generate",
+            "select",
+            "animation_description",
+            "regenerate_animation_description",
+            "animation_workflow",
+        ):
             return "Invalid image action", 400
         if action == "regenerate_animation_description":
             from artifact_editor.images import images
@@ -274,8 +306,14 @@ def timeline_image_editor(image_index):
             images.generate_animation_prompt(g.chapter, image, force=True)
             g.chapter.save_xml()
             return render_template(
-                "chapter_timeline_animation_description.html", chapter=g.chapter, image=image,
-                editor_url=url_for("library.book.chapter.timeline_image_editor", image_index=image_index, **g.chapter.kwargs),
+                "chapter_timeline_animation_description.html",
+                chapter=g.chapter,
+                image=image,
+                editor_url=url_for(
+                    "library.book.chapter.timeline_image_editor",
+                    image_index=image_index,
+                    **g.chapter.kwargs,
+                ),
             )
         if action == "animation_workflow":
             from text_to_image.comfyui.workflow.ui import get_workflow_templates
@@ -294,9 +332,9 @@ def timeline_image_editor(image_index):
             return "", 204
         if action == "select":
             filename = request.form.get("filename", "")
-            if filename not in {item['filename'] for item in thumbnails}:
+            if filename not in {item["filename"] for item in thumbnails}:
                 return "Image is not an available version for this slot", 400
-            image['src'] = filename
+            image["src"] = filename
             g.chapter.save_xml()
             from artifact_editor.cache import cache
 
@@ -308,6 +346,7 @@ def timeline_image_editor(image_index):
             return "", 204
         if action in ("metadata", "generate"):
             from worker_startup import ensure_worker_services
+
             try:
                 ensure_worker_services(comfyui=action == "generate")
             except RuntimeError as exc:
@@ -320,28 +359,52 @@ def timeline_image_editor(image_index):
             g.chapter.save_xml()
             job_id = uuid.uuid4().hex
             task = {
-                "action": "timeline_metadata" if action == "metadata" else "timeline_image", "job_id": job_id,
-                "author": g.chapter.author.name, "title": g.chapter.title,
-                "chapter_number": g.chapter.number, "language": g.chapter.language,
+                "action": "timeline_metadata"
+                if action == "metadata"
+                else "timeline_image",
+                "job_id": job_id,
+                "author": g.chapter.author.name,
+                "title": g.chapter.title,
+                "chapter_number": g.chapter.number,
+                "language": g.chapter.language,
                 "image_index": image_index,
             }
-            client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
-            client.lpush("video_render_jobs", json.dumps(task))
-            center_attribute = f' data-center-generated-image="{image_index}"' if action == "generate" else ""
+            client = redis.Redis(
+                host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+            )
+            enqueue_task(client, VIDEO_QUEUE, task)
+            center_attribute = (
+                f' data-center-generated-image="{image_index}"'
+                if action == "generate"
+                else ""
+            )
             return f'<div{center_attribute}><div id="video-progress-{job_id}" role="status" aria-live="polite"><wa-progress-bar indeterminate></wa-progress-bar>{"Metadata" if action == "metadata" else "Image"} queued.</div></div>'
     import time
 
     thumbnails = recent_image_candidates(
         gather_candidate_images(image, g.chapter),
-        paragraph_dir / image['src'] if image.get('src') else None,
+        paragraph_dir / image["src"] if image.get("src") else None,
     )
     from artifact_editor.images.panel import panel_controls
-    from text_to_image.comfyui.workflow.ui import ComfyWorkflowUI, get_workflow_templates
+    from text_to_image.comfyui.workflow.ui import (
+        ComfyWorkflowUI,
+        get_workflow_templates,
+    )
 
     prompt_controls = panel_controls(
-        ComfyWorkflowUI(g.chapter).generate_ui(image), image_index,
-        url_for("library.book.chapter.images.base", image_index=image_index, **g.chapter.kwargs).rstrip("/") + "/",
-        url_for("library.book.chapter.timeline_image_editor", image_index=image_index, **g.chapter.kwargs),
+        ComfyWorkflowUI(g.chapter).generate_ui(image),
+        image_index,
+        url_for(
+            "library.book.chapter.images.base",
+            image_index=image_index,
+            **g.chapter.kwargs,
+        ).rstrip("/")
+        + "/",
+        url_for(
+            "library.book.chapter.timeline_image_editor",
+            image_index=image_index,
+            **g.chapter.kwargs,
+        ),
     )
     from artifact_editor.images.animation_source import animation_filename
 
@@ -350,20 +413,34 @@ def timeline_image_editor(image_index):
     if video_filename:
         animation_url = url_for(
             "library.book.chapter.images.deliver_animation_video",
-            image_index=image_index, filename=Path(video_filename).stem,
-            v=time.time_ns(), **g.chapter.kwargs,
+            image_index=image_index,
+            filename=Path(video_filename).stem,
+            v=time.time_ns(),
+            **g.chapter.kwargs,
         )
     from artifact_editor.phrases.htmx import chapter_timing_updates
 
     return render_template(
-        "chapter_timeline_image_editor.html", chapter=g.chapter, image=image,
-        timing=next((entry["timing"] for entry in g.chapter.timeline()
-                     if entry["type"] == "image" and str(entry["image"]["index"]) == str(image_index)), None),
+        "chapter_timeline_image_editor.html",
+        chapter=g.chapter,
+        image=image,
+        timing=next(
+            (
+                entry["timing"]
+                for entry in g.chapter.timeline()
+                if entry["type"] == "image"
+                and str(entry["image"]["index"]) == str(image_index)
+            ),
+            None,
+        ),
         animation_fps=const.FPS,
-        prompt_controls=prompt_controls, animation_url=animation_url,
+        prompt_controls=prompt_controls,
+        animation_url=animation_url,
         i2v_templates=list(get_workflow_templates(mode="i2v")),
-        selected_i2v_template=image.get("workflow_i2v_template") or const.DEFAULT_I2V_TEMPLATE,
-        preview_version=time.time_ns(), default_image_template=const.DEFAULT_IMAGE_TEMPLATE,
+        selected_i2v_template=image.get("workflow_i2v_template")
+        or const.DEFAULT_I2V_TEMPLATE,
+        preview_version=time.time_ns(),
+        default_image_template=const.DEFAULT_IMAGE_TEMPLATE,
         thumbnails=thumbnails,
     ) + chapter_timing_updates(g.chapter)
 
@@ -377,7 +454,9 @@ def add_timeline_phrase_below(phrase_index):
     except ValueError as error:
         return str(error), 400
     return render_template(
-        "chapter_phrase_list.html", chapter=g.chapter, speakers=g.chapter.speakers(),
+        "chapter_phrase_list.html",
+        chapter=g.chapter,
+        speakers=g.chapter.speakers(),
     )
 
 
@@ -390,10 +469,10 @@ def add_timeline_image_below(phrase_index):
         image = add_image_below(g.chapter, phrase_index)
     except ValueError as error:
         return str(error), 400
-    timing = image_timings(g.chapter.get_xml()).get(str(image['index']))
-    return (render_template("chapter_timeline_image.html", chapter=g.chapter,
-                            image=image, timing=timing)
-            + chapter_timing_updates(g.chapter))
+    timing = image_timings(g.chapter.get_xml()).get(str(image["index"]))
+    return render_template(
+        "chapter_timeline_image.html", chapter=g.chapter, image=image, timing=timing
+    ) + chapter_timing_updates(g.chapter)
 
 
 @bp.post("/timeline/add-silence/<target_type>/<int:target_index>")
@@ -405,9 +484,14 @@ def add_timeline_silence(target_type, target_index):
         silence = add_silence(g.chapter, target_type, target_index, const.FPS)
     except ValueError as error:
         return str(error), 400
-    return (render_template("chapter_timeline_silence.html", chapter=g.chapter, silence=silence,
-                            timing=phrase_timings(g.chapter.get_xml(), item_type="silence").get(str(silence['index'])))
-            + chapter_timing_updates(g.chapter))
+    return render_template(
+        "chapter_timeline_silence.html",
+        chapter=g.chapter,
+        silence=silence,
+        timing=phrase_timings(g.chapter.get_xml(), item_type="silence").get(
+            str(silence["index"])
+        ),
+    ) + chapter_timing_updates(g.chapter)
 
 
 @bp.post("/timeline/silence/<int:silence_index>")
@@ -428,12 +512,19 @@ def update_timeline_silence(silence_index):
 @bp.post("/timeline/add-scene/<int:image_index>")
 def add_timeline_scene(image_index):
     from .scenes import add_scene
+
     try:
         scene = add_scene(g.chapter, image_index)
     except ValueError as error:
         return str(error), 400
     from artifact_editor.chapter.scenes import LIGHTING_CHOICES
-    return render_template("chapter_timeline_scene.html", chapter=g.chapter, scene=scene, lighting_choices=LIGHTING_CHOICES)
+
+    return render_template(
+        "chapter_timeline_scene.html",
+        chapter=g.chapter,
+        scene=scene,
+        lighting_choices=LIGHTING_CHOICES,
+    )
 
 
 @bp.route("/timeline/scene/<int:scene_index>", methods=["GET", "POST"])
@@ -445,10 +536,14 @@ def timeline_scene_editor(scene_index):
         action = request.form.get("action", "save")
         if action not in ("save", "description", "generate", "tod", "lighting"):
             return "Invalid scene action", 400
-        lighting_values = {aspect: request.form["lighting_" + aspect]
-                           for aspect in ("direction", "source", "quality") if "lighting_" + aspect in request.form}
+        lighting_values = {
+            aspect: request.form["lighting_" + aspect]
+            for aspect in ("direction", "source", "quality")
+            if "lighting_" + aspect in request.form
+        }
         if lighting_values:
             from artifact_editor.chapter.scenes import save_lighting
+
             try:
                 save_lighting(scene, lighting_values)
             except ValueError as error:
@@ -456,6 +551,7 @@ def timeline_scene_editor(scene_index):
             g.chapter.save_xml()
         if "tod" in request.form:
             from .scenes import save_time_of_day
+
             try:
                 save_time_of_day(scene, request.form["tod"])
             except ValueError as error:
@@ -470,24 +566,44 @@ def timeline_scene_editor(scene_index):
             return "Enter or generate a scene description first.", 400
         import uuid
         import redis
+
         job_id = uuid.uuid4().hex
         task = {
-            "action": {"description": "scene_description", "tod": "scene_tod", "generate": "scene_image", "lighting": "scene_lighting"}[action],
-            "job_id": job_id, "author": g.chapter.author.name, "title": g.chapter.title,
-            "chapter_number": g.chapter.number, "language": g.chapter.language,
-            "scene_index": scene_index, "description": scene.get("description", ""),
+            "action": {
+                "description": "scene_description",
+                "tod": "scene_tod",
+                "generate": "scene_image",
+                "lighting": "scene_lighting",
+            }[action],
+            "job_id": job_id,
+            "author": g.chapter.author.name,
+            "title": g.chapter.title,
+            "chapter_number": g.chapter.number,
+            "language": g.chapter.language,
+            "scene_index": scene_index,
+            "description": scene.get("description", ""),
         }
-        client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
-        client.lpush("video_render_jobs", json.dumps(task))
+        client = redis.Redis(
+            host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+        )
+        enqueue_task(client, VIDEO_QUEUE, task)
         return f'<div id="video-progress-{job_id}" role="status" aria-live="polite"><wa-progress-bar indeterminate></wa-progress-bar>Scene generation queued.</div>'
     from artifact_editor.chapter.scenes import LIGHTING_CHOICES
-    return render_template("chapter_timeline_scene_editor.html", chapter=g.chapter, scene=scene, lighting_choices=LIGHTING_CHOICES, scene_preview_oob=True)
+
+    return render_template(
+        "chapter_timeline_scene_editor.html",
+        chapter=g.chapter,
+        scene=scene,
+        lighting_choices=LIGHTING_CHOICES,
+        scene_preview_oob=True,
+    )
 
 
 @bp.get("/timeline/scene/<int:scene_index>/workflow")
 def open_timeline_scene_workflow(scene_index):
     from .scenes import LIGHTING_CHOICES, save_lighting, TIME_OF_DAY_VALUES
     from artifact_editor.reference_images import open_reference_workflow
+
     scene = g.chapter.get_xml().find("scene", index=str(scene_index))
     if scene is None:
         return "Scene no longer exists; reload the chapter", 404
@@ -497,11 +613,20 @@ def open_timeline_scene_workflow(scene_index):
     tod = request.args.get("tod", scene.get("tod", "unknown"))
     if tod not in TIME_OF_DAY_VALUES:
         return "Invalid scene time of day", 400
-    values = {aspect: request.args.get("lighting_" + aspect, scene.get("lighting_" + aspect, ""))
-              for aspect in LIGHTING_CHOICES}
+    values = {
+        aspect: request.args.get(
+            "lighting_" + aspect, scene.get("lighting_" + aspect, "")
+        )
+        for aspect in LIGHTING_CHOICES
+    }
     try:
         save_lighting({}, values)
-        return redirect(open_reference_workflow("scenes", description + '\nTime of day: ' + tod + '\nLighting: ' + str(values)))
+        return redirect(
+            open_reference_workflow(
+                "scenes",
+                description + "\nTime of day: " + tod + "\nLighting: " + str(values),
+            )
+        )
     except ValueError as error:
         return str(error), 400
 
@@ -509,12 +634,13 @@ def open_timeline_scene_workflow(scene_index):
 @bp.get("/timeline/scene/<int:scene_index>/image.png")
 def timeline_scene_image(scene_index):
     from .scenes import scene_image_path
+
     scene = g.chapter.get_xml().find("scene", index=str(scene_index))
     if scene is None or not scene.get("src"):
         return "Scene image not found", 404
     path = scene_image_path(g.chapter, scene, const.LIBRARY_DIR)
     response = send_from_directory(str(path.parent), path.name)
-    response.headers['Cache-Control'] = 'no-cache'
+    response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -529,13 +655,22 @@ def move_timeline_image():
         if item_type not in ("image", "scene"):
             raise ValueError("Invalid draggable timeline item")
         if item_type == "scene":
-            move_scene(g.chapter, int(request.form["image_index"]),
-                       request.form["target_type"], int(request.form["target_index"]),
-                       request.form["position"])
+            move_scene(
+                g.chapter,
+                int(request.form["image_index"]),
+                request.form["target_type"],
+                int(request.form["target_index"]),
+                request.form["position"],
+            )
         else:
-            move_image(g.chapter, int(request.form["image_index"]),
-                       request.form["target_type"], int(request.form["target_index"]),
-                       request.form["position"], library_dir=const.LIBRARY_DIR)
+            move_image(
+                g.chapter,
+                int(request.form["image_index"]),
+                request.form["target_type"],
+                int(request.form["target_index"]),
+                request.form["position"],
+                library_dir=const.LIBRARY_DIR,
+            )
     except (ValueError, KeyError) as error:
         return str(error), 400
     return chapter_timing_updates(g.chapter), 200
@@ -571,7 +706,9 @@ def remove_all_metadata():
 
     remove_all_image_metadata(g.chapter)
     return render_template(
-        "chapter_phrase_list.html", chapter=g.chapter, speakers=g.chapter.speakers(),
+        "chapter_phrase_list.html",
+        chapter=g.chapter,
+        speakers=g.chapter.speakers(),
     )
 
 
@@ -581,7 +718,9 @@ def remove_all_images():
 
     detach_all_images(g.chapter)
     return render_template(
-        "chapter_phrase_list.html", chapter=g.chapter, speakers=g.chapter.speakers(),
+        "chapter_phrase_list.html",
+        chapter=g.chapter,
+        speakers=g.chapter.speakers(),
     )
 
 
@@ -594,8 +733,12 @@ def timeline_panel():
         chapter=g.chapter,
         speakers=g.chapter.speakers(),
         time_align_button=htmx.time_align_button(g.chapter),
-        generate_missing_animation_button=htmx.generate_missing_animation_button(g.chapter),
-        generate_missing_metadata_button=htmx.generate_missing_metadata_button(g.chapter),
+        generate_missing_animation_button=htmx.generate_missing_animation_button(
+            g.chapter
+        ),
+        generate_missing_metadata_button=htmx.generate_missing_metadata_button(
+            g.chapter
+        ),
         generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
         generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
             g.chapter, label="Generate Missing Audio"
@@ -612,8 +755,8 @@ def chapter_base():
 
     return render_template(
         "text.html",
-        chapter_pdf_url = url_for(
-            'library.book.chapter.typography.serve_chapter_pdf',
+        chapter_pdf_url=url_for(
+            "library.book.chapter.typography.serve_chapter_pdf",
         ),
         phrases=phrases,
         speakers=g.chapter.speakers(),
@@ -624,8 +767,12 @@ def chapter_base():
         chapter_mood=htmx.chapter_mood_widget(g.chapter),
         chapter_theme=htmx.chapter_theme_widget(g.chapter),
         time_align_button=htmx.time_align_button(g.chapter),
-        generate_missing_animation_button=htmx.generate_missing_animation_button(g.chapter),
-        generate_missing_metadata_button=htmx.generate_missing_metadata_button(g.chapter),
+        generate_missing_animation_button=htmx.generate_missing_animation_button(
+            g.chapter
+        ),
+        generate_missing_metadata_button=htmx.generate_missing_metadata_button(
+            g.chapter
+        ),
         generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
         generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
             g.chapter, label="Generate Missing Audio"
@@ -715,20 +862,24 @@ def reflow_paragraphs():
     # we want to remove all "excess" newlines from this chapter
     # this will allow the contents to reflow based on latex rules
     # which are generally best.
-    
+
     # The trouble, or the challenge, is they are in delta format which
     # is not paragraph aware.
     delta = g.chapter.load_delta()
     out_ops = []
     for operation in delta["ops"]:
         if "insert" in operation:
-            operation["insert"] = re.sub(r"\n{2,}", "**PARAGRAPH**", operation["insert"])
+            operation["insert"] = re.sub(
+                r"\n{2,}", "**PARAGRAPH**", operation["insert"]
+            )
 
             # remove all newlines that are not followed by a newline
             # (reducing our \n\n\n to \n\n)
             operation["insert"] = re.sub(r"\n([^\n])", r" \1", operation["insert"])
 
-            operation["insert"] = re.sub(r"\*\*PARAGRAPH\*\*", "\n\n", operation["insert"])
+            operation["insert"] = re.sub(
+                r"\*\*PARAGRAPH\*\*", "\n\n", operation["insert"]
+            )
         out_ops.append(operation)
 
     g.chapter.save_delta({"ops": out_ops})
@@ -826,7 +977,7 @@ def restore_centered_paragraph_spacing(latex: str) -> str:
     centered_block_end = r"(\\end\{center\}\s*\\vspace\{-3\.5em\})"
 
     def paragraph_gap(match: re.Match[str]) -> str:
-        next_content = latex[match.end():].lstrip()
+        next_content = latex[match.end() :].lstrip()
         gap = "1.75em" if next_content.startswith(r"\begin{center}") else "2.59em"
         return match.group(1) + "\n" + rf"\vspace{{{gap}}}" + match.group(2)
 
@@ -852,18 +1003,16 @@ def ensure_verse_line_breaks(latex: str) -> str:
         if not in_verse or not content:
             continue
 
-        next_content = (
-            lines[index + 1].strip()
-            if index + 1 < len(lines)
-            else ""
-        )
+        next_content = lines[index + 1].strip() if index + 1 < len(lines) else ""
         if (
             next_content
             and not content.startswith((r"\begin{", r"\end{", r"\vspace{"))
             and not next_content.startswith((r"\begin{", r"\end{", r"\vspace{"))
             and not content.endswith(r"\\")
         ):
-            newline = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            newline = (
+                "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            )
             lines[index] = content + r"\\" + newline
 
     return "".join(lines)
@@ -885,15 +1034,17 @@ def phrase_editor(phrase_index: int):
     if request.args.get("collapse") == "1":
         return render_template("chapter_phrase_collapsed.html", phrase=phrase)
     previous_phrase_index = int(request.args.get("previous_phrase_index", -1))
-    
+
     previous_phrase_xml = g.chapter.get_phrase(previous_phrase_index)
     if previous_phrase_xml:
-        previous_phrase = chapter.Phrase(chapter=g.chapter, phrase_xml=previous_phrase_xml)
+        previous_phrase = chapter.Phrase(
+            chapter=g.chapter, phrase_xml=previous_phrase_xml
+        )
         previous_delta = previous_phrase.delta
     else:
         previous_phrase = None
         previous_delta = "[]"
-       
+
     # just a place for quilljs to attach itself.
     out = f"""
 <div 
@@ -904,10 +1055,10 @@ def phrase_editor(phrase_index: int):
 </div>
     """
 
-    # replace the previous quilljs-enhanced editor with the 
+    # replace the previous quilljs-enhanced editor with the
     # original vanilla, so we only have one quill running instead of N
     # _and_ it makes it clear which one is "hot", and we can add other widgets to the 'hot' phrase.
-    
+
     if previous_phrase:
         # we are not the users first choice, they picked previous_phrase_index before they
         # picked us.  So we fix previous_phrase and put it back in its inert state, but with
@@ -938,9 +1089,9 @@ def phrase_editor(phrase_index: int):
         phrase_index=phrase.index,
     )
 
-    #phrase_delta = phrase.delta or "[]"
-    #previous_simple_text = phrase.simple_text()
-    #previous_phrase.attrs.get("simple_text", "")
+    # phrase_delta = phrase.delta or "[]"
+    # previous_simple_text = phrase.simple_text()
+    # previous_phrase.attrs.get("simple_text", "")
 
     out += f"""
 <div id="js-executor" hx-swap-oob="true">
@@ -954,10 +1105,14 @@ def phrase_editor(phrase_index: int):
         clearToolbars('phrase-stack');
 """
     if previous_phrase:
-        out += """
+        out += (
+            """
         // restore the value of the previously active editor
-        fixPreviousEditor(`""" + previous_phrase.simple_text().replace("`", "\\`") + "`);"
-        
+        fixPreviousEditor(`"""
+            + previous_phrase.simple_text().replace("`", "\\`")
+            + "`);"
+        )
+
     out += f"""
         // the new previous.
         window.previous_phrase_index = '{phrase_index}';
@@ -1024,7 +1179,6 @@ def phrase_editor(phrase_index: int):
     return out, 200
 
 
-
 @bp.route("/import_chapter_small_phrase", methods=["POST"])
 def import_chapter_small_phrase():
     """
@@ -1046,7 +1200,7 @@ def import_chapter_small_phrase():
     # as a video we want to include and speak both the book and author.  If
     # we're chapter 4 of 20 in a six hour video, we don't want to waste a moment
     # with tedious repetition of the title and author.
-    
+
     nlp = sentence_pipeline
 
     # break all the 'inserts' in delta up into single delta sentences.
@@ -1060,7 +1214,6 @@ def import_chapter_small_phrase():
 
         for major_break in re.split(r"(\n\n+)", ops.get("insert", "")):
             # ie: paragraph.
-            
 
             # # Regex pattern to match anything between double quotes or smart quotes
             # quote_pattern = re.compile(r'(["“][^"”]*["”])')
@@ -1082,12 +1235,12 @@ def import_chapter_small_phrase():
                 end_idx = match.end()
                 broken.append((start_idx, end_idx))
 
-            log.info('major_break: %s', repr(major_break))
-            log.info('broken: %s', repr(broken))
+            log.info("major_break: %s", repr(major_break))
+            log.info("broken: %s", repr(broken))
 
             if not broken:
                 broken = [(0, len(major_break))]
-            
+
             for start_idx, end_idx in broken:
                 log.info("Broken span: start=%s, end=%s", start_idx, end_idx)
                 doc = nlp(major_break[start_idx:end_idx])
@@ -1095,10 +1248,22 @@ def import_chapter_small_phrase():
                 sentence_spans = list(doc.sents)
                 sentence_count = len(sentence_spans)
                 log.info("Operation has %s sentences", sentence_count)
-                for sentence_index, sentence_span in enumerate(sentence_spans, index_start):
-                    log.info("[%s] sentence_span: %s", sentence_index, repr(sentence_span))
-                    log.info("[%s] sentence_span.text_with_ws: %s", sentence_index, repr(sentence_span.text_with_ws))
-                    log.info("[%s] sentence_span.text: %s", sentence_index, repr(sentence_span.text))
+                for sentence_index, sentence_span in enumerate(
+                    sentence_spans, index_start
+                ):
+                    log.info(
+                        "[%s] sentence_span: %s", sentence_index, repr(sentence_span)
+                    )
+                    log.info(
+                        "[%s] sentence_span.text_with_ws: %s",
+                        sentence_index,
+                        repr(sentence_span.text_with_ws),
+                    )
+                    log.info(
+                        "[%s] sentence_span.text: %s",
+                        sentence_index,
+                        repr(sentence_span.text),
+                    )
                     sentence = sentence_span.text_with_ws
 
                     if sentence[0] in [",", ".", "!", "?", ";", ":"]:
@@ -1106,7 +1271,7 @@ def import_chapter_small_phrase():
                         # we can't move it to the end of the previous because it's here because
                         # the formatting has changed.  Not a problem exactly, we just
                         # have to fix the trailing whitespace on the previous opt_ops.
-                        
+
                         # if the previous operation ended with a space, remove it
                         # we . dont want , this .
                         if out_ops[-1]["insert"][-1] == " ":
@@ -1119,7 +1284,7 @@ def import_chapter_small_phrase():
                             out_ops[-1]["insert"] += word
                             continue
 
-                        log.info('word: %s', repr(word))
+                        log.info("word: %s", repr(word))
                         # is this the sort of word we would consider a better
                         # than random choice for a place to split the audio?
                         if word.strip():
@@ -1167,7 +1332,7 @@ def import_chapter_small_phrase():
 
     index = index_start
     phrases = []
-    log.info('Iterating index from %s to %s', index, len(out_ops))
+    log.info("Iterating index from %s to %s", index, len(out_ops))
     while index < len(out_ops):
         # for phrases -- the visual highlighted text, we want each section
         # to be small enough to fit the readers eye.  Less than 10 words,
@@ -1225,7 +1390,7 @@ def import_chapter_small_phrase():
         our_ops = out_ops[index : break_index + 1]
 
         doc = t.ops_to_internal_representation(our_ops)
-        as_latex = doc.render_tree(mode='latex')
+        as_latex = doc.render_tree(mode="latex")
 
         # render_tree gets a lot of things right.  It also
         # makes some mistakes.  Lets fix those.
@@ -1242,7 +1407,7 @@ def import_chapter_small_phrase():
         # this one is very puzzling to me, using '' for all " is wrong
         # latex wants `` for opening quotes and '' for closing quotes.
         # we can either use " and let luaquotes do the work, or do it ourselves.
-        
+
         # these should be right in most cases, but there are likely others I haven't considered.
         as_latex = as_latex.replace(" ''", " ``")
         as_latex = as_latex.replace("\n''", "\n``")
@@ -1253,15 +1418,17 @@ def import_chapter_small_phrase():
 
         # this section is buggy
         # grab a copy of our end-of-phrase trailing whitespace
-        trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
-       
+        trailing_whitespace = our_ops[-1]["insert"][
+            len(our_ops[-1]["insert"].rstrip()) :
+        ]
+
         # add a clean copy of our trailing whitespace to the end of our phrase latex
         as_latex = as_latex.strip() + trailing_whitespace
 
         # then glue our_ops together to get plain_phrase (what is spoken)
         plain_phrase = "".join([o["insert"] for o in our_ops])
-       
-        phrases.append({"spoken": plain_phrase, "latex": as_latex, 'delta': our_ops})
+
+        phrases.append({"spoken": plain_phrase, "latex": as_latex, "delta": our_ops})
 
         index = break_index + 1
 
@@ -1280,7 +1447,7 @@ def import_chapter_small_phrase():
     #             "bold": False,
     #             "phrase": 1
     #         },
-    #     },        
+    #     },
     # ] + out_ops
     g.chapter.save_delta({"ops": out_ops})
 
@@ -1303,8 +1470,11 @@ def import_chapter_small_phrase():
         ),
         "w",
     ) as rainbow_h:
-        header = r"""\documentclass[parskip=full]{scrartcl}
-""" + video_page_geometry(const.GEOMETRY[g.chapter.aspect]["TEXT_WIDTH"]) + r"""
+        header = (
+            r"""\documentclass[parskip=full]{scrartcl}
+"""
+            + video_page_geometry(const.GEOMETRY[g.chapter.aspect]["TEXT_WIDTH"])
+            + r"""
 \addtokomafont{title}{\centering}
 \addtokomafont{author}{\centering}
 \usepackage[english]{babel}
@@ -1331,13 +1501,14 @@ def import_chapter_small_phrase():
 \hyphenpenalty=10000
 \exhyphenpenalty=100                    
 """
-# \setlength{\droptitle}{-45pt}
-# \posttitle{\par\end{center}}
-# \title{%s}
-# \author{%s}
-# \date{}
-# \maketitle
-# \vspace{-0.5in}
+        )
+        # \setlength{\droptitle}{-45pt}
+        # \posttitle{\par\end{center}}
+        # \title{%s}
+        # \author{%s}
+        # \date{}
+        # \maketitle
+        # \vspace{-0.5in}
 
         latex_block = ""
         latex_rainbow_block = ""
@@ -1347,14 +1518,18 @@ def import_chapter_small_phrase():
         title_paragraph.attrs["tags"] = "has-text=false,spoken-only=true"
 
         title_image = chapter_soup.new_tag("image")
-        title_image.attrs["prompt"] = f"Elegant book cover for {g.chapter.title} by {g.chapter.author.name} in an environment that represents the themes of the book."
+        title_image.attrs["prompt"] = (
+            f"Elegant book cover for {g.chapter.title} by {g.chapter.author.name} in an environment that represents the themes of the book."
+        )
         title_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
 
         title_phrase = chapter_soup.new_tag("phrase")
         title_phrase.string = f"{g.chapter.title}\n\nby {g.chapter.author.name}"
         title_phrase.attrs["speaker"] = "Narrator"
         title_phrase.attrs["index"] = "0"
-        title_phrase.attrs["delta"] = json.dumps(compress_ops(g.chapter.load_title_delta()["ops"]))
+        title_phrase.attrs["delta"] = json.dumps(
+            compress_ops(g.chapter.load_title_delta()["ops"])
+        )
 
         title_paragraph.append(title_image)
         title_paragraph.append(title_phrase)
@@ -1486,22 +1661,22 @@ def import_chapter_small_phrase():
         ).splitlines(keepends=True)
 
         h.write(header % (""))
-        rainbow_h.write(
-            header % ("\n".join(rainbow_series))
-        )
+        rainbow_h.write(header % ("\n".join(rainbow_series)))
 
         # now write the header, in latex format.
         title_delta = g.chapter.load_title_delta()
         # t = TranslatorQuillJS()
         doc = t.ops_to_internal_representation(title_delta["ops"])
-        as_latex = doc.render_tree(mode='latex')
+        as_latex = doc.render_tree(mode="latex")
         as_latex = as_latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
         as_latex += "\n\\vspace{3.5em}"
 
         h.write(as_latex)
         rainbow_h.write(as_latex)
 
-        all_lines = ensure_verse_line_breaks("".join(all_lines)).splitlines(keepends=True)
+        all_lines = ensure_verse_line_breaks("".join(all_lines)).splitlines(
+            keepends=True
+        )
         all_rainbow_lines = ensure_verse_line_breaks(
             "".join(all_rainbow_lines)
         ).splitlines(keepends=True)
@@ -1511,7 +1686,7 @@ def import_chapter_small_phrase():
         h.write(r"""\end{document}""")
         rainbow_h.write(r"""\end{document}""")
 
-    #delta["ops"] = out_ops
+    # delta["ops"] = out_ops
     g.chapter.soup = chapter_xml
     g.chapter.save_xml()
 
@@ -1561,13 +1736,13 @@ def import_chapter_small_phrase():
     return "", 200
 
 
-
-
 @bp.post("/typeset_latex")
 def typeset_latex():
     """Retypeset saved XML while preserving narration, images, and animations."""
     g.chapter.load_xml(force=True)
-    directory = os.path.join(const.LIBRARY_DIR, g.chapter.get_chapterdir(), g.chapter.language)
+    directory = os.path.join(
+        const.LIBRARY_DIR, g.chapter.get_chapterdir(), g.chapter.language
+    )
     try:
         typeset_chapter_xml(
             g.chapter.soup, directory, const.GEOMETRY[g.chapter.aspect]["TEXT_WIDTH"]
@@ -1640,7 +1815,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     # as a video we want to include and speak both the book and author.  If
     # we're chapter 4 of 20 in a six hour video, we don't want to waste a moment
     # with tedious repetition of the title and author.
-    
+
     progress(5, "Splitting chapter into phrases")
     nlp = sentence_pipeline
 
@@ -1686,12 +1861,12 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             if float_index < len(major_break):
                 broken.append((float_index, len(major_break)))
 
-            log.info('major_break: %s', repr(major_break))
-            log.info('broken: %s', repr(broken))
+            log.info("major_break: %s", repr(major_break))
+            log.info("broken: %s", repr(broken))
 
             if not broken:
                 broken = [(0, len(major_break))]
-            
+
             for start_idx, end_idx in broken:
                 log.info("Broken span: start=%s, end=%s", start_idx, end_idx)
                 doc = nlp(major_break[start_idx:end_idx])
@@ -1699,10 +1874,22 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                 sentence_spans = list(doc.sents)
                 sentence_count = len(sentence_spans)
                 log.info("Operation has %s sentences", sentence_count)
-                for sentence_index, sentence_span in enumerate(sentence_spans, index_start):
-                    log.info("[%s] sentence_span: %s", sentence_index, repr(sentence_span))
-                    log.info("[%s] sentence_span.text_with_ws: %s", sentence_index, repr(sentence_span.text_with_ws))
-                    log.info("[%s] sentence_span.text: %s", sentence_index, repr(sentence_span.text))
+                for sentence_index, sentence_span in enumerate(
+                    sentence_spans, index_start
+                ):
+                    log.info(
+                        "[%s] sentence_span: %s", sentence_index, repr(sentence_span)
+                    )
+                    log.info(
+                        "[%s] sentence_span.text_with_ws: %s",
+                        sentence_index,
+                        repr(sentence_span.text_with_ws),
+                    )
+                    log.info(
+                        "[%s] sentence_span.text: %s",
+                        sentence_index,
+                        repr(sentence_span.text),
+                    )
                     sentence = sentence_span.text_with_ws
 
                     if sentence[0] in [",", ".", "!", "?", ";", ":"]:
@@ -1710,7 +1897,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                         # we can't move it to the end of the previous because it's here because
                         # the formatting has changed.  Not a problem exactly, we just
                         # have to fix the trailing whitespace on the previous opt_ops.
-                        
+
                         # if the previous operation ended with a space, remove it
                         # we . dont want , this .
                         if out_ops[-1]["insert"][-1] == " ":
@@ -1723,7 +1910,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                             out_ops[-1]["insert"] += word
                             continue
 
-                        log.info('word: %s', repr(word))
+                        log.info("word: %s", repr(word))
                         # is this the sort of word we would consider a better
                         # than random choice for a place to split the audio?
                         if word.strip():
@@ -1765,32 +1952,38 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                                 ":": 3,
                                 ",": 1,
                                 '"': 5,
-                                '”': 5,
-                                '\n': 8
+                                "”": 5,
+                                "\n": 8,
                             }[out_ops[-1]["insert"][-1]]
                         except KeyError:
                             pass
 
     index = index_start
     phrases = []
-    log.info('Iterating index from %s to %s', index, len(out_ops))
+    log.info("Iterating index from %s to %s", index, len(out_ops))
     while index < len(out_ops):
         # for NEW phrases -- we want the segment of the text that the TTS engine
-        # will be able to effectively read.  We are entirely disconnected from 
+        # will be able to effectively read.  We are entirely disconnected from
         # highlighting, pure vocal quality.
 
         # we will use a WINDOW_SIZE word evaluation window that resets whenever we
         # choose a phrase break point.
 
-        window_size = 8  # _words_ not characters, this how many words away is the bare minimum.
+        window_size = (
+            8  # _words_ not characters, this how many words away is the bare minimum.
+        )
 
         typesetting_method = (
             out_ops[index].get("attributes", {}).get("_typesetting_method", "verse")
         )
         section_end = index + 1
-        while section_end < len(out_ops) and out_ops[section_end].get(
-            "attributes", {}
-        ).get("_typesetting_method", "verse") == typesetting_method:
+        while (
+            section_end < len(out_ops)
+            and out_ops[section_end]
+            .get("attributes", {})
+            .get("_typesetting_method", "verse")
+            == typesetting_method
+        ):
             section_end += 1
 
         # Keep each blank-line boundary at a phrase edge so a silence can
@@ -1852,7 +2045,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             render_ops.append(render_operation)
 
         doc = t.ops_to_internal_representation(render_ops)
-        as_latex = doc.render_tree(mode='latex')
+        as_latex = doc.render_tree(mode="latex")
 
         # render_tree gets a lot of things right.  It also
         # makes some mistakes.  Lets fix those.
@@ -1869,7 +2062,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         # this one is very puzzling to me, using '' for all " is wrong
         # latex wants `` for opening quotes and '' for closing quotes.
         # we can either use " and let luaquotes do the work, or do it ourselves.
-        
+
         # these should be right in most cases, but there are likely others I haven't considered.
         as_latex = as_latex.replace(" ''", " ``")
         as_latex = as_latex.replace("\n''", "\n``")
@@ -1880,20 +2073,24 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
         # this section is buggy
         # grab a copy of our end-of-phrase trailing whitespace
-        trailing_whitespace = our_ops[-1]["insert"][len(our_ops[-1]["insert"].rstrip()) :]
-       
+        trailing_whitespace = our_ops[-1]["insert"][
+            len(our_ops[-1]["insert"].rstrip()) :
+        ]
+
         # add a clean copy of our trailing whitespace to the end of our phrase latex
         as_latex = as_latex.strip() + trailing_whitespace
 
         # then glue our_ops together to get plain_phrase (what is spoken)
         plain_phrase = "".join([o["insert"] for o in our_ops])
-       
-        phrases.append({
-            "spoken": plain_phrase,
-            "latex": as_latex,
-            "delta": render_ops,
-            "typesetting_method": typesetting_method,
-        })
+
+        phrases.append(
+            {
+                "spoken": plain_phrase,
+                "latex": as_latex,
+                "delta": render_ops,
+                "typesetting_method": typesetting_method,
+            }
+        )
 
         index = break_index + 1
 
@@ -1912,7 +2109,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     #             "bold": False,
     #             "phrase": 1
     #         },
-    #     },        
+    #     },
     # ] + out_ops
     for operation in out_ops:
         operation.get("attributes", {}).pop("_typesetting_method", None)
@@ -1939,8 +2136,11 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         ),
         "w",
     ) as rainbow_h:
-        header = r"""\documentclass[parskip=full]{scrartcl}
-""" + video_page_geometry(const.GEOMETRY[chapter.aspect]["TEXT_WIDTH"]) + r"""
+        header = (
+            r"""\documentclass[parskip=full]{scrartcl}
+"""
+            + video_page_geometry(const.GEOMETRY[chapter.aspect]["TEXT_WIDTH"])
+            + r"""
 \addtokomafont{title}{\centering}
 \addtokomafont{author}{\centering}
 \usepackage[english]{babel}
@@ -1968,20 +2168,23 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 \hyphenpenalty=10000
 \exhyphenpenalty=100                    
 """
-# \setlength{\droptitle}{-45pt}
-# \posttitle{\par\end{center}}
-# \title{%s}
-# \author{%s}
-# \date{}
-# \maketitle
-# \vspace{-0.5in}
+        )
+        # \setlength{\droptitle}{-45pt}
+        # \posttitle{\par\end{center}}
+        # \title{%s}
+        # \author{%s}
+        # \date{}
+        # \maketitle
+        # \vspace{-0.5in}
 
         # header block
         title_paragraph = chapter_soup.new_tag("paragraph")
         title_paragraph.attrs["tags"] = "has-text=false,spoken-only=true"
 
         title_image = chapter_soup.new_tag("image")
-        title_image.attrs["prompt"] = f"Elegant book cover for {chapter.title} by {chapter.author.name} in an environment that represents the themes of the book."
+        title_image.attrs["prompt"] = (
+            f"Elegant book cover for {chapter.title} by {chapter.author.name} in an environment that represents the themes of the book."
+        )
         title_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
 
         # title_phrase = chapter_soup.new_tag("phrase")
@@ -2052,16 +2255,18 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         rainbow_h.write(r"""\end{document}""")
 
     from .timeline import add_import_silences
+
     add_import_silences(chapter_soup, const.FPS)
 
     # Audio files are stored under each paragraph's stable index.
     for index, paragraph in enumerate(chapter_xml.find_all("paragraph")):
         paragraph["index"] = str(index)
-        os.makedirs(os.path.join(
-            const.LIBRARY_DIR, chapter.get_paragraph_dir(index)
-        ), exist_ok=True)
+        os.makedirs(
+            os.path.join(const.LIBRARY_DIR, chapter.get_paragraph_dir(index)),
+            exist_ok=True,
+        )
 
-    #delta["ops"] = out_ops
+    # delta["ops"] = out_ops
     chapter.soup = chapter_soup
     chapter.save_xml()
 
@@ -2115,7 +2320,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     progress(25, "Generating baseline audio")
     phrase_audio.generate_all_audio(
-        chapter, force=False,
+        chapter,
+        force=False,
         progress=lambda percent, message: progress(25 + percent * 0.7, message),
     )
     progress(96, "Placing image slots")
@@ -2153,7 +2359,9 @@ def chapter_sections():
         if not delta or not delta.get("ops"):
             text = g.chapter.load_txt()
             delta = {"ops": [{"insert": text}]} if text else {"ops": []}
-        return flask.jsonify([{"typesetting_method": "verse", "ops": delta.get("ops", [])}])
+        return flask.jsonify(
+            [{"typesetting_method": "verse", "ops": delta.get("ops", [])}]
+        )
 
     try:
         sections = json.loads(request.form["sections"])
@@ -2188,7 +2396,7 @@ def get_delta():
 
     if raw_text in [{}, None]:
         raw_text = g.chapter.load_txt()
-        delta = {"ops": [{"insert": raw_text}]}        
+        delta = {"ops": [{"insert": raw_text}]}
         g.chapter.save_delta(delta)
         raw_text = json.dumps(delta, indent=2)
 
@@ -2218,8 +2426,6 @@ def get_delta():
             raw_text = json.dumps({"ops": []}, indent=2)
 
     return raw_text, 200
-
-
 
     # chapter_xml = g.chapter.get_xml()
     # image_list = []
@@ -2298,11 +2504,10 @@ def save_phrase_delta(phrase_index: int):
         plain_text = "".join(
             operation["insert"]
             for operation in operations
-            if isinstance(operation, dict)
-            and isinstance(operation.get("insert"), str)
+            if isinstance(operation, dict) and isinstance(operation.get("insert"), str)
         )
         latex = t.ops_to_internal_representation(operations).render_tree(mode="latex")
-        trailing_whitespace = plain_text[len(plain_text.rstrip()):]
+        trailing_whitespace = plain_text[len(plain_text.rstrip()) :]
         latex = latex.rstrip() + trailing_whitespace
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         return f"Invalid phrase delta: {error}", 400
@@ -2314,16 +2519,19 @@ def save_phrase_delta(phrase_index: int):
     g.chapter.save_xml()
     return "", 200
 
+
 @bp.route("/title_delta", methods=["POST"])
 def save_title_delta():
     new_delta = json.loads(request.form["delta"])
     g.chapter.save_title_delta(new_delta)
     return "", 200
 
+
 @bp.route("/title_delta", methods=["GET"])
 def get_title_delta():
     delta = g.chapter.load_title_delta()
     return delta, 200
+
 
 # PUT /library/Aesop/Fables/31/english/set_chapter_style
 @bp.route("/set_chapter_style", methods=["PUT"])

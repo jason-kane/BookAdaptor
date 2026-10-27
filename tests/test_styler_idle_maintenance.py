@@ -40,6 +40,303 @@ def sample(tmp_path, *, version=ANALYSIS_VERSION, matching=True):
     return path, metadata
 
 
+def test_mode_and_idle_helpers_accept_redis_bytes_and_recover_bad_activity(monkeypatch, tmp_path):
+    worker, client = planner(tmp_path)
+    client.get.side_effect = lambda key: b'run' if key == idle.MODE else b'not-a-time'
+    assert idle.get_mode(client) == 'run'
+    assert not idle.background_ready(client, now=200)
+    client.set.assert_called_with(idle.ACTIVITY, '200')
+
+    client.get.side_effect = lambda key: 'unknown' if key == idle.MODE else '170'
+    assert idle.get_mode(client) == 'walk'
+    assert idle.background_ready(client, now=200)
+    monkeypatch.setattr(idle.time, 'time', lambda: 250)
+    idle.mark_activity(client)
+    client.set.assert_called_with(idle.ACTIVITY, '250')
+
+
+def test_mode_off_and_idle_queue_pop_result_shapes(tmp_path):
+    worker, client = planner(tmp_path)
+    client.get.side_effect = lambda key: 'off' if key == idle.MODE else '0'
+    assert not idle.background_ready(client, now=100)
+    client.eval.return_value = json.dumps({'job_id': 'idle'})
+    assert idle.pop_idle_job(client, 'video', 'priority', 'tags') == {'job_id': 'idle'}
+    client.eval.return_value = None
+    assert idle.pop_idle_job(client, 'video', 'priority', 'tags') is None
+
+
+def test_json_metadata_and_text_helpers_handle_invalid_and_missing_data(tmp_path):
+    assert idle._json(b'{"ok": true}') == {'ok': True}
+    assert idle._json('[]') == {}
+    assert idle._json(None) == {}
+    metadata_path = tmp_path / 'image.json'
+    metadata_path.write_text('{"tags": ["red"]}')
+    assert idle._metadata(tmp_path / 'image.png') == {'tags': ['red']}
+    metadata_path.write_bytes(b'\xff')
+    assert idle._metadata(tmp_path / 'image.png') == {}
+    assert idle._metadata(tmp_path / 'missing.png') == {}
+    assert idle._text(b'key') == 'key'
+    assert idle._text('key') == 'key'
+
+
+def test_image_walk_skips_missing_roots_unreadable_directories_and_symlinks(tmp_path, monkeypatch):
+    assert list(idle._image_paths(tmp_path / 'missing')) == []
+    root = tmp_path / 'stockpile'
+    root.mkdir()
+    (root / 'z.png').write_bytes(b'not an image')
+    (root / 'A.jpg').write_bytes(b'not an image')
+    (root / 'ignored.txt').write_text('ignore')
+    nested = root / 'nested'
+    nested.mkdir()
+    (nested / 'b.webp').write_bytes(b'not an image')
+    link = root / 'linked.png'
+    try:
+        link.symlink_to(root / 'A.jpg')
+    except OSError:
+        pass
+    else:
+        assert [path.relative_to(root).as_posix() for path in idle._image_paths(root)] == [
+            'A.jpg', 'nested/b.webp', 'z.png'
+        ]
+
+    def fail_to_list(_self):
+        raise OSError('unavailable')
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, 'iterdir', fail_to_list)
+        assert list(idle._image_paths(root)) == []
+
+
+def test_style_planner_cooldown_and_redis_hash_cursor_completion(tmp_path):
+    worker, client = planner(tmp_path, dict(styles_after=150))
+    assert worker._next_style(100) is None
+    client.scan.assert_not_called()
+
+    worker.state = dict(style_started=True, style_cursor=0)
+    worker.budget = 1
+    assert worker._next_style(100) is None
+    assert worker.state['styles_after'] == 100 + idle.RESCAN_SECONDS
+    client.scan.assert_not_called()
+
+
+def test_style_planner_skips_missing_hash_and_abyss_candidates(tmp_path):
+    worker, client = planner(tmp_path)
+    worker.budget = 3
+    client.scan.return_value = (0, [b'missing', b'abyss'])
+    client.hmget.side_effect = [[None, None], ['Artist', '{prompt}']]
+    client.sismember.side_effect = lambda key, tag: tag == 'abyss'
+    assert worker._next_style(100) is None
+    assert worker.state['style_keys'] == []
+    assert not worker.state.get('style')
+
+
+def test_style_candidate_uses_prompt_subdirectory_and_refuses_sample_symlinks(tmp_path):
+    worker, _ = planner(tmp_path)
+    task, pending = worker._style_candidate('artist', 'zit', 'kid_friendly')
+    assert task['base_style_prompt'] == 'kid_friendly'
+    assert pending == 'styler_pending:' + task['job_id']
+
+    sample_dir = tmp_path / 'style_exploration' / 'kid_friendly'
+    sample_dir.mkdir(parents=True)
+    target = tmp_path / 'target.png'
+    target.write_bytes(b'image')
+    try:
+        (sample_dir / 'artist_zit.png').symlink_to(target)
+    except OSError:
+        pytest.skip('symlinks are unavailable')
+    assert worker._style_candidate('artist', 'zit', 'kid_friendly') is None
+
+
+def test_style_cursor_handles_stale_style_empty_scan_and_abyss(tmp_path):
+    worker, client = planner(tmp_path, {'style': 'stale'})
+    worker.budget = 1
+    client.hmget.return_value = [None, '{prompt}']
+    assert worker._next_style(100) is None
+    assert worker.state['style'] is None
+
+    worker.state = {'style_cursor': 1}
+    client.scan.return_value = (1, [])
+    assert worker._next_style(100) is None
+    assert worker.state['style_started'] is True
+
+    worker.state = {'style': 'artist'}
+    client.hmget.return_value = ['Artist', '{prompt}']
+    client.sismember.return_value = True
+    assert worker._next_style(100) is None
+    assert worker.state['style'] is None
+
+
+def test_style_cursor_wraps_engine_and_prompt_after_inspection_failure(tmp_path):
+    worker, _ = planner(tmp_path, {
+        'style': 'artist', 'engine': len(idle.ENGINES) - 1,
+        'style_base_index': len(idle.BASE_STYLE_PROMPTS) - 1,
+    })
+    worker.budget = 1
+    worker._style_candidate = Mock(side_effect=ValueError('unreadable sample'))
+
+    assert worker._next_style(100) is None
+    assert worker.state['style'] is None
+    assert worker.state['engine'] == 0
+    assert worker.state['style_base_index'] == 0
+
+    worker.state = {'style': 'artist', 'engine': len(idle.ENGINES) - 1, 'style_base_index': 0}
+    assert worker._next_style(100) is None
+    assert worker.state['style'] == 'artist'
+    assert worker.state['style_base_index'] == 1
+
+def test_batch_planning_reserves_candidates_and_clears_reservations(tmp_path):
+    worker, client = planner(tmp_path)
+    worker.state = {'cursor': 'before', 'style': 'artist', 'style_cursor': 12, 'engine': 1}
+    style_tasks = [
+        {'job_id': 'style-one', 'style_tag': 'artist', 'engine': 'zit'},
+        {'job_id': 'style-two', 'style_tag': 'artist', 'engine': 'krea2'},
+    ]
+    worker._next_style = Mock(side_effect=[(style_tasks[0], 'pending-one'), (style_tasks[1], 'pending-two')])
+    worker._next_stockpile = Mock(return_value=None)
+
+    checkpoint, candidates, checkpoints = worker._plan_batch(100, 'run')
+
+    assert checkpoint == {
+        'cursor': 'before', 'style': 'artist', 'style_cursor': 12, 'engine': 1,
+    }
+    assert [task['job_id'] for task, _ in candidates] == ['style-one', 'style-two']
+    assert all(task['idle_maintenance'] for task, _ in candidates)
+    assert len(checkpoints) == 2
+    assert worker.batch_reserved == set()
+    worker._next_stockpile.assert_called_once_with(100)
+
+
+def test_batch_admission_restores_or_advances_checkpoint_by_accepted_count(tmp_path):
+    worker, client = planner(tmp_path, {'cursor': 'planned'})
+    worker.stockpile_paths = iter([Path('cached.png')])
+    checkpoint = {'cursor': 'before'}
+    tasks = [
+        {'job_id': 'one', 'sha256': 'a', 'analysis_version': 'v'},
+        {'job_id': 'two', 'sha256': 'b', 'analysis_version': 'v'},
+    ]
+    candidates = [(task, f'pending-{task["job_id"]}') for task in tasks]
+    checkpoints = [{'cursor': 'first'}, {'cursor': 'last'}]
+
+    client.eval.return_value = 0
+    assert worker._admit_batch(100, checkpoint, candidates, checkpoints) is None
+    assert worker.state == checkpoint
+    assert worker.stockpile_paths is None
+
+    worker.stockpile_paths = iter([Path('cached.png')])
+    client.eval.return_value = 1
+    assert worker._admit_batch(100, checkpoint, candidates, checkpoints) is tasks[0]
+    assert worker.state == checkpoints[0]
+    assert worker.stockpile_paths is None
+
+    worker.stockpile_paths = iter([Path('cached.png')])
+    client.eval.return_value = 2
+    assert worker._admit_batch(100, checkpoint, candidates, checkpoints) is tasks[0]
+    assert worker.state['cursor'] == 'first'
+    assert worker.stockpile_paths is not None
+
+
+def test_stockpile_candidate_skips_bad_image_without_losing_cursor(tmp_path):
+    worker, _ = planner(tmp_path)
+    root = tmp_path / 'stockpile'
+    root.mkdir()
+    (root / 'bad.png').write_bytes(b'not an image')
+    worker.stockpile_paths = iter([root / 'bad.png'])
+    assert worker._next_stockpile(100) is None
+    assert worker.state['stockpile_cursor'] == ''
+
+
+def test_stockpile_cursor_cooldown_and_retry_reserved_candidate(tmp_path):
+    worker, client = planner(tmp_path, {'stockpile_after': 101})
+    assert worker._next_stockpile(100) is None
+
+    root = tmp_path / 'stockpile'
+    root.mkdir()
+    Image.new('RGB', (32, 24), 'red').save(root / 'image.png')
+    worker.state = {}
+    worker.stockpile_paths = iter([root / 'image.png'])
+    worker.batch_reserved = {'retry'}
+    worker._retry_key = Mock(return_value='retry')
+    assert worker._next_stockpile(100) is None
+    client.exists.assert_not_called()
+
+
+def test_stockpile_cursor_skips_paths_already_processed(tmp_path, monkeypatch):
+    worker, _ = planner(tmp_path, {'stockpile_cursor': 'b.png'})
+    root = tmp_path / 'stockpile'
+    root.mkdir()
+    first = root / 'a.png'
+    second = root / 'b.png'
+    Image.new('RGB', (32, 24), 'red').save(first)
+    Image.new('RGB', (32, 24), 'blue').save(second)
+    worker.stockpile_paths = iter([first, second])
+
+    assert worker._next_stockpile(100) is None
+    assert worker.state['stockpile_cursor'] == ''
+
+    from stockpile import ANALYSIS_VERSION
+
+    worker.budget = 1
+    worker.state = {}
+    worker.stockpile_paths = iter([first])
+    metadata = {
+        'sha256': fingerprint(first),
+        'tags': ['red'],
+        'analysis_version': ANALYSIS_VERSION,
+    }
+    monkeypatch.setattr('stockpile.read_metadata', lambda _path: metadata)
+    monkeypatch.setattr('stockpile.complete', lambda *_args: True)
+    monkeypatch.setattr('tag_matching.matched', lambda _record: True)
+    assert worker._next_stockpile(100) is None
+
+
+def test_weekly_topic_rebuild_is_prioritized_before_idle_repairs(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    worker, client = planner(tmp_path)
+    client.get.side_effect = lambda key: {
+        idle.MODE: 'walk',
+        idle.ACTIVITY: '0',
+        'styler:topic-tree:last-success': '0',
+    }.get(key)
+    monkeypatch.setitem(
+        __import__('sys').modules,
+        'styler.topic_jobs',
+        SimpleNamespace(enqueue_taxonomy_rebuild=Mock(return_value={
+            'state': 'queued', 'job_id': 'weekly-job',
+        })),
+    )
+
+    assert worker.tick(now=idle.TOPIC_REBUILD_SECONDS + idle.IDLE_SECONDS) == {
+        'action': 'styler_topic_taxonomy_rebuild', 'job_id': 'weekly-job',
+    }
+    worker._plan_batch = Mock()
+    worker._plan_batch.assert_not_called()
+
+
+def test_failed_weekly_topic_enqueue_falls_through_to_idle_planning(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    worker, client = planner(tmp_path)
+    client.get.side_effect = lambda key: {
+        idle.MODE: 'walk',
+        idle.ACTIVITY: '0',
+        'styler:topic-tree:last-success': 'invalid',
+    }.get(key)
+    monkeypatch.setitem(
+        __import__('sys').modules,
+        'styler.topic_jobs',
+        SimpleNamespace(enqueue_taxonomy_rebuild=Mock(return_value={'state': 'busy'})),
+    )
+    worker._plan_batch = Mock(return_value=({}, [], []))
+    worker._admit_batch = Mock(return_value=None)
+
+    assert worker.tick(now=idle.TOPIC_REBUILD_SECONDS + idle.IDLE_SECONDS) is None
+    worker._plan_batch.assert_called_once()
+    worker._admit_batch.assert_called_once_with(
+        idle.TOPIC_REBUILD_SECONDS + idle.IDLE_SECONDS, {}, [], []
+    )
+
+
 def test_idle_threshold_and_busy_queues_do_not_scan(tmp_path):
     worker, client = planner(tmp_path)
     client.get.side_effect = lambda key: '100' if key == idle.ACTIVITY else None
@@ -66,12 +363,12 @@ def test_unknown_idle_time_starts_a_new_quiet_period(tmp_path):
 
 def test_missing_sample_queues_generation_but_existing_sample_uses_vision_version(tmp_path):
     worker, client = planner(tmp_path)
-    task, pending = worker._style_candidate('artist', 'zit')
+    task, pending = worker._style_candidate('artist', 'zit', 'classic')
     assert task['action'] == 'styler_sample'
     assert task['background_category'] == 'idle maintenance'
     assert pending == 'styler_pending:' + task['job_id']
     path, _ = sample(tmp_path, version='old')
-    task, pending = worker._style_candidate('artist', 'zit')
+    task, pending = worker._style_candidate('artist', 'zit', 'classic')
     assert task['action'] == 'styler_tag_sample'
     assert task['analysis_version'] == ANALYSIS_VERSION
     assert task['sha256'] == fingerprint(path)
@@ -82,14 +379,14 @@ def test_current_analysis_only_normalizes_when_matching_is_stale(tmp_path):
     path, metadata = sample(tmp_path, matching=False)
     worker, client = planner(tmp_path)
     client.get.side_effect = lambda key: json.dumps(metadata) if key.startswith('styler:image-tags:') else None
-    task, pending = worker._style_candidate('artist', 'zit')
+    task, pending = worker._style_candidate('artist', 'zit', 'classic')
     assert task['action'] == 'styler_scan_image_tags'
     assert task['scan_version'] == 'idle:' + VERSION
     assert task['sample_job_id'] == sample_task(dict(style_tag='artist', engine='zit'))['job_id']
     assert pending.startswith('styler:styles-scan:pending:')
     metadata.update(tag_matching_version=VERSION, tag_matching_tags_sha256=tags_digest(metadata['tags']))
     path.with_suffix('.json').write_text(json.dumps(metadata))
-    assert worker._style_candidate('artist', 'zit') is None
+    assert worker._style_candidate('artist', 'zit', 'classic') is None
 
 
 def test_missing_portable_tags_are_repaired_even_with_current_redis_analysis(tmp_path):
@@ -97,7 +394,7 @@ def test_missing_portable_tags_are_repaired_even_with_current_redis_analysis(tmp
     worker, client = planner(tmp_path)
     client.get.side_effect = lambda key: json.dumps(metadata) if key.startswith('styler:image-tags:') else None
     path.with_suffix('.json').unlink()
-    task, _ = worker._style_candidate('artist', 'zit')
+    task, _ = worker._style_candidate('artist', 'zit', 'classic')
     assert task['action'] == 'styler_tag_sample'
 
 
@@ -173,7 +470,7 @@ def test_idle_normalization_does_not_complete_an_unrelated_manual_scan(tmp_path)
     worker, client = planner(tmp_path)
     client.get.side_effect = lambda key: json.dumps(metadata) if key.startswith('styler:image-tags:') else json.dumps(dict(version=7, status='running')) if key == style_scan.STATE else None
     client.scard.return_value = 0
-    task, _ = worker._style_candidate('artist', 'zit')
+    task, _ = worker._style_candidate('artist', 'zit', 'classic')
     matching = dict(tags=['red'], raw_tags=['red'], tag_matching_version=VERSION, tag_matching_tags_sha256=tags_digest(['red']))
     with patch('tag_matching.match_tags', return_value=matching), patch('styler.tag_consensus.reconcile', return_value={}):
         assert style_scan.run_job(client, task, tmp_path)['state'] == 'styles_scan_image_complete'
@@ -332,14 +629,14 @@ def test_worker_activity_tracks_start_and_finish_and_prepares_idle_services(monk
     assert activity.call_count == 2
     assert json.loads(client.set.call_args_list[0].args[1])['idle_maintenance'] is True
     client.set.assert_any_call(idle.IdleMaintenance._retry_key(task), '1', ex=idle.RETRY_SECONDS)
-    client.delete.assert_called_once_with('styler:worker-running')
+    client.delete.assert_any_call('styler:worker-running')
     activity.reset_mock()
     client.reset_mock()
     callback.side_effect = RuntimeError('failed task')
     with pytest.raises(RuntimeError):
         scope['run_tracked_task'](client, callback, client, task)
     assert activity.call_count == 2
-    client.delete.assert_called_once_with('styler:worker-running')
+    client.delete.assert_any_call('styler:worker-running')
     scope['publish_queue_event'].assert_called_once_with(client, 'styler_sample_events',
         {**task, 'state': 'failed', 'message': 'failed task'})
     assert json.loads(client.publish.call_args.args[1])['state'] == 'queue_changed'

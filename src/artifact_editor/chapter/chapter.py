@@ -248,6 +248,7 @@ def get_prompt_workflow_by_filename(
     prompt: str,
     outputfile: str,
     seed: int | None = None,
+    max_output_tokens: int | None = None,
 ):
 
     common_string_nodes = {
@@ -267,10 +268,14 @@ def get_prompt_workflow_by_filename(
     # we've got a _lot_ of variables to fill in.
     out_nodes = []
     for node in workflow.get("nodes", []):
-        if node.get("type") == "TextGenerate" and seed is not None:
-            node["widgets_values_named"]["sampling_mode.seed"] = seed
+        if node.get("type") == "TextGenerate":
             widget_names = [item["widget"]["name"] for item in node["inputs"] if "widget" in item]
-            node["widgets_values"][widget_names.index("sampling_mode.seed")] = seed
+            if seed is not None:
+                node["widgets_values_named"]["sampling_mode.seed"] = seed
+                node["widgets_values"][widget_names.index("sampling_mode.seed")] = seed
+            if max_output_tokens is not None:
+                node["widgets_values_named"]["max_length"] = max_output_tokens
+                node["widgets_values"][widget_names.index("max_length")] = max_output_tokens
         if node.get("type") in common_string_nodes:
             if node.get("title") in ["PROMPT", "Prompt"]:
                 node["widgets_values"] = [ prompt ]

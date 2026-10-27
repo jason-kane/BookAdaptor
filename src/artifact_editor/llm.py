@@ -278,7 +278,15 @@ def text_2_audio(
     return wavfile
 
 
-def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", force:bool=False):
+def str_prompt(
+    prompt: str,
+    system_prompt: str = "You are a helpful assistant.",
+    force: bool = False,
+    max_output_tokens: int | None = None,
+):
+    if max_output_tokens is not None and max_output_tokens < 1:
+        raise ValueError("max_output_tokens must be positive")
+
     content = None
     filename = f"llm_str_{uuid.uuid4().hex}.txt"
     if not (content := get_cached_prompt(prompt, format="txt", force=force)):
@@ -292,6 +300,7 @@ def str_prompt(prompt: str, system_prompt: str ="You are a helpful assistant.", 
             system_prompt=system_prompt,
             outputfile=filename,
             seed=uuid.uuid4().int % (2**32) if force else None,
+            max_output_tokens=max_output_tokens,
         )
 
         comfy.run_workflow_fn(workflow_filename)

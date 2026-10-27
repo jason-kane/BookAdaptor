@@ -16,6 +16,7 @@ from flask import (
 )
 import redis
 from redis.maint_notifications import MaintNotificationsConfig
+from task_queue import VIDEO_QUEUE, enqueue_task
 
 import const
 import logger
@@ -35,53 +36,47 @@ from . import (
 log = logger.log(__name__)
 
 bp = Blueprint(
-    'video', 
+    "video",
     __name__,
-    template_folder=os.path.join(
-        os.path.dirname(__file__),
-        "templates"
-    )
+    template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
+
 
 @bp.url_defaults
 def my_url_defaults(endpoint, values):
     chapter_url_defaults_helper(endpoint, values)
 
+
 @bp.url_value_preprocessor
 def my_url_value_preprocessor(endpoint, values):
-    chapter_url_value_preprocessor(endpoint, values) 
+    chapter_url_value_preprocessor(endpoint, values)
 
 
 @bp.route("/actions/clear_adjusted_images", methods=["POST"])
 def clear_adjusted_images(author, title, chapter):
     chapterurl = get_chapterurl(author, title, chapter)
-    
-    # /chapter/0001/paragraphs/000000/img_2_image001.jpg.adj.png 
+
+    # /chapter/0001/paragraphs/000000/img_2_image001.jpg.adj.png
     chapterdir = get_chapterdir(author, title, chapter)
     for paragraph in os.listdir(
-        os.path.join(
-            neobreaker.const.LIBRARY_DIR,
-            chapterdir,
-            "paragraphs"
-        )
+        os.path.join(neobreaker.const.LIBRARY_DIR, chapterdir, "paragraphs")
     ):
         for img in os.listdir(
             os.path.join(
-                neobreaker.const.LIBRARY_DIR,
-                chapterdir,
-                "paragraphs",
-                paragraph
+                neobreaker.const.LIBRARY_DIR, chapterdir, "paragraphs", paragraph
             )
         ):
             if img.endswith(".adj.png"):
-                log.info(f'Removing adjusted image {img}')
-                os.remove(os.path.join(
-                    neobreaker.const.LIBRARY_DIR,
-                    chapterdir,
-                    "paragraphs",
-                    paragraph,
-                    img
-                ))
+                log.info(f"Removing adjusted image {img}")
+                os.remove(
+                    os.path.join(
+                        neobreaker.const.LIBRARY_DIR,
+                        chapterdir,
+                        "paragraphs",
+                        paragraph,
+                        img,
+                    )
+                )
 
     return htmx.clear_adjusted_images_button(chapterurl)
 
@@ -92,21 +87,25 @@ def calculate_paragraph_durations(author, title, chapter):
     chapterurl = get_chapterurl(author, title, chapter)
 
     phrases.recalculate_paragraph_durations(chapterdir)
-    
+
     return htmx.calculate_paragraph_durations_button(chapterurl)
 
 
 @bp.route("/actions/render_masterplan_widescreen", methods=["POST"])
 def render_masterplan_widescreen_handler(author, title, chapter_number, language):
     author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
+    chapter = Chapter(
+        author=author, title=title, number=chapter_number, language=language
+    )
     return enqueue_video_render(chapter, "widescreen")
 
 
 @bp.route("/actions/render_masterplan_portrait", methods=["POST"])
 def render_masterplan_portrait_handler(author, title, chapter_number, language):
     author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
+    chapter = Chapter(
+        author=author, title=title, number=chapter_number, language=language
+    )
     return enqueue_video_render(chapter, "portrait")
 
 
@@ -127,15 +126,17 @@ def enqueue_video_render(chapter, aspect):
         decode_responses=True,
         maint_notifications_config=MaintNotificationsConfig(enabled=False),
     )
-    client.hset(f"video_job:{job_id}", mapping={
-        "job_id": job_id, "percent": 0, "message": "Queued", "state": "queued"
-    })
-    client.expire(f"video_job:{job_id}", 86400)
-    client.lpush("video_render_jobs", json.dumps(task))
+    enqueue_task(
+        client,
+        VIDEO_QUEUE,
+        task,
+        status_key=f"video_job:{job_id}",
+        status={"job_id": job_id, "percent": 0, "message": "Queued", "state": "queued"},
+    )
     return (
         f'<div id="video-progress-{job_id}" class="wa-stack">'
         '<wa-progress-bar value="0"></wa-progress-bar>'
-        '<div>Queued for video rendering</div></div>',
+        "<div>Queued for video rendering</div></div>",
         202,
     )
 
@@ -146,13 +147,13 @@ def deliver_video(filename=""):
         g.chapter.get_video_filename(),
         mimetype="video/mp4",
         as_attachment=False,
-        etag=True
+        etag=True,
     )
 
 
 @bp.route("/")
-def base_video():    
-    filename = g.chapter.get_video_filename()    
+def base_video():
+    filename = g.chapter.get_video_filename()
     if os.path.exists(filename):
         log.info("Video file exists: %s", filename)
         filename = os.path.basename(filename)
@@ -162,10 +163,10 @@ def base_video():
     pretty_author = g.chapter.config.get("author", g.author)
     pretty_title = g.chapter.config.get("title", g.title)
 
-    if g.chapter.get_aspect() == 'portrait':
-        render_masterplan_button=htmx.render_masterplan_portrait_button(g.chapter)
+    if g.chapter.get_aspect() == "portrait":
+        render_masterplan_button = htmx.render_masterplan_portrait_button(g.chapter)
     else:
-        render_masterplan_button=htmx.render_masterplan_widescreen_button(g.chapter)
+        render_masterplan_button = htmx.render_masterplan_widescreen_button(g.chapter)
 
     return render_template(
         "video.html",
@@ -177,14 +178,18 @@ def base_video():
         pretty_title=pretty_title,
         chapter=g.chapter,
         filename=filename,
-        replace_masterplan_button=masterplan_htmx.regenerate_masterplan_button(g.chapter),
+        replace_masterplan_button=masterplan_htmx.regenerate_masterplan_button(
+            g.chapter
+        ),
         render_masterplan_button=render_masterplan_button,
-        calculate_paragraph_durations_button=htmx.calculate_paragraph_durations_button(g.chapter),
+        calculate_paragraph_durations_button=htmx.calculate_paragraph_durations_button(
+            g.chapter
+        ),
         clear_adjusted_images_button=htmx.clear_adjusted_images_button(g.chapter),
         clear_all_frames_button=htmx.clear_all_frames_button(g.chapter),
         clear_all_transitions_button=htmx.clear_all_transitions_button(g.chapter),
         section="video",
-        section_cosmetic="Video"
+        section_cosmetic="Video",
     )
 
 
@@ -194,14 +199,12 @@ def clear_all_frames(author, title, chapter_number, language):
     Go through the book.xml, sum the durations of phrases and assign that as the duration for the image.
     """
     author = Author(author)
-    chapter = Chapter(author=author, title=title, number=chapter_number, language=language)
-
-    framedir = os.path.join(
-        const.LIBRARY_DIR,
-        chapter.chapterdir.lstrip('/'),
-        "frames"
+    chapter = Chapter(
+        author=author, title=title, number=chapter_number, language=language
     )
-    log.info('Clearing all frames in %s', framedir)
+
+    framedir = os.path.join(const.LIBRARY_DIR, chapter.chapterdir.lstrip("/"), "frames")
+    log.info("Clearing all frames in %s", framedir)
 
     # Remove all frame images
     count = 0
@@ -216,8 +219,8 @@ def clear_all_frames(author, title, chapter_number, language):
                 os.remove(file_path)
                 count += 1
 
-    log.info(f'Removing {count} frames')
-    
+    log.info(f"Removing {count} frames")
+
     return htmx.clear_all_frames_button(chapter)
 
 
@@ -229,12 +232,8 @@ def clear_all_transitions(author, title, chapter):
     chapterdir = get_chapterdir(author, title, chapter)
     chapterurl = get_chapterurl(author, title, chapter)
 
-    framedir = os.path.join(
-        const.LIBRARY_DIR,
-        chapterdir.lstrip('/'),
-        "transitions"
-    )
-    log.info('Clearing all transitions in %s', framedir)
+    framedir = os.path.join(const.LIBRARY_DIR, chapterdir.lstrip("/"), "transitions")
+    log.info("Clearing all transitions in %s", framedir)
 
     # Remove all frame images
     count = 0
@@ -253,12 +252,12 @@ def clear_all_transitions(author, title, chapter):
                     count += 1
                 elif framefile == "done.flag":
                     os.remove(os.path.join(dir_path, framefile))
-    
+
             try:
                 os.rmdir(dir_path)
             except OSError as e:
                 log.warning(f"Could not remove directory {dir_path}: {e}")
 
-    log.info(f'Removing {count} files')
-    
+    log.info(f"Removing {count} files")
+
     return htmx.clear_all_transitions_button(chapterurl)

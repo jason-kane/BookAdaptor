@@ -32,10 +32,10 @@ class TagMatchingTests(unittest.TestCase):
                 '```json\n{"tags":["Oil Painting","Oil Painting","new texture",],}\n```') as llm:
             result = match_tags(self.client(), tmp, ['oil on canvas', 'oil painting', 'new texture'])
         payload = json.loads(llm.call_args.args[0].split('\n', 1)[1])
-        self.assertEqual(set(payload['all_tags']), {'Oil Painting', 'watercolor', 'warm colors', 'oil on canvas', 'new texture'})
-        self.assertEqual(payload['item_tags'], ['oil on canvas', 'oil painting', 'new texture'])
+        self.assertEqual(set(payload['existing_tags']), {'Oil Painting', 'watercolor', 'warm colors'})
+        self.assertEqual(payload['source_tags'], ['oil on canvas', 'oil painting', 'new texture'])
         self.assertEqual(result['tags'], ['Oil Painting', 'new texture'])
-        self.assertEqual(result['raw_tags'], payload['item_tags'])
+        self.assertEqual(result['raw_tags'], payload['source_tags'])
         self.assertEqual(result['tag_matches'][0], dict(source='oil on canvas', tag='Oil Painting'))
         self.assertTrue(matched(result))
         result['tags'].append('edited')
@@ -47,7 +47,7 @@ class TagMatchingTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, patch('tag_matching.run_llm', return_value='{"tags":["novel texture"]}') as llm:
             match_tags(client, tmp, ['novel texture'])
         payload = json.loads(llm.call_args.args[0].split('\n', 1)[1])
-        self.assertEqual(len(payload['all_tags']), 2001)
+        self.assertEqual(len(payload['existing_tags']), 2000)
 
     def test_invalid_mappings_are_rejected(self):
         for text in ('{"tags":[]}', '{"tags":["invented tag"]}', '{"tags":[1]}', '{"tags":[""]}'):

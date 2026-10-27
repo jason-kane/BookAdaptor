@@ -674,11 +674,16 @@ class Style:
             )
 
         def sample_panel(engine, url):
-            from styler.sample_metadata import character_placement as image_character_placement, image_tags
+            from styler.sample_metadata import (
+                character_placement as image_character_placement,
+                image_tags,
+                primary_category as image_primary_category,
+            )
             engine_name = {'zit': 'Z-Image Turbo', 'krea2': 'Krea 2', 'qwen': 'Qwen Image 2.1'}[engine]
             placement = image_character_placement(self.get_image_path(engine))
             placement_label = {'in_image': 'Character in image', 'outside_image': 'Character outside image',
                                'not_visible': 'No character visible', 'uncertain': 'Character placement unclear'}.get(placement, '')
+            primary_category = image_primary_category(self.get_image_path(engine))
             tags = ''.join('<wa-tag size="s" role="button" tabindex="0" aria-pressed="'
                            + ('true' if tag in style_tags else 'false') + '"'
                            + (' variant="success"' if tag in style_tags else '')
@@ -687,6 +692,7 @@ class Style:
             return f'''<div class="wa-stack wa-gap-s styler-engine-cell" data-sample-panel>
                 <div class="styler-engine-heading">{engine_name}</div>
                 <div class="styler-character-placement" data-character-placement data-style-tag="{escape(self.style_tag, quote=True)}" data-engine="{engine}" data-base-style-prompt="{escape(base_style_prompt, quote=True)}">{escape(placement_label)}</div>
+                <div class="styler-primary-category" data-primary-category data-style-tag="{escape(self.style_tag, quote=True)}" data-engine="{engine}" data-base-style-prompt="{escape(base_style_prompt, quote=True)}">{escape(primary_category or '')}</div>
                 <div class="wa-frame:square stylesample">
                     <img loading="lazy" class="image_sample" {sample_attributes(engine, url)} alt="Sample Image">
                     {self.engine_tier_badge(engine)}

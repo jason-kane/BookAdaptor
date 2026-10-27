@@ -37,12 +37,12 @@ class ImageTagTests(unittest.TestCase):
             self.assertEqual(record['tags'], canonical)
             self.assertEqual(json.loads(client.publish.call_args.args[1])['image_tags'], canonical)
 
-    def test_parse_accepts_up_to_eight_distinct_tags(self):
+    def test_parse_accepts_any_count_of_distinct_tags(self):
         self.assertEqual(image_tags.parse_tags('{"tags":["Oil Painting","warm  palette","Brushwork","soft edges"]}'),
                          ['oil painting','warm palette','brushwork','soft edges'])
         self.assertEqual(image_tags.parse_tags('{"tags":["a","a","b"]}'), ['a', 'b'])
-        self.assertEqual(len(image_tags.parse_tags(json.dumps({'tags': list('abcdefgh')}))), 8)
-        for text in (json.dumps({'tags': list('abcdefghi')}), '{"tags":[1,2,3]}', 'not json'):
+        self.assertEqual(len(image_tags.parse_tags(json.dumps({'tags': list('abcdefghijkl')}))), 12)
+        for text in ('{"tags":[1,2,3]}', 'not json'):
             with self.assertRaises(ValueError):
                 image_tags.parse_tags(text)
 

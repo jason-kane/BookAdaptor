@@ -81,7 +81,6 @@
             defaultPageSize: 5, // Fallback when a LOST summary lacks template metadata.
         }),
         samples: Object.freeze({
-            displayedTagLimit: 8, // Keep generated tag clouds compact while preserving all tags in server state.
             reconnectDelayMs: 2_000, // Retry a closed websocket after a short pause.
         }),
         workerReadyNoticeMs: 3_000, // Let the worker-ready confirmation be seen before clearing it.
@@ -225,7 +224,7 @@
     // Map internal queue states to short user-facing labels.
     function queueStatusLabel(job) {
         return job.state === 'clearing_vram'
-            ? 'Cleaning'
+            ? job.message || 'Cleaning'
             : job.state === 'preparing'
                 ? 'Preparing'
                 : job.state === 'running'
@@ -665,7 +664,7 @@
         row.dataset.state = job.state;
         row.dataset.next = String(Boolean(job.isNext));
         row.dataset.promoted = String(Boolean(job.promoted));
-        row.title = job.state === 'failed' ? job.message || 'Task failed' : '';
+        row.title = job.message || (job.state === 'failed' ? 'Task failed' : '');
         row.setAttribute('aria-label', job.label);
         row.tabIndex = job.state === 'queued' ? 0 : -1;
         updateQueueFindButton(row, job);
@@ -1399,7 +1398,7 @@
     // Render generated tag strings as accessible, compact Web Awesome tags.
     function renderImageTags(boxes, imageTags) {
         for (const box of boxes) {
-            const tags = imageTags.slice(0, settings.samples.displayedTagLimit).map(text => {
+            const tags = imageTags.map(text => {
                 const tag = document.createElement('wa-tag');
                 tag.setAttribute('size', 's');
                 tag.setAttribute('role', 'button');
@@ -1411,7 +1410,7 @@
         }
     }
 
-    // Apply character-placement and image-tier assessment data.
+    // Apply character-placement, primary-topic, and image-tier assessment data.
     function updateImageAssessment(event) {
         // TODO(MONITOR): collect character_placement categories and image_tier min/max before filtering.
         const labels = {in_image: 'Character in image', outside_image: 'Character outside image',
@@ -1421,6 +1420,15 @@
                 if (element.dataset.styleTag === event.style_tag && element.dataset.engine === event.engine
                     && element.dataset.baseStylePrompt === (event.base_style_prompt || 'classic')) {
                     element.textContent = labels[event.character_placement];
+                }
+            }
+        }
+        if (typeof event.primary_category === 'string') {
+            for (const element of document.querySelectorAll('[data-primary-category]')) {
+                if (element.dataset.styleTag === event.style_tag && element.dataset.engine === event.engine
+                    && element.dataset.baseStylePrompt === (event.base_style_prompt || 'classic')) {
+                    element.textContent = event.primary_category === 'uncertain'
+                        ? 'Primary topic unclear' : `Primary topic: ${event.primary_category}`;
                 }
             }
         }
@@ -1529,6 +1537,15 @@
             receiveMaintenanceMode(event.mode);
             return true;
         }
+        if (event.job_id && ['preparing', 'clearing_vram', 'running'].includes(event.state)) {
+            const job = queueJobs.get(event.job_id);
+            if (job) {
+                Object.assign(job, event);
+                const row = [...document.querySelectorAll('.styler-queue-task[data-job-id]')]
+                    .find(item => item.dataset.jobId === event.job_id);
+                if (row) updateQueueRow(row, job);
+            }
+        }
         if (event.state === 'job_promoted' || event.state === 'job_demoted' || event.state === 'job_promote_failed') {
             const job = queueJobs.get(event.job_id) || completedQueueJobs.get(event.job_id) || failedQueueJobs.get(event.job_id);
             if (job) {
@@ -1635,8 +1652,8 @@
                 stylesStatus(`Scan version ${stylesScan.version}: ${done}/${stylesScan.total} processed${stylesScan.failed ? `, ${stylesScan.failed} failed` : ''}.`, stylesScan.pending.size > 0);
             }
             if (event.state === 'styles_scan_image_complete') {
-                // TODO(MONITOR): observe image_tags lengths and how often
-                // this eight-tag display cap truncates results; never retain tag text.
+                // TODO(MONITOR): observe curated tag counts and render cost;
+                // never retain tag text.
                 const boxes = [];
                 for (const box of document.querySelectorAll('[data-image-tags]')) {
                     if (box.dataset.styleTag !== event.style_tag || box.dataset.engine !== event.engine) continue;
@@ -1698,8 +1715,8 @@
             }
         }
         if (Array.isArray(event.image_tags)) {
-            // TODO(MONITOR): observe image_tags lengths and truncation above
-            // the eight-tag cap; do not record tag values.
+            // TODO(MONITOR): observe curated tag counts and render cost;
+            // do not record tag values.
             const boxes = [];
             for (const box of document.querySelectorAll('[data-image-tags]')) {
                 if (box.dataset.styleTag !== event.style_tag || box.dataset.engine !== event.engine

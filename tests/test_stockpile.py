@@ -167,8 +167,131 @@ class StockpileTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 stockpile.parse_analysis(text)
 
+    def test_metadata_helpers_cover_missing_malformed_and_normalized_values(self):
+        with TemporaryDirectory() as tmp:
+            self.assertEqual(list(stockpile.metadata_images(tmp)), [])
+            self.assertEqual(stockpile.tagged_images(tmp, '  \t'), [])
+            self.assertEqual(stockpile.tag_counts(tmp), {})
+            stockpile._tag_index_cache.clear()
+
+            valid = self.make_image(tmp, 'nested/valid.png', dict(tags=[' Oil   Painting ', 'RED']))
+            invalid = self.make_image(tmp, 'invalid.png', {'tags': 'not a list'})
+            malformed = self.make_image(tmp, 'malformed.png')
+            malformed.with_suffix('.json').write_text('{broken')
+            images = dict(stockpile.metadata_images(tmp))
+            self.assertEqual(set(images), {'nested/valid.png', 'invalid.png', 'malformed.png'})
+            self.assertEqual(images['malformed.png'], {})
+            self.assertIsNone(stockpile.read_metadata(malformed))
+            self.assertEqual(stockpile.tagged_images(tmp, ' oil painting ')[0]['filename'], 'nested/valid.png')
+            self.assertEqual(stockpile.tag_counts(tmp), {'oil painting': 1, 'red': 1})
+
+            outside = Path(tmp) / 'outside.png'
+            Image.new('RGB', (2, 2), 'blue').save(outside)
+            (Path(tmp) / 'stockpile' / 'outside-link.png').symlink_to(outside)
+            self.assertNotIn('outside-link.png', dict(stockpile.metadata_images(tmp)))
+            self.assertIsNone(stockpile.read_metadata(Path(tmp) / 'missing.png'))
+            self.assertIsInstance(stockpile.read_metadata(valid.with_suffix('.json')), dict)
+
+    def test_metadata_validation_helpers_define_completion_contract(self):
+        digest = 'abc123'
+        metadata = dict(width=32, height=24, description='A red image', tags=['red'], sha256=digest)
+        self.assertTrue(stockpile.valid_description(' image '))
+        self.assertFalse(stockpile.valid_description('  '))
+        self.assertFalse(stockpile.valid_description(3))
+        self.assertTrue(stockpile.valid_tags(['red', ' plain background ']))
+        self.assertFalse(stockpile.valid_tags([]))
+        self.assertFalse(stockpile.valid_tags(('red',)))
+        self.assertFalse(stockpile.valid_tags([' ']))
+        self.assertFalse(stockpile.valid_tags(['x' * 81]))
+        self.assertTrue(stockpile.complete(metadata, (32, 24), digest))
+        self.assertTrue(stockpile.complete({key: value for key, value in metadata.items() if key != 'sha256'}, (32, 24), digest))
+        self.assertFalse(stockpile.complete(metadata, (24, 32), digest))
+        self.assertFalse(stockpile.complete({**metadata, 'sha256': 'stale'}, (32, 24), digest))
+        self.assertFalse(stockpile.complete(None, (32, 24), digest))
+
     def test_paths_outside_stockpile_are_rejected(self):
         client = MemoryRedis()
         with TemporaryDirectory() as tmp, self.assertLogs('stockpile', level='ERROR'):
             event = stockpile.run_job(client, dict(job_id='invalid', filename='../outside.png', sha256='x'), tmp)
         self.assertEqual(event['state'], 'stockpile_failed')
+
+    def test_missing_stockpile_returns_empty_scan_result(self):
+        client = MemoryRedis()
+        with TemporaryDirectory() as tmp:
+            self.assertEqual(stockpile.scan_stockpile(client, tmp), {
+                'state': 'stockpile_queued', 'scanned': 0, 'complete': 0, 'jobs': [], 'errors': [],
+            })
+        self.assertEqual(client.jobs, [])
+
+    def test_scan_releases_pending_lock_when_enqueue_fails(self):
+        client = MemoryRedis()
+        with TemporaryDirectory() as tmp:
+            self.make_image(tmp)
+            client.publish = Mock(side_effect=RuntimeError('redis publish failed'))
+            with self.assertRaisesRegex(RuntimeError, 'redis publish failed'):
+                stockpile.scan_stockpile(client, tmp)
+        self.assertFalse(client.values, 'Failed enqueue publication must release its deduplication lock')
+
+    def test_atomic_sidecar_writer_cleans_up_when_tempfile_creation_fails(self):
+        with TemporaryDirectory() as tmp:
+            sidecar = Path(tmp) / 'image.json'
+            with patch.object(stockpile.tempfile, 'NamedTemporaryFile', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    stockpile._write_metadata_atomically(sidecar, {'tags': ['red']})
+            self.assertFalse(sidecar.exists())
+
+    def test_worker_rejects_unsupported_extension_and_releases_pending_lock(self):
+        client = MemoryRedis()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'stockpile'
+            root.mkdir()
+            path = root / 'notes.txt'
+            path.write_text('not an image')
+            task = dict(job_id='unsupported', filename='notes.txt', sha256='unused')
+            event = stockpile.run_job(client, task, tmp)
+        self.assertEqual(event['state'], 'stockpile_failed')
+        self.assertEqual(event['message'], 'Unsupported stock image')
+        self.assertFalse(client.values)
+
+    def test_stale_image_digest_discards_description_and_tags_before_analysis(self):
+        client = MemoryRedis()
+        with TemporaryDirectory() as tmp:
+            path = self.make_image(tmp, metadata=dict(
+                description='Stale description', tags=['stale'], source='camera', sha256='old-digest'))
+            stockpile.scan_stockpile(client, tmp)
+            with patch.object(stockpile, 'analyze', return_value=dict(description='Fresh description', tags=['fresh'])), \
+                    patch.object(stockpile, 'matched', return_value=True):
+                event = stockpile.run_job(client, client.jobs[0], tmp)
+            self.assertEqual(event['state'], 'stockpile_complete')
+            metadata = json.loads(path.with_suffix('.json').read_text())
+            self.assertEqual(metadata['description'], 'Fresh description')
+            self.assertEqual(metadata['tags'], ['fresh'])
+            self.assertEqual(metadata['source'], 'camera')
+
+    def test_image_changes_during_analysis_or_matching_abort_sidecar_write(self):
+        for stage in ('analysis', 'matching'):
+            with self.subTest(stage=stage), TemporaryDirectory() as tmp:
+                client = MemoryRedis()
+                metadata = {'tags': ['red']} if stage == 'analysis' else {'description': 'Keep me', 'tags': ['red']}
+                path = self.make_image(tmp, metadata=metadata)
+                current = json.loads(path.with_suffix('.json').read_text())
+                current.pop('tag_matching_version', None)
+                current.pop('tag_matching_tags_sha256', None)
+                current.pop('tag_vocabulary_sha256', None)
+                path.with_suffix('.json').write_text(json.dumps(current))
+                original_sidecar = path.with_suffix('.json').read_text()
+                stockpile.scan_stockpile(client, tmp)
+
+                def change_image(*_args, image_path=path, **_kwargs):
+                    Image.new('RGB', (8, 8), 'blue').save(image_path)
+                    return dict(description='Fresh', tags=['blue'])
+
+                if stage == 'analysis':
+                    patcher = patch.object(stockpile, 'analyze', side_effect=change_image)
+                else:
+                    patcher = patch.object(stockpile, 'match_tags', side_effect=change_image)
+                with patcher, self.assertLogs('stockpile', level='ERROR'):
+                    event = stockpile.run_job(client, client.jobs[0], tmp)
+                self.assertEqual(event['state'], 'stockpile_failed')
+                self.assertEqual(path.with_suffix('.json').read_text(), original_sidecar)
+                self.assertFalse(client.values)
