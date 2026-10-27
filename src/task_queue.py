@@ -11,12 +11,14 @@ their owning modules.
 
 ## Queue contract
 
-Jobs are JSON mappings with a stable ``job_id``. ``enqueue_task`` writes an
-optional status hash and then pushes the serialized job onto a Redis list;
-left-push is the default because the worker pops from the right to preserve
-FIFO order. ``promote_job`` and ``remove_queued_job`` use Lua scripts so a job
-cannot be duplicated, moved after it starts, or partially removed from queues
-when the same identifier appears more than once.
+Jobs are JSON mappings with a stable ``job_id`` and a ``provider`` identifying
+``llama``, ``comfyui``, or ``none`` for control work that needs no model API.
+Queue helpers infer this attribute for older call sites that omit it.
+``enqueue_task`` writes an optional status hash and then pushes the serialized
+job onto a Redis list; left-push is the default because the worker pops from
+the right to preserve FIFO order. ``promote_job`` and ``remove_queued_job`` use
+Lua scripts so a job cannot be duplicated, moved after it starts, or partially
+removed from queues when the same identifier appears more than once.
 
 Queue names, status schemas, task dispatch, and worker lifecycle belong to the
 calling application. This module supplies Redis mechanics and keeps the queue
@@ -42,6 +44,32 @@ DEFAULT_IDLE_QUEUE = IDLE_QUEUE
 DEFAULT_RUNNING_KEY = RUNNING_KEY
 DEFAULT_STYLER_EVENTS = STYLER_EVENTS
 DEFAULT_STATUS_TTL_SECONDS = 86_400
+LLAMA_TASK_ACTIONS = {
+    "styler_tag_sample",
+    "styler_tag_group",
+    "styler_scan_image_tags",
+}
+
+
+def task_provider(task: Mapping[str, Any]) -> str:
+    """Return the persisted target API provider for one queued task."""
+    provider = task.get("provider")
+    if provider in ("llama", "comfyui", "none"):
+        return provider
+    if provider == "comfy":
+        return "comfyui"
+    if task.get("action") == "gpu_service_switch":
+        return "llama" if task.get("service_to") == "Llama" else "comfyui"
+    if task.get("action") == "worker_reset":
+        return "none"
+    return "llama" if task.get("action") in LLAMA_TASK_ACTIONS else "comfyui"
+
+
+def with_task_provider(task: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy a task and fill its target provider, including for legacy payloads."""
+    result = dict(task)
+    result["provider"] = task_provider(result)
+    return result
 
 
 def enqueue_task(
@@ -67,12 +95,37 @@ def enqueue_task(
         client.hset(status_key, mapping=dict(status))
         client.expire(status_key, status_ttl)
 
-    payload = json.dumps(dict(task), ensure_ascii=ensure_ascii)
+    payload = json.dumps(with_task_provider(task), ensure_ascii=ensure_ascii)
     enqueue_payload(client, queue, payload, front=front)
     if event is not None:
         client.publish(
             event_channel, json.dumps(dict(event), ensure_ascii=ensure_ascii)
         )
+
+
+def pop_gpu_service_switch(client: "Redis", queue: str) -> dict[str, Any] | None:
+    """Atomically pop a GPU switch control task regardless of target provider."""
+    payload = client.eval(
+        """
+        for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
+            local ok, task = pcall(cjson.decode, payload)
+            if ok and type(task) == 'table'
+                and task.action == 'gpu_service_switch' then
+                redis.call('LREM', KEYS[1], 1, payload)
+                return payload
+            end
+        end
+        return nil
+        """,
+        1,
+        queue,
+    )
+    if not payload:
+        return None
+    if isinstance(payload, bytes):
+        payload = payload.decode()
+    task = json.loads(payload)
+    return task if isinstance(task, dict) else None
 
 
 def enqueue_payload(
@@ -82,7 +135,43 @@ def enqueue_payload(
     *,
     front: bool = True,
 ) -> None:
-    """Enqueue an already serialized task without changing its wire payload."""
+    """Enqueue serialized JSON after adding the task's provider if it is absent."""
+    try:
+        decoded = json.loads(payload)
+    except (TypeError, ValueError):
+        decoded = None
+    if isinstance(decoded, dict):
+        payload = json.dumps(with_task_provider(decoded), ensure_ascii=False)
+        if decoded.get('action') in ('styler_tag_sample', 'styler_tag_group'):
+            # Provider deferrals and retries must move a task, not append a
+            # second copy. Keep distinct image/prompt revisions of legacy
+            # sample tasks, whose job_id alone does not identify a revision.
+            queues = list(dict.fromkeys((queue, TAG_QUEUE, PRIORITY_QUEUE, VIDEO_QUEUE, IDLE_QUEUE)))
+            client.eval(
+                """
+                local incoming = cjson.decode(ARGV[1])
+                for _, queue in ipairs(KEYS) do
+                    for _, payload in ipairs(redis.call('LRANGE', queue, 0, -1)) do
+                        local ok, task = pcall(cjson.decode, payload)
+                        if ok and type(task) == 'table'
+                            and task.action == incoming.action
+                            and task.job_id == incoming.job_id then
+                            local same = incoming.action == 'styler_tag_group'
+                                or (task.sha256 == incoming.sha256
+                                    and task.prompt_sha256 == incoming.prompt_sha256
+                                    and task.analysis_version == incoming.analysis_version)
+                            if same then redis.call('LREM', queue, 0, payload) end
+                        end
+                    end
+                end
+                redis.call(ARGV[2], KEYS[1], ARGV[1])
+                """,
+                len(queues),
+                *queues,
+                payload,
+                'LPUSH' if front else 'RPUSH',
+            )
+            return
     if front:
         client.lpush(queue, payload)
     else:
