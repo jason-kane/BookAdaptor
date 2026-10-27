@@ -95,6 +95,41 @@ class SectionLatexTests(unittest.TestCase):
         self.assertNotIn(r"\setlength{\vindent}{0pt}", output)
         self.assertNotIn(r"\parbox", output)
 
+    def test_plain_defaults_to_full_justification_without_verse_indentation(self):
+        sections = [{'typesetting_method': 'plain', 'ops': [
+            {'insert': 'Ordinary prose wraps into fully justified paragraphs.\n'}]}]
+        for highlights in (None, [{'index': 3, 'spoken': sections[0]['ops'][0]['insert']}]):
+            output = renderer.render_sections(sections, highlights)
+            self.assertIn(r'\leftskip=0pt\rightskip=0pt\parfillskip=0pt plus 1fil', output)
+            self.assertNotIn(r'\begin{verse}', output)
+            self.assertNotIn(r'\vindent', output)
+            self.assertNotIn(r'\rightskip=0pt plus 1fil', output)
+            self.assertIn(r'\par}', output)
+
+    def test_saved_editor_methods_override_legacy_xml_without_changing_assets(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup('<chapter><paragraph index="0"><image index="4" src="keep.png"/>'
+                             '<phrase index="7" src="keep.wav">Hello world.</phrase></paragraph></chapter>', 'xml')
+        before = str(soup)
+        sections = [{'typesetting_method': 'plain', 'ops': [{'insert': 'Hello world.\n'}]}]
+        for document in renderer.render_chapter_xml(soup, 840, sections=sections):
+            self.assertNotIn(r'\begin{verse}', document)
+            self.assertIn(r'\leftskip=0pt\rightskip=0pt', document)
+        self.assertEqual(str(soup), before)
+        with self.assertRaisesRegex(ValueError, 'Audio phrase text does not match'):
+            renderer.render_chapter_xml(soup, 840, sections=[{
+                'typesetting_method': 'plain', 'ops': [{'insert': 'Different words.\n'}]}])
+
+    def test_xml_phrase_methods_preserve_section_boundaries_within_a_paragraph(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup('<chapter><paragraph><phrase index="0" typesetting_method="plain">Prose\n</phrase>'
+                             '<phrase index="1" typesetting_method="verse">Poem\n</phrase>'
+                             '<phrase index="2" typesetting_method="plain">Afterword\n</phrase></paragraph></chapter>', 'xml')
+        for document in renderer.render_chapter_xml(soup, 840):
+            self.assertEqual(document.count(r'\begin{verse}'), 1)
+            self.assertLess(document.index('Prose'), document.index(r'\begin{verse}'))
+            self.assertLess(document.index(r'\end{verse}'), document.index('Afterword'))
+
     def test_failed_render_keeps_published_files(self):
         from bs4 import BeautifulSoup
         from tempfile import TemporaryDirectory

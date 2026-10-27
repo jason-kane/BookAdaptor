@@ -30,11 +30,11 @@
                             hx-post="{{ url_for('library.book.chapter.typeset_latex', **chapter.kwargs) }}"
                             hx-disabled-elt="this"
                             hx-on::before-request="beforeRequest(this,event)"
-                            hx-on::after-request="afterRequest(this,event); if (event.detail.successful) latex_rerender_url('{{ url_for('library.book.chapter.typography.serve_chapter_pdf', **chapter.kwargs) }}?t=' + Date.now())"
-                            hx-target="#typeset-latex-status" hx-swap="textContent"
+                            hx-on::after-request="afterRequest(this,event)"
+                            hx-target="#typeset-latex-status" hx-swap="innerHTML"
                             variant="neutral" appearance="accent" size="medium"
                         >Typeset LaTeX</wa-button>
-                        <span id="typeset-latex-status" class="chapter-action-status" role="status" aria-live="polite"></span>
+                        <div id="typeset-latex-status" class="chapter-action-status" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </section>

@@ -266,22 +266,38 @@ def crop_chapter_text_images(directory):
                 cropped.close()
 
 
-def typeset_chapter_xml(soup, directory, text_width):
+def typeset_chapter_xml(soup, directory, text_width, sections=None):
     """Publish fresh typesetting artifacts only after both renders succeed."""
+    typeset_documents(render_chapter_xml(soup, text_width, sections=sections), directory)
+
+
+def typeset_documents(documents, directory):
+    """Compile a paired set of documents inside a CPU worker's staging folder."""
     from pathlib import Path
     import subprocess
     from tempfile import TemporaryDirectory
 
-    documents = render_chapter_xml(soup, text_width)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix="typeset-", dir=directory) as staging:
         staging = Path(staging)
         for name, document in zip(("chapter", "chapter.rainbow"), documents):
             (staging / f"{name}.latex").write_text(document, encoding="utf-8")
-            subprocess.run([
-                "lualatex", "-interaction=nonstopmode", "-halt-on-error", f"{name}.latex",
-            ], cwd=staging, check=True, capture_output=True)
+            try:
+                subprocess.run([
+                    "lualatex", "-interaction=nonstopmode", "-halt-on-error", f"{name}.latex",
+                ], cwd=staging, check=True, capture_output=True)
+            except subprocess.CalledProcessError as error:
+                log_path = staging / f"{name}.log"
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines() if log_path.exists() else []
+                error_index = next((i for i, line in enumerate(lines) if line.startswith("!")), None)
+                if error_index is not None:
+                    diagnostic = "\n".join(lines[error_index:error_index + 8])
+                else:
+                    diagnostic = "\n".join(lines[-20:]) or str(error.stderr or error.stdout or "No LaTeX log was produced.")
+                raise RuntimeError(
+                    f"lualatex failed for {name}.latex (exit {error.returncode}):\n{diagnostic}"
+                ) from error
             subprocess.run([
                 "gs", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pngalpha", f"-r{RASTER_DPI}",
                 "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4",

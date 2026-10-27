@@ -1,0 +1,8 @@
+<div data-task-progress
+    {% if task.state not in ('complete', 'failed') %}hx-get="{{ status_url }}" hx-trigger="load delay:1s" hx-swap="outerHTML"{% endif %}>
+    {% if task.state != 'failed' %}
+    <wa-progress-bar data-task-timing="{{ task|tojson|forceescape }}" aria-label="Typeset LaTeX progress" {% if task.state == 'complete' %}value="100"{% else %}indeterminate{% endif %}></wa-progress-bar>
+    {% endif %}
+    <span data-task-eta class="task-timing-label">{{ eta }}</span>
+    <div>{{ task.message or ('Queued in CPU Queue' if task.state == 'queued' else 'Typesetting LaTeX') }}</div>
+</div>

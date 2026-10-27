@@ -6,7 +6,8 @@ from artifact_editor.chapter import views
 
 log = logging.getLogger(__name__)
 
-def test_import_chapter_runs_without_http_context_and_places_images_after_audio(monkeypatch, tmp_path):
+@pytest.mark.parametrize('method', ['plain', 'verse'])
+def test_import_chapter_runs_without_http_context_and_places_images_after_audio(monkeypatch, tmp_path, method):
     import json
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -15,8 +16,8 @@ def test_import_chapter_runs_without_http_context_and_places_images_after_audio(
     monkeypatch.setattr(views.const, "LIBRARY_DIR", str(tmp_path))
     monkeypatch.setattr(views, "sentence_pipeline", lambda text: SimpleNamespace(
         sents=[SimpleNamespace(text=text.strip(), text_with_ws=text)]))
-    monkeypatch.setattr(views.subprocess, "run", Mock())
-    monkeypatch.setattr(views, "crop_chapter_text_images", Mock())
+    typeset = Mock()
+    monkeypatch.setattr(views, "enqueue_typesetting", typeset)
     chapter = SimpleNamespace(
         language="en", aspect=next(iter(views.const.GEOMETRY)),
         title="Test", author=SimpleNamespace(name="Author"),
@@ -40,10 +41,12 @@ def test_import_chapter_runs_without_http_context_and_places_images_after_audio(
     monkeypatch.setattr(views, "generate_chapter_theme", theme)
     progress = Mock()
     views.import_chapter_content(chapter, json.dumps([
-        {"typesetting_method": "verse", "ops": [{"insert": "Hello world.\n"}]}
+        {"typesetting_method": method, "ops": [{"insert": "Hello world.\n"}]}
     ]), progress=progress)
     assert chapter.soup.find("image") is not None
     assert chapter.soup.find("image").find_next_sibling("phrase") is not None
+    assert all(phrase['typesetting_method'] == method for phrase in chapter.soup.find_all('phrase'))
+    typeset.assert_called_once_with(chapter, wait=True, source='latex')
     mood.assert_called_once_with(chapter)
     theme.assert_called_once_with(chapter)
     progress.assert_called_with(100, "Chapter import complete")

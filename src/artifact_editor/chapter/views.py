@@ -9,7 +9,6 @@ import flask
 from artifact_editor.chapter import chapter
 import roman
 from worker_client import sentence_pipeline
-import subprocess
 
 from flask import (
     Blueprint,
@@ -37,13 +36,11 @@ from artifact_editor.tools import (
 )
 
 from . import htmx
+from .typesetting import enqueue_typesetting
 from .section_latex import (
-    RASTER_DPI,
     font_preamble,
     render_sections,
     video_page_geometry,
-    typeset_chapter_xml,
-    crop_chapter_text_images,
 )
 
 from artifact_editor.chapter.chapter import (
@@ -1696,63 +1693,43 @@ def import_chapter_small_phrase():
         g.chapter.language,
     )
 
-    # sorry assholes.
-    subprocess.run(["lualatex", "./chapter.latex"], cwd=cwd)
-    subprocess.run(
-        [
-            "gs",
-            "-dNOPAUSE",
-            "-sDEVICE=pngalpha",
-            f"-r{RASTER_DPI}",
-            "-dTextAlphaBits=4",
-            "-dGraphicsAlphaBits=4",
-            "-sOutputFile=chapter-%d.png",
-            "chapter.pdf",
-            "-c",
-            "quit",
-        ],
-        cwd=cwd,
-    )
-
-    subprocess.run(["lualatex", "./chapter.rainbow.latex"], cwd=cwd)
-
-    subprocess.run(
-        [
-            "gs",
-            "-dNOPAUSE",
-            "-sDEVICE=pngalpha",
-            f"-r{RASTER_DPI}",
-            "-dTextAlphaBits=4",
-            "-dGraphicsAlphaBits=4",
-            "-sOutputFile=chapter.rainbow-%d.png",
-            "chapter.rainbow.pdf",
-            "-c",
-            "quit",
-        ],
-        cwd=cwd,
-    )
-    crop_chapter_text_images(cwd)
+    enqueue_typesetting(g.chapter, wait=True, source='latex')
 
     return "", 200
 
 
 @bp.post("/typeset_latex")
 def typeset_latex():
-    """Retypeset saved XML while preserving narration, images, and animations."""
-    g.chapter.load_xml(force=True)
-    directory = os.path.join(
-        const.LIBRARY_DIR, g.chapter.get_chapterdir(), g.chapter.language
-    )
+    """Queue CPU work and return immediately with a live task status."""
+    job_id = enqueue_typesetting(g.chapter)
+    return typeset_latex_status(job_id), 202
+
+
+@bp.get("/typeset_latex/status/<job_id>")
+def typeset_latex_status(job_id):
+    from cpu_queue import connection
+    from task_timing import Estimator, eta_label
+
+    client = connection()
     try:
-        typeset_chapter_xml(
-            g.chapter.soup, directory, const.GEOMETRY[g.chapter.aspect]["TEXT_WIDTH"]
-        )
-    except (ValueError, KeyError, TypeError) as error:
-        return f"Cannot typeset chapter: {html.escape(str(error))}", 400
-    except subprocess.CalledProcessError:
-        log.exception("Chapter typesetting failed")
-        return "Typesetting failed. See server logs for details.", 500
-    return "LaTeX typeset successfully.", 200
+        raw = client.get(f'cpu_job:{job_id}')
+        if not raw:
+            return 'Typesetting status is no longer available.'
+        task = json.loads(raw)
+        identity = task.get('chapter') or {}
+        expected = dict(author=g.chapter.author.name, title=g.chapter.title,
+                        chapter_number=g.chapter.number, language=g.chapter.language)
+        if any(str(identity.get(key)) != str(value) for key, value in expected.items()):
+            flask.abort(404)
+        task = Estimator(client).attach(task)
+        response = flask.make_response(render_template('chapter_typeset_status.html',
+            task=task, eta=eta_label(task), status_url=url_for('.typeset_latex_status', job_id=job_id, **g.chapter.kwargs)))
+        if task['state'] == 'complete':
+            response.headers['HX-Trigger'] = json.dumps({'chapter-typeset-complete': {
+                'pdf_url': url_for('library.book.chapter.typography.serve_chapter_pdf', **g.chapter.kwargs)}})
+        return response
+    finally:
+        client.close()
 
 
 def import_chapter_content(chapter, sections_json=None, progress=None):
@@ -2277,44 +2254,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         chapter.language,
     )
 
-    progress(15, "Typesetting chapter text")
-    subprocess.run(["lualatex", "./chapter.latex"], cwd=cwd, check=True)
-    subprocess.run(
-        [
-            "gs",
-            "-dNOPAUSE",
-            "-sDEVICE=pngalpha",
-            f"-r{RASTER_DPI}",
-            "-dTextAlphaBits=4",
-            "-dGraphicsAlphaBits=4",
-            "-sOutputFile=chapter-%d.png",
-            "chapter.pdf",
-            "-c",
-            "quit",
-        ],
-        cwd=cwd,
-        check=True,
-    )
-
-    subprocess.run(["lualatex", "./chapter.rainbow.latex"], cwd=cwd, check=True)
-
-    subprocess.run(
-        [
-            "gs",
-            "-dNOPAUSE",
-            "-sDEVICE=pngalpha",
-            f"-r{RASTER_DPI}",
-            "-dTextAlphaBits=4",
-            "-dGraphicsAlphaBits=4",
-            "-sOutputFile=chapter.rainbow-%d.png",
-            "chapter.rainbow.pdf",
-            "-c",
-            "quit",
-        ],
-        cwd=cwd,
-        check=True,
-    )
-    crop_chapter_text_images(cwd)
+    progress(15, "Typesetting chapter text in CPU Queue")
+    enqueue_typesetting(chapter, wait=True, source='latex')
 
     from artifact_editor.phrases import phrases as phrase_audio
     from .timeline import add_import_images
