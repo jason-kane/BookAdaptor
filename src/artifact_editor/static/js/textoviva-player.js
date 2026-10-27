@@ -47,9 +47,8 @@
                 if (!timeline || player.isDisposed()) return;
                 const frame = Math.floor(player.currentTime() * timeline.fps);
                 const phrase = timeline.phrases.find(item => item.start <= frame && frame <= item.end);
-                // Match the renderer: use the next image in a gap, and keep
-                // the final image visible through the end of the narration.
-                const image = timeline.images.find(item => frame <= item.end) || timeline.images.at(-1);
+                // Images begin at their XML positions and persist until the next image.
+                const image = timeline.images.filter(item => item.start <= frame).at(-1);
                 let activePhrase = null;
                 document.querySelectorAll('[data-timeline-type]').forEach(item => {
                     const current = item.dataset.timelineType === 'phrase' ? phrase : image;
