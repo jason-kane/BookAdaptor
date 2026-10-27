@@ -303,7 +303,9 @@ def str_prompt(
             max_output_tokens=max_output_tokens,
         )
 
-        comfy.run_workflow_fn(workflow_filename)
+        from gpu_tasks import task_label, gpu_label
+        with task_label("LLM · " + gpu_label.get()):
+            comfy.run_workflow_fn(workflow_filename)
 
         # and find the output..
         glob_name = os.path.join(
@@ -379,7 +381,7 @@ def json_prompt(prompt, force=False):
 
         workflow = comfy.load_workflow_template("api", "t2json", "qwen35-json_Qwen 3.5 JSON")
 
-        output_filename = "llm_json.txt"
+        output_filename = f"llm_json_{uuid.uuid4().hex}.txt"
         outputfile = os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], output_filename)
         if os.path.exists(outputfile):
             os.remove(outputfile)
@@ -393,11 +395,14 @@ def json_prompt(prompt, force=False):
             "FILE_NAME": os.path.splitext(output_filename)[0],
         }
 
-        response = comfy.run_workflow(workflow, template_environment=template_environment)
+        from gpu_tasks import task_label, gpu_label
+        with task_label("LLM · " + gpu_label.get()):
+            response = comfy.run_workflow(workflow, template_environment=template_environment)
         log.info("LLM workflow response: %s", response)
 
         with open(outputfile, "r") as f:
             content = json.load(f)
+        os.remove(outputfile)
 
         set_cached_prompt(prompt, content, format="json")
 

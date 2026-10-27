@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import time
 import uuid
 
@@ -68,6 +69,11 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
         "state": state,
     }
     previous = client.hgetall(f"video_job:{job_id}")
+    event.update({key: previous[key] for key in ("execution_queue", "parent_job_id", "queue_started_at",
+                  "timing_key", "timing_units", "timing_unit")
+                  if key in previous})
+    if state == 'running' and 'queue_started_at' not in event:
+        event['queue_started_at'] = time.time()
     event.update(
         {key: value for key, value in previous.items() if key.startswith("comfy_")}
     )
@@ -76,6 +82,8 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
         event["action"] = action
     client.hset(f"video_job:{job_id}", mapping=event)
     client.expire(f"video_job:{job_id}", 86400)
+    from task_timing import enrich
+    event = enrich(client, event)
     publish_queue_event(client, VIDEO_EVENTS, event)
 
 
@@ -95,37 +103,25 @@ def publish_comfy_progress(client, job_id, percent, message):
 
 
 def progress_html(event):
-    job_id = event["job_id"]
-    percent = event["percent"]
-    message = event["message"]
-    state = event["state"]
-    escaped_message = (
-        str(message)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    status = (
-        "success" if state == "complete" else "danger" if state == "failed" else "brand"
-    )
-    comfy_html = ""
-    if "comfy_percent" in event:
-        from html import escape
+    from html import escape
+    from task_timing import eta_label
 
-        comfy_percent = int(event["comfy_percent"])
-        comfy_message = escape(str(event.get("comfy_message", "ComfyUI")))
-        comfy_html = (
-            f'<div class="wa-stack" aria-label="ComfyUI task progress">'
-            f'<wa-progress-bar value="{comfy_percent}" aria-label="ComfyUI task progress"></wa-progress-bar>'
-            f"<div>{comfy_percent}% — {comfy_message}</div></div>"
-        )
+    job_id = escape(str(event['job_id']), quote=True)
+    state = escape(str(event['state']), quote=True)
+    message = escape(re.sub(r"\(?\b\d+(?:\.\d+)?\s*%\)?\s*[—·-]?\s*", "", str(event.get('message', ''))))
+    status = 'success' if state == 'complete' else 'danger' if state == 'failed' else 'brand'
+    payload = {key: event[key] for key in ('job_id', 'state', 'timing', 'queue_started_at', 'duration_seconds') if key in event}
+    metadata = escape(json.dumps(payload), quote=True)
+    bar = 'value="100"' if state == 'complete' else 'indeterminate'
+    detail = escape(str(event.get('comfy_message', '')))
     return (
-        f'<div id="video-progress-{job_id}" '
+        f'<div id="video-progress-{job_id}" data-task-progress '
         f'hx-swap-oob="outerHTML:#video-progress-{job_id}" class="wa-stack" '
         f'data-video-job="{job_id}" data-video-state="{state}">'
-        f'<wa-progress-bar value="{percent}" variant="{status}"></wa-progress-bar>'
-        f"<div>{percent}% — {escaped_message}</div>{comfy_html}</div>"
+        f'<wa-progress-bar {bar} data-task-timing="{metadata}" variant="{status}"></wa-progress-bar>'
+        f'<span data-task-eta class="task-timing-label">{escape(eta_label(event))}</span>'
+        f'<small data-task-timing-stats class="task-timing-stats"></small>'
+        f'<div>{message}</div>' + (f'<small>{detail}</small>' if detail else '') + '</div>'
     )
 
 
@@ -144,13 +140,24 @@ def pending_video_progress(pubsub, client):
             latest[payload["job_id"]] = payload
         except (ValueError, TypeError, KeyError):
             log.exception("Invalid video progress event")
-    return [
-        client.hgetall(f"video_job:{job_id}") or payload
-        for job_id, payload in latest.items()
-    ]
+    from task_timing import enrich
+    return [enrich(client, client.hgetall(f"video_job:{job_id}") or payload)
+            for job_id, payload in latest.items()]
 
 
 def run_video_job(client, task):
+    if task.get("action") in ("gpu_workflow", "gpu_llama"):
+        from gpu_tasks import run_job
+        return run_job(client, task)
+    # Drain renders submitted by older producers into the coordinator queue.
+    # The GPU worker must remain free for their dependent LLM workflows.
+    from task_queue import RENDER_ACTIONS
+    if (os.environ.get("VIDEO_WORKER_PROCESS") == "1" and (
+        task.get("action") in RENDER_ACTIONS
+        or (not task.get("action") and "aspect" in task)
+    )):
+        enqueue_task(client, VIDEO_QUEUE, task)
+        return
     job_id = task["job_id"]
     message = {
         "scene_description": "Preparing scene description",
@@ -1016,7 +1023,11 @@ def run_tracked_task(client, callback, *args):
         clear_failed_job(client, task["job_id"])
         client.delete(f"styler:retry-pending:{task['job_id']}")
     mark_activity(client)
-    current_task = {**task, "queue_started_at": time.time()} if task else None
+    if task:
+        from task_timing import prepare
+        task.update(prepare(task))
+        task['queue_started_at'] = time.time()
+    current_task = dict(task) if task else None
     if current_task and current_task.get("action") in (
         "styler_tag_sample",
         "styler_tag_group",
@@ -1279,6 +1290,11 @@ def clear_removed_task_markers(client, task):
     action = task.get("action")
     job_id = task["job_id"]
     client.delete(f"styler:retry-pending:{job_id}")
+    if action in ("gpu_workflow", "gpu_llama"):
+        with client.pipeline() as pipe:
+            pipe.rpush(f"gpu_result:{job_id}", json.dumps({"error": "GPU task was removed from the queue"}))
+            pipe.expire(f"gpu_result:{job_id}", 600)
+            pipe.execute()
     if action == "styler_sample":
         client.delete(f"styler_pending:{job_id}", f"styler_progress:{job_id}")
     elif action == "styler_tag_group":
@@ -1345,6 +1361,11 @@ def run_worker_rpc(client, task):
     except Exception as exc:
         log.exception("Worker RPC failed", operation=task["operation"])
         response["error"] = str(exc)
+    publish_queue_event(client, 'styler_sample_events', {
+        **{key: value for key, value in task.items() if key not in ('arguments', 'deadline')},
+        'state': 'failed' if 'error' in response else 'complete',
+        'message': response.get('error', 'Worker operation complete'),
+    })
     key = f"worker_result:{task['job_id']}"
     with client.pipeline() as pipe:
         pipe.rpush(key, json.dumps(response))
@@ -1419,6 +1440,8 @@ def styler_websocket(ws):
     last_queue_state = None
     last_queue_sent = 0.0
     last_running_id = None
+    last_cpu_sent = 0.0
+    last_cpu_signature = None
 
     def send_queue_plan(completed_job_id=None):
         nonlocal queue_dirty, last_queue_state, last_queue_sent, last_running_id
@@ -1437,6 +1460,14 @@ def styler_websocket(ws):
     try:
         send_queue_plan()
         while True:
+            if time.monotonic() - last_cpu_sent >= 1:
+                from cpu_queue import snapshot as cpu_snapshot
+                cpu_plan = cpu_snapshot(client)
+                signature = json.dumps(cpu_plan, sort_keys=True)
+                if signature != last_cpu_signature:
+                    ws.send(json.dumps(cpu_plan))
+                    last_cpu_signature = signature
+                last_cpu_sent = time.monotonic()
             incoming = ws.receive(timeout=0.1)
             if incoming:
                 message = None
@@ -1807,6 +1838,8 @@ def styler_websocket(ws):
                     payload = json.loads(event["data"])
                 except (ValueError, TypeError):
                     continue
+                if isinstance(payload, dict) and payload.get("execution_queue") == "render":
+                    continue
                 if isinstance(payload, dict) and payload.get("state") in (
                     "lost_resolved",
                     "style_tags_reconciled",
@@ -1915,6 +1948,8 @@ def styler_queue_entry(task, priority=False):
     if not isinstance(task, dict) or not isinstance(task.get("job_id"), str):
         return None
     from task_queue import task_provider
+    from task_timing import prepare
+    task = prepare(task)
 
     action = task.get("action") or ""
     labels = {
@@ -1940,7 +1975,7 @@ def styler_queue_entry(task, priority=False):
         "scene_description": "Scene description",
         "scene_image": "Scene image",
     }
-    job_type = labels.get(
+    job_type = task.get("job_type") or labels.get(
         action, action.replace("_", " ").strip().title() or "GPU task"
     )
     if action == "worker_rpc":
@@ -1949,6 +1984,7 @@ def styler_queue_entry(task, priority=False):
         key: task[key]
         for key in (
             "job_id",
+            "parent_job_id",
             "style_tag",
             "engine",
             "engines",
@@ -1959,6 +1995,9 @@ def styler_queue_entry(task, priority=False):
             "priority_removed",
             "idle_maintenance",
             "queue_started_at",
+            "timing_key",
+            "timing_units",
+            "timing_unit",
             "topic_level",
             "topic_parent",
             "service_from",
@@ -2009,6 +2048,11 @@ def styler_queue_entry(task, priority=False):
 
 def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     """Return a bounded, worker-ordered queue view for the styler UI."""
+    from task_timing import Estimator, learn_outcomes
+    completed_history = recent_completions(client)
+    failed_history = recent_failures(client)
+    learn_outcomes(client, [*completed_history, *failed_history])
+    estimator = Estimator(client)
     running = None
     raw_running = client.get("gpu:service-transition") or client.get(
         "styler:worker-running"
@@ -2153,6 +2197,7 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
         return 4
 
     queued.sort(key=rank)
+    running, queued = estimator.serial(running, queued)
     capacity = max(0, min(200, int(capacity)))
     visible = queued[:capacity]
     for item in visible:
@@ -2173,7 +2218,7 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     queued_ids = {job["job_id"] for job in queued}
     failures = [
         entry
-        for entry in recent_failures(client)
+        for entry in failed_history
         if entry["job_id"] not in queued_ids
         and not (
             running
@@ -2188,15 +2233,15 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
         "overflow_count": max(0, len(queued) - len(visible)),
         "completed": [
             {
-                **entry,
+                **{key: value for key, value in estimator.attach(entry).items() if key not in ("arguments", "deadline")},
                 "label": styler_queue_entry(entry)["label"],
                 "provider": styler_queue_entry(entry)["provider"],
             }
-            for entry in recent_completions(client)
+            for entry in completed_history
         ],
         "failed": [
             {
-                **entry,
+                **{key: value for key, value in estimator.attach(entry).items() if key not in ("arguments", "deadline")},
                 "label": styler_queue_entry(entry)["label"],
                 "provider": styler_queue_entry(entry)["provider"],
             }
@@ -2297,7 +2342,7 @@ def handle_websocket(ws):
                             if task["action"] == "chapter_import"
                             else "Queued for Time Align"
                             if task["action"] == "textoviva_time_align"
-                            else "Queued for re-render"
+                            else "Queued for video generation"
                         )
                         if task["action"] in ("prop_image", "character_image"):
                             label = (
@@ -2318,15 +2363,28 @@ def handle_websocket(ws):
                             label = "Queued for missing " + task["action"].removeprefix(
                                 "chapter_missing_"
                             )
-                        publish_progress(
-                            client,
-                            task["job_id"],
-                            0,
-                            label,
-                            "queued",
-                            action=task.get("action"),
+                        # Persist both identity and queued status before starting
+                        # consumers. Startup may disconnect this WebSocket; the
+                        # coordinator must still be able to finish the request.
+                        queued_status = {
+                            "job_id": task["job_id"], "action": task["action"],
+                            "percent": 0, "message": label, "state": "queued",
+                        }
+                        enqueue_task(
+                            client, VIDEO_QUEUE, task,
+                            status_key=f"video_job:{task['job_id']}", status=queued_status,
+                            event_channel=VIDEO_EVENTS, event=queued_status,
                         )
-                        enqueue_task(client, VIDEO_QUEUE, task)
+                        from task_queue import RENDER_ACTIONS
+                        if task["action"] in RENDER_ACTIONS:
+                            from worker_startup import ensure_worker_services
+                            try:
+                                ensure_worker_services()
+                            except RuntimeError as exc:
+                                status = client.hgetall(f"video_job:{task['job_id']}")
+                                if status.get("state") == "queued":
+                                    publish_progress(client, task["job_id"], 0,
+                                                     f"Queued; {exc}", "queued")
                 except (ValueError, TypeError, KeyError, AttributeError):
                     log.exception("Invalid WebSocket render command")
 
@@ -2347,15 +2405,28 @@ def handle_websocket(ws):
                     value = client.incr(queue_name + "_counter")
                     if value == 1:
                         client.set(queue_name + "_steps", int(float(message)))
+                        client.set(queue_name + '_started_at', time.time(), ex=86400)
                     max_value = int(client.get(queue_name + "_steps") or 100)
                     percent = min(100, int(value / max_value * 100))
+                    from task_timing import Estimator, safe_record
+                    from html import escape
+                    import hashlib
+                    started = client.get(queue_name + '_started_at')
+                    legacy = dict(job_id='legacy:' + hashlib.sha256(queue_name.encode()).hexdigest(),
+                                  action='legacy_image', state='complete' if message == 'Complete' else 'running',
+                                  queue_started_at=started)
+                    if message == 'Complete' and started:
+                        legacy['duration_seconds'] = time.time() - float(started)
+                        safe_record(client, legacy, legacy['duration_seconds'], started_at=started)
+                    timing_data = escape(json.dumps(Estimator(client).attach(legacy)), quote=True)
                     ws.send(
                         f'<wa-progress-ring hx-swap-oob="outerHTML:.image_{image_index}" '
-                        f'class="image_{image_index}" value="{percent}"></wa-progress-ring>'
+                        f'class="image_{image_index}" data-task-timing="{timing_data}" '
+                        f'indeterminate></wa-progress-ring>'
                     )
                     if message == "Complete":
                         client.delete(
-                            key, queue_name + "_steps", queue_name + "_counter"
+                            key, queue_name + "_steps", queue_name + "_counter", queue_name + '_started_at'
                         )
                         author, title, chapter_number, language = json.loads(
                             chapter_key

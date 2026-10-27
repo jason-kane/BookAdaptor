@@ -149,7 +149,9 @@ def boost_scrollrate(
 
 def set_frame_to_camera(frame_to_camera_value: list[float | None]):
     global _frame_to_camera
+    global _frame_loaded
     _frame_to_camera = frame_to_camera_value
+    _frame_loaded = True
 
 
 def load_camera(chapter: Chapter, aspect='widescreen'):

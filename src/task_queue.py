@@ -20,9 +20,9 @@ the right to preserve FIFO order. ``promote_job`` and ``remove_queued_job`` use
 Lua scripts so a job cannot be duplicated, moved after it starts, or partially
 removed from queues when the same identifier appears more than once.
 
-Queue names, status schemas, task dispatch, and worker lifecycle belong to the
-calling application. This module supplies Redis mechanics and keeps the queue
-operations identical across artifactserver and worker processes.
+Chapter render commands are routed to RENDER_QUEUE so the coordinator can wait
+for GPU dependencies without blocking the GPU consumer. Per-frame CPU work is
+owned by cpu_queue. Other dispatch and worker lifecycle remain with callers.
 """
 
 import json
@@ -35,6 +35,11 @@ if TYPE_CHECKING:
 
 VIDEO_QUEUE = "video_render_jobs"
 VIDEO_EVENTS = "video_render_events"
+RENDER_QUEUE = "chapter_render_jobs"
+RENDER_ACTIONS = frozenset({
+    "video_render", "textoviva_rerender", "textoviva_regenerate_animation",
+    "textoviva_missing_animation",
+})
 TAG_QUEUE = "styler_image_tag_jobs"
 PRIORITY_QUEUE = "styler_image_tag_priority_jobs"
 IDLE_QUEUE = "styler_idle_jobs"
@@ -53,6 +58,10 @@ LLAMA_TASK_ACTIONS = {
 
 def task_provider(task: Mapping[str, Any]) -> str:
     """Return the persisted target API provider for one queued task."""
+    if task.get("action") in RENDER_ACTIONS or (
+        not task.get("action") and "aspect" in task
+    ):
+        return "none"
     provider = task.get("provider")
     if provider in ("llama", "comfyui", "none"):
         return provider
@@ -91,13 +100,34 @@ def enqueue_task(
     if event is not None and event_channel is None:
         raise ValueError("event_channel is required when publishing a queue event")
 
-    if status is not None:
+    from task_timing import prepare
+    task = prepare(task, queue='render' if task.get('action') in RENDER_ACTIONS else None)
+
+    if queue == VIDEO_QUEUE and (task.get("action") in RENDER_ACTIONS or (
+        not task.get("action") and "aspect" in task
+    )):
+        queue = RENDER_QUEUE
+        task = {**task, "action": task.get("action") or "video_render",
+                "execution_queue": "render", "provider": "none"}
+        identity = {key: task[key] for key in (
+            "author", "title", "chapter_number", "language") if key in task}
+        render_status = {"job_id": task["job_id"], "state": "queued", "percent": 0,
+                         "message": "Queued for video generation",
+                         **(dict(status) if status else {}), **identity,
+                         **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')},
+                         "execution_queue": "render", "action": task["action"]}
+        client.hset(f"video_job:{task['job_id']}", mapping=render_status)
+        client.expire(f"video_job:{task['job_id']}", status_ttl)
+        if event is not None:
+            event = {**event, "execution_queue": "render"}
+    elif status is not None:
+        status = {**status, **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')}}
         client.hset(status_key, mapping=dict(status))
         client.expire(status_key, status_ttl)
-
     payload = json.dumps(with_task_provider(task), ensure_ascii=ensure_ascii)
     enqueue_payload(client, queue, payload, front=front)
     if event is not None:
+        event = {**event, **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')}}
         client.publish(
             event_channel, json.dumps(dict(event), ensure_ascii=ensure_ascii)
         )

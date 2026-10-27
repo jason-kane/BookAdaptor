@@ -42,17 +42,19 @@ class Textoviva:
         self.chapter = chapter
         self.videofile = chapter.get_video_filename()
 
-    def create_video(self, force: bool = False, progress=None, regenerate_image_index=None, regenerate_image_indices=None, regenerate_insufficient=False):
+    def create_video(self, force: bool = False, progress=None, regenerate_image_index=None, regenerate_image_indices=None, regenerate_insufficient=False, rebuild=False):
         """
-        Create a video from the chapter's phrases.
+        Create a video from narration, still images, and existing animations.
         """
         log.info("Creating textoviva video for chapter %s", self.chapter)
         # check if the video already exists
-        if os.path.exists(self.videofile) and not force:
+        if os.path.exists(self.videofile) and not (force or rebuild):
             log.info("Video file %s already exists, skipping creation", self.videofile)
             return
 
         def report(percent, message):
+            from gpu_tasks import gpu_label
+            gpu_label.set(message)
             if progress:
                 progress(percent, message)
 
@@ -234,20 +236,22 @@ class Textoviva:
                 else:
                     raise ValueError(f"{base_mode} is too fucking stupid to know who should be talking")
 
-            if not phrase_xml.attrs.get("src") or not phrase_xml.attrs.get("pronunciation"):
+            audio_filename = phrases.get_wavfile_filename(phrase_xml, self.chapter)
+            if not os.path.isfile(audio_filename):
                 report(5, f"Phrase {phrase.index}: Generating Audio")
                 phrase_xml = self.speak(
                     chapter=self.chapter,
                     phrase_xml=phrase_xml,
                 )
 
-            phrase_duration = float(phrase_xml.attrs.get('duration', '0') or 0)
+            # Always measure the paragraph-local WAV; XML duration caches can
+            # survive edits and must never truncate narration on a later render.
+            phrases.wav_pad_to_frame(audio_filename)
+            phrase_duration = float(phrases.get_wav_duration(audio_filename))
             if phrase_duration <= 0:
-                log.info('Measuring duration...')
-                audio_filename = phrase_xml.attrs['src']
-                phrase_duration = phrases.get_wav_duration(audio_filename)
-                phrase_xml.attrs['duration'] = str(phrase_duration)
-                log.info('Saving duration: %s', phrase_duration)
+                raise ValueError(f"Phrase {phrase.index} has no audible duration")
+            phrase_xml.attrs['duration'] = str(phrase_duration)
+            phrase_xml.attrs['frames'] = str(round(phrase_duration * const.FPS))
 
             total_duration += phrase_duration
             log.info('Total duration so far: %s', total_duration)
@@ -257,9 +261,14 @@ class Textoviva:
         total_images = len(list(self.chapter.images()))
 
         # no images, or clearly too few.
-        if total_images == 0 or total_duration / total_images > 16:
-            # Add image slots every 8-ish seconds
-            timeline.inject_image_slots(self.chapter)
+        if total_images == 0:
+            from artifact_editor.chapter.timeline import add_import_images
+            add_import_images(self.chapter.get_xml())
+
+        for silence in self.chapter.get_xml().find_all("silence"):
+            silence_frames = round(float(silence.get("duration", 0)) * const.FPS)
+            silence["frames"] = str(silence_frames)
+            silence["duration"] = str(silence_frames / const.FPS)
 
         self.chapter.save_xml()
 
@@ -309,12 +318,15 @@ class Textoviva:
         self.chapter.save_xml()
 
         self.generate_missing_images(progress=progress)
-        self.generate_missing_animations(
-            progress=progress, force=force,
-            regenerate_image_index=regenerate_image_index,
-            regenerate_image_indices=regenerate_image_indices,
-            regenerate_insufficient=regenerate_insufficient,
-        )
+        # Animation generation is an explicit action. A complete still image
+        # is already a usable video asset, including on a forced video rebuild.
+        if regenerate_image_index is not None or regenerate_image_indices or regenerate_insufficient:
+            self.generate_missing_animations(
+                progress=progress, force=force,
+                regenerate_image_index=regenerate_image_index,
+                regenerate_image_indices=regenerate_image_indices,
+                regenerate_insufficient=regenerate_insufficient,
+            )
 
         # Rebuild expansions before frame workers start, including animations
         # retained by "generate missing". Never reuse a partial or mixed-width
@@ -343,7 +355,7 @@ class Textoviva:
 
         # generate text scrolling rate
         report(65, "Preparing camera movement")
-        self.chapter.build_frame_to_camera(aspect="widescreen")
+        self.chapter.build_frame_to_camera(aspect=self.chapter.get_aspect())
 
         # rebuild masterplan
         self.chapter.get_masterplan(force=True)
@@ -415,12 +427,19 @@ class Textoviva:
                                     regenerate_insufficient=False):
         """Generate animations from existing stills without building a video."""
         report = progress or (lambda percent, message: None)
-        missing = [image for image in self.chapter.images()
+        animation_images = list(self.chapter.images())
+        selected = None
+        if regenerate_image_index is not None or regenerate_image_indices is not None:
+            selected = {int(index) for index in (regenerate_image_indices or ())}
+            if regenerate_image_index is not None:
+                selected.add(int(regenerate_image_index))
+            animation_images = [image for image in animation_images if int(image['index']) in selected]
+        missing = [image for image in animation_images
                    if not self.chapter.get_image_filename(image)
                    or not os.path.isfile(self.chapter.get_image_filename(image))]
         if missing:
             raise ValueError("Generate missing images before generating animations")
-        for image_xml in self.chapter.images():
+        for image_xml in animation_images:
             if "animation_prompt" in image_xml.attrs and image_xml.attrs["animation_prompt"] not in ["", None]:
                 continue  # already has an animation prompt
 
@@ -437,14 +456,10 @@ class Textoviva:
         # Force only the selected animation when editing from the player.
         force_all = force
         # and finally draw the animations
-        animation_images = list(self.chapter.images())
         for animation_position, image_xml in enumerate(animation_images):
             animation_percent = 35 + int(30 * animation_position / max(1, len(animation_images)))
             report(animation_percent, f"Image {image_xml.attrs['index']}: Preparing Animation")
-            force = force_all or int(image_xml.attrs["index"]) in (regenerate_image_indices or ()) or (
-                regenerate_image_index is not None
-                and int(image_xml.attrs["index"]) == regenerate_image_index
-            )
+            force = force_all or (selected is not None and int(image_xml['index']) in selected)
             
             if regenerate_insufficient:
                 from artifact_editor.images.animation_source import animation_frame_count
@@ -758,12 +773,7 @@ class Textoviva:
             chapter=chapter,
             phrase_xml=phrase_xml,
             wavfile=wavfile,
-            workdir=os.path.join(
-                const.LIBRARY_DIR,
-                os.path.dirname(wavfile).lstrip(
-                    "/"
-                ),
-            ),
+            workdir=os.path.dirname(wavfile),
             delay=float(phrase_xml.attrs.get("delay", 0)),
         )
 

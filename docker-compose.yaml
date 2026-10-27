@@ -249,7 +249,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     entrypoint: [ "python", "-m", "websocket.server", "worker" ]
-    volumes:
+    volumes: &worker-volumes
       - ./src:/app
       - ./active:/active
       - ./assets:/assets
@@ -260,7 +260,7 @@ services:
       - ./comfy/ComfyUI/custom_nodes:/custom_nodes
       - ./configuration.toml:/app/configuration.toml
       - /var/run/docker.sock:/var/run/docker.sock
-    environment:
+    environment: &worker-environment
       - CONTAINER_MODE=1
       - COMFYUI_WORKFLOWS_DIR=/workflows
       - COMFYUI_WORKFLOW_TEMPLATES_DIR=/templates
@@ -278,6 +278,39 @@ services:
             - driver: nvidia
               count: all
               capabilities: [ gpu ]
+    networks:
+      - home-network
+
+  # Coordinates asset preparation without occupying a GPU worker while waiting
+  # for CPU frames or dependent LLM/image/audio workflows.
+  render_worker:
+    profiles: ["on-demand"]
+    image: bookadaptor-app:latest
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "render_worker"]
+    volumes: *worker-volumes
+    environment: *worker-environment
+    networks:
+      - home-network
+
+  # The supervisor creates one worker process per available CPU core. This
+  # service has no GPU reservation; frame tasks remain visible in Redis.
+  cpu_worker:
+    profiles: ["on-demand"]
+    image: bookadaptor-app:latest
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "cpu_queue"]
+    volumes: *worker-volumes
+    environment:
+      CONTAINER_MODE: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
     networks:
       - home-network
 

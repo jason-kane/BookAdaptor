@@ -110,8 +110,10 @@ def render_masterplan_portrait_handler(author, title, chapter_number, language):
 
 
 def enqueue_video_render(chapter, aspect):
+    from worker_startup import ensure_worker_services
     job_id = uuid.uuid4().hex
     task = {
+        "action": "video_render",
         "job_id": job_id,
         "author": chapter.author.name,
         "title": chapter.title,
@@ -133,9 +135,10 @@ def enqueue_video_render(chapter, aspect):
         status_key=f"video_job:{job_id}",
         status={"job_id": job_id, "percent": 0, "message": "Queued", "state": "queued"},
     )
+    ensure_worker_services()
     return (
         f'<div id="video-progress-{job_id}" class="wa-stack">'
-        '<wa-progress-bar value="0"></wa-progress-bar>'
+        '<wa-progress-bar indeterminate></wa-progress-bar>'
         "<div>Queued for video rendering</div></div>",
         202,
     )

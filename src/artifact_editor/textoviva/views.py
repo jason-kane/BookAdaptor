@@ -235,7 +235,9 @@ def regenerate_animation(image_index):
     )
     from task_queue import VIDEO_QUEUE, enqueue_task
 
+    from worker_startup import ensure_worker_services
     enqueue_task(client, VIDEO_QUEUE, task)
+    ensure_worker_services()
     return f'<div id="video-progress-{job_id}">Animation queued. The chapter video will be rebuilt.</div>'
 
 
@@ -256,11 +258,8 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     )
     notice = f"""<div id="video-generation-notice" class="wa-stack"
         hx-ext="ws" ws-connect="{websocket_url()}">
-        <wa-drawer class="chapter-actions-drawer" id="chapter-video-actions" label="Video actions" placement="bottom">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
-            variant="brand" appearance="accent">Re-render</wa-button>
-        <wa-button slot="footer" class="chapter-actions-close" appearance="outlined" aria-label="Close Video actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></wa-button>
-        </wa-drawer>
+            variant="brand" appearance="accent">Generate Video</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 

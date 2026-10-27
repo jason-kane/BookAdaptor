@@ -315,6 +315,8 @@ def draw_frame(
             # )
             # if we've got nothing, just throw the static image up.
             if image_list in [None, []] and animation_frames in [None, []]:
+                # TODO: Optional zoom/pan effects for still images, without
+                # requiring an image-to-video generation workflow.
                 log.info(f"Static image: {ii_pfn}")
                 image_list = itertools.cycle(
                     [
@@ -505,7 +507,6 @@ def draw_frame(
                     if not changed and imaginative_image.size != G["SIZE"]:
                         log.info(f"Resizing imaginative image from {imaginative_image.size} to {G['SIZE']}")
                         imaginative_image = imaginative_image.resize(G["SIZE"])
-                        imaginative_image.save(image_pfn)
 
                     canvas.paste(
                         imaginative_image,
@@ -513,15 +514,8 @@ def draw_frame(
                     )
                 else:
                     if not changed and imaginative_image.size != (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT):
-                        animate_lock.acquire()
-
-                        imaginative_image = Image.open(image_pfn)
-                        if not changed and imaginative_image.size != (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT):
-                            log.info(f"Resizing imaginative image from {imaginative_image.size} to {(const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)}")
-                            imaginative_image = imaginative_image.resize((const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT))
-                            imaginative_image.save(image_pfn)
-
-                        animate_lock.release()
+                        imaginative_image = imaginative_image.resize(
+                            (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT))
 
                     # text on the left
                     canvas.paste(text_image, (0, 0))
@@ -649,14 +643,12 @@ def hpan(image_pfn, imaginative_image, first_frame: int, this_frame:int, last_fr
             imaginative_image = imaginative_image.resize(
                 (math.ceil(ratio * vp_width), math.ceil(ratio * vp_height))
             )
-            vp_width, vp_height = imaginative_image.size
+        vp_width, vp_height = imaginative_image.size
 
-        # save it so we don't have to resize every frame.
-        imaginative_image.save(image_pfn)
 
     pan_left = 0
     pan_distance = vp_width - const.IMG_TARGET_WIDTH
-    per_frame_distance = pan_distance / (last_frame - first_frame)
+    per_frame_distance = pan_distance / max(1, last_frame - first_frame)
 
     pan_left += per_frame_distance * (this_frame - first_frame)
 
@@ -675,7 +667,7 @@ def vpan(imaginative_image, first_frame: int, this_frame:int, last_frame:int):
 
     pan_top = 0
     pan_distance = vp_height - const.IMG_TARGET_HEIGHT
-    per_frame_distance = pan_distance / (last_frame - first_frame)
+    per_frame_distance = pan_distance / max(1, last_frame - first_frame)
 
     pan_top += per_frame_distance * (this_frame - first_frame)
 

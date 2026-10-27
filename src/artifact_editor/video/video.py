@@ -1,346 +1,118 @@
-import inspect
-import json
-import multiprocessing as mp
 import os
-import subprocess
-import time
-import threading
 
 from artifact_editor import camera
 import const
 import logger
 from artifact_editor import tools
 from artifact_editor.phrases import phrases
-from artifact_editor.frames import frames
 
 log = logger.log(__name__)
 
-def onErr(self, *args, **kwargs):
-    stack = inspect.stack()
-    for s in stack:
-        log.error(s)
-
-    log.error(args)
-    raise BaseException(args)
-
 def book_to_video(chapter, aspect=None, force=False, progress=None):
-    """
-    Turn the whole book into one mp4
-    """
-    global shared_text_image
+    """Render every XML phrase and image on one frame-aligned audio timeline."""
+    from pathlib import Path
+    from PIL import Image
+    from cpu_queue import Batch
+    from gpu_tasks import render_context
 
-    # Typography and frame assets are generated for the chapter's configured
-    # aspect. Keep video rendering on that same aspect unless a caller
-    # explicitly requests a different output.
-    if aspect is None:
-        aspect = chapter.get_aspect()
-
-    log.info(f"=== Book to {aspect.capitalize()} Video ===")
-    framedir = os.path.join(
-        const.LIBRARY_DIR,
-        chapter.chapterdir,
-        "frames",
-        aspect
-    )
-    os.makedirs(framedir, exist_ok=True)
-
-    # image timeline/table of content, populated by .frame_images()
-
-    # annotate image tags with:
-    #   frame_start
-    #   frame_end
-    #   text_height - bottom of previous highlighted block to bottom of current highlighted block in pixels
-    #   hbottom - top of text_image to bottom of current highlighted block in pixels
-
-    # what should the initial scroll lock be? approximate proper initial
-    # scroll lock for title and author that don't wrap.
-    # this is purely based on latex, TODO: we should calculate it from
-    # the highlight block instead.
-    scroll_lock = 0
-    current_frame = 0
-    previous_image = None
-    audio_tracks = []
-
-    log.info("Exhausting words and images...")
-    paragraph_index = 0
-    current_paragraph_index = -1
-
-    # Rebuild timing from XML, including edits to pauses and older cached
-    # plans that did not account for silence in the highlight timeline.
+    aspect = aspect or chapter.get_aspect()
+    framedir = Path(const.LIBRARY_DIR) / chapter.chapterdir / "frames" / aspect
+    framedir.mkdir(parents=True, exist_ok=True)
     mplan = chapter.get_masterplan(force=True)
-    max_frame_index = mplan.words[-1].end_frame
-    total_frames = max(1, max_frame_index + 1)
-    completed_frames = 0
-    progress_lock = threading.Lock()
-
-    def report_frames(completed):
-        if progress:
-            percent = 10 + int(65 * min(completed, total_frames) / total_frames)
-            progress(percent, f"Rendering frames ({min(completed, total_frames)}/{total_frames})")
-
-    def frame_completed(_result=None):
-        nonlocal completed_frames
-        # Pool callbacks run in its result thread; cached frames are counted
-        # by the submitting thread. Serialize counts and progress publication.
-        with progress_lock:
-            completed_frames += 1
-            report_frames(completed_frames)
+    if not mplan.words or mplan.words[-1].end_frame < 0:
+        raise ValueError("The chapter has no narration to render")
+    total_frames = mplan.words[-1].end_frame + 1
+    # Validate and assemble narration before submitting expensive frame work.
+    # Missing tracks must fail the render rather than silently omit phrases.
+    audio_tracks = chapter.get_all_audio_tracks()
+    audio_fn = str(Path(const.LIBRARY_DIR) / chapter.chapterdir / "audio.wav")
+    phrases.assemble(audio_tracks, audio_fn)
+    audio_duration = phrases.get_wav_duration(audio_fn)
+    if abs(float(audio_duration) - total_frames / const.FPS) > 1 / const.FPS:
+        raise ValueError("Audio duration does not match the complete chapter timeline")
 
     if progress:
         progress(5, "Preparing frame timeline")
+    chapter.build_frame_to_camera(aspect=aspect, force=True)
+    identity = {"author": chapter.author.name, "title": chapter.title,
+                "chapter_number": chapter.number, "language": chapter.language, "aspect": aspect}
+    parent_id = render_context.get().get("parent_job_id")
+    batch = Batch(parent_job_id=parent_id, chapter=identity)
+    previous_image = None
+    fallback = framedir / "blank.png"
+    Image.new("RGB", const.GEOMETRY[aspect]["SIZE"], "black").save(fallback)
+    image_cursor = -1
+    word_cursor = 0
+    try:
+        for frame_index in range(total_frames):
+            while (image_cursor + 1 < len(mplan.images)
+                   and mplan.images[image_cursor + 1].start_frame <= frame_index):
+                image_cursor += 1
+            while (word_cursor + 1 < len(mplan.words)
+                   and mplan.words[word_cursor].end_frame < frame_index):
+                word_cursor += 1
+            word = mplan.words[word_cursor]
+            if not word.start_frame <= frame_index <= word.end_frame:
+                raise ValueError(f"Missing phrase timing for frame {frame_index}")
+            paragraph_index = int(word.paragraph_index)
+            if image_cursor >= 0:
+                image_dict = mplan.images[image_cursor].as_dict()
+                image_path = Path(image_dict["image"])
+                if not image_path.is_absolute():
+                    image_path = Path(const.LIBRARY_DIR) / image_dict["paragraph_dir"] / image_path
+                image_dict["image_pfn"] = str(image_path)
+            else:
+                # Before the first XML image, show narration against a blank
+                # background. Do not bring a later illustration forward in time.
+                image_dict = {"index": -1, "start_frame": 0,
+                              "end_frame": total_frames - 1, "image": str(fallback),
+                              "image_pfn": str(fallback), "paragraph_dir": chapter.chapterdir,
+                              "fullscreen": False, "mode": "scale"}
+            image_dict["fullscreen"] = bool(image_dict.get("fullscreen") or word.fullscreen)
+            image_dict["paragraph_tags"] = word.paragraph_tags
+            batch.submit("draw_frame", {
+                "chapterdir": chapter.chapterdir, "aspect": aspect,
+                "frame_fn": str(framedir / f"frame_{frame_index:06}.png"),
+                "scroll_lock": camera.frame_to_camera(frame_index),
+                "first_frame_index": image_dict["start_frame"],
+                "frame_index": frame_index, "max_frame_index": image_dict["end_frame"],
+                "image_dict": image_dict, "previous_image_dict": previous_image,
+                # The XML id is stable across phrase re-indexing and maps back
+                # to the correct XML phrase; its numeric index drives rainbow
+                # color selection after that phrase has been resolved.
+                "paragraph_index": paragraph_index,
+                "phrase_id": word.id if word.id is not None else word.index,
+                "force": force,
+            }, f"Frame {frame_index + 1} of {total_frames}")
+            previous_image = image_dict
 
-    # first sync pass to link a specific camera location to every frame
-    chapter.build_frame_to_camera(
-        aspect=aspect,
-        # The camera map contains None for fullscreen phrase frames. Rebuild
-        # it from the current masterplan every render so edits to phrase
-        # fullscreen flags cannot leave stale None entries on text frames.
-        force=True,
-    )
+        batch.wait(progress=(lambda completed: progress(
+            10 + int(65 * completed / total_frames),
+            f"Rendering frames ({completed}/{total_frames})")) if progress else None)
+    except Exception:
+        batch.client.hset(batch.key, "cancelled", "1")
+        raise
+    finally:
+        batch.client.close()
 
-    m = mp.Manager()
-    animate_lock = m.Lock()
-
-    if os.path.exists("scroll_to_page.pickle"):
-        log.info("Clearing scroll_to_page.pickle")
-        os.unlink("scroll_to_page.pickle")
-
-    with mp.Pool(processes=const.PROCESSES) as pool:
-        current_frame = 0
-        jobs = []
-        
-        # throw a redraw task for every frame at the multiprocessing pool.
-        while current_frame <= max_frame_index:
-            # word is a word dict from masterplan:
-            # {
-            #     "start_frame": 0,
-            #     "duration": 1.4,
-            #     "text": "Meno",
-            #     "paragraph_tags": {
-            #         "has-text": False,
-            #         "spoken-only": True
-            #     },
-            #     "phrasedir": "Plato/Meno/paragraphs/000000",
-            #     "id": "0_1",
-            #     "speaker": "narrator",
-            #     "src": "/Plato/Meno/paragraphs/000000/ph_1_Meno_e6c5de6c.wav",
-            #     "end_frame": 35
-            # },
-
-            image_dict = chapter.frame_to_image(mplan, current_frame)
-            if image_dict is None:
-                raise ValueError(
-                    f"Masterplan has no image for frame {current_frame}; cannot render video"
-                )
-
-            # frame_to_image returns the next image plan when the timeline has
-            # a gap before it. Extend that image backward across the gap so
-            # the rendered sequence still starts at frame 0 and remains
-            # contiguous for ffmpeg's image-sequence input.
-            if image_dict["start_frame"] > current_frame:
-                gap_end = image_dict["start_frame"] - 1
-                log.warning(
-                    "Image timeline gap; filling frames %s through %s with the next image",
-                    current_frame,
-                    gap_end,
-                )
-                image_dict["start_frame"] = current_frame
-                image_dict["end_frame"] = min(
-                    gap_end,
-                    image_dict["end_frame"],
-                    max_frame_index,
-                )
-            image_plan_fullscreen = bool(image_dict.get("fullscreen", False))
-
-            # # absolute path to the source image
-            # # "image" can either be a simple filename relative to the paragraph_dir,
-            # # or it can be relative to the library dir.
-            # if "/" in image_dict['image']:
-            #     image_dict["image_pfn"] = os.path.join(
-            #         const.LIBRARY_DIR,
-            #         image_dict['image'].lstrip("/")
-            #     )
-            # else:
-            image_dict["image_pfn"] = os.path.join(
-                const.LIBRARY_DIR,
-                image_dict['paragraph_dir'],
-                os.path.basename(image_dict['image'])
-            )
-
-            # The last image remains on screen after its explicit image
-            # duration ends, through the end of the audio timeline.
-            if image_dict["end_frame"] < current_frame:
-                image_dict["start_frame"] = current_frame
-                image_dict["end_frame"] = max_frame_index
-
-            # when the image_dict changes, draw all the frames for that image_dict.
-            if image_dict != previous_image:
-                for current_frame in range(
-                    image_dict["start_frame"], image_dict["end_frame"] + 1
-                ):
-                    word_plan = chapter.frame_to_word(mplan, current_frame)
-                    if word_plan is None:
-                        log.error("No word found for frame %s", current_frame)
-                        continue
-                    word = word_plan.as_dict()
-                    phrase_id = word.get('id') or word['index']
-                    paragraph_index = int(word['paragraph_index'])
-                    # paragraph_index, phrase_id = word["id"].split("_")
-
-                    # paragraph_index = int(paragraph_index)
-                    # phrase_id = int(phrase_id)
-
-                    if paragraph_index != current_paragraph_index:
-                        paragraph = chapter.get_xml().find(
-                            "paragraph", index=str(paragraph_index)
-                        )
-                        # re.compile('^%s_.*$' % paragraph_index))
-
-                        if paragraph is None:
-                            log.error(
-                                f"Paragraph {paragraph_index} not found in XML!!  Bad masterplan?"
-                            )
-                            break
-
-                        paragraph_tags = tools.tags_to_dict(
-                            paragraph.attrs.get("tags", "")
-                        )
-                        current_paragraph_index = paragraph_index
-
-                    # draw_frame validates its companion metadata before reusing a frame.
-                    frame_fn = os.path.join(
-                        framedir, f"frame_{current_frame:06}.png"
-                    )
-                    image_dict["paragraph_tags"] = paragraph_tags
-                    # Camera entries are intentionally None on fullscreen
-                    # phrase frames. Keep the draw-time image flags aligned
-                    # with that phrase-level camera decision; otherwise a
-                    # textless/fullscreen phrase can inherit a non-fullscreen
-                    # image plan and fail while looking up its scroll lock.
-                    image_dict["fullscreen"] = bool(
-                        image_plan_fullscreen
-                        or word.get("fullscreen", False)
-                    )
-
-                    # check for a camera effect frame, if it exists that becomes
-                    # our new base image.
-                    camera_frame = os.path.join(
-                        const.LIBRARY_DIR,
-                        image_dict["paragraph_dir"],
-                        "image_frames",
-                        "image_%06d" % image_dict["index"],
-                        f"frame_{current_frame:06}.png"
-                    )
-
-                    if os.path.exists(camera_frame):
-                        image_dict["image"] = os.path.join(
-                            image_dict["paragraph_dir"],
-                            "image_frames",
-                            "image_%06d" % image_dict["index"],
-                            f"frame_{current_frame:06}.png"
-                        )
-                        image_dict["image_pfn"] = camera_frame
-
-                    scroll_lock = camera.frame_to_camera(current_frame)
-                    if scroll_lock is None:
-                        log.warning(
-                            f"No scroll_lock found for frame {current_frame}"
-                        )
-
-                    args = (
-                        chapter,
-                        chapter.chapterdir,
-                        aspect,
-                        frame_fn,
-                        scroll_lock,
-                        image_dict["start_frame"],
-                        current_frame,
-                        image_dict["end_frame"],
-                        image_dict,
-                        previous_image,
-                        animate_lock,
-                        paragraph_index,
-                        phrase_id,
-                        force,
-                    )
-
-                    previous_image = image_dict
-
-                    if const.MULTIPROCESS:
-                        jobs.append(
-                            pool.apply_async(
-                                frames.draw_frame,
-                                args=args,
-                                error_callback=onErr,
-                                callback=frame_completed,
-                            )
-                        )
-                    else:
-                        frames.draw_frame(*args)
-                        frame_completed()
-
-            # Always advance, including when this image matches the previous
-            # one. Without this, a persisted final image can leave the outer
-            # loop repeatedly selecting the same plan entry forever.
-            current_frame = max(
-                current_frame + 1,
-                image_dict["end_frame"] + 1,
-            )
-
-        if const.MULTIPROCESS:
-            log.info("Closing pool...")
-            if jobs:
-                while True:
-                    completed = sum(job.ready() for job in jobs)
-                    if completed == len(jobs):
-                        log.info("All jobs are ready, closing pool...")
-                        break
-                    time.sleep(0.5)
-
-                for job in jobs:
-                    try:
-                        result = job.get(timeout=30)
-                        log.debug(result)
-                    except Exception as e:
-                        log.exception("Frame job failed")
-                        raise RuntimeError(f"Video frame render failed: {e}") from e
-
-
-            pool.close()
-            pool.join()
-            log.info("Pool closed.")
-
-    chapter.save_xml()
-
-    audio_tracks = chapter.get_all_audio_tracks()
+    missing = next((index for index in range(total_frames)
+                    if not (framedir / f"frame_{index:06}.png").is_file()), None)
+    if missing is not None:
+        raise RuntimeError(f"Frame {missing} is missing; refusing to encode an incomplete video")
     if progress:
-        progress(78, "Assembling audio")
-
-    # glue all the wav files in [audio_tracks] together.
-    if not audio_tracks:
-        log.warning("No audio tracks found, no video will be created.")
-
-    else:
-        audio_fn = os.path.join(
-            const.LIBRARY_DIR, 
-            chapter.chapterdir.lstrip("/"), 
-            "audio.wav"
-        )
-        phrases.assemble(audio_tracks=audio_tracks, outfile=audio_fn)
-
-        # now make an mp4 with these frames set to this audio.
-        video_pfn = chapter.get_video_filename()
-
-        tools.assemble_mp4(
-            fps=const.FPS,
-            framedir=os.path.abspath(framedir),
-            wavfile=audio_fn,
-            videofile=video_pfn,
-            image_match="frame_%06d.png",
-        )
-        if progress:
-            progress(96, "Encoding MP4")
-
+        progress(80, "Encoding complete chapter video")
+    encoding = Batch(parent_job_id=parent_id, chapter=identity)
+    try:
+        encoding.submit("encode_video", {
+            "fps": const.FPS, "framedir": str(framedir.resolve()), "wavfile": audio_fn,
+            "videofile": chapter.get_video_filename(), "image_match": "frame_%06d.png",
+            "start_number": 0, "max_frames": total_frames,
+        }, "Encode chapter MP4")
+        encoding.wait()
+    finally:
+        encoding.client.close()
+    if progress:
+        progress(99, "Chapter video ready")
 
 
 def render_masterplan_widescreen(chapter, progress=None):
@@ -348,11 +120,6 @@ def render_masterplan_widescreen(chapter, progress=None):
     Render the masterplan for the book in bookdir, output is the mp4.
     Thin wrapper around Book().book_to_video()
     """       
-    video_filename = chapter.get_video_filename()
-    if os.path.exists(video_filename):
-        log.info("Video file already exists, skipping render: %s", video_filename)
-        return
-
     framedir = os.path.join(
         const.LIBRARY_DIR,
         chapter.bookdir,
@@ -369,11 +136,6 @@ def render_masterplan_portrait(chapter):
     Render the masterplan for the book in bookdir, output is the mp4.
     Thin wrapper around Book().book_to_video()
     """
-    video_filename = chapter.get_video_filename()
-    if os.path.exists(video_filename):
-        log.info("Video file already exists, skipping render: %s", video_filename)
-        return
-
     framedir = os.path.join(
         const.LIBRARY_DIR,
         chapter.bookdir,

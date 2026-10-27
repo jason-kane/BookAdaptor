@@ -1109,7 +1109,7 @@ def wav_pad_to_frame(wavfile: str) -> None:
         out.setparams((nchannels, sampwidth, framerate, nframes, comptype, compname))
         log.info("sampwidth: %s", sampwidth)
         out.writeframes(all_frames)
-        out.writeframes(b"\0" * (sampwidth * int(delay_wav_frames)))
+        out.writeframes(b"\0" * (nchannels * sampwidth * int(delay_wav_frames)))
 
     expected_duration = (nframes + delay_wav_frames) / framerate
     log.info(f"Expected duration is {expected_duration} seconds.")
@@ -1450,12 +1450,16 @@ def assemble(audio_tracks, outfile):
     """
     # open the first audio track to get the parameters; they must be consistent
     # across the wav files.
+    if not audio_tracks:
+        raise ValueError("No chapter audio tracks were supplied")
+    for track in audio_tracks:
+        if not os.path.isfile(track):
+            raise FileNotFoundError(f"Chapter audio track is missing: {track}")
     log.info(f"Retrieving audio parameters from {audio_tracks[0]}...")
 
     first_file = get_first_file(audio_tracks)
     if first_file is None:
-        log.error("No audio files exist, cannot assemble them.")
-        return
+        raise ValueError("No chapter narration audio exists")
 
     with contextlib.closing(wave.open(first_file, "rb")) as input:
         params = input.getparams()
@@ -1472,10 +1476,10 @@ def assemble(audio_tracks, outfile):
 
         # write the frames from each audio track to the outfile
         for track in audio_tracks:
-            if not os.path.exists(track):
-                log.warning("Skipping audio file %s that does not exist", track)
-                continue
-
             with contextlib.closing(wave.open(track, "rb")) as input:
+                track_params = input.getparams()
+                if (track_params.nchannels, track_params.sampwidth, track_params.framerate,
+                    track_params.comptype) != (nchannels, sampwidth, framerate, comptype):
+                    raise ValueError(f"Incompatible narration audio format: {track}")
                 all_frames = input.readframes(input.getnframes())
                 out.writeframes(all_frames)

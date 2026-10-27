@@ -224,7 +224,7 @@ def chapter_audio_tracks(chapter, library_dir, make_silence):
         return Path(library_dir) / chapter.get_paragraph_dir(int(paragraph["index"]))
 
     def phrase_path(tag):
-        return paragraph_dir(tag) / tag["src"].lstrip("/")
+        return paragraph_dir(tag) / Path(tag["src"]).name
 
     # Assembly copies raw samples, so silence must match the narration format.
     reference = next((phrase_path(tag) for tag in items
@@ -238,8 +238,9 @@ def chapter_audio_tracks(chapter, library_dir, make_silence):
     tracks = []
     for tag in items:
         if tag.name == "phrase":
-            if tag.get("src"):
-                tracks.append(str(phrase_path(tag)))
+            if not tag.get("src") or not phrase_path(tag).is_file():
+                raise ValueError(f"Phrase {tag.get('index', '?')} is missing narration audio")
+            tracks.append(str(phrase_path(tag)))
             continue
         duration = silence_duration(tag.get("duration", "0"))
         if duration == 0:

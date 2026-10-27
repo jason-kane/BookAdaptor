@@ -63,7 +63,7 @@ def start_service(service_name, allowed_services):
     start_services((service_name,), allowed_services)
 
 
-def start_services(service_names, allowed_services):
+def start_services(service_names, allowed_services, *, recreate=True):
     if not service_names or any(name not in allowed_services for name in service_names):
         raise ValueError("Unknown service")
     command = compose_command()
@@ -71,8 +71,13 @@ def start_services(service_names, allowed_services):
         command += ["--profile", "test"]
     # Resolve relative bind mounts against the HOST checkout, not /app in Home.
     # Compose owns commands, health checks, GPU settings, and dependency startup.
+    startup = ["up", "-d", "--no-build"]
+    if not recreate:
+        # A worker startup request can originate inside one of these services.
+        # Recreating it would kill the request that is starting its consumers.
+        startup.append("--no-recreate")
     try:
-        subprocess.run(command + ["up", "-d", "--no-build", *service_names], check=True, capture_output=True, text=True, timeout=120)
+        subprocess.run(command + startup + list(service_names), check=True, capture_output=True, text=True, timeout=120)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(exc.stderr or "Compose could not start the program") from exc
     except subprocess.TimeoutExpired as exc:

@@ -42,6 +42,7 @@ Rewritten with contract-first-rewrite v1.2.0; last used 2026-10-26T22:01:10Z.
 """
 
 import glob
+import inspect
 from functools import wraps
 import json
 import os
@@ -90,6 +91,18 @@ def _requires_gpu_service(service: str):
     def decorate(function):
         @wraps(function)
         def wrapped(*args, **kwargs):
+            if (function.__name__ == "run_workflow"
+                    and os.environ.get("RENDER_WORKER_PROCESS") == "1"
+                    and os.environ.get("VIDEO_WORKER_PROCESS") != "1"):
+                from gpu_tasks import submit
+
+                bound = inspect.signature(function).bind(*args, **kwargs)
+                arguments = dict(bound.arguments)
+                workflow = arguments["workflow"]
+                if isinstance(workflow, Workflow):
+                    arguments["workflow"] = workflow.serialize()
+                return submit("gpu_workflow", arguments,
+                              timeout=max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600))
             from gpu_service import use_gpu_service
 
             with use_gpu_service(None, service):

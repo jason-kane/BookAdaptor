@@ -720,12 +720,7 @@ def assemble_mp4(
     # tie it all together
     #
     if not os.path.exists(framedir):
-        log.error(f"Framedir {framedir} does not exist!")
-        return
-
-    elif len(os.listdir(framedir)) <= 1:
-        log.error(f"{framedir=} exists but is empty!")
-        return
+        raise FileNotFoundError(f"Frame directory does not exist: {framedir}")
 
     log.info(f"Assembling video from {len(os.listdir(framedir))} frames in {framedir}")
 
@@ -739,30 +734,57 @@ def assemble_mp4(
         str(fps),
     ]
 
-    if start_number:
-        cmd.append("-start_number %s" % str(start_number))
-
-    if max_frames:
-        cmd.append("-frames:v %s" % str(max_frames))
+    if start_number is not None:
+        cmd += ["-start_number", str(start_number)]
 
     cmd += ["-i", os.path.join(framedir, image_match)]
 
     if wavfile:
         cmd += ["-i", wavfile]
 
+    if max_frames is not None:
+        cmd += ["-frames:v", str(max_frames)]
+
+    # Publish only a fully encoded video. An interrupted/failed rebuild keeps
+    # the last playable output, and stale cached frame tails cannot extend it.
+    temporary_video = videofile + ".rendering.mp4"
+
     cmd += [
         "-c:a",
         "aac",
-        "-shortest",
         "-c:v",
         "libx264",
         "-pix_fmt",
         "yuv420p",
-        videofile,
+        "-threads", "1",
+        temporary_video,
     ]
     # #"-c:v h264_amf",   # AMD hardware encoding
     log.info(json.dumps(cmd, indent=2))
-    subprocess.run(cmd, capture_output=False)
+    try:
+        subprocess.run(cmd, capture_output=False, check=True)
+        if not os.path.isfile(temporary_video) or os.path.getsize(temporary_video) == 0:
+            raise RuntimeError("FFmpeg did not produce a video")
+        probe = subprocess.run([
+            "/usr/bin/ffprobe", "-v", "error", "-show_streams", "-of", "json", temporary_video,
+        ], capture_output=True, text=True, check=True)
+        streams = json.loads(probe.stdout)["streams"]
+        video_stream = next((stream for stream in streams if stream["codec_type"] == "video"), None)
+        audio_stream = next((stream for stream in streams if stream["codec_type"] == "audio"), None)
+        if video_stream is None or (wavfile and audio_stream is None):
+            raise RuntimeError("Encoded video is missing a required video or audio stream")
+        if max_frames is not None and int(video_stream.get("nb_frames", 0)) != max_frames:
+            raise RuntimeError("Encoded video is missing chapter frames")
+        if wavfile:
+            import wave
+            with wave.open(wavfile, "rb") as narration:
+                expected_duration = narration.getnframes() / narration.getframerate()
+            if float(audio_stream.get("duration", 0)) + 1 / fps < expected_duration:
+                raise RuntimeError("Encoded audio does not cover the complete narration")
+        os.replace(temporary_video, videofile)
+    finally:
+        if os.path.exists(temporary_video):
+            os.remove(temporary_video)
     # subprocess.run(cmd)
     log.info(f"DONE assemble_mp4({fps=}, {framedir=}, {wavfile=}, {videofile=})")
     return videofile

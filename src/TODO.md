@@ -265,6 +265,10 @@ favicon
 
 # Latex
 
+[ ] Investigate how the typeset page and rainbow phrase map can diverge.
+    Reported on Aesop / Fables / chapter 25 after Generate Video; rainbow highlighting does not line up with the text. User will manually run Typeset LaTeX.
+    Check whether both outputs use the same XML revision, phrase indices, fonts/layout, raster scale, and crop, and whether cached PNGs, masks, camera positions, or video frames can survive a typesetting change. Reproduce the mismatch and determine how to keep the paired outputs in sync.
+
 [X] There is a spacing problem in the Raven, there doesn't seem to be consistent vertical space only between stanzas.  
 
 # Animations

@@ -71,11 +71,13 @@ def start_program(service_name):
 def start_workers():
     from .programs import start_services
 
-    services = ["video_worker", "websocket"]
-    if (request.get_json(silent=True) or {}).get("comfyui") is True:
+    payload = request.get_json(silent=True) or {}
+    services = (["cpu_worker", "websocket"] if payload.get("cpu_only") is True
+                else ["video_worker", "render_worker", "cpu_worker", "websocket"])
+    if payload.get("comfyui") is True and payload.get("cpu_only") is not True:
         services.append("comfyui")
     try:
-        start_services(services, ("video_worker", "websocket", "comfyui"))
+        start_services(services, ("video_worker", "render_worker", "cpu_worker", "websocket", "comfyui"), recreate=False)
     except (OSError, RuntimeError, ValueError) as exc:
         log.error("Unable to start generation services: %s", exc)
         return jsonify(error="Unable to start generation services. Please try again."), 503

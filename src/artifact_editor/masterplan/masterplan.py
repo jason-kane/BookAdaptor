@@ -356,9 +356,9 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                                 # counts only images with a valid duration, so it
                                 # can drift when an earlier image is skipped.
                                 "index": as_int(fragment.attrs.get("index", image_index)),
-                                "start_frame": image_frame_index,
+                                "start_frame": frame_index,
                                 "frames": frame_duration,
-                                "end_frame": (image_frame_index + frame_duration) - 1,
+                                "end_frame": (frame_index + frame_duration) - 1,
                                 "image": src,
                                 "paragraph_dir": chapter.get_paragraph_dir(
                                     as_int(paragraph.attrs.get("index"))
@@ -467,6 +467,7 @@ def frame_to_image(masterplan: Masterplan | Plan, frame_index: int) -> ImagePlan
 
     plan = masterplan.plan if isinstance(masterplan, Masterplan) else masterplan
 
+    previous_image = None
     for image in plan.images:
         if image.start_frame <= frame_index <= image.end_frame:
             log.debug('image: %s', image)
@@ -495,11 +496,13 @@ def frame_to_image(masterplan: Masterplan | Plan, frame_index: int) -> ImagePlan
             log.warning("masterplan images are non-contiguous: %s", frame_index)
             # images are ordered by start_frame, so if we hit one that starts after
             # the frame we're looking for, we can stop.
-            return image
+            return previous_image
+
+        previous_image = image
 
     # The final image persists through the end of the chapter timeline even
     # when its recorded duration ends before the final phrase does.
-    return plan.images[-1] if plan.images else None
+    return previous_image
 
 
 def frame_to_word(masterplan: Masterplan, frame_index: int) -> WordPlan| None:

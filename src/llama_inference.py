@@ -104,6 +104,15 @@ def chat_completion(
     response_format: Mapping[str, Any] | None = None,
 ) -> str:
     """Run one text or image-and-text request while holding Llama GPU ownership."""
+    if (os.environ.get("RENDER_WORKER_PROCESS") == "1"
+            and os.environ.get("VIDEO_WORKER_PROCESS") != "1"):
+        from gpu_tasks import submit
+        return submit("gpu_llama", {
+            "prompt": prompt, "system_prompt": system_prompt,
+            "image_path": str(image_path) if image_path else None,
+            "max_tokens": max_tokens, "response_format": response_format,
+        }, provider="llama", label="Video LLM request")
+
     from gpu_service import use_gpu_service
 
     with use_gpu_service(client, "llama"):
@@ -129,6 +138,16 @@ def chat_completions(
         raise ValueError("max_parallel must be positive")
     if not requests:
         return []
+
+    if (os.environ.get("RENDER_WORKER_PROCESS") == "1"
+            and os.environ.get("VIDEO_WORKER_PROCESS") != "1"):
+        results = []
+        for request in requests:
+            try:
+                results.append(chat_completion(client, **request))
+            except Exception as error:
+                results.append(error)
+        return results
 
     from gpu_service import use_gpu_service
 

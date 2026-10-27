@@ -5,13 +5,13 @@ import time
 import httpx
 
 
-def ensure_worker_services(*, comfyui=False):
+def ensure_worker_services(*, comfyui=False, cpu_only=False):
     home_url = os.environ.get('HOME_INTERNAL_URL', 'http://home:8080').rstrip('/')
     try:
-        response = httpx.post(home_url + '/programs/workers/start',
-                              json={'comfyui': comfyui}, timeout=130)
+        payload = {'cpu_only': True} if cpu_only else {'comfyui': comfyui}
+        response = httpx.post(home_url + '/programs/workers/start', json=payload, timeout=130)
         response.raise_for_status()
-        if comfyui:
+        if comfyui and not cpu_only:
             deadline = time.monotonic() + 300
             while time.monotonic() < deadline:
                 status = httpx.get(home_url + '/programs/comfyui/status', timeout=10)
