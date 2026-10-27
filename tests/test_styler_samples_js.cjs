@@ -44,6 +44,24 @@ const {JSDOM} = require('jsdom');
     assert.equal(column.querySelectorAll('wa-tag').length, 8);
     assert.equal(column.querySelector('b'), null, 'Image tags must render as text');
     assert.equal(window.document.querySelector('[data-image-tags][data-engine="qwen"]').children.length, 0);
+    window.document.querySelector('.card-overview').insertAdjacentHTML('beforeend',
+        '<div data-image-tags data-style-tag="joe_quesada" data-engine="zit" data-base-style-prompt="kid_friendly"><wa-tag>child variant tag</wa-tag></div>');
+    const childColumn = window.document.querySelector('[data-image-tags][data-base-style-prompt="kid_friendly"]');
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'styles_scan_image_complete', style_tag: 'joe_quesada', engine: 'zit',
+        base_style_prompt: 'kid_friendly', image_tags: [],
+    })}));
+    assert.equal(column.querySelectorAll('wa-tag').length, 8,
+        'An empty kid-friendly normalization must not clear classic image tags');
+    assert.equal(childColumn.children.length, 0);
+    childColumn.textContent = 'keep child variant';
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'styles_scan_image_complete', style_tag: 'joe_quesada', engine: 'zit',
+        image_tags: imageTags,
+    })}));
+    assert.equal(column.querySelectorAll('wa-tag').length, 8);
+    assert.equal(childColumn.textContent, 'keep child variant',
+        'Legacy normalization events default to classic, not every prompt variant');
     assert.equal(window.document.querySelectorAll('#tag_cloud_joe_quesada wa-tag').length, 2, 'Image evidence must not become style tags directly');
     window.document.body.insertAdjacentHTML('beforeend', '<img data-style-sample="joe_quesada" data-engine="zit">');
     await new Promise(resolve => setImmediate(resolve));
@@ -62,6 +80,44 @@ const {JSDOM} = require('jsdom');
     }
     assert.equal(retag.disabled, false, 'A prompt_tagged event completes the matching style and engine retag');
     assert.equal(window.document.querySelector('.retag-status').textContent, 'Retag complete');
+    window.document.querySelector('.card-overview').insertAdjacentHTML('beforeend',
+        '<div><wa-button data-style-retag="joe_quesada" data-engine="zit" data-base-style-prompt="kid_friendly">Retag child image</wa-button><span class="retag-status"></span></div>');
+    const childRetag = window.document.querySelector('[data-style-retag][data-base-style-prompt="kid_friendly"]');
+    childRetag.click();
+    assert.deepEqual(socket.messages.at(-1), {
+        action: 'retag', style_tag: 'joe_quesada', engine: 'zit', base_style_prompt: 'kid_friendly',
+    });
+    assert.equal(retag.disabled, false, 'Kid-friendly retag must not disable the classic button');
+    retag.click();
+    assert.equal(socket.messages.at(-1).base_style_prompt, 'classic',
+        'A pending child retag must not suppress an independent classic request');
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'retag_queued', style_tag: 'joe_quesada', engines: ['zit', 'zit'],
+        samples: [{engine: 'zit', base_style_prompt: 'classic'}, {engine: 'zit', base_style_prompt: 'kid_friendly'}],
+    })}));
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'prompt_tagged', style_tag: 'joe_quesada', engine: 'zit', base_style_prompt: 'classic',
+    })}));
+    assert.equal(retag.disabled, false);
+    assert.equal(childRetag.disabled, true, 'Classic completion must not clear child retag tracking');
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'prompt_tagged', style_tag: 'joe_quesada', engine: 'zit', base_style_prompt: 'kid_friendly',
+    })}));
+    assert.equal(childRetag.disabled, false);
+    const autoDetails = window.document.createElement('wa-details');
+    autoDetails.open = true;
+    window.document.querySelector('.card-overview').id = 'card_joe_quesada';
+    window.document.querySelector('.card-overview').append(autoDetails);
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'loaded', style_tag: 'joe_quesada', engine: 'zit', base_style_prompt: 'kid_friendly',
+        filename: '/styles/show_sample/child.png', image_tags: [],
+    })}));
+    assert.equal(socket.messages.at(-1).base_style_prompt, 'kid_friendly',
+        'Automatic retagging after loading a child image must preserve its variant');
+    socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({
+        state: 'prompt_tagged', style_tag: 'joe_quesada', engine: 'zit', base_style_prompt: 'kid_friendly',
+    })}));
+    autoDetails.remove();
     await new Promise(resolve => setImmediate(resolve));
     const imageChips = window.document.querySelector('[data-image-tags][data-engine="qwen"]');
     assert.equal(imageChips.querySelector('wa-tag').getAttribute('variant'), 'success');

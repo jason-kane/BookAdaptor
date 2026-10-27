@@ -56,10 +56,10 @@
         maintenanceLabels: Object.freeze(['Off', 'Walk', 'Run']), // User-facing labels in matching slider order.
         initialMaintenanceMode: 'walk', // Start with gentle background work until the server reports its mode.
         queue: Object.freeze({
-            successRetentionMs: 30_000, // Briefly show successful work without letting history dominate.
+            successRetentionMs: 90_000, // Keep successful work visible three times longer.
             failureRetentionMs: 300_000, // Keep failures available longer so users can inspect or retry them.
-            successHistoryLimit: 5, // Bound successful records; failed records have a separate expiry.
-            measuredHistoryLimit: 5, // Limit history measured when calculating the visible queue layout.
+            successHistoryLimit: 15, // Retain up to fifteen completions during the longer window.
+            measuredHistoryLimit: 15, // Let the layout account for all retained completions.
             visibleHistoryLimit: 3, // Reserve at most three slots for recent history.
             initialLoadingMs: 700, // Keep the loading affordance visible through first layout.
             rowAnimationMs: 350, // Short positional animation for queue reorderings.
@@ -223,15 +223,46 @@
 
     // Map internal queue states to short user-facing labels.
     function queueStatusLabel(job) {
+        const duration = formatQueueDuration(job.duration_seconds);
+        const compactDuration = duration.replaceAll(' ', '');
         return job.state === 'clearing_vram'
-            ? job.message || 'Cleaning'
+            ? 'Cleaning'
             : job.state === 'preparing'
                 ? 'Preparing'
                 : job.state === 'running'
                     ? 'Running'
                     : job.state === 'complete'
-                        ? 'Done'
+                        ? compactDuration
+                        : job.state === 'failed' && duration
+                            ? compactDuration
                         : job.state;
+    }
+
+    // Format measured worker time for direct display in completed queue rows.
+    function formatQueueDuration(value) {
+        if (value === null || value === undefined || value === '') return '';
+        const seconds = Number(value);
+        if (!Number.isFinite(seconds) || seconds < 0) return '';
+        const rounded = Math.round(seconds);
+        if (rounded < 60) return `${rounded}s`;
+        const minutes = Math.floor(rounded / 60);
+        const remainder = rounded % 60;
+        if (minutes < 60) return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    }
+
+    // Give screen readers and pointer users the full completion-time context.
+    function queueStatusDescription(job) {
+        const duration = formatQueueDuration(job.duration_seconds);
+        if (job.state === 'complete' && duration) return `Completed in ${duration}`;
+        if (job.state === 'failed') {
+            const elapsed = duration ? ` after ${duration}` : '';
+            const reason = job.message || 'No failure details were reported';
+            return `Failed${elapsed}: ${reason}`;
+        }
+        return queueStatusLabel(job);
     }
 
     // Show the initial queue loading indicator.
@@ -296,10 +327,51 @@
         return `/static/fontawesome7/svgs/solid/${icon}.svg`;
     }
 
+    // Return the provider label used in queue-row tooltips and accessible text.
+    function queueProvider(job) {
+        if (['comfyui', 'llama', 'none'].includes(job.provider)) return job.provider;
+        if (job.provider === 'comfy') return 'comfyui';
+        return ['styler_tag_sample', 'styler_tag_group', 'styler_scan_image_tags'].includes(job.action)
+            ? 'llama' : 'comfyui';
+    }
+
+    // Add or refresh the provider badge centered on the task row's left edge.
+    function updateQueueProviderBadge(type, job) {
+        const provider = queueProvider(job);
+        const names = {comfyui: 'ComfyUI', llama: 'Llama', none: 'No API provider'};
+        let badge = type.querySelector('.styler-queue-provider-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'styler-queue-provider-badge';
+            badge.setAttribute('aria-hidden', 'true');
+            type.append(badge);
+        }
+        badge.replaceChildren();
+        badge.dataset.provider = provider;
+        if (provider === 'comfyui') {
+            const image = document.createElement('img');
+            image.src = '/static/images/comfyui.svg';
+            image.alt = '';
+            badge.append(image);
+        } else if (provider === 'llama') {
+            badge.textContent = '🦙';
+        } else {
+            const icon = document.createElement('wa-icon');
+            icon.setAttribute('src', '/static/fontawesome7/svgs/solid/circle-minus.svg');
+            icon.setAttribute('aria-hidden', 'true');
+            badge.append(icon);
+        }
+        const description = `${queueTaskType(job)} · ${names[provider] || 'Unknown provider'}`;
+        badge.title = names[provider] || 'Unknown provider';
+        type.title = description;
+        type.setAttribute('aria-label', description);
+    }
+
     // Build the concise subject and engine name shown in a queue row.
     function queueTaskName(job) {
         const subject = job.style_tag?.replaceAll('_', ' ') || job.filename?.split('/').pop();
-        const engine = ({zit: 'Z-Image', krea2: 'Krea 2', qwen: 'Qwen 2.1'})[job.engine];
+        const engine = job.action === 'styler_tag_group' ? null
+            : ({zit: 'Z-Image', krea2: 'Krea 2', qwen: 'Qwen 2.1'})[job.engine];
         return [subject, engine].filter(Boolean).join(' · ') || job.label || job.message || queueTaskType(job);
     }
 
@@ -341,6 +413,7 @@
         typeIcon.setAttribute('src', queueTaskTypeIcon(typeName));
         typeIcon.setAttribute('aria-hidden', 'true');
         type.append(typeIcon);
+        updateQueueProviderBadge(type, event);
         const content = document.createElement('div');
         content.className = 'styler-queue-task-content';
         const label = document.createElement('span');
@@ -364,6 +437,8 @@
         state.textContent = event.isNext ? 'next'
             : event.state === 'running' && Number.isFinite(queuePercent(event.percent))
                 ? `${Math.max(0, Math.min(100, queuePercent(event.percent)))}%` : queueStatusLabel(event);
+        state.title = queueStatusDescription(event);
+        state.setAttribute('aria-label', queueStatusDescription(event));
         const targetSlot = document.createElement('span');
         targetSlot.className = 'styler-queue-target-slot';
         const otherSlot = document.createElement('span');
@@ -454,6 +529,7 @@
                 if (tagArea) return tagArea;
             }
         }
+        if (card && job.style_tag) return card;
         if (job.filename) {
             const image = [...document.querySelectorAll('[data-stockpile-filename]')]
                 .find(item => item.dataset.stockpileFilename === job.filename);
@@ -574,7 +650,7 @@
 
     // Create, update, or remove a row’s find-target button.
     function updateQueueFindButton(row, job) {
-        const supported = Boolean(job.style_tag && job.engine)
+        const supported = Boolean(job.style_tag)
             || Boolean(queueDestination(job, null));
         row.dataset.canFind = String(supported);
         let button = row.querySelector('[data-queue-find]');
@@ -679,6 +755,7 @@
         type.title = typeName;
         type.setAttribute('aria-label', typeName);
         type.querySelector('wa-icon')?.setAttribute('src', queueTaskTypeIcon(typeName));
+        updateQueueProviderBadge(type, job);
         let progress = row.querySelector('wa-progress-bar');
         if (['preparing', 'clearing_vram', 'running', 'complete'].includes(job.state)) {
             if (!progress) {
@@ -700,6 +777,8 @@
         const text = job.isNext ? 'next' : job.state === 'running' && Number.isFinite(queuePercent(job.percent))
             ? `${Math.max(0, Math.min(100, queuePercent(job.percent)))}%` : queueStatusLabel(job);
         if (state.textContent !== text) state.textContent = text;
+        state.title = queueStatusDescription(job);
+        state.setAttribute('aria-label', queueStatusDescription(job));
     }
 
     // Queue layout and animation
@@ -790,7 +869,7 @@
         const visibleHistory = [...visibleFailures, ...(completionSlots ? completions.slice(-completionSlots) : [])]
             .sort((a, b) => a.completed_at - b.completed_at);
         const currentRows = [...visibleHistory, ...(running ? [running] : [])].map(getRow);
-        const pendingRows = pending.slice(0, layout.pending).map((job, index) => getRow({...job, isNext: index === 0}));
+        const pendingRows = pending.slice(0, layout.pending).map(job => getRow(job));
         const desiredRows = new Set([...currentRows, ...pendingRows]);
         // Move only rows whose order or host changed; preserve upgraded progress components and focus.
         // Put desired rows in order without rebuilding their elements.
@@ -842,7 +921,7 @@
         const failed = queueFailureStates.has(event?.state) || event?.queue_failed === true;
         const state = failed ? 'failed' : 'complete';
         // TODO(MONITOR): observe completion age and retained-history pressure to
-        // validate these 5-minute failure / 30-second success retention windows.
+        // validate these 5-minute failure / 90-second success retention windows.
         const retention = failed ? settings.queue.failureRetentionMs : settings.queue.successRetentionMs;
         const completedAt = Number(event?.completed_at) || Date.now() / 1000;
         if (completedAt * 1000 + retention <= Date.now()) return;
@@ -854,8 +933,20 @@
         if (previous && previous.state === state && !event?.completed_at) return;
         const job = queueJobs.get(jobId) || previous || event;
         if (!job) return;
+        const reportedDuration = event?.duration_seconds === null
+                || event?.duration_seconds === undefined
+                || event?.duration_seconds === ''
+            ? NaN
+            : Number(event.duration_seconds);
+        const startedAt = Number(event?.queue_started_at ?? job.queue_started_at);
+        const duration = Number.isFinite(reportedDuration) && reportedDuration >= 0
+            ? reportedDuration
+            : Number.isFinite(startedAt) && startedAt > 0
+                ? Math.max(0, completedAt - startedAt)
+                : undefined;
         clearQueueHistory(jobId);
         const record = {...job, ...event, job_id: jobId, label: job.label || jobLabel(job),
+            ...(duration === undefined ? {} : {duration_seconds: duration}),
             state, percent: failed ? null : 100, isNext: false, completed_at: completedAt};
         (failed ? failedQueueJobs : completedQueueJobs).set(jobId, record);
         queueHistoryTimers.set(jobId, window.setTimeout(() => retireQueueJob(jobId),
@@ -931,6 +1022,12 @@
         // TODO(MONITOR): track raw queue_count and overflow_count ranges before coercion/clamping below.
         const previousStructure = queueStructure();
         receiveMaintenanceMode(event.maintenance_mode);
+        updateGPUProviderControl(
+            event.active_provider,
+            event.switching_to,
+            Boolean(event.gpu_switch_pending),
+            event.gpu_switch_pending_to,
+        );
         updateWorkerResetControl(Boolean(event.worker_reset_pending));
         if (event.completed_job_id) finishQueueJob(event.completed_job_id);
         for (const job of event.completed || []) {
@@ -987,6 +1084,66 @@
             if (runningJob && !completedQueueJobs.has(runningJob) && !failedQueueJobs.has(runningJob)) updateRunningProgress(queueJobs.get(runningJob));
         }
     }
+
+    // Reflect the provider currently owning the shared GPU and any handoff in progress.
+    function updateGPUProviderControl(
+        provider,
+        switchingTo,
+        requestPending = false,
+        queuedTarget = null,
+    ) {
+        const control = document.getElementById('styler-gpu-provider');
+        if (!control) return;
+        const supportedProviders = ['comfyui', 'llama'];
+        const active = supportedProviders.includes(provider) ? provider : 'unknown';
+        const transitioningTo = supportedProviders.includes(switchingTo) ? switchingTo : null;
+        const pendingTarget = supportedProviders.includes(queuedTarget) ? queuedTarget : null;
+        const target = transitioningTo || pendingTarget;
+        const pending = requestPending || Boolean(target);
+        const label = value => value === 'comfyui' ? 'ComfyUI' : 'Llama';
+        control.dataset.provider = active;
+        control.dataset.pending = String(pending);
+        if (target) control.dataset.transitionTo = target;
+        else delete control.dataset.transitionTo;
+        const description = transitioningTo
+            ? `Switching GPU provider${active === 'unknown' ? '' : ` from ${label(active)}`} to ${label(target)}`
+            : pendingTarget
+                ? `GPU provider switch queued to ${label(pendingTarget)}`
+            : pending
+                ? 'GPU provider switch queued'
+            : active === 'unknown'
+                ? 'GPU provider state unknown'
+                : `Active GPU provider: ${label(active)}`;
+        control.setAttribute('aria-label', description);
+        control.title = description;
+        for (const button of control.querySelectorAll('[data-provider-option]')) {
+            const selected = button.dataset.providerOption === active;
+            button.disabled = pending;
+            button.setAttribute('aria-pressed', String(selected));
+            button.title = pending
+                ? description
+                : selected
+                    ? `Active ${label(active)}; click to switch to ${label(active === 'llama' ? 'comfyui' : 'llama')}`
+                    : `Switch GPU to ${label(button.dataset.providerOption)} (overrides the five-minute cooldown)`;
+        }
+    }
+
+    // Queue a user-requested provider handoff; server-side rules still serialize it with worker tasks.
+    document.getElementById('styler-gpu-provider')?.addEventListener('click', event => {
+        const button = event.target.closest('[data-provider-option]');
+        const control = document.getElementById('styler-gpu-provider');
+        if (!button || button.disabled || !control) return;
+        const selectedProvider = button.dataset.providerOption;
+        const provider = selectedProvider === control.dataset.provider
+            ? (selectedProvider === 'llama' ? 'comfyui' : 'llama')
+            : selectedProvider;
+        updateGPUProviderControl(control.dataset.provider, null, true, provider);
+        if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({action: 'gpu_service_switch', provider}));
+        } else {
+            pendingGPUProvider = provider;
+        }
+    });
 
     // Synchronize the worker-reset button and status message.
     function updateWorkerResetControl(pending, message) {
@@ -1240,6 +1397,7 @@
     }
 
     let socket;
+    let pendingGPUProvider = null;
     // Remove a resolved style from LOST and update its page summary.
     function resolveLostStyle(event) {
         const panel = document.querySelector('wa-tab-panel[name="tag_LOST"]');
@@ -1372,9 +1530,10 @@
     // Retagging and image assessment
     const retagging = new Map();
     // Update the retag button and status for one style engine.
-    function retagStatus(style, engine, text, busy) {
+    function retagStatus(style, engine, text, busy, baseStylePrompt = 'classic') {
         for (const button of document.querySelectorAll('[data-style-retag]')) {
-            if (button.dataset.styleRetag !== style || button.dataset.engine !== engine) continue;
+            if (button.dataset.styleRetag !== style || button.dataset.engine !== engine
+                || (button.dataset.baseStylePrompt || 'classic') !== baseStylePrompt) continue;
             button.disabled = busy;
             const status = button.parentElement.querySelector('.retag-status');
             if (status) status.textContent = text;
@@ -1383,14 +1542,14 @@
 
     // Queue a retag request unless one is already pending.
     function requestRetag(style_tag, engine, base_style_prompt = 'classic') {
-        const id = key(style_tag, engine);
+        const id = sampleKey(style_tag, engine, base_style_prompt);
         if (retagging.has(id)) return false;
         if (socket?.readyState !== WebSocket.OPEN) {
-            retagStatus(style_tag, engine, 'Disconnected. Try again when connected.', false);
+            retagStatus(style_tag, engine, 'Disconnected. Try again when connected.', false, base_style_prompt);
             return false;
         }
-        retagging.set(id, {style_tag, engine, failed: false});
-        retagStatus(style_tag, engine, 'Retag queued', true);
+        retagging.set(id, {style_tag, engine, base_style_prompt, failed: false});
+        retagStatus(style_tag, engine, 'Retag queued', true, base_style_prompt);
         socket.send(JSON.stringify({action: 'retag', style_tag, engine, base_style_prompt}));
         return true;
     }
@@ -1572,6 +1731,26 @@
 
     // Update scan, worker, LOST, and duplicate-style operations from server events.
     function handleOperationsEvent(event) {
+        if (event.state === 'gpu_service_switch_queued') {
+            const control = document.getElementById('styler-gpu-provider');
+            if (control) {
+                updateGPUProviderControl(
+                    control.dataset.provider,
+                    null,
+                    true,
+                    event.provider || null,
+                );
+            }
+            return true;
+        }
+        if (event.state === 'gpu_service_switch_failed') {
+            const control = document.getElementById('styler-gpu-provider');
+            if (control) {
+                updateGPUProviderControl(control.dataset.provider, null, false);
+                control.title = event.message || 'GPU provider switch failed';
+            }
+            return true;
+        }
         if (['style_description_complete', 'style_description_failed'].includes(event.state)) {
             updateStyleHistoryDescription(event);
             return true;
@@ -1656,7 +1835,8 @@
                 // never retain tag text.
                 const boxes = [];
                 for (const box of document.querySelectorAll('[data-image-tags]')) {
-                    if (box.dataset.styleTag !== event.style_tag || box.dataset.engine !== event.engine) continue;
+                    if (box.dataset.styleTag !== event.style_tag || box.dataset.engine !== event.engine
+                        || (box.dataset.baseStylePrompt || 'classic') !== (event.base_style_prompt || 'classic')) continue;
                     boxes.push(box);
                 }
                 renderImageTags(boxes, event.image_tags || []);
@@ -1682,15 +1862,22 @@
             const card = document.getElementById(`card_${event.style_tag}`);
             const details = card?.querySelector('wa-details');
             const tagBox = [...(card?.querySelectorAll('[data-image-tags]') || [])]
-                .find(box => box.dataset.styleTag === event.style_tag && box.dataset.engine === event.engine);
+                .find(box => box.dataset.styleTag === event.style_tag && box.dataset.engine === event.engine
+                    && (box.dataset.baseStylePrompt || 'classic') === (event.base_style_prompt || 'classic'));
             const imageTags = Array.isArray(event.image_tags) ? event.image_tags
                 : [...(tagBox?.querySelectorAll('wa-tag') || [])].map(tag => tag.textContent.trim());
-            if (details?.open && imageTags.length === 0) requestRetag(event.style_tag, event.engine);
+            if (details?.open && imageTags.length === 0) {
+                requestRetag(event.style_tag, event.engine, event.base_style_prompt || 'classic');
+            }
         }
         if (event.state === 'retag_queued') {
-            for (const engine of event.engines || []) {
-                retagging.set(key(event.style_tag, engine), {style_tag: event.style_tag, engine, failed: false});
-                retagStatus(event.style_tag, engine, 'Retag queued', true);
+            const samples = Array.isArray(event.samples) ? event.samples
+                : (event.engines || []).map(engine => ({engine, base_style_prompt: event.base_style_prompt || 'classic'}));
+            for (const sample of samples) {
+                const {engine, base_style_prompt = 'classic'} = sample;
+                retagging.set(sampleKey(event.style_tag, engine, base_style_prompt),
+                    {style_tag: event.style_tag, engine, base_style_prompt, failed: false});
+                retagStatus(event.style_tag, engine, 'Retag queued', true, base_style_prompt);
             }
             return;
         }
@@ -1699,18 +1886,19 @@
             // fallback list before broadening it; collect category counts only.
             const engines = event.engine ? [event.engine] : ['zit', 'krea2', 'qwen'];
             for (const engine of engines) {
-                retagging.delete(key(event.style_tag, engine));
-                retagStatus(event.style_tag, engine, event.message, false);
+                retagging.delete(sampleKey(event.style_tag, engine, event.base_style_prompt));
+                retagStatus(event.style_tag, engine, event.message, false, event.base_style_prompt || 'classic');
             }
             return;
         }
         if (['prompt_tagged', 'tag_failed', 'tag_abyss'].includes(event.state)) {
-            const retagId = key(event.style_tag, event.engine);
+            const retagId = sampleKey(event.style_tag, event.engine, event.base_style_prompt);
             const pending = retagging.get(retagId);
             if (pending) {
                 pending.failed ||= event.state === 'tag_failed';
                 retagStatus(event.style_tag, event.engine, event.state === 'tag_abyss'
-                    ? 'Style needs manual tag repair' : pending.failed ? 'Retag failed' : 'Retag complete', false);
+                    ? 'Style needs manual tag repair' : pending.failed ? 'Retag failed' : 'Retag complete',
+                    false, event.base_style_prompt || 'classic');
                 retagging.delete(retagId);
             }
         }
@@ -1828,6 +2016,13 @@
         lastReportedQueueCapacity = -1;
         targets.clear();
         updateWorkerResetControl(false);
+        if (pendingGPUProvider) {
+            socket.send(JSON.stringify({
+                action: 'gpu_service_switch',
+                provider: pendingGPUProvider,
+            }));
+            pendingGPUProvider = null;
+        }
         reportQueueCapacity();
         requestMissing();
         for (const details of document.querySelectorAll('.card-overview wa-details[open]')) {
@@ -1844,7 +2039,8 @@
         stockpile = null;
         stockpileStatus('Disconnected. Scan again after reconnecting to check progress.', false);
         for (const pending of retagging.values()) {
-            retagStatus(pending.style_tag, pending.engine, 'Disconnected. Retag may still be processing.', false);
+            retagStatus(pending.style_tag, pending.engine, 'Disconnected. Retag may still be processing.',
+                false, pending.base_style_prompt || 'classic');
         }
         retagging.clear();
         if (!stopped) setTimeout(connect, settings.samples.reconnectDelayMs);

@@ -147,6 +147,7 @@ def enqueue(client, task, queue):
         raise ValueError(f'Style {style_tag} is being merged; try again shortly')
     # Redis makes requests from multiple pages and socket processes coalesce.
     key = f"styler_pending:{task['job_id']}"
+    task.setdefault('provider', 'comfyui')
     if client.set(key, '1', nx=True, ex=86400):
         try:
             client.lpush(queue, json.dumps(task))

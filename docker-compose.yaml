@@ -141,6 +141,10 @@ services:
       - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
       - COMFYUI_API_URL=http://comfyui:8188/
       - COMFYUI_UI_URL=http://localhost:8188/
+      - GPU_SERVICE_SWITCHING=1
+      - COMFYUI_CONTAINER_NAME=comfyui-megapak
+      - LLAMA_CONTAINER_NAME=llama-vision
+      - LLAMA_API_URL=http://llama:8080
     networks:
       - home-network
 
@@ -188,6 +192,39 @@ services:
     networks:
       - home-network
 
+  # Llama.cpp serves the existing Qwen2.5-VL GGUF directly. It has a separate
+  # profile so Compose never starts it beside ComfyUI on the shared GPU.
+  llama:
+    profiles: ["llama"]
+    container_name: llama-vision
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    command:
+      - "--model"
+      - "/models/Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+      - "--mmproj"
+      - "/models/mmproj-Qwen_Qwen2.5-VL-7B-Instruct-f16.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--n-gpu-layers"
+      - "99"
+      - "--ctx-size"
+      - "24576"
+      - "--parallel"
+      - "3"
+    volumes:
+      - ./comfy/ComfyUI/models/text_encoders:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - home-network
+
   websocket:
     profiles: ["on-demand"]
     image: bookadaptor-app:latest
@@ -198,6 +235,8 @@ services:
     volumes:
       - ./src/:/app
       - ./active:/active:ro
+    environment:
+      - GPU_SERVICE_SWITCHING=1
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
     networks:
       - home-network
@@ -229,6 +268,9 @@ services:
       - COMFYUI_OUTPUT_DIR=/root/ComfyUI/output
       - COMFYUI_API_URL=http://comfyui:8188/
       - COMFYUI_UI_URL=http://localhost:8188/
+      - GPU_SERVICE_SWITCHING=1
+      - HOME_API_URL=http://home:8080
+      - LLAMA_API_URL=http://llama:8080
     deploy:
       resources:
         reservations:

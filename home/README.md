@@ -111,6 +111,11 @@ Home mounts the Docker socket and Compose configuration for program controls
 and the test runner. Test runs use the existing `bookadaptor-app:latest` image.
 TODO data persists in `src/todo/home.json`.
 
+The video worker delegates GPU provider handoffs to Home through
+`POST /api/gpu/provider/switch`. Home stops the other provider and starts the
+requested `comfyui` or `llama` Compose service; `GET /api/gpu/provider` reports
+which provider services are running.
+
 Nginx remains an optional shared entry point on port 80. Starting it currently
 starts its declared editor, ComfyUI, and WebSocket dependencies as well.
 

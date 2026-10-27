@@ -8,6 +8,15 @@
             aria-label="Queue worker reset" title="Queue a safe worker reset">
             <wa-icon name="rotate"></wa-icon>
         </wa-button>
+        <div id="styler-gpu-provider" class="styler-gpu-provider" data-provider="unknown"
+            role="group" aria-label="GPU provider state unknown" title="GPU provider state unknown">
+            <button class="styler-gpu-provider-option" type="button" data-provider-option="comfyui"
+                aria-label="Switch GPU to ComfyUI" title="Switch GPU to ComfyUI">
+                <img src="/static/images/comfyui.svg" alt="" aria-hidden="true">
+            </button>
+            <button class="styler-gpu-provider-option" type="button" data-provider-option="llama"
+                aria-label="Switch GPU to Llama" title="Switch GPU to Llama">🦙</button>
+        </div>
         <span id="styler-worker-reset-status" role="status" aria-live="polite"></span>
         <wa-button id="styler-queue-toggle" size="small" appearance="plain"
             aria-label="Minimize task queue" aria-expanded="true" title="Minimize task queue">

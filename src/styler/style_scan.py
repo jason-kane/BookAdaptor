@@ -10,19 +10,21 @@ from styler.jobs import sample_task
 STATE = 'styler:styles-scan:state'
 
 
-def pop_scan_job(client, queue):
+def pop_scan_job(client, queue, provider=None):
     """Atomically take the oldest style scan before background generation."""
     return client.eval('''
         local jobs = redis.call('LRANGE', KEYS[1], 0, -1)
         for i = #jobs, 1, -1 do
             local job = cjson.decode(jobs[i])
-            if job.action == 'styler_scan_image_tags' then
+            local provider = job.provider or 'llama'
+            if job.action == 'styler_scan_image_tags'
+                and (ARGV[1] == '' or provider == ARGV[1]) then
                 redis.call('LREM', KEYS[1], -1, jobs[i])
                 return jobs[i]
             end
         end
         return nil
-    ''', 1, queue)
+    ''', 1, queue, provider or '')
 
 
 def _read_state(client):
@@ -82,7 +84,8 @@ def scan_styles(client, library_dir, queue='video_render_jobs'):
             candidates.append(dict(action='styler_scan_image_tags', job_id=job_id,
                                    sample_job_id=sample['job_id'], style_tag=style_tag,
                                    engine=engine, base_style_prompt=base_style_prompt,
-                                   sha256=digest, scan_version=version))
+                                   sha256=digest, scan_version=version,
+                                   provider='llama'))
 
     candidates.sort(key=lambda task: (task['style_tag'].casefold(), task['base_style_prompt'], task['engine']))
     # Reconcile the durable remaining set on every click. This also recovers
@@ -123,10 +126,12 @@ def run_job(client, task, library_dir):
     from styler.sample_metadata import write_metadata
     from tag_matching import match_tags
 
+    base_style_prompt = task.get('base_style_prompt', 'classic')
     event = {key: task[key] for key in ('job_id', 'style_tag', 'engine', 'scan_version')}
+    event['base_style_prompt'] = base_style_prompt
     client.publish(EVENTS, json.dumps(dict(
         job_id=task['job_id'], style_tag=task['style_tag'], engine=task['engine'],
-        state='running', job_type='Tag normalization')))
+        base_style_prompt=base_style_prompt, state='running', job_type='Tag normalization')))
     pending = 'styler:styles-scan:pending:' + task['job_id']
     from styler.tag_consensus import style_key
     if client.sismember('ABYSS/tags', style_key(task['style_tag'])):
@@ -136,7 +141,6 @@ def run_job(client, task, library_dir):
         publish_queue_event(client, EVENTS, event)
         _finish_scan_job(client, task)
         return event
-    base_style_prompt = task.get('base_style_prompt', 'classic')
     folder = Path(library_dir) / 'style_exploration'
     if base_style_prompt == 'kid_friendly':
         folder /= base_style_prompt
@@ -152,7 +156,8 @@ def run_job(client, task, library_dir):
         if not isinstance(source_tags, list) or not all(isinstance(tag, str) for tag in source_tags):
             source_tags = metadata['tags']
         matching = match_tags(client, library_dir, source_tags,
-                              style_name=task['style_tag'], engine=task['engine'])
+                              style_name=task['style_tag'], engine=task['engine'],
+                              base_style_prompt=base_style_prompt)
         if fingerprint(path) != task['sha256']:
             raise ValueError('Style sample changed during tag matching; scan again')
 

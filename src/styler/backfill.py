@@ -41,7 +41,8 @@ def restrict_lost_queue(client, visible_styles, queue='video_render_jobs'):
                              or task.action == 'styler_sample')))
                 if discard then
                     if task.action == 'styler_tag_sample' then
-                        redis.call('DEL', 'styler:tag-pending:' .. task.job_id .. ':' .. task.sha256 .. ':' .. task.analysis_version)
+                        redis.call('DEL', task.pending_key or
+                            ('styler:tag-pending:' .. task.job_id .. ':' .. task.sha256 .. ':' .. task.analysis_version))
                     elseif task.action == 'styler_scan_image_tags' then
                         redis.call('DEL', 'styler:styles-scan:pending:' .. task.job_id)
                         if task.scan_version then
@@ -163,9 +164,15 @@ def next_sample(client, queue, library_dir, preferred_engine=None, budget=256):
 
 
 def next_tag_sample(client, queue, library_dir, budget=256):
-    """Analyze all images of each style before advancing within the category."""
+    """Queue one style/prompt's available engine images as a shared tag job."""
     from styler.jobs import sample_task
-    from styler.image_tags import schedule, QUEUE as TAG_QUEUE
+    from styler.image_tags import (
+        QUEUE as TAG_QUEUE,
+        _hold_tag_group_build_locks,
+        pop_tag_job,
+        schedule,
+    )
+
     with client.lock(LOCK, timeout=15, blocking_timeout=2):
         raw = client.get(STATE)
         if not isinstance(raw, (str, bytes)) or client.llen(queue):
@@ -198,39 +205,41 @@ def next_tag_sample(client, queue, library_dir, budget=256):
             tag = state['tag_style']
             if client.sismember('ABYSS/tags', tag):
                 state['tag_style'] = None
-                state['tag_engine'] = 0
+                state['tag_base_style_index'] = 0
                 continue
-            engine = ENGINES[state['tag_engine']]
-            state['tag_engine'] += 1
-            base_style_prompt = BASE_STYLE_PROMPTS[state.get('tag_base_style_index', 0)]
-            if state['tag_engine'] == len(ENGINES):
-                state['tag_engine'] = 0
-                state['tag_base_style_index'] = state.get('tag_base_style_index', 0) + 1
-                if state['tag_base_style_index'] == len(BASE_STYLE_PROMPTS):
-                    state.update(tag_style=None, tag_base_style_index=0)
-            try:
-                task = sample_task(dict(style_tag=tag, engine=engine,
-                                        base_style_prompt=base_style_prompt))
-            except ValueError:
-                continue
+
+            prompt_index = state.get('tag_base_style_index', 0)
+            base_style_prompt = BASE_STYLE_PROMPTS[prompt_index]
+            state['tag_base_style_index'] = prompt_index + 1
+            if state['tag_base_style_index'] == len(BASE_STYLE_PROMPTS):
+                state.update(tag_style=None, tag_base_style_index=0)
+
             sample_dir = Path(library_dir) / 'style_exploration'
             if base_style_prompt == 'kid_friendly':
                 sample_dir /= base_style_prompt
-            path = sample_dir / f'{tag}_{engine}.png'
-            if not path.is_file():
-                continue
-            schedule(client, task, path)
-            payload = client.eval('''
-                for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
-                    if cjson.decode(payload).job_id == ARGV[1] then
-                        redis.call('LREM', KEYS[1], 1, payload)
-                        return payload
-                    end
-                end
-                return false
-            ''', 1, TAG_QUEUE, task['job_id'])
-            if payload:
+            ready = []
+            for engine in ENGINES:
+                try:
+                    task = sample_task(dict(style_tag=tag, engine=engine,
+                                            base_style_prompt=base_style_prompt))
+                except ValueError:
+                    continue
+                path = sample_dir / f'{tag}_{engine}.png'
+                if path.is_file():
+                    ready.append((task, path))
+
+            if ready:
+                with _hold_tag_group_build_locks(
+                    client, tag, [base_style_prompt]
+                ):
+                    for task, path in ready:
+                        schedule(client, task, path)
+                job = pop_tag_job(client, TAG_QUEUE, tag)
+            else:
+                job = None
+
+            if job:
                 client.set(STATE, json.dumps(state))
-                return json.loads(payload)
+                return job
         client.set(STATE, json.dumps(state))
         return None

@@ -115,13 +115,13 @@ def write_metadata(path, task, *, prompt=None, record=None, digest=None):
                 record = json.loads(legacy.read_text())
             except (OSError, ValueError):
                 log.warning('Unable to read sample tags: %s', legacy)
-    metadata.update({key: task[key] for key in ('job_id', 'style_tag', 'engine', 'scan_version')
+    metadata.update({key: task[key] for key in ('job_id', 'style_tag', 'engine', 'scan_version', 'base_style_prompt')
                      if key in task})
     metadata.update(prompt=prompt, sha256=digest)
     metadata.setdefault('tags', [])
     if isinstance(record, dict) and record.get('sha256') == digest:
         metadata.update({key: record[key] for key in (
-            'tags', 'analysis_version', 'prompt_sha256', 'raw_tags', 'tag_matches',
+            'tags', 'analysis_version', 'prompt_sha256', 'raw_tags', 'tag_matches', 'new_tags', 'base_style_prompt',
             'character_placement', 'primary_category', 'image_tier',
             'tag_matching_version', 'tag_matching_tags_sha256', 'tag_vocabulary_sha256') if key in record})
     temporary = None

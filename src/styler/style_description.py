@@ -43,7 +43,8 @@ def request(client, style_tag):
     pending_key = f'styler:description-pending:{job_id}'
     task = dict(action='styler_style_description', job_id=job_id,
                 style_tag=style.style_tag, style_key=style.key,
-                description_signature=signature, priority=True)
+                description_signature=signature, priority=True,
+                provider='comfyui')
     if client.set(pending_key, '1', nx=True, ex=86400):
         try:
             client.lpush(PRIORITY_QUEUE, json.dumps(task, ensure_ascii=False))

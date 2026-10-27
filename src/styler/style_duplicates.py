@@ -76,7 +76,8 @@ def request(client):
     if existing:
         return dict(state='style_duplicate_scan_queued', job_id=existing,
                     job_type=JOB_TYPE, already_queued=True)
-    task = dict(action=ACTION, job_id=uuid.uuid4().hex, priority=True)
+    task = dict(action=ACTION, job_id=uuid.uuid4().hex, priority=True,
+                provider='comfyui')
     if not client.set(MERGE_PENDING_KEY, task['job_id'], nx=True, ex=86400):
         existing = _text(client.get(MERGE_PENDING_KEY))
         return dict(state='style_duplicate_scan_queued', job_id=existing,

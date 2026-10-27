@@ -220,6 +220,7 @@ def parse_analysis(text: str) -> dict[str, Any]:
 def _queue_job(client: Any, queue: str, task: dict[str, str]) -> None:
     """Claim a pending marker, enqueue the task, and publish its queue notice."""
     job_id = task['job_id']
+    task.setdefault('provider', 'comfyui')
     pending_key = f'stockpile:pending:{job_id}'
     if not client.set(pending_key, '1', nx=True, ex=PENDING_TTL_SECONDS):
         return

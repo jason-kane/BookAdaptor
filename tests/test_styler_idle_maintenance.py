@@ -372,7 +372,8 @@ def test_missing_sample_queues_generation_but_existing_sample_uses_vision_versio
     assert task['action'] == 'styler_tag_sample'
     assert task['analysis_version'] == ANALYSIS_VERSION
     assert task['sha256'] == fingerprint(path)
-    assert pending.endswith(ANALYSIS_VERSION)
+    assert pending == task['pending_key']
+    assert pending.endswith(f":{ANALYSIS_VERSION}:{task['prompt_sha256']}")
 
 
 def test_current_analysis_only_normalizes_when_matching_is_stale(tmp_path):

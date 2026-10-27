@@ -475,10 +475,10 @@ function setup(markup = '') {
         emit({state: 'retag_queued', style_tag: 'artist', engines: ['zit']});
         emit({state: 'retag_failed', style_tag: 'artist', engine: 'zit', message: 'Retag error'});
         assert.equal(window.document.querySelector('.retag-status').textContent, 'Retag error');
-        hooks.retagging.set(hooks.key('artist', 'zit'), {style_tag: 'artist', engine: 'zit', failed: false});
+        hooks.retagging.set(hooks.sampleKey('artist', 'zit'), {style_tag: 'artist', engine: 'zit', failed: false});
         emit({state: 'tag_failed', style_tag: 'artist', engine: 'zit'});
         assert.equal(window.document.querySelector('.retag-status').textContent, 'Retag failed');
-        hooks.retagging.set(hooks.key('artist', 'zit'), {style_tag: 'artist', engine: 'zit', failed: false});
+        hooks.retagging.set(hooks.sampleKey('artist', 'zit'), {style_tag: 'artist', engine: 'zit', failed: false});
         emit({state: 'tag_abyss', style_tag: 'artist', engine: 'zit'});
         assert.equal(window.document.querySelector('.retag-status').textContent, 'Style needs manual tag repair');
         emit({style_tag: 'artist', engine: 'zit', state: 'running', job_id: 'sample-fail', percent: null});

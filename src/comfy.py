@@ -42,6 +42,7 @@ Rewritten with contract-first-rewrite v1.2.0; last used 2026-10-26T22:01:10Z.
 """
 
 import glob
+from functools import wraps
 import json
 import os
 import subprocess
@@ -84,6 +85,22 @@ WORKFLOW_HTTP_TIMEOUT = httpx.Timeout(
 workflow_progress = ContextVar("comfy_workflow_progress", default=None)
 
 
+def _requires_gpu_service(service: str):
+    """Serialize a complete external workflow under its owning GPU service."""
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            from gpu_service import use_gpu_service
+
+            with use_gpu_service(None, service):
+                return function(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
+
+
+@_requires_gpu_service("comfy")
 def free_vram(
     minimum_free_gib: float = DEFAULT_MINIMUM_FREE_VRAM_GIB,
     timeout_seconds: float = DEFAULT_VRAM_WAIT_SECONDS,
@@ -366,6 +383,7 @@ def _report_workflow_event(event: dict[str, Any], prompt: dict[str, Any], active
     return active_node
 
 
+@_requires_gpu_service("comfy")
 def run_workflow(
     workflow: Workflow | dict[Any, Any],
     template_environment: dict[str, Any] | None = None,

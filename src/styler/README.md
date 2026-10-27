@@ -8,6 +8,39 @@ Other editor modules import `styler.styles` and `styler.htmx` for shared style
 selection. Sample generation uses the editor's chapter/image helpers and
 ComfyUI; Redis stores style selections and ranking data.
 
+## Shared GPU service
+
+The `video_worker` and `artifactserver` use one Redis-locked GPU lease to
+switch between the ComfyUI container and the direct llama.cpp server. ComfyUI
+is used for media-generation workflows. Grouped image-tag tasks use the
+Qwen2.5-VL GGUF server, submitting the available engine images concurrently
+(up to three per style group) and keeping Llama loaded through tag matching.
+The Compose Llama service has a separate `llama` profile so it is not started
+alongside ComfyUI by the normal `on-demand` profile.
+
+Every queued task records its `provider` (`llama`, `comfyui`, or `none` for
+GPU-independent control work). A queued job is marked **Next** only when its
+provider matches the active service. When the worker reaches a job for the
+other provider, it puts that job back in its queue, runs the visible service
+switch task, and takes the waiting job on a later worker pass.
+
+The ComfyUI/Llama control in the Styler task-queue header queues a priority
+service-switch task. A user-requested switch waits for any running task to
+finish and overrides the automatic five-minute switch cooldown. Automatic
+provider changes continue to observe the cooldown.
+
+Before the first switch to Llama, create its stopped Compose container once
+from the repository root:
+
+```sh
+docker compose --profile llama create llama
+```
+
+The application then starts and stops the prepared container through the
+Docker socket already mounted in these services. The initial server settings
+allow three parallel slots with 24,576 total context tokens; tune these against
+GPU memory and observed throughput before increasing parallelism.
+
 ## Safely reload the worker
 
 Use the **rotate** button in the Styler **Task queue** header to enqueue a

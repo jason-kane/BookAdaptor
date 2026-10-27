@@ -50,11 +50,13 @@ class SampleMetadataTests(unittest.TestCase):
             first = write_metadata(path, task)
             self.assertEqual(first['prompt'], prompt)
             self.assertEqual(first['tags'], [])
-            record = dict(sha256=first['sha256'], tags=['watercolor', 'soft light'], analysis_version='v3')
+            record = dict(sha256=first['sha256'], tags=['watercolor', 'soft light'],
+                          new_tags=['soft light'], analysis_version='v3')
             write_metadata(path, task, record=record)
             result = json.loads(path.with_suffix('.json').read_text())
             self.assertEqual(result['prompt'], prompt)
             self.assertEqual(result['tags'], record['tags'])
+            self.assertEqual(result['new_tags'], ['soft light'])
             self.assertEqual(list(Path(tmp).glob('*.tmp')), [])
 
     def test_replacement_does_not_inherit_old_tags_or_prompt(self):

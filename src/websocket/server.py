@@ -18,6 +18,7 @@ from task_queue import (
     VIDEO_QUEUE,
     enqueue_task,
     enqueue_payload,
+    pop_gpu_service_switch,
     promote_job,
     remove_queued_job,
 )
@@ -44,6 +45,7 @@ app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
 
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 LEGACY_PREFIX = "websocket_"
+GPU_SWITCH_REQUEST_KEY = "gpu:manual-switch-request"
 
 
 def redis_connection():
@@ -354,9 +356,67 @@ def run_video_job(client, task):
         workflow_progress.reset(progress_token)
 
 
+def _active_task_provider(client):
+    """Translate the active GPU service into the queue provider name."""
+    service = client.get("gpu:active-service")
+    if isinstance(service, bytes):
+        service = service.decode()
+    return {"comfy": "comfyui", "llama": "llama"}.get(service)
+
+
+def _pop_priority_task_for_provider(client):
+    """Pop eligible priority work, including a provider change after drain."""
+    from styler.image_tags import pop_tag_job
+
+    switch_task = pop_gpu_service_switch(client, PRIORITY_QUEUE)
+    if switch_task:
+        return switch_task
+    provider = _active_task_provider(client)
+    if provider is None:
+        return pop_tag_job(client, PRIORITY_QUEUE)
+    control = pop_tag_job(client, PRIORITY_QUEUE, provider="none")
+    if control:
+        return control
+    task = pop_tag_job(client, PRIORITY_QUEUE, provider=provider)
+    if task:
+        return task
+    if not _has_queued_provider_task(client, provider):
+        # Let run_tracked_task requeue this task and perform the provider
+        # transition once work for the active provider has drained.
+        return pop_tag_job(client, PRIORITY_QUEUE)
+    return None
+
+
+def _has_queued_provider_task(client, provider):
+    """Check whether the active provider still has interactive queued work."""
+    from task_queue import task_provider
+
+    for queue in (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE):
+        for payload in client.lrange(queue, 0, -1):
+            try:
+                task = json.loads(payload)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(task, dict) or task_provider(task) != provider:
+                continue
+            description_job_id = task.get("description_waiting_on")
+            if description_job_id and client.exists(
+                f"styler:description-pending:{description_job_id}"
+            ):
+                # This tag job cannot run until the description's provider has
+                # completed its queued dependency, so it must not block a switch.
+                continue
+            if task_provider(task) == provider:
+                return True
+    return False
+
+
 def video_worker():
     os.environ["VIDEO_WORKER_PROCESS"] = "1"
     client = redis_connection()
+    from gpu_service import initialize_active_service
+
+    initialize_active_service(client)
     log.info("Video render worker started; waiting on Redis queue %s", VIDEO_QUEUE)
     reset_job_id = client.get("styler:worker-reset-ready")
     if reset_job_id:
@@ -387,22 +447,60 @@ def video_worker():
     while True:
         try:
             client.set("styler:worker-model-batching", "1", ex=30)
-            from styler.image_tags import (
-                pop_tag_job,
-                run_job as run_tag_job,
-            )
+            from styler.image_tags import pop_tag_job
             from styler.jobs import pop_engine_sample, pop_interactive_job
             from styler.style_scan import pop_scan_job
 
-            payload = None
-            if payload is None:
-                priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+            active_provider = _active_task_provider(client)
+            if active_provider == "llama":
+                priority_tag = _pop_priority_task_for_provider(client)
                 if priority_tag:
                     styler_engine = None
                     client.delete("styler:worker-model")
                     if handle_worker_reset_task(client, priority_tag):
                         return
-                    if priority_tag.get("action") == "styler_tag_sample":
+                    if priority_tag.get("action") in (
+                        "styler_tag_sample",
+                        "styler_tag_group",
+                    ):
+                        tag_style = priority_tag["style_tag"]
+                    styler_engine = run_priority_task(client, priority_tag)
+                    continue
+                tag_payload = pop_tag_job(
+                    client, TAG_QUEUE, tag_style, provider="llama"
+                )
+                if tag_payload:
+                    styler_engine = None
+                    client.delete("styler:worker-model")
+                    tag_style = tag_payload["style_tag"]
+                    run_queued_tag_task(client, tag_payload, const.LIBRARY_DIR)
+                    continue
+                scan_payload = pop_scan_job(
+                    client, VIDEO_QUEUE, provider="llama"
+                )
+                if scan_payload:
+                    from styler.style_scan import run_job as run_style_scan_job
+
+                    scan_task = json.loads(scan_payload)
+                    styler_engine = None
+                    client.delete("styler:worker-model")
+                    run_tracked_task(
+                        client, run_style_scan_job, client, scan_task
+                    )
+                    continue
+
+            payload = None
+            if payload is None:
+                priority_tag = _pop_priority_task_for_provider(client)
+                if priority_tag:
+                    styler_engine = None
+                    client.delete("styler:worker-model")
+                    if handle_worker_reset_task(client, priority_tag):
+                        return
+                    if priority_tag.get("action") in (
+                        "styler_tag_sample",
+                        "styler_tag_group",
+                    ):
                         tag_style = priority_tag["style_tag"]
                     styler_engine = run_priority_task(client, priority_tag)
                     continue
@@ -413,7 +511,9 @@ def video_worker():
             if payload is None:
                 payload = pop_interactive_job(client, VIDEO_QUEUE)
             if payload is None:
-                payload = pop_scan_job(client, VIDEO_QUEUE)
+                payload = pop_scan_job(
+                    client, VIDEO_QUEUE, provider=active_provider
+                )
             if payload is None:
                 from styler.backfill import STATE as BACKFILL_STATE
 
@@ -427,18 +527,21 @@ def video_worker():
                         styler_engine = None
                         client.delete("styler:worker-model")
                         tag_style = tag_payload["style_tag"]
-                        run_tracked_task(client, run_tag_job, client, tag_payload)
+                        run_queued_tag_task(client, tag_payload, const.LIBRARY_DIR)
                         continue
                     queued = client.brpop(VIDEO_QUEUE, timeout=5)
                 if queued is None:
                     # A priority request may have arrived while BRPOP waited.
-                    priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                    priority_tag = _pop_priority_task_for_provider(client)
                     if priority_tag:
                         styler_engine = None
                         client.delete("styler:worker-model")
                         if handle_worker_reset_task(client, priority_tag):
                             return
-                        if priority_tag.get("action") == "styler_tag_sample":
+                        if priority_tag.get("action") in (
+                            "styler_tag_sample",
+                            "styler_tag_group",
+                        ):
                             tag_style = priority_tag["style_tag"]
                         styler_engine = run_priority_task(client, priority_tag)
                         continue
@@ -451,7 +554,7 @@ def video_worker():
                         styler_engine = None
                         client.delete("styler:worker-model")
                         tag_style = tag_payload["style_tag"]
-                        run_tracked_task(client, run_tag_job, client, tag_payload)
+                        run_queued_tag_task(client, tag_payload, const.LIBRARY_DIR)
                         continue
                     import const
                     from styler.backfill import next_sample, next_tag_sample
@@ -468,42 +571,43 @@ def video_worker():
                         payload = json.dumps(background)
                     else:
                         from styler.backfill import STATE as BACKFILL_STATE
-                        from styler.image_tags import run_job as run_tag_job
-
                         tag_task = (
                             next_tag_sample(client, VIDEO_QUEUE, const.LIBRARY_DIR)
                             if backfill_ready
                             else None
                         )
                         if tag_task:
-                            priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                            priority_tag = _pop_priority_task_for_provider(client)
                             if priority_tag:
                                 client.lpush(TAG_QUEUE, json.dumps(tag_task))
                                 styler_engine = None
                                 client.delete("styler:worker-model")
                                 if handle_worker_reset_task(client, priority_tag):
                                     return
-                                if priority_tag.get("action") == "styler_tag_sample":
+                                if priority_tag.get("action") in (
+                                    "styler_tag_sample",
+                                    "styler_tag_group",
+                                ):
                                     tag_style = priority_tag["style_tag"]
                                 styler_engine = run_priority_task(client, priority_tag)
                                 continue
                             styler_engine = None
                             client.delete("styler:worker-model")
                             tag_style = tag_task["style_tag"]
-                            run_tracked_task(client, run_tag_job, client, tag_task)
+                            run_queued_tag_task(client, tag_task, const.LIBRARY_DIR)
                         elif not client.exists(BACKFILL_STATE) or not backfill_ready:
                             tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
                             if tag_payload:
-                                priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+                                priority_tag = _pop_priority_task_for_provider(client)
                                 if priority_tag:
                                     client.lpush(TAG_QUEUE, json.dumps(tag_payload))
                                     styler_engine = None
                                     client.delete("styler:worker-model")
                                     if handle_worker_reset_task(client, priority_tag):
                                         return
-                                    if (
-                                        priority_tag.get("action")
-                                        == "styler_tag_sample"
+                                    if priority_tag.get("action") in (
+                                        "styler_tag_sample",
+                                        "styler_tag_group",
                                     ):
                                         tag_style = priority_tag["style_tag"]
                                     styler_engine = run_priority_task(
@@ -513,8 +617,8 @@ def video_worker():
                                 styler_engine = None
                                 client.delete("styler:worker-model")
                                 tag_style = tag_payload["style_tag"]
-                                run_tracked_task(
-                                    client, run_tag_job, client, tag_payload
+                                run_queued_tag_task(
+                                    client, tag_payload, const.LIBRARY_DIR
                                 )
                             else:
                                 idle_task = pop_idle_job(
@@ -523,7 +627,10 @@ def video_worker():
                                 if idle_task:
                                     styler_engine = None
                                     client.delete("styler:worker-model")
-                                    if idle_task.get("action") == "styler_tag_sample":
+                                    if idle_task.get("action") in (
+                                        "styler_tag_sample",
+                                        "styler_tag_group",
+                                    ):
                                         tag_style = idle_task["style_tag"]
                                     styler_engine = run_priority_task(client, idle_task)
                                 else:
@@ -532,14 +639,17 @@ def video_worker():
                 else:
                     _, payload = queued
             # A priority request may arrive while we wait for another queue.
-            priority_tag = pop_tag_job(client, PRIORITY_QUEUE)
+            priority_tag = _pop_priority_task_for_provider(client)
             if priority_tag:
                 enqueue_payload(client, VIDEO_QUEUE, payload, front=False)
                 styler_engine = None
                 client.delete("styler:worker-model")
                 if handle_worker_reset_task(client, priority_tag):
                     return
-                if priority_tag.get("action") == "styler_tag_sample":
+                if priority_tag.get("action") in (
+                    "styler_tag_sample",
+                    "styler_tag_group",
+                ):
                     tag_style = priority_tag["style_tag"]
                 styler_engine = run_priority_task(client, priority_tag)
                 continue
@@ -610,19 +720,79 @@ def video_worker():
             time.sleep(2)
 
 
+def run_queued_tag_task(client, task, library_dir, queue=TAG_QUEUE):
+    """Run style-group tag tasks or batch adjacent legacy per-engine records."""
+    from styler.image_tags import (
+        ANALYSIS_VERSION,
+        peek_tag_batch,
+        run_job,
+        run_tag_group,
+    )
+
+    if task.get("action") == "styler_tag_group":
+        return run_tracked_task(client, run_tag_group, client, task, library_dir)
+    following = peek_tag_batch(client, queue, task)
+    if following:
+        members = [dict(task)]
+        for member, raw in following:
+            if client.lrem(queue, 1, raw):
+                members.append(dict(member))
+        if len(members) > 1:
+            import uuid
+
+            base_prompt = task.get("base_style_prompt", "classic")
+            for member in members:
+                member.setdefault(
+                    "pending_key",
+                    "styler:tag-pending:"
+                    f"{member['job_id']}:{member.get('sha256', '')}:"
+                    f"{member.get('analysis_version', ANALYSIS_VERSION)}",
+                )
+            group = {
+                "action": "styler_tag_group",
+                "job_id": uuid.uuid4().hex,
+                "style_tag": task["style_tag"],
+                "base_style_prompt": base_prompt,
+                "items": members,
+                "engines": [member["engine"] for member in members],
+                "priority": bool(task.get("priority")),
+            }
+            return run_tracked_task(
+                client, run_tag_group, client, group, library_dir
+            )
+    return run_tracked_task(client, run_job, client, task)
+
+
 def run_priority_task(client, task):
     """Dispatch a promoted job through its original handler, before model batching."""
     action = task.get("action")
+    if action == "gpu_service_switch":
+        log.info(
+            "Dequeued GPU service switch %s targeting %s",
+            task.get("job_id"),
+            task.get("target_provider"),
+        )
+        run_tracked_task(client, run_gpu_service_switch_task, client, task)
+        return None
     if action == "styler_sample":
         from styler.jobs import run_sample_job
 
         client.set("styler:worker-model", task["engine"], ex=86400)
         run_tracked_task(client, run_sample_job, client, task)
         return task["engine"]
-    if action == "styler_tag_sample":
-        from styler.image_tags import run_job
+    if action in ("styler_tag_sample", "styler_tag_group"):
+        if action == "styler_tag_group":
+            from styler.image_tags import run_tag_group
 
-        run_tracked_task(client, run_job, client, task)
+            import const
+
+            run_tracked_task(client, run_tag_group, client, task, const.LIBRARY_DIR)
+        else:
+            import const
+
+            run_queued_tag_task(
+                client, task, const.LIBRARY_DIR, PRIORITY_QUEUE
+            )
     elif action == "stockpile_image_metadata":
         import const
         from stockpile import run_job
@@ -657,6 +827,81 @@ def run_priority_task(client, task):
     return None
 
 
+def run_gpu_service_switch_task(client, task):
+    """Switch to a user-selected provider, bypassing only the cooldown rule."""
+    from gpu_service import service_switching_enabled, use_gpu_service
+
+    if not service_switching_enabled():
+        log.error(
+            "GPU service switch %s cannot run: GPU_SERVICE_SWITCHING is disabled",
+            task.get("job_id"),
+        )
+        raise RuntimeError("GPU provider switching is disabled in the worker")
+    target = task.get("target_provider")
+    service = {"comfyui": "comfy", "llama": "llama"}.get(target)
+    if service is None:
+        raise ValueError(f"Unsupported GPU provider target: {target!r}")
+    log.info(
+        "Starting GPU service switch task %s: target=%s",
+        task.get("job_id"),
+        target,
+    )
+    try:
+        with use_gpu_service(
+            client,
+            service,
+            override_cooldown=True,
+            transition_task=task,
+        ):
+            pass
+    finally:
+        if client.get(GPU_SWITCH_REQUEST_KEY) in (task["job_id"], task["job_id"].encode()):
+            client.delete(GPU_SWITCH_REQUEST_KEY)
+
+
+def _pending_gpu_switch_id(client, *, clear_orphaned=True):
+    """Return the manual switch ID only while its task is queued or running."""
+    raw_pending_id = client.get(GPU_SWITCH_REQUEST_KEY)
+    if not raw_pending_id:
+        return None
+    pending_id = (
+        raw_pending_id.decode()
+        if isinstance(raw_pending_id, bytes)
+        else str(raw_pending_id)
+    )
+
+    task_payloads = client.lrange(PRIORITY_QUEUE, 0, -1)
+    active_payloads = (
+        client.get("gpu:service-transition"),
+        client.get("styler:worker-running"),
+    )
+    for payload in [*task_payloads, *active_payloads]:
+        if not payload:
+            continue
+        try:
+            task = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        if (
+            isinstance(task, dict)
+            and task.get("job_id") == pending_id
+            and task.get("action") == "gpu_service_switch"
+        ):
+            return pending_id
+
+    # A worker crash or task deletion can leave the deduplication key behind.
+    # Compare before deleting so a newer request created during this check survives.
+    if clear_orphaned:
+        client.eval(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then "
+            "return redis.call('del', KEYS[1]) else return 0 end",
+            1,
+            GPU_SWITCH_REQUEST_KEY,
+            pending_id,
+        )
+    return None
+
+
 def run_tracked_task(client, callback, *args):
     task = next(
         (
@@ -667,13 +912,115 @@ def run_tracked_task(client, callback, *args):
         None,
     )
     if task:
+        from task_queue import with_task_provider
+        from gpu_service import (
+            service_switching_enabled,
+            switch_cooldown_remaining,
+            use_gpu_service,
+        )
+
+        task.update(with_task_provider(task))
+        provider = task["provider"]
+        if (
+            service_switching_enabled()
+            and task.get("action") != "gpu_service_switch"
+            and provider in ("llama", "comfyui")
+        ):
+            service = "comfy" if provider == "comfyui" else "llama"
+            active_provider = _active_task_provider(client)
+            if active_provider != provider:
+                priority = bool(task.get("priority"))
+                waiting_for_active_provider = bool(
+                    active_provider
+                    and _has_queued_provider_task(client, active_provider)
+                )
+                if waiting_for_active_provider:
+                    if provider == "llama" and task.get("action") in (
+                        "styler_tag_sample",
+                        "styler_tag_group",
+                    ):
+                        queue, front = TAG_QUEUE, False
+                    elif provider == "llama":
+                        queue, front = VIDEO_QUEUE, True
+                    elif task.get("idle_maintenance"):
+                        queue, front = IDLE_QUEUE, False
+                    else:
+                        queue, front = VIDEO_QUEUE, True
+                elif provider == "llama" and task.get("action") in (
+                    "styler_tag_sample",
+                    "styler_tag_group",
+                ):
+                    queue = PRIORITY_QUEUE if priority else TAG_QUEUE
+                    front = True
+                elif provider == "llama":
+                    queue, front = VIDEO_QUEUE, False
+                elif priority:
+                    queue, front = PRIORITY_QUEUE, True
+                elif task.get("idle_maintenance"):
+                    queue, front = IDLE_QUEUE, True
+                else:
+                    queue, front = VIDEO_QUEUE, False
+                enqueue_task(
+                    client,
+                    queue,
+                    task,
+                    front=front,
+                    ensure_ascii=False,
+                )
+                if waiting_for_active_provider:
+                    return None
+                cooldown = switch_cooldown_remaining(client)
+                if cooldown > 0:
+                    client.publish(
+                        "styler_sample_events",
+                        json.dumps(
+                            {"job_id": task["job_id"], "state": "queue_changed"}
+                        ),
+                    )
+                    time.sleep(min(cooldown, 5))
+                    return None
+                # Keep the original task queued, but report its provider
+                # transition separately and let the same Home-backed handoff
+                # path handle automatic and user-requested switches.
+                service_names = {"comfy": "ComfyUI", "llama": "Llama"}
+                transition_task = {
+                    "job_id": f"gpu-switch-auto-{task['job_id']}",
+                    "action": "gpu_service_switch",
+                    "job_type": "GPU service switch",
+                    "service_from": {
+                        "comfyui": "ComfyUI",
+                        "llama": "Llama",
+                    }.get(active_provider, "Stopped"),
+                    "service_to": service_names[service],
+                    "target_provider": provider,
+                    "provider": provider,
+                    "priority": True,
+                    "trigger_job_id": task["job_id"],
+                }
+                log.info(
+                    "Starting automatic GPU provider transition for task %s: %s -> %s",
+                    task["job_id"],
+                    active_provider or "Stopped",
+                    provider,
+                )
+                with use_gpu_service(
+                    client,
+                    service,
+                    transition_task=transition_task,
+                ):
+                    pass
+                return None
+    if task:
         from styler.queue_history import clear_failed_job
 
         clear_failed_job(client, task["job_id"])
         client.delete(f"styler:retry-pending:{task['job_id']}")
     mark_activity(client)
     current_task = {**task, "queue_started_at": time.time()} if task else None
-    if current_task and current_task.get("action") == "styler_tag_sample":
+    if current_task and current_task.get("action") in (
+        "styler_tag_sample",
+        "styler_tag_group",
+    ):
         current_task.update(state="preparing", message="Preparing image tags")
     current = json.dumps(current_task) if current_task else "1"
     client.set("styler:worker-running", current, ex=86400)
@@ -681,6 +1028,7 @@ def run_tracked_task(client, callback, *args):
         if task and task.get("action") in (
             "styler_sample",
             "styler_tag_sample",
+            "styler_tag_group",
             "styler_scan_image_tags",
             "styler_style_description",
         ):
@@ -772,6 +1120,7 @@ def retry_failed_task(client, job_id):
     for key in (
         "state",
         "completed_at",
+        "duration_seconds",
         "message",
         "percent",
         "queue_failed",
@@ -789,6 +1138,9 @@ def retry_failed_task(client, job_id):
             state="retry_rejected", job_id=job_id, message="Task cannot be retried"
         )
     task["priority"] = True
+    from task_queue import task_provider
+
+    task["provider"] = task_provider(task)
 
     raw_running = client.get("styler:worker-running")
     if raw_running:
@@ -863,10 +1215,23 @@ def discard_missing_style_task(client, task):
     if action == "styler_sample":
         client.delete(f"styler_pending:{job_id}", f"styler_progress:{job_id}")
         event.update(state="failed", job_type="Sample image", action=action)
+    elif action == "styler_tag_group":
+        for member in task.get("items", []):
+            if isinstance(member, dict) and member.get("pending_key"):
+                client.delete(member["pending_key"])
+        if task.get("group_key"):
+            client.delete(f"styler:tag-group-open:{task['group_key']}")
+        event.update(
+            state="tag_failed",
+            job_type="Image tags",
+            action=action,
+            engines=task.get("engines", []),
+            priority=bool(task.get("priority")),
+        )
     elif action == "styler_tag_sample":
         from styler.image_tags import ANALYSIS_VERSION
 
-        pending = (
+        pending = task.get("pending_key") or (
             f"styler:tag-pending:{job_id}:{task.get('sha256', '')}:"
             f"{task.get('analysis_version', ANALYSIS_VERSION)}"
         )
@@ -916,11 +1281,20 @@ def clear_removed_task_markers(client, task):
     client.delete(f"styler:retry-pending:{job_id}")
     if action == "styler_sample":
         client.delete(f"styler_pending:{job_id}", f"styler_progress:{job_id}")
+    elif action == "styler_tag_group":
+        for member in task.get("items", []):
+            if isinstance(member, dict):
+                if member.get("pending_key"):
+                    client.delete(member["pending_key"])
+                client.delete(f"styler:retry-pending:{member.get('job_id', '')}")
+        if task.get("group_key"):
+            client.delete(f"styler:tag-group-open:{task['group_key']}")
     elif action == "styler_tag_sample":
         from styler.image_tags import ANALYSIS_VERSION
 
         client.delete(
-            f"styler:tag-pending:{job_id}:{task.get('sha256', '')}:{task.get('analysis_version', ANALYSIS_VERSION)}"
+            task.get("pending_key")
+            or f"styler:tag-pending:{job_id}:{task.get('sha256', '')}:{task.get('analysis_version', ANALYSIS_VERSION)}"
         )
     elif action == "styler_scan_image_tags":
         client.delete(f"styler:styles-scan:pending:{job_id}")
@@ -954,6 +1328,9 @@ def clear_removed_task_markers(client, task):
         key = "styler:worker-reset-pending"
         if client.get(key) in (job_id, job_id.encode()):
             client.delete(key)
+    elif action == "gpu_service_switch":
+        if client.get(GPU_SWITCH_REQUEST_KEY) in (job_id, job_id.encode()):
+            client.delete(GPU_SWITCH_REQUEST_KEY)
 
 
 def run_worker_rpc(client, task):
@@ -1134,6 +1511,87 @@ def styler_websocket(ws):
                         response = retry_failed_task(client, message.get("job_id"))
                         ws.send(json.dumps(response))
                         queue_dirty = True
+                    elif message.get("action") == "gpu_service_switch":
+                        target_provider = message.get("provider")
+                        log.info(
+                            "Received GPU service switch request: target=%s",
+                            target_provider,
+                        )
+                        service = {
+                            "comfyui": "comfy",
+                            "comfy": "comfy",
+                            "llama": "llama",
+                        }.get(target_provider)
+                        if service is None:
+                            response = dict(
+                                state="gpu_service_switch_failed",
+                                message="Choose ComfyUI or Llama",
+                            )
+                        else:
+                            target_provider = "comfyui" if service == "comfy" else "llama"
+                            existing = _pending_gpu_switch_id(client)
+                            if existing:
+                                response = dict(
+                                    state="gpu_service_switch_queued",
+                                    job_id=existing,
+                                    already_queued=True,
+                                )
+                            else:
+                                task = {
+                                    "job_id": uuid.uuid4().hex,
+                                    "action": "gpu_service_switch",
+                                    "job_type": "GPU service switch",
+                                    "service_to": "ComfyUI" if service == "comfy" else "Llama",
+                                    "target_provider": target_provider,
+                                    "provider": target_provider,
+                                    "priority": True,
+                                    "manual_override": True,
+                                }
+                                if client.set(
+                                    GPU_SWITCH_REQUEST_KEY,
+                                    task["job_id"],
+                                    nx=True,
+                                    ex=7200,
+                                ):
+                                    try:
+                                        enqueue_task(
+                                            client,
+                                            PRIORITY_QUEUE,
+                                            task,
+                                            front=True,
+                                            ensure_ascii=False,
+                                        )
+                                        client.publish(
+                                            EVENTS,
+                                            json.dumps(
+                                                {
+                                                    "state": "job_queued",
+                                                    **task,
+                                                },
+                                                ensure_ascii=False,
+                                            ),
+                                        )
+                                        log.info(
+                                            "Queued GPU service switch %s targeting %s",
+                                            task["job_id"],
+                                            target_provider,
+                                        )
+                                    except Exception:
+                                        client.delete(GPU_SWITCH_REQUEST_KEY)
+                                        raise
+                                    response = dict(
+                                        state="gpu_service_switch_queued",
+                                        job_id=task["job_id"],
+                                        provider=target_provider,
+                                    )
+                                else:
+                                    response = dict(
+                                        state="gpu_service_switch_queued",
+                                        job_id=client.get(GPU_SWITCH_REQUEST_KEY),
+                                        already_queued=True,
+                                    )
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
                     elif message.get("action") == "worker_reset":
                         reset_key = "styler:worker-reset-pending"
                         existing = client.get(reset_key)
@@ -1148,6 +1606,7 @@ def styler_websocket(ws):
                                 "job_id": uuid.uuid4().hex,
                                 "action": "worker_reset",
                                 "priority": True,
+                                "provider": "none",
                             }
                             if client.set(reset_key, task["job_id"], nx=True, ex=86400):
                                 try:
@@ -1216,6 +1675,11 @@ def styler_websocket(ws):
                             else request_retag
                         )
                         if message["action"] == "retag":
+                            log.info(
+                                "Retag requested: style=%s engine=%s variant=%s",
+                                message.get("style_tag"), message.get("engine"),
+                                message.get("base_style_prompt", "classic"),
+                            )
                             tasks = request_tags(
                                 client,
                                 message.get("style_tag"),
@@ -1244,6 +1708,12 @@ def styler_websocket(ws):
                                     style_tag=message["style_tag"],
                                     engines=[task["engine"] for task in tasks],
                                     engine=message.get("engine"),
+                                    base_style_prompt=message.get("base_style_prompt", "classic"),
+                                    samples=[
+                                        {"engine": task["engine"],
+                                         "base_style_prompt": task.get("base_style_prompt", "classic")}
+                                        for task in tasks
+                                    ],
                                 )
                             )
                         )
@@ -1267,6 +1737,7 @@ def styler_websocket(ws):
                         "styles_scan": "styles_scan_failed",
                         "style_duplicate_scan": "style_duplicate_scan_failed",
                         "queue_delete": "queue_delete_rejected",
+                        "gpu_service_switch": "gpu_service_switch_failed",
                     }.get(
                         message.get("action") if isinstance(message, dict) else None,
                         "failed",
@@ -1284,6 +1755,8 @@ def styler_websocket(ws):
                                 "engine": message.get("engine")
                                 if isinstance(message, dict)
                                 else None,
+                                "base_style_prompt": message.get("base_style_prompt", "classic")
+                                if isinstance(message, dict) else "classic",
                                 "message": "Invalid request or no sample images found",
                             }
                         )
@@ -1314,6 +1787,8 @@ def styler_websocket(ws):
                                 "engine": message.get("engine")
                                 if isinstance(message, dict)
                                 else None,
+                                "base_style_prompt": message.get("base_style_prompt", "classic")
+                                if isinstance(message, dict) else "classic",
                                 "message": "Unable to queue request",
                             }
                         )
@@ -1439,15 +1914,19 @@ def styler_websocket(ws):
 def styler_queue_entry(task, priority=False):
     if not isinstance(task, dict) or not isinstance(task.get("job_id"), str):
         return None
+    from task_queue import task_provider
+
     action = task.get("action") or ""
     labels = {
         "styler_tag_sample": "Image tags",
+        "styler_tag_group": "Image tags",
         "styler_sample": "Sample image",
         "styler_scan_image_tags": "Tag normalization",
         "styler_style_description": "Historical description",
         "styler_style_duplicate_scan": "Style duplicate scan",
         "styler_topic_llm": "Category grouping",
         "styler_topic_taxonomy_rebuild": "Category taxonomy rebuild",
+        "gpu_service_switch": "GPU service switch",
         "worker_reset": "Worker reset",
         "stockpile_image_metadata": "Stockpile tags",
         "chapter_import": "Chapter import",
@@ -1472,6 +1951,7 @@ def styler_queue_entry(task, priority=False):
             "job_id",
             "style_tag",
             "engine",
+            "engines",
             "filename",
             "background_category",
             "operation",
@@ -1481,12 +1961,21 @@ def styler_queue_entry(task, priority=False):
             "queue_started_at",
             "topic_level",
             "topic_parent",
+            "service_from",
+            "service_to",
+            "target_provider",
+            "provider",
         )
         if key in task
     } | {
         "job_type": job_type,
         "priority": bool(priority),
         "action": action,
+        "provider": (
+            task.get("target_provider")
+            if action == "gpu_service_switch" and task.get("target_provider")
+            else task_provider(task)
+        ),
         "state": "queued",
     }
     subject = (
@@ -1494,6 +1983,8 @@ def styler_queue_entry(task, priority=False):
         .replace("_", " ")
         .split("/")[-1]
     )
+    if action == "gpu_service_switch":
+        subject = f"{item.get('service_from', 'GPU')} → {item.get('service_to', 'GPU')}"
     if action == "styler_topic_llm":
         subject = item.get("topic_parent") or str(
             item.get("topic_level") or "topics"
@@ -1501,6 +1992,17 @@ def styler_queue_entry(task, priority=False):
     engine = {"zit": "Z-Image", "krea2": "Krea 2", "qwen": "Qwen 2.1"}.get(
         item.get("engine")
     )
+    if action == "styler_tag_group":
+        engine = None
+    elif item.get("engines"):
+        engine_names = {
+            "zit": "Z-Image",
+            "krea2": "Krea 2",
+            "qwen": "Qwen 2.1",
+        }
+        engine = ", ".join(
+            engine_names.get(name, name) for name in item["engines"]
+        )
     item["label"] = " · ".join(part for part in (job_type, subject, engine) if part)
     return item
 
@@ -1508,7 +2010,9 @@ def styler_queue_entry(task, priority=False):
 def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     """Return a bounded, worker-ordered queue view for the styler UI."""
     running = None
-    raw_running = client.get("styler:worker-running")
+    raw_running = client.get("gpu:service-transition") or client.get(
+        "styler:worker-running"
+    )
     if raw_running:
         try:
             task = json.loads(raw_running)
@@ -1543,6 +2047,35 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
             pass
     loaded_engine = client.get("styler:worker-model")
     model_batching = bool(loaded_engine)
+    active_service = client.get("gpu:active-service")
+    if isinstance(active_service, bytes):
+        active_service = active_service.decode()
+    active_provider = {
+        "comfy": "comfyui",
+        "llama": "llama",
+    }.get(active_service)
+    transition_task = None
+    raw_transition = client.get("gpu:service-transition")
+    if raw_transition:
+        try:
+            transition_task = json.loads(raw_transition)
+        except (TypeError, ValueError):
+            transition_task = None
+        active_provider = None
+    switching_to = (
+        transition_task.get("provider")
+        if isinstance(transition_task, dict)
+        else None
+    )
+    if active_provider is None and switching_to is None and running:
+        running_provider = running.get("provider")
+        if running_provider in ("comfyui", "llama"):
+            active_provider = running_provider
+    reported_provider = active_provider
+    from gpu_service import service_switching_enabled
+
+    if not service_switching_enabled():
+        active_provider = "*"
     sources = (
         (priority_queue, False, True),
         (VIDEO_QUEUE, True, False),
@@ -1568,7 +2101,33 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
             seen.add(item["job_id"])
             queued.append(item)
 
+    gpu_switch_pending_to = switching_to
+    if not gpu_switch_pending_to and running and running.get("action") == "gpu_service_switch":
+        gpu_switch_pending_to = running.get("target_provider") or running.get("provider")
+    if not gpu_switch_pending_to:
+        pending_switch_id = client.get(GPU_SWITCH_REQUEST_KEY)
+        pending_switch = next(
+            (
+                item
+                for item in queued
+                if item["job_id"] == pending_switch_id
+                and item.get("action") == "gpu_service_switch"
+            ),
+            None,
+        )
+        if pending_switch:
+            gpu_switch_pending_to = pending_switch.get("target_provider")
+
     def rank(job):
+        if job["action"] == "gpu_service_switch":
+            return -1
+        if active_provider is None and job["provider"] == "none":
+            return -1
+        if active_provider != "*" and active_provider and job["provider"] not in (
+            active_provider,
+            "none",
+        ):
+            return 6
         if job["priority"]:
             return 0
         if job.get("idle_maintenance"):
@@ -1581,7 +2140,7 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
             and not job.get("priority_removed")
         ):
             return 1
-        if action == "styler_tag_sample" or (
+        if action in ("styler_tag_sample", "styler_tag_group") or (
             action == "styler_sample" and job.get("background_category")
         ):
             return 4
@@ -1596,8 +2155,21 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     queued.sort(key=rank)
     capacity = max(0, min(200, int(capacity)))
     visible = queued[:capacity]
-    for index, item in enumerate(visible):
-        item["isNext"] = index == 0
+    for item in visible:
+        item["isNext"] = False
+    eligible = next(
+        (
+            item
+            for item in visible
+            if item["action"] == "gpu_service_switch"
+            or active_provider == "*"
+            or item["provider"] == "none"
+            or item["provider"] == active_provider
+        ),
+        None,
+    )
+    if eligible:
+        eligible["isNext"] = True
     queued_ids = {job["job_id"] for job in queued}
     failures = [
         entry
@@ -1615,14 +2187,29 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
         "queue_count": len(queued) + int(running is not None),
         "overflow_count": max(0, len(queued) - len(visible)),
         "completed": [
-            {**entry, "label": styler_queue_entry(entry)["label"]}
+            {
+                **entry,
+                "label": styler_queue_entry(entry)["label"],
+                "provider": styler_queue_entry(entry)["provider"],
+            }
             for entry in recent_completions(client)
         ],
         "failed": [
-            {**entry, "label": styler_queue_entry(entry)["label"]} for entry in failures
+            {
+                **entry,
+                "label": styler_queue_entry(entry)["label"],
+                "provider": styler_queue_entry(entry)["provider"],
+            }
+            for entry in failures
         ],
         "maintenance_mode": get_mode(client),
         "worker_reset_pending": bool(client.exists("styler:worker-reset-pending")),
+        "gpu_switch_pending": bool(
+            _pending_gpu_switch_id(client, clear_orphaned=False)
+        ),
+        "gpu_switch_pending_to": gpu_switch_pending_to,
+        "active_provider": reported_provider,
+        "switching_to": switching_to,
     }
 
 

@@ -33,7 +33,8 @@ def queued_prompt(client, prompt, system_prompt, *, force=False, timeout=300,
 
     pending_key = f'styler:topic-llm-pending:{job_id}'
     task = dict(action='styler_topic_llm', job_id=job_id, prompt=prompt,
-                system_prompt=system_prompt, force=bool(force), topic_level=topic_level)
+                system_prompt=system_prompt, force=bool(force), topic_level=topic_level,
+                provider='comfyui')
     if topic_parent:
         task['topic_parent'] = topic_parent
     if client.set(pending_key, '1', nx=True, ex=timeout + 60):
@@ -98,7 +99,7 @@ def enqueue_taxonomy_rebuild(client, *, queue=IDLE_QUEUE, reason='weekly', now=N
         return dict(state='retry_later')
     job_id = f"styler-topic-tree:{int(now)}:{uuid.uuid4().hex[:8]}"
     task = dict(action='styler_topic_taxonomy_rebuild', job_id=job_id,
-                reason=reason, idle_maintenance=True)
+                reason=reason, idle_maintenance=True, provider='comfyui')
     if not client.set('styler:topic-tree:pending', job_id, nx=True, ex=24 * 60 * 60):
         return dict(state='already_queued', job_id=_decode(client.get('styler:topic-tree:pending')))
     try:

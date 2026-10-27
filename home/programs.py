@@ -1,10 +1,12 @@
 """Start optional services through the mounted Docker socket."""
 import http.client
 import json
+import logging
 import subprocess
 import socket
 from urllib.parse import urlencode, quote
 
+log = logging.getLogger(__name__)
 
 class DockerConnection(http.client.HTTPConnection):
     def __init__(self):
@@ -43,6 +45,7 @@ PROGRAMS = {
     "glances": {"name": "Glances", "port": 61208, "image": "glances.png"},
     "redisinsight": {"name": "Redis Insight", "port": 5540, "image": "redis_insight.png"},
 }
+GPU_PROVIDER_SERVICES = {"comfyui": "ComfyUI", "llama": "Llama"}
 
 
 def start_glances():
@@ -74,6 +77,79 @@ def start_services(service_names, allowed_services):
         raise RuntimeError(exc.stderr or "Compose could not start the program") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Compose startup timed out; please retry") from exc
+
+
+def gpu_provider_status():
+    """Report which Compose-managed service currently owns the shared GPU."""
+    running = [
+        service
+        for service in GPU_PROVIDER_SERVICES
+        if any(
+            container.get("State") == "running"
+            for container in _program_containers(
+                service, GPU_PROVIDER_SERVICES
+            )[1]
+        )
+    ]
+    return {
+        "active_provider": running[0] if len(running) == 1 else None,
+        "running_providers": running,
+    }
+
+
+def switch_gpu_provider(provider):
+    """Stop the current GPU service and bring up the requested Compose service."""
+    if not isinstance(provider, str) or provider not in GPU_PROVIDER_SERVICES:
+        raise ValueError("GPU provider must be 'comfyui' or 'llama'")
+
+    inactive_service = "llama" if provider == "comfyui" else "comfyui"
+    base_command = compose_command() + ["--profile", "llama"]
+    commands = [
+        (
+            base_command
+            + ["stop", "--timeout", "20", inactive_service],
+            f"stop {inactive_service}",
+            60,
+        ),
+    ]
+    start_command = compose_command()
+    if provider == "llama":
+        start_command += ["--profile", "llama"]
+    commands.append(
+        (
+            start_command + ["up", "-d", "--no-build", "--no-deps", provider],
+            f"start {provider}",
+            480,
+        )
+    )
+
+    for command, description, timeout in commands:
+        log.info("GPU provider handoff: docker compose %s", description)
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Docker Compose timed out while trying to {description}"
+            ) from exc
+        output = "\n".join(
+            value.strip()
+            for value in (result.stdout, result.stderr)
+            if value and value.strip()
+        )
+        for line in output.splitlines():
+            log.info("Docker Compose: %s", line)
+        if result.returncode:
+            raise RuntimeError(
+                f"Docker Compose failed to {description}: "
+                f"{output or f'exit status {result.returncode}'}"
+            )
+    log.info("GPU provider handoff complete: %s is running", provider)
 
 
 def compose_command():

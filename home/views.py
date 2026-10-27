@@ -82,6 +82,32 @@ def start_workers():
     return jsonify(started=True)
 
 
+@bp.get("/api/gpu/provider")
+def gpu_provider_status():
+    from .programs import gpu_provider_status
+
+    try:
+        return jsonify(gpu_provider_status())
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.error("Unable to inspect GPU provider services: %s", exc)
+        return jsonify(error="Unable to inspect GPU provider services."), 503
+
+
+@bp.post("/api/gpu/provider/switch")
+def switch_gpu_provider():
+    from .programs import GPU_PROVIDER_SERVICES, switch_gpu_provider
+
+    provider = (request.get_json(silent=True) or {}).get("provider")
+    if not isinstance(provider, str) or provider not in GPU_PROVIDER_SERVICES:
+        return jsonify(error="Choose ComfyUI or Llama."), 400
+    try:
+        switch_gpu_provider(provider)
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.exception("Unable to switch GPU provider to %s", provider)
+        return jsonify(error=str(exc) or "Compose could not switch GPU providers."), 503
+    return jsonify(switched=True, provider=provider)
+
+
 @bp.post("/programs/panels/<panel_id>/members/<service_name>/stop")
 def stop_member(panel_id, service_name):
     from flask import current_app

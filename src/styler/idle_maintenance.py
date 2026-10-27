@@ -236,9 +236,13 @@ class IdleMaintenance:
                 analysis_version=ANALYSIS_VERSION,
                 prompt_sha256=prompt_version(self.client, tag),
             )
+            task["pending_key"] = (
+                f"styler:tag-pending:{task['job_id']}:{digest}:{ANALYSIS_VERSION}:"
+                f"{task['prompt_sha256']}"
+            )
             return (
                 task,
-                f"styler:tag-pending:{task['job_id']}:{digest}:{ANALYSIS_VERSION}",
+                task["pending_key"],
             )
         if (
             not matched(metadata)
