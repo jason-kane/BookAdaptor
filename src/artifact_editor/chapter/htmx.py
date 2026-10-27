@@ -49,7 +49,7 @@ def generate_missing_metadata_button(chapter: Chapter):
     return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
         data-chapter-metadata="{job_id}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
-            variant="neutral" appearance="accent" size="medium">Generate Missing Metadata</wa-button>
+            variant="neutral" appearance="accent" size="medium">Add Missing Metadata</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 
@@ -72,11 +72,11 @@ def time_align_button(chapter: Chapter):
 
 
 def generate_missing_images_button(chapter):
-    return missing_asset_button(chapter, "chapter_missing_images", "Generate Missing Images")
+    return missing_asset_button(chapter, "chapter_missing_images", "Add Missing Images")
 
 
 def generate_missing_animation_button(chapter):
-    return missing_asset_button(chapter, "chapter_missing_animations", "Generate Missing Animations")
+    return missing_asset_button(chapter, "chapter_missing_animations", "Add Missing Animations")
 
 
 def missing_asset_button(chapter, action, label):

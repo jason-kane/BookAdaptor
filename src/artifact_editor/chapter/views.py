@@ -741,7 +741,7 @@ def timeline_panel():
         ),
         generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
         generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
-            g.chapter, label="Generate Missing Audio"
+            g.chapter, label="Add Missing Audio"
         ),
     )
 
@@ -775,7 +775,7 @@ def chapter_base():
         ),
         generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
         generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
-            g.chapter, label="Generate Missing Audio"
+            g.chapter, label="Add Missing Audio"
         ),
         chapterurl=g.chapter.url,
         author=g.author,

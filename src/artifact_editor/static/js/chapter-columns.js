@@ -1,4 +1,23 @@
 document.addEventListener('click', event => {
+    const actionsButton = event.target.closest('.chapter-actions-trigger');
+    if (actionsButton) {
+        const drawer = document.getElementById(actionsButton.dataset.drawer);
+        if (drawer) {
+            const column = actionsButton.closest('.chapter-column');
+            const bounds = column.getBoundingClientRect();
+            drawer.style.setProperty('--chapter-drawer-left', `${bounds.left}px`);
+            drawer.style.setProperty('--chapter-drawer-width', `${bounds.width}px`);
+            const triggerBounds = actionsButton.getBoundingClientRect();
+            drawer.style.setProperty('--chapter-trigger-bottom', `${window.innerHeight - triggerBounds.bottom}px`);
+            drawer.style.left = `${bounds.left}px`;
+            drawer.style.width = `${bounds.width}px`;
+            drawer.open = true;
+            drawer.setAttribute('open', '');
+            drawer.addEventListener('wa-after-hide', () => drawer.removeAttribute('open'), { once: true });
+        }
+        return;
+    }
+
     const button = event.target.closest('.chapter-column-toggle');
     if (!button) return;
     const column = button.closest('.chapter-column');
@@ -18,3 +37,18 @@ document.addEventListener('click', event => {
     button.replaceChildren(icon);
     if (!collapsed) htmx.trigger(content, 'column-expanded');
 });
+
+window.openChapterActions = button => {
+    const drawer = document.getElementById(button.dataset.drawer);
+    if (!drawer) return;
+    const bounds = button.closest('.chapter-column').getBoundingClientRect();
+    drawer.style.setProperty('--chapter-drawer-left', `${bounds.left}px`);
+    drawer.style.setProperty('--chapter-drawer-width', `${bounds.width}px`);
+    const triggerBounds = button.getBoundingClientRect();
+    drawer.style.setProperty('--chapter-trigger-bottom', `${window.innerHeight - triggerBounds.bottom}px`);
+    drawer.style.left = `${bounds.left}px`;
+    drawer.style.width = `${bounds.width}px`;
+    drawer.open = true;
+    drawer.setAttribute('open', '');
+    drawer.addEventListener('wa-after-hide', () => drawer.removeAttribute('open'), { once: true });
+};

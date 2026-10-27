@@ -7,6 +7,11 @@
 {% block styles %}
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
+    html,
+    body {
+        height: 100%;
+        overflow: hidden;
+    }
     #player-stack {
         width: 100%;
         min-width: 0;
@@ -26,18 +31,63 @@
         display: flex;
         align-items: stretch;
         gap: clamp(0.5rem, 1vw, 1rem);
+        height: calc(100dvh - 4.125rem);
+        min-height: 0;
     }
     .chapter-column {
         position: relative;
+        display: flex;
+        flex-direction: column;
         flex: 1 1 0;
+        min-height: 0;
         min-width: 0;
     }
     .chapter-column-content {
+        flex: 1 1 auto;
+        margin-block-start: 2.75rem;
+        min-height: 0;
         min-width: 0;
         width: 100%;
+        overflow: hidden;
     }
     .chapter-column-content[hidden] {
         display: none;
+    }
+    .chapter-column-content > wa-tab-group {
+        display: block;
+        height: 100%;
+        min-height: 0;
+    }
+    .chapter-column-content > wa-tab-group::part(base) {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+    .chapter-column-content > wa-tab-group::part(body) {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab-panel {
+        display: block;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .chapter-editor-column wa-tab-panel[name="mood"],
+    .chapter-editor-column wa-tab-panel[name="theme"] {
+        overflow-y: auto;
+    }
+    .chapter-editor-column wa-tab-panel[name="text"] > .chapter-text-scroll {
+        height: calc(100dvh - 12.5rem);
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
+    }
+    .chapter-text-scroll > .wa-stack {
+        min-height: min-content;
     }
     .chapter-column-toggle {
         position: absolute;
@@ -46,11 +96,184 @@
         z-index: 1;
         width: 2.5rem;
     }
+    .chapter-column-content > wa-tab-group > wa-tab-panel {
+        padding-block-start: 0;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab-panel::part(base) {
+        padding-block: 0.25rem;
+    }
     .chapter-column-content > wa-tab-group::part(nav) {
-        margin-inline-end: 2.75rem;
+        --spacing: 0;
+        padding-block: 0;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab {
+        height: 3.5rem;
+        min-height: 0;
     }
     .chapter-column-toggle::part(base) {
         padding-inline: 0;
+        width: 100%;
+    }
+    .chapter-actions-trigger {
+        align-self: stretch;
+        flex: 0 0 auto;
+        margin-block-start: auto;
+        height: 1.5rem;
+        width: 100%;
+        padding: 0;
+        color: inherit;
+        background: var(--wa-color-surface-raised, #17171b);
+        border: 1px solid var(--wa-color-neutral-border, #555);
+        border-radius: 0.4rem;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+    }
+    wa-drawer.chapter-actions-drawer {
+        --size: min(34rem, calc(100dvh - 4rem));
+    }
+    wa-drawer.chapter-actions-drawer:not([open]) {
+        display: none;
+    }
+    .chapter-actions-drawer::part(panel) {
+        position: relative;
+        height: var(--size);
+        max-height: var(--size);
+        border-radius: 0.75rem 0.75rem 0 0;
+    }
+    .chapter-actions-drawer::part(overlay) {
+        background: transparent;
+        pointer-events: none;
+    }
+    .chapter-actions-drawer::part(body) {
+        overflow: auto;
+        padding: 0.5rem 0.75rem 2rem;
+    }
+    .chapter-actions-drawer::part(header) {
+        min-height: 2.25rem;
+        padding: 0.25rem 0.75rem;
+    }
+    .chapter-actions-drawer::part(title) {
+        font-size: 0.95rem;
+    }
+    .chapter-action-groups {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: start;
+        gap: 1rem;
+    }
+    .chapter-action-group {
+        display: grid;
+        gap: 0.5rem;
+        min-width: 0;
+        align-content: start;
+    }
+    .chapter-action-group h3 {
+        margin: 0;
+        padding-block-end: 0.25rem;
+        border-bottom: 1px solid var(--wa-color-neutral-border, #555);
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--wa-color-text-quiet, #aaa);
+    }
+    .chapter-action-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: start;
+        gap: 0.5rem;
+    }
+    .chapter-action-item {
+        display: grid;
+        align-content: start;
+        justify-items: stretch;
+        min-width: 0;
+    }
+    .chapter-action-group:first-child .chapter-action-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    }
+    .chapter-action-group:first-child .chapter-action-item:nth-child(-n + 2) {
+        grid-column: span 1;
+    }
+    .chapter-action-group:first-child .chapter-action-item:nth-child(n + 3) {
+        grid-column: span 1;
+    }
+    .chapter-action-item > wa-button,
+    .chapter-action-item > .wa-stack,
+    .chapter-action-item .wa-stack > wa-button {
+        width: 100%;
+    }
+    .chapter-action-item > .wa-stack {
+        gap: 0.25rem;
+    }
+    .chapter-action-status,
+    .chapter-action-item [role="status"] {
+        min-height: 1rem;
+        font-size: 0.75rem;
+        line-height: 1.25;
+    }
+    .chapter-action-group-danger h3 {
+        color: var(--wa-color-danger-text, #e38b9e);
+    }
+    @media (max-width: 760px) {
+        .chapter-action-groups {
+            grid-template-columns: 1fr;
+        }
+        .chapter-action-grid {
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+        }
+    }
+    .chapter-actions-close {
+        position: fixed;
+        inset-inline-start: 0;
+        width: 100vw;
+        inset-block-end: var(--chapter-trigger-bottom, 0.5rem);
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        height: 1.5rem;
+        min-height: 1.5rem;
+        margin: 0;
+        padding: 0;
+        transform: translateY(-0.75rem);
+        color: inherit;
+        background: var(--wa-color-surface-raised, #17171b);
+        border: 1px solid var(--wa-color-neutral-border, #555);
+        pointer-events: auto;
+        border-radius: 0.4rem;
+        cursor: pointer;
+    }
+    .chapter-actions-close wa-icon {
+        font-size: 0.9rem;
+    }
+    .chapter-actions-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+        align-items: start;
+        gap: 1rem;
+    }
+    .chapter-actions-section {
+        display: grid;
+        align-content: start;
+        gap: 0.5rem;
+        min-width: 0;
+    }
+    .chapter-actions-section h3 {
+        margin: 0;
+        padding-block-end: 0.25rem;
+        border-bottom: 1px solid var(--wa-color-neutral-border, #555);
+        color: var(--wa-color-text-quiet, #aaa);
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .chapter-actions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+        align-items: start;
+        gap: 0.5rem;
+    }
+    .chapter-actions-grid > wa-button,
+    .chapter-actions-grid > .wa-stack,
+    .chapter-actions-grid .wa-stack > wa-button {
         width: 100%;
     }
     .chapter-column.is-collapsed {
@@ -66,13 +289,32 @@
         width: 100%;
         height: 100%;
     }
+    .chapter-column.is-collapsed > .chapter-actions-trigger {
+        display: none;
+    }
     .chapter-rendered-scroll {
         width: 100%;
-        height: 46em;
+        height: calc(100dvh - 12.5rem);
+        min-height: 0;
         overflow-y: scroll;
     }
     #chapter-timeline-scroll {
-        height: max(12rem, calc(100dvh - 14rem));
+        flex: 1 1 0;
+        height: 0;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
+    }
+    .chapter-phrase-column wa-tab-panel[name="timeline"] {
+        position: relative;
+        overflow: hidden;
+    }
+    .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > #chapter-timeline-scroll {
+        position: absolute;
+        inset: 0;
+        height: auto;
+        min-height: 0;
         overflow-y: auto;
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable;
@@ -393,7 +635,7 @@
 {% block scripts %}
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
 <script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-columns.js', v='3') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-columns.js', v='5') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-drag-2') }}" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
@@ -613,55 +855,63 @@
             <wa-tab panel="mood">Mood</wa-tab>
             <wa-tab panel="theme">Theme</wa-tab>
             <wa-tab-panel name="text">
+                <div class="chapter-text-scroll">
                 <div class="wa-stack">
                     <div id="chapter-sections" class="wa-stack"></div>
-
-                    <div class="wa-cluster">
-                        <wa-button
-                            id="reflow_btn"
-                            hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}"
-                            hx-on::before-request="beforeRequest(this,event)"
-                            hx-on::after-request="afterRequest(this,event)"
-                            hx-swap="none"
-                            variant="neutral"
-                            appearance="accent"
-                            size="medium"
-                        >Reflow Paragraphs</wa-button>
-
-                        {{import_button|safe}}
-
-                    </div>
+                </div>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="mood">
                 <div class="wa-stack">
                     <div id="chapter-mood-editor">{{ chapter_mood|safe }}</div>
-                    <wa-button
-                        hx-post="{{ url_for('library.book.chapter.generate_mood', **chapter.kwargs) }}"
-                        hx-target="#chapter-mood-editor"
-                        hx-swap="innerHTML"
-                        hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-mood-status').textContent = 'Generating mood…'"
-                        hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-mood-status').textContent = event.detail.successful ? 'Mood generated and saved.' : 'Mood generation failed. Check that chapter text is imported and try again.'"
-                    >Generate Mood</wa-button>
                     <p id="chapter-mood-status" role="status" aria-live="polite"></p>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="theme">
                 <div class="wa-stack">
                     <div id="chapter-theme-editor">{{ chapter_theme|safe }}</div>
-                    <wa-button
-                        hx-post="{{ url_for('library.book.chapter.generate_theme', **chapter.kwargs) }}"
-                        hx-target="#chapter-theme-editor"
-                        hx-swap="innerHTML"
-                        hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-theme-status').textContent = 'Generating theme…'"
-                        hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-theme-status').textContent = event.detail.successful ? 'Theme generated and saved.' : 'Theme generation failed. Check that chapter text is imported and try again.'"
-                    >Generate Theme</wa-button>
                     <p id="chapter-theme-status" role="status" aria-live="polite"></p>
                 </div>
             </wa-tab-panel>
         </wa-tab-group>
         </div>
-
+        <button type="button" class="chapter-actions-trigger" data-drawer="chapter-text-actions" aria-label="Open Text actions" title="Text actions" onclick="const d=document.getElementById(this.dataset.drawer),r=this.closest('.chapter-column').getBoundingClientRect();d.style.setProperty('--chapter-drawer-left',r.left+'px');d.style.setProperty('--chapter-drawer-width',r.width+'px');d.style.setProperty('--chapter-trigger-bottom',(innerHeight-this.getBoundingClientRect().bottom)+'px');d.open=true"><wa-icon name="chevron-up" aria-hidden="true"></wa-icon></button>
+        <wa-drawer class="chapter-actions-drawer" id="chapter-text-actions" label="Text actions" placement="bottom">
+            <div class="chapter-actions-content">
+                <section class="chapter-actions-section" aria-labelledby="text-actions-heading">
+                    <h3 id="text-actions-heading">Text</h3>
+                    <div class="chapter-actions-grid">
+                        <wa-button
+                            id="reflow_btn"
+                            hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}"
+                            hx-on::before-request="beforeRequest(this,event)"
+                            hx-on::after-request="afterRequest(this,event)"
+                            hx-swap="none"
+                            variant="neutral" appearance="accent" size="medium"
+                        >Reflow Paragraphs</wa-button>
+                        {{import_button|safe}}
+                    </div>
+                </section>
+                <section class="chapter-actions-section" aria-labelledby="chapter-analysis-heading">
+                    <h3 id="chapter-analysis-heading">Chapter analysis</h3>
+                    <div class="chapter-actions-grid">
+                        <wa-button
+                            hx-post="{{ url_for('library.book.chapter.generate_mood', **chapter.kwargs) }}"
+                            hx-target="#chapter-mood-editor" hx-swap="innerHTML"
+                            hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-mood-status').textContent = 'Generating mood…'"
+                            hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-mood-status').textContent = event.detail.successful ? 'Mood generated and saved.' : 'Mood generation failed. Check that chapter text is imported and try again.'"
+                        >Generate Mood</wa-button>
+                        <wa-button
+                            hx-post="{{ url_for('library.book.chapter.generate_theme', **chapter.kwargs) }}"
+                            hx-target="#chapter-theme-editor" hx-swap="innerHTML"
+                            hx-on::before-request="beforeRequest(this,event); document.getElementById('chapter-theme-status').textContent = 'Generating theme…'"
+                            hx-on::after-request="afterRequest(this,event); document.getElementById('chapter-theme-status').textContent = event.detail.successful ? 'Theme generated and saved.' : 'Theme generation failed. Check that chapter text is imported and try again.'"
+                        >Generate Theme</wa-button>
+                    </div>
+                </section>
+            </div>
+            <button class="chapter-actions-close" type="button" aria-label="Close Text actions" title="Close Text actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></button>
+        </wa-drawer>
     </div>
     <div id="phrase-stack" class="chapter-column wa-stack wa-gap-0 chapter-phrase-column">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
@@ -692,6 +942,7 @@
             </wa-tab-panel>
         </wa-tab-group>
         </div>
+        <button type="button" class="chapter-actions-trigger" data-drawer="chapter-timeline-actions" aria-label="Open Timeline actions" title="Timeline actions" onclick="const d=document.getElementById(this.dataset.drawer),r=this.closest('.chapter-column').getBoundingClientRect();d.style.setProperty('--chapter-drawer-left',r.left+'px');d.style.setProperty('--chapter-drawer-width',r.width+'px');d.open=true"><wa-icon name="chevron-up" aria-hidden="true"></wa-icon></button>
     </div>
     <div class="chapter-column wa-stack chapter-rendered-column">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
@@ -719,6 +970,16 @@
             </wa-tab-panel>
         </wa-tab-group>
         </div>
+        <button type="button" class="chapter-actions-trigger" data-drawer="chapter-preview-actions" aria-label="Open Preview actions" title="Preview actions" onclick="const d=document.getElementById(this.dataset.drawer),r=this.closest('.chapter-column').getBoundingClientRect();d.style.setProperty('--chapter-drawer-left',r.left+'px');d.style.setProperty('--chapter-drawer-width',r.width+'px');d.style.setProperty('--chapter-trigger-bottom',(innerHeight-this.getBoundingClientRect().bottom)+'px');d.open=true"><wa-icon name="chevron-up" aria-hidden="true"></wa-icon></button>
+        <wa-drawer class="chapter-actions-drawer" id="chapter-preview-actions" label="Preview actions" placement="bottom">
+            <div class="chapter-actions-content">
+                <section class="chapter-actions-section" aria-labelledby="preview-actions-heading">
+                    <h3 id="preview-actions-heading">Preview</h3>
+                    <div class="chapter-actions-grid"><wa-button onclick="latex_rerender_url('{{ chapter_pdf_url }}?t=' + Date.now())">Refresh PDF</wa-button></div>
+                </section>
+            </div>
+            <button class="chapter-actions-close" type="button" aria-label="Close Preview actions" title="Close Preview actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></button>
+        </wa-drawer>
     </div>
 
     <div class="chapter-column wa-stack wa-gap-0">
