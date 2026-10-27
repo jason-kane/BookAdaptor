@@ -256,8 +256,11 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     )
     notice = f"""<div id="video-generation-notice" class="wa-stack"
         hx-ext="ws" ws-connect="{websocket_url()}">
+        <wa-drawer class="chapter-actions-drawer" id="chapter-video-actions" label="Video actions" placement="bottom">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
             variant="brand" appearance="accent">Re-render</wa-button>
+        <wa-button slot="footer" class="chapter-actions-close" appearance="outlined" aria-label="Close Video actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></wa-button>
+        </wa-drawer>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 
