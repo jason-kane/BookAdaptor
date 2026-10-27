@@ -1,9 +1,12 @@
 from pathlib import Path
+import json
 import sys
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from styler.tag_consensus import ENGINES, agreed_tags
+from styler.tag_consensus import ENGINES, agreed_tags, reconcile, _queue_new_tag_classification
 from styler.image_tags import ANALYSIS_VERSION
 
 
@@ -72,3 +75,41 @@ class TagConsensusTests(unittest.TestCase):
     def test_old_analysis_is_not_used_for_new_tag_target(self):
         self.records['qwen'].pop('analysis_version')
         self.assertEqual(agreed_tags(self.records,self.hashes,'prompt'),[])
+
+    def test_new_promoted_tags_queue_idle_classification(self):
+        client = Mock()
+        tree = {'topics': [{'categories': [{'tags': ['oil painting']}]}]}
+        with patch('styler.topic_taxonomy.cached_tree', return_value=tree), patch(
+                'styler.topic_jobs.enqueue_taxonomy_rebuild') as enqueue:
+            _queue_new_tag_classification(client, ['oil painting', 'expressive texture'])
+        enqueue.assert_called_once_with(client, reason='new_tags')
+
+    def test_classified_tags_do_not_queue_a_rebuild(self):
+        tree = {'topics': [{'categories': [{'tags': ['oil painting']}]}]}
+        with patch('styler.topic_taxonomy.cached_tree', return_value=tree), patch(
+                'styler.topic_jobs.enqueue_taxonomy_rebuild') as enqueue:
+            _queue_new_tag_classification(Mock(), ['oil painting'])
+            _queue_new_tag_classification(Mock(), [])
+        enqueue.assert_not_called()
+
+    def test_new_promoted_tags_without_a_tree_queue_classification(self):
+        client = Mock()
+        with patch('styler.topic_taxonomy.cached_tree', return_value=None), patch(
+                'styler.topic_jobs.enqueue_taxonomy_rebuild') as enqueue:
+            _queue_new_tag_classification(client, ['expressive texture'])
+        enqueue.assert_called_once_with(client, reason='new_tags')
+
+    def test_consensus_commit_passes_added_tags_to_classification(self):
+        client = Mock()
+        client.type.return_value = 'hash'
+        client.mget.return_value = [None] * 6
+        client.hget.return_value = '{prompt}'
+        client.eval.return_value = json.dumps({
+            'tags': ['expressive texture'], 'added': ['expressive texture'],
+            'removed': [], 'counts': [],
+        })
+        with TemporaryDirectory() as folder, patch(
+                'styler.tag_consensus._queue_new_tag_classification') as classify:
+            result = reconcile(client, 'artist', folder)
+        self.assertEqual(result['tags'], ['expressive texture'])
+        classify.assert_called_once_with(client, ['expressive texture'])

@@ -53,6 +53,30 @@ def saved_tags(client, tag):
     return [value for value in tags if value not in suppressed]
 
 
+def _queue_new_tag_classification(client, added: list[str]) -> None:
+    """Batch newly promoted, unclassified tags into the existing idle rebuild.
+
+    The taxonomy classifies tags that have actual styles. Image-only candidates
+    remain recorded until engine consensus promotes them; classification must
+    not grant style membership or start a GPU job for every candidate label.
+    The rebuild queue deduplicates concurrent additions into one pending job.
+    """
+    if not added:
+        return
+    from styler.topic_taxonomy import cached_tree
+    from styler.topic_jobs import enqueue_taxonomy_rebuild
+
+    tree = cached_tree(client)
+    classified = {
+        tag
+        for topic in (tree or {}).get('topics', [])
+        for category in topic.get('categories', [])
+        for tag in category.get('tags', [])
+    }
+    if any(tag not in classified for tag in added):
+        enqueue_taxonomy_rebuild(client, reason='new_tags')
+
+
 def reconcile(client, tag, library_dir):
     from styler.image_tags import fingerprint
     from styler.jobs import BASE_STYLE_PROMPTS, sample_task
@@ -172,4 +196,5 @@ def reconcile(client, tag, library_dir):
         client.publish(EVENTS, json.dumps(dict(
             state='lost_resolved' if result.get('was_lost') and not result['lost'] else 'style_tags_reconciled',
             style_tag=tag, lost=result['lost'], lost_count=result['lost_count'], **agreement)))
+    _queue_new_tag_classification(client, agreement['added'])
     return agreement
