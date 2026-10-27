@@ -5,6 +5,7 @@
 {% endblock %}
 
 {% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261027-eta-1">
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
     html,
@@ -70,10 +71,15 @@
         overflow: hidden;
     }
     .chapter-column-content > wa-tab-group > wa-tab-panel {
-        display: block;
         height: 100%;
         min-height: 0;
         overflow: hidden;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab-panel:not([active]) {
+        display: none;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab-panel[active] {
+        display: block;
     }
     .chapter-editor-column wa-tab-panel[name="mood"],
     .chapter-editor-column wa-tab-panel[name="theme"] {
@@ -659,10 +665,12 @@
 
 {% block scripts %}
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='4') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='5') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='5') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-drag-2') }}" defer></script>
+<script src="/static/js/chapter-typesetting.js?v=1" defer></script>
+<script defer src="/static/js/styler-samples.js?v=20261027-eta-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.
@@ -861,6 +869,7 @@
 {% endblock %}
 
 {% block body %}
+{% include "job-queue.html" %}
 <wa-dialog id="chapter-image-viewer" label="Chapter image" style="--width: 96vw;">
     <div class="chapter-image-viewer-layout">
         <wa-button id="chapter-image-previous" aria-label="Previous image" appearance="plain">❮</wa-button>
@@ -944,7 +953,7 @@
             aria-label="Collapse Timeline column" title="Collapse Timeline column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
         <div id="chapter-timeline-content" class="chapter-column-content">
         <wa-tab-group active="timeline"
-            hx-on:wa-tab-show="if (event.target === this) htmx.trigger(this.querySelector('wa-tab-panel[name=' + this.active + ']'), 'load-column')">
+            hx-on:wa-tab-show="if (event.target.closest('wa-tab-group') === this) htmx.trigger(this.querySelector('wa-tab-panel[name=' + this.active + ']'), 'load-column')">
             <wa-tab panel="timeline">Timeline</wa-tab>
             <wa-tab panel="characters">Characters</wa-tab>
             <wa-tab panel="props">Props</wa-tab>

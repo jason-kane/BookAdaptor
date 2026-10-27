@@ -16,6 +16,8 @@ FAILURE_SECONDS = 300
 
 def publish_queue_event(client, channel, event):
     """Retain real worker outcomes; cached image replies never pass through here."""
+    if event.get('execution_queue') in ('render', 'cpu'):
+        return client.publish(channel, json.dumps(event))
     if event.get('queue_group_job_id') and event.get('state') in SUCCESS_STATES | FAILURE_STATES:
         # Member results are still published for per-engine UI updates, but the
         # queue retains only the enclosing multi-engine job's terminal outcome.
@@ -47,6 +49,8 @@ def publish_queue_event(client, channel, event):
                 duration_seconds = max(0.0, completed_at - started_at)
                 entry.update(queue_started_at=started_at,
                              duration_seconds=round(duration_seconds, 2))
+                from task_timing import safe_record
+                safe_record(client, entry, duration_seconds, state=entry['state'], started_at=started_at)
 
             # Stable IDs can be retried. Keep only the latest outcome for each job.
             client.eval('''

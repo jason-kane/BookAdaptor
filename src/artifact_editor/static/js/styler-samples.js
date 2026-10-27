@@ -223,6 +223,7 @@
 
     // Map internal queue states to short user-facing labels.
     function queueStatusLabel(job) {
+        if (window.TaskTiming) return TaskTiming.describe(job, 0, true).label;
         const duration = formatQueueDuration(job.duration_seconds);
         const compactDuration = duration.replaceAll(' ', '');
         return job.state === 'clearing_vram'
@@ -278,7 +279,7 @@
         if (!button) return;
         const queue = document.getElementById('styler-job-queue');
         const minimized = queue.classList.toggle('is-minimized');
-        const label = minimized ? 'Expand task queue' : 'Minimize task queue';
+        const label = minimized ? 'Expand GPU queue' : 'Minimize GPU queue';
         button.setAttribute('aria-expanded', String(!minimized));
         button.setAttribute('aria-label', label);
         button.setAttribute('title', label);
@@ -402,6 +403,7 @@
         row.dataset.state = event.state;
         row.dataset.next = String(Boolean(event.isNext));
         row.dataset.jobId = event.job_id;
+        if (event.parent_job_id) row.dataset.parentJobId = event.parent_job_id;
         row.setAttribute('role', 'group');
         row.setAttribute('aria-label', event.label);
         const type = document.createElement('span');
@@ -424,19 +426,12 @@
         if (['preparing', 'clearing_vram', 'running', 'complete'].includes(event.state)) {
             const progress = document.createElement('wa-progress-bar');
             progress.setAttribute('aria-label', `${event.label} progress`);
-            const percent = queuePercent(event.percent);
-            if (Number.isFinite(percent)) {
-                progress.setAttribute('value', Math.max(0, Math.min(100, percent)));
-            } else {
-                progress.setAttribute('indeterminate', '');
-            }
+            progress.setAttribute('indeterminate', '');
             content.append(progress);
         }
         const state = document.createElement('span');
         state.className = 'styler-queue-task-state';
-        state.textContent = event.isNext ? 'next'
-            : event.state === 'running' && Number.isFinite(queuePercent(event.percent))
-                ? `${Math.max(0, Math.min(100, queuePercent(event.percent)))}%` : queueStatusLabel(event);
+        state.textContent = queueStatusLabel(event);
         state.title = queueStatusDescription(event);
         state.setAttribute('aria-label', queueStatusDescription(event));
         const targetSlot = document.createElement('span');
@@ -444,6 +439,7 @@
         const otherSlot = document.createElement('span');
         otherSlot.className = 'styler-queue-other-slot';
         row.append(type, content, state, targetSlot, otherSlot);
+        window.TaskTiming?.bind(row.querySelector('wa-progress-bar'), event, state, {compact: true});
         return row;
     }
 
@@ -737,6 +733,8 @@
 
     // Synchronize a queue row’s content and controls with its job.
     function updateQueueRow(row, job) {
+        if (job.parent_job_id) row.dataset.parentJobId = job.parent_job_id;
+        else delete row.dataset.parentJobId;
         row.dataset.state = job.state;
         row.dataset.next = String(Boolean(job.isNext));
         row.dataset.promoted = String(Boolean(job.promoted));
@@ -763,22 +761,18 @@
                 row.querySelector('.styler-queue-task-content').append(progress);
             }
             progress.setAttribute('label', `${job.label} progress`);
-            const percent = queuePercent(job.percent);
-            if (Number.isFinite(percent)) {
-                progress.removeAttribute('indeterminate');
-                progress.setAttribute('value', Math.max(0, Math.min(100, percent)));
-            } else {
-                progress.setAttribute('indeterminate', '');
-            }
+            progress.setAttribute('indeterminate', '');
         } else {
             progress?.remove();
+            progress = null;
         }
         const state = row.querySelector('.styler-queue-task-state');
-        const text = job.isNext ? 'next' : job.state === 'running' && Number.isFinite(queuePercent(job.percent))
-            ? `${Math.max(0, Math.min(100, queuePercent(job.percent)))}%` : queueStatusLabel(job);
+        const text = queueStatusLabel(job);
         if (state.textContent !== text) state.textContent = text;
         state.title = queueStatusDescription(job);
         state.setAttribute('aria-label', queueStatusDescription(job));
+        window.TaskTiming?.bind(progress, job, state, {compact: true});
+        if (window.TaskTiming) row.title = TaskTiming.describe(job).title;
     }
 
     // Queue layout and animation
@@ -1001,9 +995,11 @@
                 queueJobs.get(id)?.label,
                 queueJobs.get(id)?.promoted,
                 queueJobs.get(id)?.priority,
+                queueJobs.get(id)?.parent_job_id,
             ]),
             queueJobs.get(runningJob)?.label,
             queueJobs.get(runningJob)?.promoted,
+            queueJobs.get(runningJob)?.parent_job_id,
             serverOverflowCount,
             serverQueueCount,
             [...completedQueueJobs.values(), ...failedQueueJobs.values()].map(job => [
@@ -1011,6 +1007,7 @@
                 job.state,
                 job.completed_at,
                 job.promoted,
+                job.parent_job_id,
             ]),
         ]);
     }
@@ -1175,15 +1172,7 @@
         const progress = row.querySelector('wa-progress-bar');
         const state = row.querySelector('.styler-queue-task-state');
         if (!progress || !state) return;
-        const percent = monotonicQueuePercent(job.job_id, job.percent);
-        if (Number.isFinite(percent)) {
-            progress.removeAttribute('indeterminate');
-            progress.setAttribute('value', Math.max(0, Math.min(100, percent)));
-            state.textContent = `${Math.max(0, Math.min(100, percent))}%`;
-        } else {
-            progress.setAttribute('indeterminate', '');
-            state.textContent = queueStatusLabel(job);
-        }
+        window.TaskTiming?.bind(progress, job, state, {compact: true});
     }
 
     // Tell the server how many queue rows fit in the panel.
@@ -1957,15 +1946,8 @@
                     container.innerHTML = '<span data-sample-progress-message></span><wa-progress-bar label="Sample generation progress"></wa-progress-bar>';
                     bar = container.querySelector('wa-progress-bar');
                 }
-                const previous = sampleProgressMax.get(progressKey) || 0;
-                const displayed = queuePercent(bar.getAttribute('value'));
-                const reported = queuePercent(event.percent);
-                const percent = Math.min(100, Math.max(previous,
-                    Number.isFinite(displayed) ? displayed : 0,
-                    Number.isFinite(reported) ? reported : 0));
-                sampleProgressMax.set(progressKey, percent);
-                bar.setAttribute('value', percent);
-                container.querySelector('[data-sample-progress-message]').textContent = `${event.message || 'Generating sample'} (${percent}%)`;
+                window.TaskTiming?.bind(bar, event, container.querySelector('[data-sample-progress-message]'),
+                    {prefix: event.message || 'Generating sample'});
             } else if (['complete', 'loaded'].includes(event.state) && event.filename) {
                 sampleProgressMax.delete(progressKey);
                 const image = document.createElement('img');
@@ -2002,6 +1984,11 @@
             return;
         }
         if (!event || typeof event !== 'object' || Array.isArray(event)) return;
+        event = window.TaskTiming?.enrich(event) || event;
+        if (event.state === 'cpu_queue_plan') {
+            document.dispatchEvent(new CustomEvent('cpu:queue-plan', {detail: event}));
+            return;
+        }
         // TODO(MONITOR): sample state/action/engine/job_type values at this ingress point to find
         // protocol variants the UI currently ignores. Measure base_style_prompt length/cardinality,
         // not its raw text; do not collect job IDs, filenames, style tags, or tag contents.

@@ -1,0 +1,24 @@
+<link rel="stylesheet" href="/static/styles/cpu-queue.css?v=6">
+<script defer src="/static/js/cpu-queue.js?v=20261027-failure-copy-2"></script>
+<script defer src="/static/js/queue-dependencies.js?v=2"></script>
+<link rel="stylesheet" href="/static/styles/queue-panels.css?v=1">
+<script defer src="/static/js/queue-panels.js?v=1"></script>
+<svg id="queue-dependency-lines" aria-hidden="true" focusable="false"></svg>
+<aside id="cpu-job-queue" data-queue-panel aria-label="CPU queue">
+    <header data-queue-drag-handle tabindex="0" aria-label="Move CPU queue" title="Drag to move. Arrow keys move; Shift moves faster.">
+        <h2>CPU Queue</h2>
+        <span id="cpu-queue-count"></span>
+        <wa-button id="cpu-queue-toggle" size="small" appearance="plain"
+            aria-label="Minimize CPU queue" aria-expanded="true" title="Minimize CPU queue">
+            <wa-icon name="chevron-down" aria-hidden="true"></wa-icon>
+        </wa-button>
+    </header>
+    <div class="cpu-queue-body">
+        <p id="cpu-queue-summary" role="status">Connecting…</p>
+        <div id="cpu-queue-renders"></div>
+        <div id="cpu-queue-running"></div>
+        <div id="cpu-queue-pending"></div>
+        <div id="cpu-queue-failed"></div>
+        <div id="cpu-queue-completed"></div>
+    </div>
+</aside>

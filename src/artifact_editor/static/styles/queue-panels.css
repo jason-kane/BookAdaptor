@@ -1,0 +1,12 @@
+[data-queue-drag-handle] {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+[data-queue-drag-handle]:focus-visible {
+    outline: 2px solid var(--wa-color-brand-fill-loud, #a9c8e8);
+    outline-offset: 3px;
+    border-radius: 0.25rem;
+}
+.queue-panel-dragging, .queue-panel-dragging * { cursor: grabbing !important; }
+#cpu-job-queue.is-dragging, #styler-job-queue.is-dragging { z-index: 10002; }

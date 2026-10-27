@@ -10,7 +10,7 @@
 {% block scripts %}
 <script defer src="/static/js/styler-tags.js?v=12"></script>
 <script defer src="/static/js/styler-tier-sliders.js?v=1"></script>
-<script defer src="/static/js/styler-samples.js?v=20261026-86" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script defer src="/static/js/styler-samples.js?v=20261027-eta-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 {% endblock %}
 
 {% block styles %}
@@ -204,7 +204,7 @@
     #styler-queue-current { display: flex; flex: none; flex-direction: column; min-height: 0; overflow: hidden; }
     #styler-queue-current > .styler-queue-task, #styler-queue-near > .styler-queue-task { flex-shrink: 0; }
     #styler-queue-near { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
-    .styler-queue-task { position: relative; isolation: isolate; box-sizing: border-box; height: 2.25rem; flex: none; line-height: 1.25rem; display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 4.5rem 1.2rem 1.2rem; align-items: center; gap: 0.15rem; padding: 0.3rem 0.4rem 0.65rem; margin-bottom: 0.2rem; border-radius: 0; border-bottom: 1px solid var(--wa-color-surface-border); background: transparent; font-size: 0.78rem; }
+    .styler-queue-task { position: relative; isolation: isolate; box-sizing: border-box; height: 2.25rem; flex: none; line-height: 1.25rem; display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 5.8rem 1.2rem 1.2rem; align-items: center; gap: 0.15rem; padding: 0.3rem 0.4rem 0.65rem; margin-bottom: 0.2rem; border-radius: 0; border-bottom: 1px solid var(--wa-color-surface-border); background: transparent; font-size: 0.78rem; }
     .styler-queue-task:focus-visible { outline: 2px solid var(--wa-color-brand-fill-loud, #f89b7f); outline-offset: -2px; }
     .styler-queue-find { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
     .styler-queue-find::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }

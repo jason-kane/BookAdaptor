@@ -1,8 +1,8 @@
-<aside id="styler-job-queue" aria-label="GPU task queue" aria-live="polite">
+<aside id="styler-job-queue" data-queue-panel aria-label="GPU queue" aria-live="polite">
     <header class="styler-queue-header">
-    <h2>
-        <span>Task queue</span>
-        <wa-spinner id="styler-queue-loading" aria-label="Refreshing task queue"></wa-spinner>
+    <h2 data-queue-drag-handle tabindex="0" aria-label="Move GPU queue" title="Drag to move. Arrow keys move; Shift moves faster.">
+        <span>GPU Queue</span>
+        <wa-spinner id="styler-queue-loading" aria-label="Refreshing GPU queue"></wa-spinner>
         <span id="styler-queue-count" hidden></span>
         <wa-button id="styler-worker-reset" size="small" appearance="plain"
             aria-label="Queue worker reset" title="Queue a safe worker reset">
@@ -19,7 +19,7 @@
         </div>
         <span id="styler-worker-reset-status" role="status" aria-live="polite"></span>
         <wa-button id="styler-queue-toggle" size="small" appearance="plain"
-            aria-label="Minimize task queue" aria-expanded="true" title="Minimize task queue">
+            aria-label="Minimize GPU queue" aria-expanded="true" title="Minimize GPU queue">
             <wa-icon src="/static/fontawesome7/svgs/solid/chevron-down.svg"></wa-icon>
         </wa-button>
     </h2>
@@ -40,3 +40,4 @@
         </div>
     </div>
 </aside>
+{% include "cpu-queue.html" %}

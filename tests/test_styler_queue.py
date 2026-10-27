@@ -150,12 +150,14 @@ def test_history_lua_on_redis(monkeypatch):
 
 
 def test_running_progress_triggers_plan_for_an_unrequested_job(monkeypatch):
+    import cpu_queue
     import itertools
     import sys
     tree = ast.parse(SERVER.read_text())
     node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'styler_websocket')
     node.decorator_list = []
     client = Mock()
+    monkeypatch.setattr(cpu_queue, 'snapshot', lambda _: {'state': 'cpu_queue_plan'})
     pubsub = client.pubsub.return_value
     pubsub.get_message.side_effect = [dict(type='message', data=json.dumps(dict(job_id='other-page-job', state='running', percent=62))), None]
     ws = Mock()
@@ -170,7 +172,8 @@ def test_running_progress_triggers_plan_for_an_unrequested_job(monkeypatch):
     with pytest.raises(StopIteration):
         scope['styler_websocket'](ws)
     delivered = [json.loads(call.args[0]) for call in ws.send.call_args_list]
-    assert [event['running']['percent'] for event in delivered] == [10, 62]
+    assert [event['running']['percent'] for event in delivered if event.get('state') == 'queue_plan'] == [10, 62]
+    assert any(event.get('state') == 'cpu_queue_plan' for event in delivered)
     pubsub.close.assert_called_once()
     client.close.assert_called_once()
 

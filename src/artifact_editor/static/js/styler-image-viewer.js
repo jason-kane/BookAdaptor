@@ -16,8 +16,8 @@
             clearTimeout(dissolveTimer);
             progress.classList.remove('styler-progress-dissolving');
             drawing = event;
-            const percent = Math.max(0, Math.min(100, Number(event.percent) || 0));
-            progressLabel.textContent = `${event.style_name} — ${engineNames[event.engine] || event.engine}: ${event.message || 'Generating sample'} (${percent}%)`;
+            window.TaskTiming?.bind(progressBar, event, progressLabel,
+                {prefix: `${event.style_name} — ${engineNames[event.engine] || event.engine}: ${event.message || 'Generating sample'}`});
             progressTags.replaceChildren(...(event.tags || []).map(text => {
                 const tag = document.createElement('wa-tag');
                 tag.setAttribute('size', 's');
@@ -26,13 +26,13 @@
                 return tag;
             }));
             progressTags.hidden = !progressTags.childElementCount;
-            progressBar.setAttribute('value', percent);
             progress.hidden = false;
         } else if (drawing?.style_tag === event.style_tag && drawing?.engine === event.engine
             && ['complete', 'loaded'].includes(event.state)) {
             progressBar.removeAttribute('indeterminate');
             progressBar.setAttribute('value', 100);
-            progressLabel.textContent = `${drawing.style_name} — ${engineNames[drawing.engine] || drawing.engine}: Complete (100%)`;
+            window.TaskTiming?.bind(progressBar, event, progressLabel,
+                {prefix: `${drawing.style_name} — ${engineNames[drawing.engine] || drawing.engine}`});
             drawing = null;
             progress.classList.add('styler-progress-dissolving');
             dissolveTimer = window.setTimeout(() => {
