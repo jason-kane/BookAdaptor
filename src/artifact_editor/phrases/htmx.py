@@ -761,7 +761,7 @@ def phrase_latex_rainbow(chapter, phrase_xml):
     phrase = hyphen_fixer(phrase)
     
     # limit to 24 bits
-    rainbow_int = (int(phrase_xml['index']) + 10) % 16777216
+    rainbow_int = (10 + 2654435 * int(phrase_xml['index'])) % 16777216
     if "latex_rainbow" not in phrase_xml.attrs:
         phrase_xml.attrs['latex_rainbow'] = f"\\color{{B{rainbow_int:X}}}\\highLight[B{rainbow_int:X}]{{{phrase}}}\n"
 
