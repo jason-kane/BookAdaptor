@@ -17,6 +17,11 @@ NARRATOR: dict[str, str] = configuration.get("NARRATOR", {})
 
 # library, source, and assets directories
 LIBRARY_DIR: str = configuration.get("LIBRARY_DIR", "/active")
+# Director-led movies have their own Theater workspace. Keep the data root
+# outside the Library's author/book inventory while sharing its mounted volume.
+THEATER_DIR: str = configuration.get(
+    "THEATER_DIR", os.path.join(LIBRARY_DIR, "Theater")
+)
 SRC_DIR: str = configuration.get("SRC_DIR", "/app")
 ASSETS_DIR: str = configuration.get("ASSETS_DIR", "/assets")
 STYLES_DIR: str = configuration.get("STYLES_DIR", "/styles")

@@ -1,6 +1,26 @@
 (() => {
     const controls = 'button, a, input, select, textarea, [contenteditable], wa-button, wa-slider, [role="button"], [role="slider"]';
     for (const panel of document.querySelectorAll('[data-queue-panel]')) {
+        const stateKey = `bookadaptor:queue-panel-state:${panel.id}`;
+        const toggle = panel.querySelector('[id$="-queue-toggle"]');
+        if (toggle) {
+            const queueName = panel.getAttribute('aria-label')?.toLowerCase().includes('gpu') ? 'GPU queue' : 'CPU queue';
+            const labelFor = expanded => `${expanded ? 'Minimize' : 'Expand'} ${queueName}`;
+            const applyExpanded = expanded => {
+                panel.classList.toggle('is-minimized', !expanded);
+                toggle.setAttribute('aria-expanded', String(expanded));
+                toggle.setAttribute('aria-label', labelFor(expanded));
+                toggle.title = labelFor(expanded);
+            };
+            try {
+                const saved = localStorage.getItem(stateKey);
+                if (saved === 'expanded' || saved === 'minimized') applyExpanded(saved === 'expanded');
+            } catch (_) { /* optional storage */ }
+            toggle.addEventListener('click', () => {
+                const expanded = !panel.classList.contains('is-minimized');
+                try { localStorage.setItem(stateKey, expanded ? 'minimized' : 'expanded'); } catch (_) { /* optional storage */ }
+            });
+        }
         const handle = panel.querySelector('[data-queue-drag-handle]');
         if (!handle) continue;
         const key = `bookadaptor:queue-panel:${panel.id}`;

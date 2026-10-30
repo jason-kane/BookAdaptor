@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Theater clapperboard">
+  <rect x="13" y="37" width="102" height="75" rx="8" fill="#24163f" stroke="#c5a8ff" stroke-width="5"/>
+  <path d="M13 42a5 5 0 0 1 5-5h92a5 5 0 0 1 5 5v19H13z" fill="#7651bd" stroke="#c5a8ff" stroke-width="5"/>
+  <path d="m20 37 13 24m12-24 13 24m12-24 13 24m12-24 13 24" stroke="#fff" stroke-width="7"/>
+  <path d="M29 82h70M29 96h46" stroke="#e8ddff" stroke-linecap="round" stroke-width="6"/>
+</svg>

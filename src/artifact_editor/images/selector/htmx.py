@@ -44,6 +44,7 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
 
         if not os.path.exists(destination):
             # copy, not move so it doesn't disappear from comfyui
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
             shutil.copy(fn, destination)
             log.info(f"Copied {fn} to {destination}")
 

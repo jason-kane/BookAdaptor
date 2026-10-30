@@ -46,8 +46,15 @@ class SectionLatexTests(unittest.TestCase):
         for width in (840, 1080, 960):
             geometry = renderer.video_page_geometry(width)
             inches = float(re.search(r"paperwidth=([0-9.]+)in", geometry)[1])
+            text_width = float(re.search(r"textwidth=([0-9.]+)in", geometry)[1])
             self.assertAlmostEqual(inches * renderer.RASTER_DPI, width, places=6)
-            self.assertIn("left=0.1in,right=0.1in", geometry)
+            self.assertAlmostEqual(
+                (inches - text_width) * renderer.RASTER_DPI,
+                2 * renderer.HORIZONTAL_SAFETY_GUTTER * renderer.RASTER_DPI,
+                places=6,
+            )
+            self.assertIn("textheight=195.5in", geometry)
+            self.assertIn("hcentering", geometry)
 
     def test_xml_typesetting_preserves_assets_and_phrase_ids(self):
         from bs4 import BeautifulSoup

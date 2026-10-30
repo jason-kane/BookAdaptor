@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}<title>{{ project.title or 'Untitled film' }} · Theater</title>{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
+<link rel="stylesheet" href="/static/styles/theater.css?v=shared-image-leaves-1">
+<link rel="stylesheet" href="/static/styles/gpu-queue.css?v=20261028-gpu-traceback-1">
+{% endblock %}
+{% block scripts %}
+<script defer src="/static/js/image-leaves.js?v=1"></script>
+<script defer src="/static/js/theater.js?v=shared-image-leaves-1"></script>
+<script defer src="/static/js/styler-samples.js?v=cpu-cancel-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+{% endblock %}
+{% block body %}
+<main class="theater-shell" id="theater-project" data-project-id="{{ project.project_id }}"
+  data-configure-url="{{ url_for('theater.configure_project', project_id=project.project_id) }}"
+  data-reset-url="{{ url_for('theater.reset_project', project_id=project.project_id) }}"
+  data-reset-images-url="{{ url_for('theater.reset_images', project_id=project.project_id) }}"
+  data-read-url="{{ url_for('theater.read_story', project_id=project.project_id) }}"
+  data-chat-url="{{ url_for('theater.director_chat', project_id=project.project_id) }}"
+  data-create-script-url="{{ url_for('theater.create_script', project_id=project.project_id) }}"
+  data-rough-draft-url="{{ url_for('theater.render_rough_draft', project_id=project.project_id) }}"
+  data-rough-film-url="{{ url_for('theater.render_rough_film', project_id=project.project_id) }}"
+  data-final-render-url="{{ url_for('theater.render_final_film', project_id=project.project_id) }}"
+  data-render-websocket="{{ websocket_url().replace('/ws', '/theater-ws/' ~ project.project_id) }}"
+  data-render-job-id="{{ project.render_job_id or '' }}"
+  data-editor-url="{{ project.editor_url }}"
+  data-rough-url="{{ project.rough_url }}"
+  data-final-url="{{ project.final_url }}"
+  data-rough-version="{{ project.rough_version }}"
+  data-final-version="{{ project.final_version }}"
+  data-render-stage="{{ project.render_stage or '' }}"
+  data-timeline-exists="{{ 'true' if project.timeline_exists else 'false' }}"
+  data-script-url="{{ url_for('theater.save_script', project_id=project.project_id) }}"
+  data-script='{{ project.script|tojson|forceescape }}'
+  data-story-read="{{ 'true' if project.story_read and project.title else 'false' }}">
+  <div class="image-reveal-stage" data-image-reveal-stage aria-live="polite" aria-label="Newly generated images"></div>
+  <header class="theater-heading"><div><p class="eyebrow">Theater · {{ project.render_status|replace('_', ' ')|title }}</p>
+    <h1>{{ profile_name }}</h1><h2 class="film-title" data-film-title>{{ project.title or 'Untitled film' }}</h2><p>Director's room</p></div>
+    <div class="theater-heading-actions">
+      <a href="{{ url_for('theater.index') }}">All movies</a>
+      <wa-button class="reset-project-button" variant="neutral" appearance="outlined"
+        {% if project.render_status in ('rough_queued', 'rough_rendering', 'rough_film_queued', 'rough_film_rendering', 'final_queued', 'final_rendering') %}disabled{% endif %}
+        aria-label="Reset this film and start over">Start over</wa-button>
+    </div></header>
+  <div class="theater-layout">
+    <aside class="theater-controls wa-stack">
+      <wa-checkbox class="read-along-toggle" {% if project.read_along %}checked{% endif %}>Include optional read-along text</wa-checkbox>
+      <div class="theater-status" role="status" aria-live="polite"></div>
+    </aside>
+    <section class="director-room">
+      <div class="director-conversation" aria-live="polite">
+        {% for line in project.conversation %}<p class="dialogue-line {{ line.role }}"><b>{{ 'You' if line.role == 'user' else 'Director' }}:</b> {{ line.content }}{% if line.follow_up_question %}<br>{{ line.follow_up_question }}{% endif %}</p>{% endfor %}
+        {% if not project.conversation %}<p class="conversation-empty">The director is preparing to read the base story.</p>{% endif %}
+      </div>
+      <form class="director-chat-form"><wa-textarea name="message" label="Talk about the story" rows="3" required disabled></wa-textarea>
+        <wa-button type="submit" variant="brand" disabled>Send</wa-button></form>
+      <div class="director-options"></div>
+      <div class="sample-stills"></div>
+      <section class="script-section">
+        <div class="script-heading">
+          <div><p class="eyebrow">Director's draft</p><h2>Script & shot plan</h2></div>
+          <wa-button class="create-script-button" variant="brand" {% if not project.story_read %}disabled{% endif %}>Refine script from conversation</wa-button>
+        </div>
+        <p class="script-task-status" role="status" aria-live="polite"></p>
+        <p class="script-hint">Talk through the story with the director first. When you’re ready, this turns the raw story and your conversation into a revised script and shot plan.</p>
+        <div class="script-preview" aria-live="polite"></div>
+        <details class="script-source">
+          <summary>Edit structured script (JSON)</summary>
+          <wa-textarea class="script-editor" label="Structured script (JSON)" rows="24" resize="auto"></wa-textarea>
+        </details>
+      </section>
+      <section class="film-production" data-production>
+        <div class="script-heading">
+          <div><p class="eyebrow">From script to screen</p><h2>Video</h2></div>
+          {% if project.rough_exists %}<a class="editor-room-link" data-editor-link href="{{ project.editor_url }}">Open video edit room</a>{% endif %}
+        </div>
+        <p class="production-status" data-production-status role="status" aria-live="polite">
+          {% if project.render_status == 'rough_ready' %}Rough draft ready. Review the stills and timing, then render the low-resolution rough film.{% elif project.render_status == 'rough_film_ready' %}Rough film ready. Review the animation, then render the final film at high resolution.{% elif project.render_status == 'final_ready' %}Final render ready.{% elif project.render_status in ('rough_queued', 'rough_rendering', 'rough_film_queued', 'rough_film_rendering', 'final_queued', 'final_rendering') %}{{ project.render_status|replace('_', ' ')|title }}.{% elif project.render_status == 'render_failed' %}Render failed: {{ project.render_error }}{% else %}Create a rough cut from the director’s shot plan.{% endif %}
+        </p>
+        <div class="production-actions">
+          {% if project.script and project.script.scenes %}<wa-button class="rough-draft-button" variant="brand" {% if project.render_status in ('rough_queued', 'rough_rendering', 'rough_ready', 'rough_film_queued', 'rough_film_rendering', 'rough_film_ready', 'final_queued', 'final_rendering', 'final_ready') %}hidden{% endif %}>Create rough draft</wa-button>{% endif %}
+          <wa-button class="rough-film-button" variant="brand" {% if project.render_status not in ('rough_ready', 'rough_film_ready') %}hidden{% endif %}>Render rough film</wa-button>
+          <wa-button class="final-render-button" variant="brand" {% if not project.rough_exists or project.render_status not in ('rough_film_ready', 'final_ready') %}hidden{% endif %}>Render final film</wa-button>
+          {% if project.timeline_exists %}<wa-button class="reset-images-button" variant="neutral" appearance="outlined" {% if project.render_status in ('rough_queued', 'rough_rendering', 'rough_film_queued', 'rough_film_rendering', 'final_queued', 'final_rendering') %}disabled{% endif %}>Reset images</wa-button>{% endif %}
+        </div>
+        <div class="video-previews" data-video-previews>
+          {% if project.rough_exists %}<div class="video-preview" data-video-kind="rough draft"><h3>Rough draft</h3><video controls playsinline preload="metadata" data-media-version="{{ project.rough_version }}" src="{{ project.rough_url }}?v={{ project.rough_version }}"></video></div>{% endif %}
+          {% if project.final_exists %}<div class="video-preview" data-video-kind="final film"><h3>Final film</h3><video controls playsinline preload="metadata" data-media-version="{{ project.final_version }}" src="{{ project.final_url }}?v={{ project.final_version }}"></video></div>{% endif %}
+        </div>
+      </section>
+    </section>
+  </div>
+</main>
+{% include "job-queue.html" %}
+{% endblock %}

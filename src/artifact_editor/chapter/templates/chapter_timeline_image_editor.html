@@ -1,6 +1,7 @@
 {% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
+{% set source_motion_active = image.get('source_motion') and image.get('source_motion_src') == image.get('src') %}
 <div class="wa-stack wa-gap-s" hx-sync="this:queue all" hx-ext="ws" ws-connect="{{ websocket_url() }}">
-    {% if image.get('src') %}
+    {% if image.get('src') and not source_motion_active %}
     <wa-tab-group active="image" aria-label="Image and animation editor">
         <wa-tab panel="image">Image</wa-tab>
         <wa-tab panel="animation">Animation</wa-tab>
@@ -38,7 +39,7 @@
         <div id="timeline-image-status-{{ image['index'] }}" data-image-editor-url="{{ editor_url }}"
              data-image-editor-target="#timeline-image-editor-{{ image['index'] }}" role="status" aria-live="polite"></div>
     </div>
-    {% if image.get('src') %}
+    {% if image.get('src') and not source_motion_active %}
         </wa-tab-panel>
         <wa-tab-panel name="animation">
             {% if timing %}
@@ -62,7 +63,8 @@
                 label="Choose i2v Workflow" name="workflow_i2v_template"
                 value="{{ selected_i2v_template }}"
                 hx-post="{{ editor_url }}" hx-vals='{"action":"animation_workflow"}'
-                hx-trigger="change" hx-swap="none">
+                hx-trigger="change" hx-swap="none"
+                onchange="document.getElementById('timeline-animation-quality-panel-{{ image['index'] }}').hidden = this.value !== 'i2v.h3turbo'">
                 {% if selected_i2v_template not in i2v_templates|map(attribute='id')|list %}
                 <wa-option value="{{ selected_i2v_template }}">{{ selected_i2v_template }}</wa-option>
                 {% endif %}
@@ -70,6 +72,19 @@
                 <wa-option value="{{ template.id }}">{{ template.name }}</wa-option>
                 {% endfor %}
             </wa-select>
+            <div id="timeline-animation-quality-panel-{{ image['index'] }}"
+                {% if not show_animation_quality %}hidden{% endif %}>
+                <wa-select id="timeline-animation-quality-{{ image['index'] }}"
+                    label="Quality" name="animation_quality"
+                    value="{{ animation_quality }}"
+                    hx-post="{{ editor_url }}" hx-vals='{"action":"animation_quality"}'
+                    hx-trigger="change" hx-swap="none">
+                    {% for option in animation_quality_options %}
+                    <wa-option value="{{ option.id }}">{{ option.label }} · {{ option.width }}×{{ option.height }} · {{ option.estimate }}</wa-option>
+                    {% endfor %}
+                </wa-select>
+                <small>Estimated time for this animation. Turbo renders at the selected resolution, then upscales to match the still.</small>
+            </div>
             {% include 'chapter_timeline_animation_description.html' %}
             {% set animation_workflow_url = url_for('library.book.chapter.textoviva.open_animation_workflow', image_index=image['index'], **chapter.kwargs) %}
             <div class="wa-stack wa-gap-s">
@@ -80,7 +95,7 @@
                         hx-disabled-elt="this">Regenerate Description</wa-button>
                     <wa-button
                         hx-post="{{ url_for('library.book.chapter.textoviva.regenerate_animation', image_index=image['index'], **chapter.kwargs) }}"
-                        hx-include="#timeline-animation-description-{{ image['index'] }}, #timeline-animation-workflow-{{ image['index'] }}"
+                        hx-include="#timeline-animation-description-{{ image['index'] }}, #timeline-animation-workflow-{{ image['index'] }}, #timeline-animation-quality-{{ image['index'] }}"
                         hx-target="#timeline-animation-status-{{ image['index'] }}" hx-swap="innerHTML"
                         hx-disabled-elt="this" variant="brand">Re-render</wa-button>
                     <wa-button href="{{ animation_workflow_url }}" target="_blank"

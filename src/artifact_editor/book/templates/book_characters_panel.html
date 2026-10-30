@@ -1,0 +1,22 @@
+<section class="wa-stack" id="book-characters-panel">
+    <h3>Book Characters</h3>
+    <p>Character identity, voice, and baseline appearance are shared across chapters.</p>
+    <wa-tab-group active="{% if characters %}character-0{% else %}extra{% endif %}">
+        {% for tag, character in characters.items() %}
+        <wa-tab panel="character-{{ loop.index0 }}">{{ character.name }}</wa-tab>
+        {% endfor %}
+        <wa-tab panel="extra">New Character</wa-tab>
+        {% for tag, character in characters.items() %}
+        <wa-tab-panel name="character-{{ loop.index0 }}">{{ character_cards[tag]|safe }}</wa-tab-panel>
+        {% endfor %}
+        <wa-tab-panel name="extra">
+            <h3>New Character</h3>
+            <form class="wa-stack" hx-post="{{ url_for('library.book.add_book_character', author=author.name, title=title) }}"
+                hx-target="#book-characters-panel" hx-swap="outerHTML">
+                <wa-input label="Character name" name="name" required></wa-input>
+                <wa-textarea label="Baseline appearance" name="description" rows="3"></wa-textarea>
+                <wa-button type="submit">Add character</wa-button>
+            </form>
+        </wa-tab-panel>
+    </wa-tab-group>
+</section>

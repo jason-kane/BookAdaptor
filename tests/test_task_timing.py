@@ -95,6 +95,14 @@ def test_hash_string_metadata_is_supported_and_terminal_duration_stops_clock():
     assert timing.format_seconds(0.032) == '32ms'
 
 
+def test_cancelled_task_stops_timing_without_claiming_success():
+    measured = estimator().attach({**task(start=90), 'state': 'cancelled', 'duration_seconds': 8})
+    assert measured['timing']['elapsed_seconds'] == 8
+    assert measured['timing']['eta_seconds'] is None
+    assert measured['timing']['status'] == 'cancelled'
+    assert timing.eta_label(measured) == 'Cancelled · 8s'
+
+
 def test_rendered_progress_displays_eta_and_escapes_user_content():
     import ast
     import json

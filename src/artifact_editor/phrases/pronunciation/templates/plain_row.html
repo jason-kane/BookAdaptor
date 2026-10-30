@@ -8,7 +8,7 @@
         <input type="hidden" name="word" value="{{word['key']}}">
         <td name="word">{{word['word']}}</td>
         <td name="pronunciation">{{word['pronunciation']}}</td>
-        <td>
+        <td class="pronunciation-table-action">
             <div class="wa-cluster">
                 <wa-button
                     hx-delete="{{ url_for('library.book.chapter.phrases.pronunciation.delete_global_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, key=word['key']) }}"

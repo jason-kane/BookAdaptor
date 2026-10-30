@@ -2,9 +2,9 @@
         <input type="hidden" name="key" value="{{key}}">
         <td name="word">{{word}}</td>
         <td>
-            <div class="wa-stack">
+            <div class="wa-stack pronunciation-edit-stack">
                 <wa-input
-                    hx-post="set_pronunciation"
+                    hx-post="{{ url_for('library.book.chapter.phrases.pronunciation.set_pronunciation', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language) }}"
                     hx-target="#pronounce_{{key}}"
                     hx-swap="outerHTML"                        
                     name="pronunciation"
@@ -13,7 +13,7 @@
                     hx-trigger="change delay:125ms">
                 </wa-input>
 
-                <div class="wa-cluster">
+                <div class="wa-stack pronunciation-soundslike">
                     <wa-input
                         label="SoundsLike"
                         hint="Try an english word with the sound you want to help find the IPA symbols."
@@ -26,7 +26,7 @@
                         hx-trigger="change delay:125ms">
                     </wa-input>
 
-                    <wa-textarea id="soundslike_{{key}}" placeholder="International Phonetic Alphabet (IPA)" disabled></wa-textarea>
+                    <wa-textarea class="pronunciation-suggestion" id="soundslike_{{key}}" placeholder="Suggested IPA appears here"></wa-textarea>
                 </div>
 
                 <div>Syllables: </div>

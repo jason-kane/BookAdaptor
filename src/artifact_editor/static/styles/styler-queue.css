@@ -50,7 +50,7 @@
     #styler-queue-current { display: flex; flex: none; flex-direction: column; min-height: 0; overflow: hidden; }
     #styler-queue-current > .styler-queue-task, #styler-queue-near > .styler-queue-task { flex-shrink: 0; }
     #styler-queue-near { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
-    .styler-queue-task { position: relative; isolation: isolate; box-sizing: border-box; height: 2.25rem; flex: none; line-height: 1.25rem; display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 5.8rem 1.2rem 1.2rem; align-items: center; gap: 0.15rem; padding: 0.3rem 0.4rem 0.65rem; margin-bottom: 0.2rem; border-radius: 0; border-bottom: 1px solid var(--wa-color-surface-border); background: transparent; font-size: 0.78rem; }
+    .styler-queue-task { position: relative; isolation: isolate; box-sizing: border-box; height: 2.25rem; flex: none; line-height: 1.25rem; display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 5.8rem 1.2rem 2.5rem; align-items: center; gap: 0.15rem; padding: 0.3rem 0.4rem 0.65rem; margin-bottom: 0.2rem; border-radius: 0; border-bottom: 1px solid var(--wa-color-surface-border); background: transparent; font-size: 0.78rem; }
     .styler-queue-task:focus-visible { outline: 2px solid var(--wa-color-brand-fill-loud, #f89b7f); outline-offset: -2px; }
     .styler-queue-find { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
     .styler-queue-find::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
@@ -58,6 +58,9 @@
     .styler-queue-retry { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
     .styler-queue-retry::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
     .styler-queue-retry wa-icon { font-size: 0.85rem; }
+    .styler-queue-traceback { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; }
+    .styler-queue-traceback::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
+    .styler-queue-traceback wa-icon { font-size: 0.85rem; }
     .styler-queue-delete { position: relative; z-index: 4; display: inline-flex; width: 1.2rem; height: 1.5rem; align-self: center; color: var(--wa-color-danger-text, #f3a1a6); }
     .styler-queue-delete::part(base) { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; }
     .styler-queue-delete wa-icon { font-size: 0.85rem; }
@@ -68,8 +71,9 @@
     .styler-queue-provider-badge wa-icon { font-size: 0.56rem; }
     .styler-queue-task-content { display: grid; min-width: 0; gap: 0.2rem; }
     .styler-queue-target-slot { grid-column: 4; }
-    .styler-queue-other-slot { grid-column: 5; }
-    .styler-queue-target-slot, .styler-queue-other-slot { display: flex; align-items: center; justify-content: center; width: 1.2rem; min-height: 1.5rem; }
+    .styler-queue-other-slot { grid-column: 5; gap: 0.1rem; }
+    .styler-queue-target-slot, .styler-queue-other-slot { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 1.5rem; }
+    .styler-queue-other-slot { justify-content: flex-start; }
     .styler-queue-task-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .styler-queue-task wa-progress-bar { z-index: 1; position: absolute; inset-inline: 0.4rem; bottom: 0.15rem; display: block; width: auto; height: 0.3rem; min-height: 0.3rem; --track-height: 0.3rem; }
     .styler-queue-task-state { min-width: 0; white-space: nowrap; text-align: right; color: var(--wa-color-text-quiet, #aaa); font-size: 0.68rem; text-transform: capitalize; }

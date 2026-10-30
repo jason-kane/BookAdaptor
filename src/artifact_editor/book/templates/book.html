@@ -4,6 +4,10 @@
 <title>Book: {{ pretty_title }}</title>
 {% endblock %}
 
+{% block scripts %}
+<script src="/static/js/characters.js"></script>
+{% endblock %}
+
 {% block styles %}
 <style>
     .chapter-card {
@@ -41,12 +45,27 @@
 <h2>Book {{ pretty_title }}</h2>
 <h3>By <i>{{author.pretty_name}}</i></h3>
         
-<div class="wa-cluster">
-    <div>book cover img</div>
-    <div class="wa-stack">
-        {{ book_metadata|safe }}
-    </div>
-</div>
+<wa-tab-group active="chapters" aria-label="Book sections"
+    hx-on:wa-tab-show="if (event.target.closest('wa-tab-group') === this && this.active === 'characters') htmx.trigger(document.getElementById('book-characters-loader'), 'book-characters:load')">
+    <wa-tab panel="meta">Meta</wa-tab>
+    <wa-tab panel="chapters">Chapter</wa-tab>
+    <wa-tab panel="characters">Characters</wa-tab>
 
-{{ chapter_list|safe }}
+    <wa-tab-panel name="meta">
+        <div class="wa-cluster">
+            <div>book cover img</div>
+            <div class="wa-stack">
+                {{ book_metadata|safe }}
+            </div>
+        </div>
+    </wa-tab-panel>
+    <wa-tab-panel name="chapters">
+        {{ chapter_list|safe }}
+    </wa-tab-panel>
+    <wa-tab-panel name="characters">
+        <div id="book-characters-loader"
+            hx-get="{{ url_for('library.book.characters_panel', author=author.name, title=title) }}"
+            hx-trigger="load, book-characters:load" hx-swap="outerHTML"></div>
+    </wa-tab-panel>
+</wa-tab-group>
 {% endblock %}

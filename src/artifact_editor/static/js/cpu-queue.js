@@ -14,14 +14,42 @@
         item.className = 'cpu-queue-row';
         item.dataset.jobId = task.job_id;
         item.dataset.state = task.state || state;
+        item.dataset.retryable = String(Boolean(task.retryable));
+        item.dataset.cancellable = String(Boolean(task.cancellable));
         const label = document.createElement('p');
+        label.className = 'cpu-queue-label';
         label.textContent = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`].filter(Boolean).join(' · ') || 'Chapter render';
         label.title = label.textContent;
         item.append(label);
         const message = document.createElement('p');
+        message.className = 'cpu-queue-message';
         message.textContent = window.TaskTiming?.cleanMessage(task.message) || (task.worker_id ? `Worker ${task.worker_id}` : state);
         message.title = message.textContent;
         item.append(message);
+        if (task.cancellable) {
+            const cancel = document.createElement('wa-button');
+            cancel.setAttribute('size', 'small');
+            cancel.setAttribute('appearance', 'plain');
+            cancel.setAttribute('variant', 'danger');
+            cancel.className = 'cpu-queue-cancel';
+            cancel.dataset.cpuCancel = '';
+            cancel.textContent = 'Cancel Task';
+            cancel.setAttribute('aria-label', `Cancel ${label.textContent}`);
+            cancel.title = 'Cancel this task';
+            cancel.addEventListener('click', () => {
+                if (cancel.disabled) return;
+                const running = item.dataset.state !== 'queued';
+                if (running && !window.confirm(
+                    `Cancel running task “${label.textContent}”?\n\nThis stops it immediately and cancels queued child work. Partial output files may remain. A GPU request already running may finish.`
+                )) return;
+                cancel.disabled = true;
+                cancel.textContent = 'Cancelling…';
+                document.dispatchEvent(new CustomEvent('cpu:cancel-send', {
+                    detail: {job_id: task.job_id, allow_running: running},
+                }));
+            });
+            item.append(cancel);
+        }
         if (item.dataset.state === 'failed') {
             const copy = document.createElement('wa-button');
             copy.setAttribute('size', 'small');
@@ -75,7 +103,27 @@
             });
             item.append(copy);
         }
-        if (task.timing || task.percent !== undefined || task.state === 'running') {
+        if (task.retryable && ['failed', 'complete', 'cancelled'].includes(item.dataset.state)) {
+            const retry = document.createElement('wa-button');
+            retry.setAttribute('size', 'small');
+            retry.setAttribute('appearance', 'plain');
+            retry.className = 'cpu-queue-retry';
+            retry.dataset.cpuRetry = '';
+            retry.setAttribute('aria-label', `Retry ${label.textContent}`);
+            retry.title = 'Run this task again with the same inputs';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', () => {
+                if (retry.disabled) return;
+                retry.disabled = true;
+                retry.title = 'Queueing a retry…';
+                document.dispatchEvent(new CustomEvent('cpu:retry-request', {
+                    detail: {job_id: task.job_id},
+                }));
+            });
+            item.append(retry);
+        }
+        if (!['failed', 'cancelled', 'cancelling'].includes(item.dataset.state)
+                && (task.timing || task.percent !== undefined || task.state === 'running')) {
             const progress = document.createElement('wa-progress-bar');
             progress.setAttribute('aria-label', `${label.textContent} progress`);
             const eta = document.createElement('span');
@@ -86,6 +134,35 @@
             window.TaskTiming?.bind(progress, task, eta, {statsElement: stats});
         }
         return item;
+    }
+    function updateRow(existing, task, state) {
+        const currentState = task.state || state;
+        const retryable = String(Boolean(task.retryable));
+        if (existing.dataset.state !== currentState || existing.dataset.retryable !== retryable
+                || existing.dataset.cancellable !== String(Boolean(task.cancellable))) {
+            return row(task, state);
+        }
+        const label = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`]
+            .filter(Boolean).join(' · ') || 'Chapter render';
+        const message = window.TaskTiming?.cleanMessage(task.message)
+            || (task.worker_id ? `Worker ${task.worker_id}` : state);
+        const labelElement = existing.querySelector('.cpu-queue-label');
+        const messageElement = existing.querySelector('.cpu-queue-message');
+        if (labelElement) {
+            labelElement.textContent = label;
+            labelElement.title = label;
+        }
+        if (messageElement) {
+            messageElement.textContent = message;
+            messageElement.title = message;
+        }
+        const progress = existing.querySelector('wa-progress-bar');
+        if (progress && window.TaskTiming) {
+            window.TaskTiming.bind(progress, task, existing.querySelector('.task-timing-label'), {
+                statsElement: existing.querySelector('.task-timing-stats'),
+            });
+        }
+        return existing;
     }
     document.addEventListener('cpu:queue-plan', ({detail: plan}) => {
         const renders = Number(plan.render_count) || 0;
@@ -102,7 +179,58 @@
             ['pending', plan.jobs, 'queued'], ['failed', plan.failed, 'failed'],
             ['completed', plan.completed, 'complete'],
         ]) {
-            document.getElementById(`cpu-queue-${name}`).replaceChildren(...(tasks || []).map(task => row(task, state)));
+            const container = document.getElementById(`cpu-queue-${name}`);
+            const previous = new Map([...container.children]
+                .filter(child => child.dataset.jobId).map(child => [child.dataset.jobId, child]));
+            const incoming = tasks || [];
+            const currentIds = new Set(incoming.map(task => task.job_id));
+            const rows = incoming.map(task => {
+                const existing = previous.get(task.job_id);
+                return existing && !existing.classList.contains('cpu-queue-row-fading')
+                    ? updateRow(existing, task, state) : row(task, state);
+            });
+            if (name === 'failed') {
+                for (const [jobId, existing] of previous) {
+                    if (currentIds.has(jobId)) continue;
+                    rows.push(existing);
+                    if (existing.classList.contains('cpu-queue-row-fading')) continue;
+                    existing.classList.add('cpu-queue-row-fading');
+                    existing.setAttribute('aria-label', `${existing.getAttribute('aria-label') || 'Failed task'} — dismissed`);
+                    setTimeout(() => existing.remove(), 1200);
+                }
+            }
+            container.replaceChildren(...rows);
+        }
+    });
+    document.addEventListener('cpu:retry-result', ({detail: result}) => {
+        const row = [...panel.querySelectorAll('.cpu-queue-row[data-job-id]')]
+            .find(item => item.dataset.jobId === result.job_id);
+        const button = row?.querySelector('[data-cpu-retry]');
+        if (!button) return;
+        if (result.state === 'cpu_retry_queued') {
+            button.textContent = 'Queued';
+            button.title = 'Retry queued with the same inputs';
+            return;
+        }
+        button.disabled = false;
+        button.title = result.message || 'Retry this task';
+    });
+    document.addEventListener('cpu:retry-request', ({detail}) => {
+        document.dispatchEvent(new CustomEvent('cpu:retry-send', {detail}));
+    });
+    document.addEventListener('cpu:cancel-result', ({detail: result}) => {
+        const item = [...panel.querySelectorAll('.cpu-queue-row[data-job-id]')]
+            .find(row => row.dataset.jobId === result.job_id);
+        const button = item?.querySelector('[data-cpu-cancel]');
+        if (!button) return;
+        if (result.state === 'cpu_cancel_rejected') {
+            button.disabled = false;
+            button.textContent = 'Cancel Task';
+            button.title = result.message || 'Cancellation failed';
+            const message = item.querySelector('.cpu-queue-message');
+            if (message) message.textContent = button.title;
+        } else {
+            button.textContent = result.state === 'cpu_cancelled' ? 'Cancelled' : 'Cancelling…';
         }
     });
 })();

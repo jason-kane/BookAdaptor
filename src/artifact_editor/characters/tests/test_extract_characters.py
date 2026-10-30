@@ -16,12 +16,12 @@ class ExtractionTests(unittest.TestCase):
                  and n.name in {'extract_characters', 'name_to_tag', 'resolve_character_tag', 'character_names'}]
         original = {'name': 'Alice', 'tag': 'Alice', 'description': 'Custom', 'voices': [{'id': 'voice'}]}
         catalog = {'Alice': original}
-        model = Mock(return_value=[
-            {'name': 'alice', 'description': 'Replacement', 'evidence': 'Alice'},
-            {'name': 'Fox', 'description': 'A red fox', 'evidence': 'a red fox'},
-            {'name': 'fox', 'description': '', 'evidence': 'a red fox'},
-            {'name': 'Dragon', 'description': '', 'evidence': 'invented dragon'},
-            {'name': 'Narrator', 'description': '', 'evidence': 'Alice'}, None,
+        model = Mock(side_effect=[
+            [{'name': 'alice', 'description': 'Replacement', 'evidence': 'Alice'},
+             {'name': 'Fox', 'description': 'A red fox', 'evidence': 'a red fox'}],
+            [{'name': 'fox', 'description': '', 'evidence': 'a red fox'},
+             {'name': 'Dragon', 'description': '', 'evidence': 'invented dragon'},
+             {'name': 'Narrator', 'description': '', 'evidence': 'Alice'}, None],
         ])
         save = Mock()
         namespace = {'json': json, 'llm': SimpleNamespace(json_prompt=model),
@@ -35,8 +35,12 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(records['Alice'], original)
         self.assertEqual(records['Fox']['description'], 'A red fox')
         self.assertEqual(records['Fox']['voices'], [])
-        self.assertNotIn('invented dragon', model.call_args.args[0])
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('complete first-pass inventory', model.call_args_list[0].args[0])
+        self.assertIn('Independently audit', model.call_args_list[1].args[0])
+        self.assertNotIn('invented dragon', model.call_args_list[0].args[0])
         catalog.update(records)
+        model.side_effect = [[{'name': 'Fox', 'description': 'A fox', 'evidence': 'a red fox'}], []]
         self.assertEqual(namespace['extract_characters'](chapter), 0)
         story.find('phrase').decompose()
         model.reset_mock()

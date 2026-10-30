@@ -40,14 +40,14 @@ class PropTests(unittest.TestCase):
     def test_extraction_adds_supported_objects_and_preserves_existing_props(self, exclusions):
         story = BeautifulSoup('<chapter><paragraph><phrase>A silver cup and a brass key lay on the table.</phrase>'
                               '<image description="An invented sword"/></paragraph></chapter>', 'xml')
-        model = Mock(return_value=[
-            {'name': ' CUP ', 'description': 'Changed', 'evidence': 'A silver cup'},
-            {'name': 'Key', 'description': 'A brass key', 'evidence': 'a brass key'},
-            {'name': 'key', 'description': 'Duplicate', 'evidence': 'a brass key'},
-            {'name': 'Sword', 'description': 'A sword', 'evidence': 'An invented sword'},
-            *[{'name': name, 'description': 'A character', 'evidence': 'A silver cup'}
-              for name in ('ALICE', 'Mr_Stone', 'roger', 'Tin-Man')],
-            {'name': 'Broken'}, None,
+        model = Mock(side_effect=[
+            [{'name': ' CUP ', 'description': 'Changed', 'evidence': 'A silver cup'},
+             {'name': 'Key', 'description': 'A brass key', 'evidence': 'a brass key'}],
+            [{'name': 'key', 'description': 'Duplicate', 'evidence': 'a brass key'},
+             {'name': 'Sword', 'description': 'A sword', 'evidence': 'An invented sword'},
+             *[{'name': name, 'description': 'A character', 'evidence': 'A silver cup'}
+               for name in ('ALICE', 'Mr_Stone', 'roger', 'Tin-Man')],
+             {'name': 'Broken'}, None],
         ])
         with TemporaryDirectory() as root, patch.object(props.const, 'LIBRARY_DIR', root), patch.dict(
             sys.modules, {'artifact_editor': SimpleNamespace(llm=SimpleNamespace(json_prompt=model))}
@@ -59,11 +59,15 @@ class PropTests(unittest.TestCase):
             records = props.get_all_props(chapter)
             self.assertEqual(records['cup'], original)
             self.assertEqual(len(records), 2)
-            self.assertNotIn('invented sword', model.call_args.args[0])
-            self.assertIn('Excluded characters and aliases:', model.call_args.args[0])
-            self.assertIn('Mr. Stone', model.call_args.args[0])
+            self.assertEqual(model.call_count, 2)
+            self.assertIn('complete first-pass inventory', model.call_args_list[0].args[0])
+            self.assertIn('Independently audit', model.call_args_list[1].args[0])
+            self.assertNotIn('invented sword', model.call_args_list[0].args[0])
+            self.assertIn('Excluded characters and aliases:', model.call_args_list[0].args[0])
+            self.assertIn('Mr. Stone', model.call_args_list[0].args[0])
+            model.side_effect = [[], []]
             self.assertEqual(props.extract_props(chapter), 0)
-            model.return_value = {'invalid': 'response'}
+            model.side_effect = [[], {'invalid': 'response'}]
             with self.assertRaises(ValueError):
                 props.extract_props(chapter)
             self.assertEqual(props.get_all_props(chapter), records)

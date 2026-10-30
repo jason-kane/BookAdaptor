@@ -15,10 +15,27 @@
             const job = container.dataset.chapterImport || container.dataset.chapterMetadata || container.dataset.chapterAssets;
             const status = document.getElementById(`video-progress-${job}`);
             const state = status?.dataset.videoState;
+            if (container.hasAttribute('data-chapter-assets')) {
+                const completedImage = status?.textContent.match(/Image\s+(\d+):\s+Animation complete\b/);
+                if (completedImage) {
+                    const imageIndex = completedImage[1];
+                    const refreshed = new Set((container.dataset.refreshedAnimationImages || '').split(',').filter(Boolean));
+                    if (!refreshed.has(imageIndex)) {
+                        const summary = document.querySelector(`#timeline-image-${imageIndex} > summary`);
+                        const editor = document.getElementById(`timeline-image-editor-${imageIndex}`);
+                        const url = summary?.getAttribute('hx-get');
+                        if (url && editor && window.htmx) {
+                            refreshed.add(imageIndex);
+                            container.dataset.refreshedAnimationImages = [...refreshed].join(',');
+                            window.htmx.ajax('GET', url, {target: editor, swap: 'innerHTML'});
+                        }
+                    }
+                }
+            }
             if (state === 'complete') {
                 // Reload the typeset text, phrase audio, and image timeline together.
                 window.location.reload();
-            } else if (state === 'failed') {
+            } else if (state === 'failed' || state === 'cancelled') {
                 container.querySelector('wa-button').disabled = false;
             }
         });

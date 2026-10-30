@@ -1,6 +1,6 @@
 from artifact_editor.websocket_url import websocket_url
 import json
-from os import name
+import os
 from typing import Any
 
 import logger
@@ -115,6 +115,7 @@ def headshot(character_dict, chapter, tag):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
         "character_tag": tag,
+        "description": character_dict.get("description", ""),
     }))
     src = url_for("library.book.chapter.characters.headshot", **chapter.kwargs, character_tag=tag)
     image = (f'<img src="{escape(src)}?v={job_id}" alt="Full-body character image" '
@@ -569,6 +570,22 @@ def character_data(chapter, character_dict: dict[str, Any]):
         character_dict["description"] = description
         save_character(chapter, character_dict["tag"], character_dict)
 
+    panel_background = ""
+    headshot_fn = os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, "characters", f"{tag}.png"
+    )
+    if character_dict.get("headshot") and os.path.isfile(headshot_fn):
+        image_url = url_for(
+            "library.book.chapter.characters.headshot",
+            **chapter.kwargs,
+            character_tag=tag,
+        )
+        panel_background = (
+            "background-image: linear-gradient(rgba(0,0,0,.38), "
+            f"rgba(0,0,0,.38)), url('{image_url}?v={int(os.path.getmtime(headshot_fn))}'); "
+            "background-size: cover; background-position: center 20%; background-repeat: no-repeat;"
+        )
+
     tts_engine = character_dict.get("tts_engine", "kokoro")
     visual_appearances = character_dict.get("visual_appearances", 0)
     audio_appearances = character_dict.get("audio_appearances", 0)
@@ -650,8 +667,9 @@ def character_data(chapter, character_dict: dict[str, Any]):
 
     return f"""
     <div 
-        style="border: 1px solid #e0e0e0; padding: 16px; border-radius: var(--wa-border-radius-m); position: relative;" 
+        style="border: 1px solid #e0e0e0; padding: 16px; border-radius: var(--wa-border-radius-m); position: relative; {panel_background}"
         id="character_{tag}"
+        data-character-panel
         class="wa-stack"
     >
         <wa-button type="button" size="small" variant="danger" appearance="plain"

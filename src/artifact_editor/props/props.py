@@ -110,7 +110,7 @@ def object_name_key(name):
 
 
 def extract_props(chapter):
-    """Add explicitly referenced story objects without replacing existing props."""
+    """Extract and reconcile two independent, evidence-grounded prop lists."""
     from artifact_editor import llm
 
     story_text = '\n\n'.join(
@@ -122,7 +122,7 @@ def extract_props(chapter):
         return 0
     existing = get_all_props(chapter)
     excluded_characters = character_exclusions(chapter)
-    extracted = llm.json_prompt(
+    instructions = (
         'Extract all physical objects explicitly referenced in the supplied story text. '
         'Include ordinary objects as well as named objects; do not require a detailed description. '
         'Exclude people, animals, places, abstract concepts, and inferred or invented objects. '
@@ -140,8 +140,15 @@ def extract_props(chapter):
         f'Excluded characters and aliases: {json.dumps(excluded_characters)}\n\n'
         f'BEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'
     )
-    if not isinstance(extracted, list):
-        raise ValueError('Prop extraction returned an invalid list. Please try again.')
+    extracted = []
+    for perspective in (
+        'Make a complete first-pass inventory, reading every paragraph carefully.',
+        'Independently audit the source for overlooked physical objects, including ordinary objects and objects mentioned only briefly.',
+    ):
+        response = llm.json_prompt(perspective + '\n\n' + instructions)
+        if not isinstance(response, list):
+            raise ValueError('Prop extraction returned an invalid list. Please try again.')
+        extracted.extend(response)
     # Re-read so extraction preserves props edited or added during the request.
     records = get_all_props(chapter)
     normalize = lambda value: ' '.join(value.casefold().split())

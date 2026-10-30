@@ -10,7 +10,7 @@ EVENTS = 'styler_sample_events'
 BASE_STYLE_PROMPTS = ('classic', 'kid_friendly')
 
 
-def pop_engine_sample(client, queue, engine):
+def pop_engine_sample(client, queue, engine, *, allow_background=True):
     """Take the oldest queued sample using the currently loaded engine."""
     return client.eval('''
         local length = redis.call('LLEN', KEYS[1])
@@ -25,7 +25,10 @@ def pop_engine_sample(client, queue, engine):
                 if not ok or type(task) ~= 'table' then
                     return false
                 end
-                if task.action == 'styler_sample' and task.engine == ARGV[1] and not task.priority_removed then
+                local background = task.idle_maintenance or task.background_category ~= nil
+                if task.action == 'styler_sample' and task.engine == ARGV[1]
+                    and not task.priority_removed
+                    and (ARGV[2] == '1' or not background) then
                     redis.call('LREM', KEYS[1], -1, jobs[i])
                     return jobs[i]
                 end
@@ -33,7 +36,7 @@ def pop_engine_sample(client, queue, engine):
             finish = start - 1
         end
         return false
-    ''', 1, queue, engine)
+    ''', 1, queue, engine, '1' if allow_background else '0')
 
 
 def pop_interactive_job(client, queue='video_render_jobs'):
@@ -44,9 +47,10 @@ def pop_interactive_job(client, queue='video_render_jobs'):
             local ok, task = pcall(cjson.decode, jobs[i])
             if ok and type(task) == 'table' then
                 local action = task.action
-                local background = action == 'styler_scan_image_tags'
+                local background = task.idle_maintenance
+                    or task.background_category ~= nil
+                    or action == 'styler_scan_image_tags'
                     or action == 'stockpile_image_metadata'
-                    or (action == 'styler_sample' and task.background_category ~= nil)
                 if not background then
                     redis.call('LREM', KEYS[1], 1, jobs[i])
                     return jobs[i]

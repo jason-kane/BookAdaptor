@@ -11,6 +11,9 @@ def test_dashboard_and_assets(tmp_path):
     response = client.get("/")
     assert response.status_code == 200
     assert b'href="/programs/artifactserver"' in response.data
+    assert b'href="/theater/" data-service-port="8082"' in response.data
+    assert b'Enter Theater' in response.data
+    assert client.get("/home-static/images/theater.svg").status_code == 200
     assert b'/home-static/js/service-members.js' in response.data
     assert b'data-program-stop' not in response.data
     for path in ("/home-static/js/service-members.js", "/home-static/js/quill.js",
@@ -66,7 +69,7 @@ def test_default_list_is_a_text_table_with_explicit_actions():
     assert 'data-service-version="redisinsight"' in table
     assert 'data-service-image="artifactserver"' in table
     assert 'data-service-ports="redis"' in table
-    assert table.count('data-table-info=') == 9
+    assert table.count('data-table-info=') == 10
     assert 'data-program-stop' not in table
     assert 'onclick' not in table
 

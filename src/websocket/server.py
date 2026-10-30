@@ -4,7 +4,11 @@ import json
 import os
 import re
 import time
+import traceback
 import uuid
+from pathlib import Path
+from threading import Lock
+from urllib.parse import quote
 
 from styler.queue_history import (
     publish_queue_event,
@@ -12,6 +16,7 @@ from styler.queue_history import (
     recent_failures,
 )
 from task_queue import (
+    CHAPTER_IMAGE_EVENTS,
     IDLE_QUEUE,
     PRIORITY_QUEUE,
     TAG_QUEUE,
@@ -61,7 +66,8 @@ def redis_connection():
     )
 
 
-def publish_progress(client, job_id, percent, message, state="running", action=None):
+def publish_progress(client, job_id, percent, message, state="running", action=None,
+                     debug_details=None):
     event = {
         "job_id": job_id,
         "percent": max(0, min(100, int(percent))),
@@ -70,7 +76,7 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
     }
     previous = client.hgetall(f"video_job:{job_id}")
     event.update({key: previous[key] for key in ("execution_queue", "parent_job_id", "queue_started_at",
-                  "timing_key", "timing_units", "timing_unit")
+                  "timing_key", "timing_units", "timing_unit", "theater_project_id", "theater_stage")
                   if key in previous})
     if state == 'running' and 'queue_started_at' not in event:
         event['queue_started_at'] = time.time()
@@ -80,6 +86,8 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
     action = action or previous.get("action")
     if action:
         event["action"] = action
+    if debug_details:
+        event["debug_details"] = debug_details
     client.hset(f"video_job:{job_id}", mapping=event)
     client.expire(f"video_job:{job_id}", 86400)
     from task_timing import enrich
@@ -109,10 +117,10 @@ def progress_html(event):
     job_id = escape(str(event['job_id']), quote=True)
     state = escape(str(event['state']), quote=True)
     message = escape(re.sub(r"\(?\b\d+(?:\.\d+)?\s*%\)?\s*[—·-]?\s*", "", str(event.get('message', ''))))
-    status = 'success' if state == 'complete' else 'danger' if state == 'failed' else 'brand'
+    status = 'success' if state == 'complete' else 'danger' if state == 'failed' else 'neutral' if state == 'cancelled' else 'brand'
     payload = {key: event[key] for key in ('job_id', 'state', 'timing', 'queue_started_at', 'duration_seconds') if key in event}
     metadata = escape(json.dumps(payload), quote=True)
-    bar = 'value="100"' if state == 'complete' else 'indeterminate'
+    bar = 'value="100"' if state == 'complete' else 'value="0"' if state == 'cancelled' else 'indeterminate'
     detail = escape(str(event.get('comfy_message', '')))
     return (
         f'<div id="video-progress-{job_id}" data-task-progress '
@@ -170,7 +178,11 @@ def run_video_job(client, task):
         "chapter_missing_metadata": "Preparing missing metadata",
         "chapter_missing_images": "Preparing missing images",
         "chapter_missing_animations": "Preparing missing animations",
-    }.get(task.get("action"), "Preparing video render")
+        "chapter_missing_characters": "Finding missing characters",
+        "chapter_character_appearances": "Processing character appearance changes",
+        "chapter_missing_props": "Finding missing props",
+        "chapter_add_all": "Adding all missing chapter assets",
+    }.get(task.get("action"), task.get("job_type") or "Preparing chapter video render")
     publish_progress(client, job_id, 0, message, action=task.get("action"))
     from comfy import workflow_progress
 
@@ -233,7 +245,7 @@ def run_video_job(client, task):
         if task.get("action") == "timeline_image":
             from artifact_editor.images.jobs import generate_timeline_image
 
-            generate_timeline_image(chapter, task["image_index"])
+            generate_timeline_image(chapter, task["image_index"], force=True)
             publish_progress(
                 client, job_id, 100, "Image generation complete", "complete"
             )
@@ -269,7 +281,12 @@ def run_video_job(client, task):
             method(
                 progress=lambda percent, message: publish_progress(
                     client, job_id, percent, message
-                )
+                ),
+                # An animation that exists but ends before its image's audio
+                # is still missing usable coverage. Repair short animations
+                # when the user asks to add missing animations.
+                **({"regenerate_insufficient": True}
+                   if task["action"] == "chapter_missing_animations" else {})
             )
             publish_progress(client, job_id, 100, "Missing assets complete", "complete")
             return
@@ -285,6 +302,80 @@ def run_video_job(client, task):
             publish_progress(
                 client, job_id, 100, "Missing metadata complete", "complete"
             )
+            return
+        if task.get("action") in ("chapter_missing_characters", "chapter_missing_props"):
+            if task["action"] == "chapter_missing_characters":
+                from artifact_editor.characters.characters import extract_characters, assign_phrase_speakers
+                count = extract_characters(chapter)
+                assigned = assign_phrase_speakers(
+                    chapter,
+                    progress=lambda percent, detail: publish_progress(
+                        client, job_id, percent, detail, action=task["action"]
+                    ),
+                )
+                noun = "characters"
+            else:
+                from artifact_editor.props.props import extract_props
+                count = extract_props(chapter)
+                assigned = 0
+                noun = "props"
+            message = f"Found {count} missing {noun}"
+            if task["action"] == "chapter_missing_characters":
+                message += f"; assigned {assigned} phrase speakers"
+            publish_progress(client, job_id, 100, message, "complete", task["action"])
+            return
+        if task.get("action") == "chapter_character_appearances":
+            from artifact_editor.characters.characters import extract_all_description_timelines
+
+            result = extract_all_description_timelines(
+                chapter,
+                progress=lambda percent, detail: publish_progress(client, job_id, percent, detail),
+            )
+            message = (
+                f"Processed appearance changes for {result['characters']} characters; "
+                f"{result['changes']} changes in this chapter"
+            )
+            failures = result["failures"]
+            if failures:
+                message += ". Failed: " + "; ".join(failures)
+            publish_progress(client, job_id, 100, message,
+                             "failed" if failures else "complete", task["action"])
+            return
+        if task.get("action") == "chapter_add_all":
+            from artifact_editor.characters.characters import extract_characters, assign_phrase_speakers
+            from artifact_editor.props.props import extract_props
+            from artifact_editor.images.images import generate_missing_metadata
+            from gpu_tasks import task_label
+
+            def find_characters_and_assign_speakers(report):
+                count = extract_characters(chapter)
+                assign_phrase_speakers(chapter, progress=report)
+                return count
+
+            stages = [
+                ("Finding characters and assigning phrase speakers", find_characters_and_assign_speakers),
+                ("Finding missing props", lambda report: extract_props(chapter)),
+                ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report, skip_existing_images=True)),
+                ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
+                ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
+            ]
+            for position, (label, operation) in enumerate(stages):
+                publish_progress(client, job_id, position * 20, label)
+                stage_lock = Lock()
+                stage_percent = position * 20
+
+                def stage_progress(percent, detail):
+                    nonlocal stage_percent
+                    scaled = position * 20 + max(0, min(100, int(percent))) * 0.2
+                    with stage_lock:
+                        if scaled <= stage_percent:
+                            return
+                        stage_percent = scaled
+                        publish_progress(client, job_id, scaled, detail)
+                with task_label(label):
+                    operation(stage_progress)
+                publish_progress(client, job_id, (position + 1) * 20, f"{label} complete")
+            publish_progress(client, job_id, 100, "All missing chapter assets complete", "complete")
             return
         if task.get("action") == "chapter_import":
             from artifact_editor.chapter.views import import_chapter_content
@@ -328,6 +419,8 @@ def run_video_job(client, task):
                 animation_prompt=task.get("animation_prompt"),
                 regenerate_insufficient=task.get("action")
                 == "textoviva_missing_animation",
+                theater_stage=task.get("theater_stage"),
+                theater_project_id=task.get("theater_project_id"),
                 progress=lambda percent, message: publish_progress(
                     client, job_id, percent, message
                 ),
@@ -357,8 +450,15 @@ def run_video_job(client, task):
             "chapter_missing_metadata": "Metadata generation",
             "chapter_missing_images": "Image generation",
             "chapter_missing_animations": "Animation generation",
+            "chapter_missing_characters": "Character extraction",
+            "chapter_character_appearances": "Character appearance processing",
+            "chapter_missing_props": "Prop extraction",
+            "chapter_add_all": "Add all chapter assets",
         }.get(task.get("action"), "Video render")
-        publish_progress(client, job_id, 100, f"{label} failed: {exc}", "failed")
+        publish_progress(
+            client, job_id, 100, f"{label} failed: {exc}", "failed",
+            debug_details=traceback.format_exc(),
+        )
     finally:
         workflow_progress.reset(progress_token)
 
@@ -371,7 +471,7 @@ def _active_task_provider(client):
     return {"comfy": "comfyui", "llama": "llama"}.get(service)
 
 
-def _pop_priority_task_for_provider(client):
+def _pop_priority_task_for_provider(client, *, allow_background=True):
     """Pop eligible priority work, including a provider change after drain."""
     from styler.image_tags import pop_tag_job
 
@@ -380,17 +480,27 @@ def _pop_priority_task_for_provider(client):
         return switch_task
     provider = _active_task_provider(client)
     if provider is None:
-        return pop_tag_job(client, PRIORITY_QUEUE)
-    control = pop_tag_job(client, PRIORITY_QUEUE, provider="none")
+        return pop_tag_job(
+            client, PRIORITY_QUEUE, allow_background=allow_background
+        )
+    control = pop_tag_job(
+        client, PRIORITY_QUEUE, provider="none",
+        allow_background=allow_background,
+    )
     if control:
         return control
-    task = pop_tag_job(client, PRIORITY_QUEUE, provider=provider)
+    task = pop_tag_job(
+        client, PRIORITY_QUEUE, provider=provider,
+        allow_background=allow_background,
+    )
     if task:
         return task
     if not _has_queued_provider_task(client, provider):
         # Let run_tracked_task requeue this task and perform the provider
         # transition once work for the active provider has drained.
-        return pop_tag_job(client, PRIORITY_QUEUE)
+        return pop_tag_job(
+            client, PRIORITY_QUEUE, allow_background=allow_background
+        )
     return None
 
 
@@ -398,13 +508,25 @@ def _has_queued_provider_task(client, provider):
     """Check whether the active provider still has interactive queued work."""
     from task_queue import task_provider
 
+    allow_background = get_mode(client) != "off"
     for queue in (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE):
+        if not allow_background and queue == TAG_QUEUE:
+            continue
         for payload in client.lrange(queue, 0, -1):
             try:
                 task = json.loads(payload)
             except (TypeError, ValueError):
                 continue
             if not isinstance(task, dict) or task_provider(task) != provider:
+                continue
+            if not allow_background and (
+                task.get("idle_maintenance")
+                or task.get("background_category")
+                or task.get("action") in (
+                    "styler_scan_image_tags",
+                    "stockpile_image_metadata",
+                )
+            ):
                 continue
             description_job_id = task.get("description_waiting_on")
             if description_job_id and client.exists(
@@ -453,6 +575,7 @@ def video_worker():
     mark_activity(client)
     while True:
         try:
+            allow_background = get_mode(client) != "off"
             client.set("styler:worker-model-batching", "1", ex=30)
             from styler.image_tags import pop_tag_job
             from styler.jobs import pop_engine_sample, pop_interactive_job
@@ -460,7 +583,9 @@ def video_worker():
 
             active_provider = _active_task_provider(client)
             if active_provider == "llama":
-                priority_tag = _pop_priority_task_for_provider(client)
+                priority_tag = _pop_priority_task_for_provider(
+                    client, allow_background=allow_background
+                )
                 if priority_tag:
                     styler_engine = None
                     client.delete("styler:worker-model")
@@ -473,8 +598,12 @@ def video_worker():
                         tag_style = priority_tag["style_tag"]
                     styler_engine = run_priority_task(client, priority_tag)
                     continue
-                tag_payload = pop_tag_job(
-                    client, TAG_QUEUE, tag_style, provider="llama"
+                tag_payload = (
+                    pop_tag_job(
+                        client, TAG_QUEUE, tag_style, provider="llama",
+                        allow_background=allow_background,
+                    )
+                    if allow_background else None
                 )
                 if tag_payload:
                     styler_engine = None
@@ -482,8 +611,9 @@ def video_worker():
                     tag_style = tag_payload["style_tag"]
                     run_queued_tag_task(client, tag_payload, const.LIBRARY_DIR)
                     continue
-                scan_payload = pop_scan_job(
-                    client, VIDEO_QUEUE, provider="llama"
+                scan_payload = (
+                    pop_scan_job(client, VIDEO_QUEUE, provider="llama")
+                    if allow_background else None
                 )
                 if scan_payload:
                     from styler.style_scan import run_job as run_style_scan_job
@@ -498,7 +628,9 @@ def video_worker():
 
             payload = None
             if payload is None:
-                priority_tag = _pop_priority_task_for_provider(client)
+                priority_tag = _pop_priority_task_for_provider(
+                    client, allow_background=allow_background
+                )
                 if priority_tag:
                     styler_engine = None
                     client.delete("styler:worker-model")
@@ -514,32 +646,44 @@ def video_worker():
             # Continue work for the loaded generation model before switching
             # to another non-priority task. Priority tag jobs were checked above.
             if styler_engine:
-                payload = pop_engine_sample(client, VIDEO_QUEUE, styler_engine)
+                payload = pop_engine_sample(
+                    client, VIDEO_QUEUE, styler_engine,
+                    allow_background=allow_background,
+                )
             if payload is None:
                 payload = pop_interactive_job(client, VIDEO_QUEUE)
             if payload is None:
-                payload = pop_scan_job(
-                    client, VIDEO_QUEUE, provider=active_provider
-                )
+                if allow_background:
+                    payload = pop_scan_job(
+                        client, VIDEO_QUEUE, provider=active_provider
+                    )
             if payload is None:
                 from styler.backfill import STATE as BACKFILL_STATE
 
-                backfill_ready = background_ready(client)
+                backfill_ready = allow_background and background_ready(client)
                 if client.exists(BACKFILL_STATE) and backfill_ready:
                     pending_payload = client.rpop(VIDEO_QUEUE)
                     queued = (VIDEO_QUEUE, pending_payload) if pending_payload else None
                 else:
-                    tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                    tag_payload = (
+                        pop_tag_job(client, TAG_QUEUE, tag_style)
+                        if allow_background else None
+                    )
                     if tag_payload:
                         styler_engine = None
                         client.delete("styler:worker-model")
                         tag_style = tag_payload["style_tag"]
                         run_queued_tag_task(client, tag_payload, const.LIBRARY_DIR)
                         continue
-                    queued = client.brpop(VIDEO_QUEUE, timeout=5)
+                    queued = (
+                        client.brpop(VIDEO_QUEUE, timeout=5)
+                        if allow_background else None
+                    )
                 if queued is None:
                     # A priority request may have arrived while BRPOP waited.
-                    priority_tag = _pop_priority_task_for_provider(client)
+                    priority_tag = _pop_priority_task_for_provider(
+                        client, allow_background=allow_background
+                    )
                     if priority_tag:
                         styler_engine = None
                         client.delete("styler:worker-model")
@@ -556,7 +700,10 @@ def video_worker():
                     # already queued image-tag task before creating that work,
                     # so hidden maintenance jobs cannot jump ahead of the
                     # queue's visible next task.
-                    tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                    tag_payload = (
+                        pop_tag_job(client, TAG_QUEUE, tag_style)
+                        if allow_background else None
+                    )
                     if tag_payload:
                         styler_engine = None
                         client.delete("styler:worker-model")
@@ -566,7 +713,7 @@ def video_worker():
                     import const
                     from styler.backfill import next_sample, next_tag_sample
 
-                    backfill_ready = background_ready(client)
+                    backfill_ready = allow_background and background_ready(client)
                     background = (
                         next_sample(
                             client, VIDEO_QUEUE, const.LIBRARY_DIR, styler_engine
@@ -584,7 +731,9 @@ def video_worker():
                             else None
                         )
                         if tag_task:
-                            priority_tag = _pop_priority_task_for_provider(client)
+                            priority_tag = _pop_priority_task_for_provider(
+                                client, allow_background=allow_background
+                            )
                             if priority_tag:
                                 client.lpush(TAG_QUEUE, json.dumps(tag_task))
                                 styler_engine = None
@@ -603,9 +752,14 @@ def video_worker():
                             tag_style = tag_task["style_tag"]
                             run_queued_tag_task(client, tag_task, const.LIBRARY_DIR)
                         elif not client.exists(BACKFILL_STATE) or not backfill_ready:
-                            tag_payload = pop_tag_job(client, TAG_QUEUE, tag_style)
+                            tag_payload = (
+                                pop_tag_job(client, TAG_QUEUE, tag_style)
+                                if allow_background else None
+                            )
                             if tag_payload:
-                                priority_tag = _pop_priority_task_for_provider(client)
+                                priority_tag = _pop_priority_task_for_provider(
+                                    client, allow_background=allow_background
+                                )
                                 if priority_tag:
                                     client.lpush(TAG_QUEUE, json.dumps(tag_payload))
                                     styler_engine = None
@@ -628,8 +782,11 @@ def video_worker():
                                     client, tag_payload, const.LIBRARY_DIR
                                 )
                             else:
-                                idle_task = pop_idle_job(
-                                    client, VIDEO_QUEUE, PRIORITY_QUEUE, TAG_QUEUE
+                                idle_task = (
+                                    pop_idle_job(
+                                        client, VIDEO_QUEUE, PRIORITY_QUEUE, TAG_QUEUE
+                                    )
+                                    if allow_background else None
                                 )
                                 if idle_task:
                                     styler_engine = None
@@ -642,11 +799,15 @@ def video_worker():
                                     styler_engine = run_priority_task(client, idle_task)
                                 else:
                                     maintenance.tick()
+                                    if not allow_background:
+                                        time.sleep(0.5)
                         continue
                 else:
                     _, payload = queued
             # A priority request may arrive while we wait for another queue.
-            priority_tag = _pop_priority_task_for_provider(client)
+            priority_tag = _pop_priority_task_for_provider(
+                client, allow_background=allow_background
+            )
             if priority_tag:
                 enqueue_payload(client, VIDEO_QUEUE, payload, front=False)
                 styler_engine = None
@@ -941,7 +1102,11 @@ def run_tracked_task(client, callback, *args):
                     active_provider
                     and _has_queued_provider_task(client, active_provider)
                 )
-                if waiting_for_active_provider:
+                # A priority request may switch providers ahead of queued
+                # background work on the currently active provider. The worker
+                # is serial, so any call already in progress has finished before
+                # we reach this dispatch point.
+                if waiting_for_active_provider and not priority:
                     if provider == "llama" and task.get("action") in (
                         "styler_tag_sample",
                         "styler_tag_group",
@@ -974,10 +1139,10 @@ def run_tracked_task(client, callback, *args):
                     front=front,
                     ensure_ascii=False,
                 )
-                if waiting_for_active_provider:
+                if waiting_for_active_provider and not priority:
                     return None
                 cooldown = switch_cooldown_remaining(client)
-                if cooldown > 0:
+                if cooldown > 0 and not priority:
                     client.publish(
                         "styler_sample_events",
                         json.dumps(
@@ -1013,6 +1178,7 @@ def run_tracked_task(client, callback, *args):
                 with use_gpu_service(
                     client,
                     service,
+                    override_cooldown=priority,
                     transition_task=transition_task,
                 ):
                     pass
@@ -1133,6 +1299,7 @@ def retry_failed_task(client, job_id):
         "completed_at",
         "duration_seconds",
         "message",
+        "traceback",
         "percent",
         "queue_failed",
         "queue_completed",
@@ -1149,22 +1316,23 @@ def retry_failed_task(client, job_id):
             state="retry_rejected", job_id=job_id, message="Task cannot be retried"
         )
     task["priority"] = True
-    from task_queue import task_provider
+    from task_queue import RENDER_ACTIONS, RENDER_QUEUE, task_provider
 
     task["provider"] = task_provider(task)
 
-    raw_running = client.get("styler:worker-running")
-    if raw_running:
-        try:
-            running = json.loads(raw_running)
-        except (TypeError, ValueError):
-            running = {}
-        if isinstance(running, dict) and running.get("job_id") == job_id:
-            return dict(
-                state="retry_rejected", job_id=job_id, message="Task is already running"
-            )
+    for running_key in ("styler:worker-running", "chapter_render:running"):
+        raw_running = client.get(running_key)
+        if raw_running:
+            try:
+                running = json.loads(raw_running)
+            except (TypeError, ValueError):
+                running = {}
+            if isinstance(running, dict) and running.get("job_id") == job_id:
+                return dict(
+                    state="retry_rejected", job_id=job_id, message="Task is already running"
+                )
 
-    queues = (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE, IDLE_QUEUE)
+    queues = (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE, IDLE_QUEUE, RENDER_QUEUE)
     for queue in queues:
         for raw in client.lrange(queue, 0, -1):
             try:
@@ -1187,7 +1355,15 @@ def retry_failed_task(client, job_id):
             state="retry_rejected", job_id=job_id, message="Retry is already queued"
         )
     try:
-        client.lpush(PRIORITY_QUEUE, json.dumps(task, ensure_ascii=False))
+        if action in RENDER_ACTIONS:
+            enqueue_task(client, VIDEO_QUEUE, task)
+            from worker_startup import ensure_worker_services
+            try:
+                ensure_worker_services()
+            except RuntimeError:
+                log.exception("Retried coordinator queued but worker startup failed")
+        else:
+            client.lpush(PRIORITY_QUEUE, json.dumps(task, ensure_ascii=False))
         from styler.queue_history import clear_job_outcome
 
         clear_job_outcome(client, job_id)
@@ -1422,6 +1598,126 @@ def websocket(ws):
     handle_websocket(ws)
 
 
+def _theater_render_snapshot(project_id, client):
+    """Return the current Theater render state and its review media versions."""
+    from artifact_editor.theater.views import _project_dir, _read_project
+    import const
+
+    project = _read_project(project_id)
+    folder = _project_dir(project_id)
+    job_id = project.get("render_job_id", "")
+    job = client.hgetall(f"video_job:{job_id}") if job_id else {}
+    status = project.get("render_status", "planning")
+    error = project.get("render_error", "")
+    if job.get("state") == "failed" and status in (
+        "rough_queued", "rough_rendering", "rough_film_queued", "rough_film_rendering",
+        "final_queued", "final_rendering"
+    ):
+        status = "render_failed"
+        error = job.get("message") or "The render worker failed."
+
+    rough_path = folder / "rough-draft.mp4"
+    final_path = folder / "final.mp4"
+
+    def version(path):
+        try:
+            stat = path.stat()
+        except OSError:
+            return ""
+        return f"{stat.st_mtime_ns}-{stat.st_size}"
+
+    generated_images = []
+    chapter_xml = folder / "chapter" / "0001" / "english" / "chapter.xml"
+    if project.get("render_stage") == "rough" and chapter_xml.is_file():
+        from bs4 import BeautifulSoup
+
+        try:
+            soup = BeautifulSoup(chapter_xml.read_text(encoding="utf-8"), "xml")
+            for image in soup.find_all("image"):
+                generation_id = image.get("image_generation_id")
+                paragraph = image.find_parent("paragraph")
+                src = image.get("src")
+                if not generation_id or paragraph is None or not src:
+                    continue
+                image_path = Path(const.LIBRARY_DIR) / paragraph.get("dir", "") / Path(src).name
+                if not image_path.is_file():
+                    continue
+                index = int(image.get("index", -1))
+                generated_images.append({
+                    "id": generation_id,
+                    "index": index,
+                    "url": (
+                        f"/library/Theater/{quote(folder.name, safe='')}/1/english/images/0/{index}.png"
+                        f"?v={quote(generation_id, safe='')}"
+                    ),
+                })
+        except (OSError, ValueError):
+            log.warning("Could not read generated Theater images", project_id=project_id)
+
+    progress = {
+        key: job[key]
+        for key in ("state", "percent", "message", "timing", "duration_seconds")
+        if key in job
+    }
+    return {
+        "job_id": job_id,
+        "status": status,
+        "render_stage": project.get("render_stage"),
+        "error": error,
+        "runtime_seconds": project.get("runtime_seconds"),
+        "aspect": project.get("aspect"),
+        "rough_exists": rough_path.is_file(),
+        "final_exists": final_path.is_file(),
+        "rough_version": version(rough_path),
+        "final_version": version(final_path),
+        "generated_images": generated_images,
+        "progress": progress,
+    }
+
+
+@sock.route("/theater-ws/<project_id>")
+def theater_render_websocket(ws, project_id):
+    """Push one Theater project's initial render snapshot and live job updates."""
+    if not re.fullmatch(r"[a-f0-9]{32}", project_id):
+        return
+    client = redis_connection()
+    pubsub = client.pubsub()
+    try:
+        pubsub.subscribe(VIDEO_EVENTS)
+        initial = _theater_render_snapshot(project_id, client)
+        watched_job_id = initial.get("job_id")
+        ws.send(json.dumps({"type": "snapshot", **initial}))
+        while True:
+            incoming = ws.receive(timeout=0.1)
+            if incoming:
+                try:
+                    command = json.loads(incoming)
+                except (TypeError, ValueError):
+                    command = {}
+                if command.get("action") == "watch" and isinstance(command.get("job_id"), str):
+                    watched_job_id = command["job_id"]
+                continue
+            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.2)
+            if not message or message.get("type") != "message":
+                continue
+            try:
+                event = json.loads(message["data"])
+            except (TypeError, ValueError):
+                continue
+            if (
+                event.get("theater_project_id") != project_id
+                and event.get("job_id") != watched_job_id
+            ):
+                continue
+            snapshot = _theater_render_snapshot(project_id, client)
+            ws.send(json.dumps({"type": "update", **snapshot}))
+    except Exception:
+        log.debug("Theater render WebSocket closed", project_id=project_id)
+    finally:
+        pubsub.close()
+        client.close()
+
+
 @sock.route("/styler-ws")
 def styler_websocket(ws):
     from styler.jobs import EVENTS, sample_task, request_sample
@@ -1433,7 +1729,8 @@ def styler_websocket(ws):
 
     client = redis_connection()
     pubsub = client.pubsub()
-    pubsub.subscribe(EVENTS, VIDEO_EVENTS)
+    pubsub.subscribe(EVENTS, VIDEO_EVENTS, CHAPTER_IMAGE_EVENTS)
+    watched_chapter = None
     requested = set()
     queue_capacity = 10
     queue_dirty = True
@@ -1475,7 +1772,15 @@ def styler_websocket(ws):
                     message = json.loads(incoming)
                     if not isinstance(message, dict):
                         raise ValueError("Invalid request")
-                    if message.get("action") == "queue_capacity":
+                    if message.get("action") == "watch_chapter_images":
+                        from artifact_editor.images.completions import (
+                            chapter_image_snapshot, normalize_chapter_identity,
+                        )
+                        identity = normalize_chapter_identity(message)
+                        snapshot = chapter_image_snapshot(identity)
+                        watched_chapter = identity
+                        ws.send(json.dumps(snapshot))
+                    elif message.get("action") == "queue_capacity":
                         queue_capacity = max(0, min(200, int(message.get("rows", 10))))
                         queue_dirty = True
                     elif message.get("action") == "maintenance_mode":
@@ -1540,6 +1845,19 @@ def styler_websocket(ws):
                         queue_dirty = True
                     elif message.get("action") == "retry_job":
                         response = retry_failed_task(client, message.get("job_id"))
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get("action") == "retry_cpu_job":
+                        from cpu_queue import retry_task
+
+                        response = retry_task(client, message.get("job_id"))
+                        ws.send(json.dumps(response))
+                        queue_dirty = True
+                    elif message.get("action") == "cancel_cpu_job":
+                        from cpu_queue import cancel_task
+
+                        response = cancel_task(client, message.get("job_id"),
+                                               allow_running=message.get("allow_running") is True)
                         ws.send(json.dumps(response))
                         queue_dirty = True
                     elif message.get("action") == "gpu_service_switch":
@@ -1768,6 +2086,7 @@ def styler_websocket(ws):
                         "styles_scan": "styles_scan_failed",
                         "style_duplicate_scan": "style_duplicate_scan_failed",
                         "queue_delete": "queue_delete_rejected",
+                        "watch_chapter_images": "chapter_image_snapshot_failed",
                         "gpu_service_switch": "gpu_service_switch_failed",
                     }.get(
                         message.get("action") if isinstance(message, dict) else None,
@@ -1837,6 +2156,10 @@ def styler_websocket(ws):
                 try:
                     payload = json.loads(event["data"])
                 except (ValueError, TypeError):
+                    continue
+                if isinstance(payload, dict) and payload.get("state") == "chapter_image_complete":
+                    if watched_chapter and all(payload.get(key) == value for key, value in watched_chapter.items()):
+                        semantic_events.append(payload)
                     continue
                 if isinstance(payload, dict) and payload.get("execution_queue") == "render":
                     continue
@@ -1968,6 +2291,10 @@ def styler_queue_entry(task, priority=False):
         "chapter_missing_metadata": "Metadata generation",
         "chapter_missing_images": "Image generation",
         "chapter_missing_animations": "Animation generation",
+        "chapter_missing_characters": "Character extraction",
+        "chapter_character_appearances": "Character appearance processing",
+        "chapter_missing_props": "Prop extraction",
+        "chapter_add_all": "Add all chapter assets",
         "timeline_metadata": "Image metadata",
         "timeline_image": "Image generation",
         "character_image": "Character image",
@@ -2273,6 +2600,10 @@ def handle_websocket(ws):
                         "prop_image",
                         "chapter_missing_images",
                         "chapter_missing_animations",
+                        "chapter_missing_characters",
+                        "chapter_character_appearances",
+                        "chapter_missing_props",
+                        "chapter_add_all",
                         "chapter_missing_metadata",
                         "chapter_import",
                         "textoviva_rerender",
@@ -2356,6 +2687,8 @@ def handle_websocket(ws):
                             )
                         elif task["action"] == "chapter_missing_metadata":
                             label = "Queued for missing metadata"
+                        elif task["action"] == "chapter_character_appearances":
+                            label = "Queued for character appearance changes"
                         elif task["action"] in (
                             "chapter_missing_images",
                             "chapter_missing_animations",

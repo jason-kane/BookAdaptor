@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}<title>Theater</title>{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/styles/theater.css">{% endblock %}
+{% block body %}
+<main class="theater-shell">
+  <header class="theater-heading">
+    <div><p class="eyebrow">A new kind of story room</p><h1>Theater</h1>
+      <p>Start with a base story and choose its director.</p></div>
+  </header>
+  {% if error %}<wa-callout variant="danger">{{ error }}</wa-callout>{% endif %}
+  <section class="theater-create">
+    <h2>Base story</h2>
+    <form method="post" action="{{ url_for('theater.create_project') }}" class="wa-stack">
+      <wa-textarea name="raw_story" label="Base story" help-text="Paste the story the director will reshape." rows="10" required></wa-textarea>
+      <wa-select name="director_profile" label="Director" required>
+        <wa-option value="">Choose a director</wa-option>
+        {% for profile in profiles.values() %}<wa-option value="{{ profile.id }}">{{ profile.name }}</wa-option>{% endfor %}
+      </wa-select>
+      <wa-button type="submit" variant="brand">Meet the director</wa-button>
+    </form>
+  </section>
+  {% if projects %}<section><h2>Your movies</h2><div class="theater-project-grid">
+    {% for item in projects %}<a class="theater-project-card" href="{{ url_for('theater.project', project_id=item.project_id) }}">
+      <span class="eyebrow">{{ item.render_status|replace('_', ' ')|title }}</span><h3>{{ item.title or 'Untitled film' }}</h3>
+      <p>{{ item.director_profile or 'No director selected' }}</p><small>{{ item.updated_at }}</small>
+    </a>{% endfor %}
+  </div></section>{% endif %}
+</main>
+{% endblock %}

@@ -35,7 +35,7 @@ def textoviva():
     for author_name in sorted(os.listdir(const.LIBRARY_DIR)):
         if (
             author_name[0] == "." or
-            author_name in ['home', 'active', 'lost+found', 'global_characters']
+            author_name in ['home', 'active', 'lost+found', 'global_characters', 'Theater']
         ):
             continue
 
@@ -60,7 +60,7 @@ def library():
     for author_name in sorted(os.listdir(const.LIBRARY_DIR)):
         if (
             author_name[0] == "." or
-            author_name in ['home', 'active', 'lost+found', 'global_characters']
+            author_name in ['home', 'active', 'lost+found', 'global_characters', 'Theater']
         ):
             continue
 

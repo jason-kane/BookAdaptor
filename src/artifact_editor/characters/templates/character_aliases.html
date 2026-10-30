@@ -1,10 +1,13 @@
 {% if tag != 'Narrator' %}
 <div class="wa-stack">
-    <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.characters.aliases', character_tag=tag, **chapter.kwargs) }}"
-          hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML">
+    <form class="wa-stack">
         <wa-textarea name="aliases" label="Aliases (one per line)" value="{{ character.get('alias', [])|join('\n') }}"
-            hint="Other names for this character, such as Roger, Mr. Stone, or Mr. S."></wa-textarea>
-        <wa-button type="submit">Save Aliases</wa-button>
+            hint="Other names for this character, such as Roger, Mr. Stone, or Mr. S."
+            hx-post="{{ url_for('library.book.chapter.characters.aliases', character_tag=tag, **chapter.kwargs) }}"
+            hx-target="next" hx-swap="innerHTML"
+            hx-trigger="change delay:500ms" hx-include="closest form"
+            hx-sync="closest form:queue last"></wa-textarea>
+        <span role="status" aria-live="polite" data-alias-status></span>
     </form>
     <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.characters.merge', character_tag=tag, **chapter.kwargs) }}"
           hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML">

@@ -74,6 +74,7 @@ from .scene.views import bp as images_scene
 from .selector import htmx as selector_htmx
 from .selector import selector as selector
 from .selector.views import bp as images_selector
+from .source import SOURCE_WORKFLOW, choose_source_image, source_image_path
 
 log = logger.log(name=__name__)
 
@@ -178,7 +179,54 @@ def comfyui_workflow_choose(image_index: int = 0):
     image_xml.attrs["workflow_image_template"] = workflow_image_template
 
     g.chapter.save_xml()
-    return "", 200
+    from text_to_image.comfyui.workflow.ui import ComfyWorkflowUI
+
+    return ComfyWorkflowUI(g.chapter).workflow_controls(image_xml), 200
+
+
+@bp.get("/<int:image_index>/source_image/<path:filename>")
+def chapter_source_image(image_index, filename):
+    if g.chapter.get_image(image_index) is None:
+        abort(404)
+    try:
+        path = source_image_path(g.chapter, filename)
+    except (ValueError, FileNotFoundError):
+        abort(404)
+    height = request.args.get("height", 800, type=int)
+    if height not in (160, 800):
+        return "Invalid source image size", 400
+    try:
+        from PIL import ImageOps
+
+        with Image.open(path) as original:
+            preview = ImageOps.exif_transpose(original)
+            preview.thumbnail((height, height))
+            output = io.BytesIO()
+            preview.save(output, format="PNG")
+    except (OSError, ValueError):
+        abort(404)
+    output.seek(0)
+    fingerprint = f"{path.stat().st_mtime_ns}-{path.stat().st_size}-{height}"
+    return send_file(output, mimetype="image/png", etag=fingerprint, max_age=3600)
+
+
+@bp.post("/<int:image_index>/source_choose")
+def choose_chapter_source(image_index):
+    image = g.chapter.get_image(image_index)
+    if image is None:
+        abort(404)
+    try:
+        choose_source_image(g.chapter, image, request.form.get("image_source", ""),
+                            motion=request.form.get("source_motion"))
+    except (ValueError, FileNotFoundError, OSError):
+        return "Source image is unavailable or invalid", 400
+    cache.clear()
+    from .completions import publish_image_completion
+
+    publish_image_completion(g.chapter, image)
+    response = make_response("", 200)
+    response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @bp.route("/<int:image_index>/workflow_run", methods=["POST"])
@@ -192,6 +240,9 @@ def comfyui_workflow_run(image_index: int = 0):
         if not workflow_template:
             return "No workflow_image_template provided", 400
         image_xml.attrs["workflow_image_template"] = workflow_template
+
+    if workflow_template == SOURCE_WORKFLOW:
+        return "Choose a source image from Chapter Source", 400
 
     # mode.workflow_template
     if "." in workflow_template:
@@ -218,6 +269,18 @@ def comfyui_workflow_run(image_index: int = 0):
         log.info('Workflow file for image %s: %s', image_index, workflow_fn)
 
         comfy.run_workflow_fn(workflow_fn)
+        candidates = selector_htmx.gather_candidate_images(image_xml, g.chapter)
+        if candidates:
+            generated_image_fn = max(candidates, key=os.path.getmtime)
+            target_size = (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
+            with Image.open(generated_image_fn) as generated_image:
+                if generated_image.size != target_size:
+                    generated_image.resize(
+                        target_size, Image.Resampling.LANCZOS
+                    ).save(generated_image_fn)
+            image_xml["src"] = os.path.basename(generated_image_fn)
+            g.chapter.save_xml()
+            images.load_image.cache_clear()
     else:
         log.error("No workflow_image_template post parameter found!")
     
@@ -272,6 +335,11 @@ def comfyui_workflow_open(
 
     is_animation = animation.lower() in ["1", "true", "animation"]
     log.info(f"animation is {is_animation}")
+
+    if not is_animation and (
+        request.args.get("workflow_image_template") or image_xml.get("workflow_image_template")
+    ) == SOURCE_WORKFLOW:
+        return "Choose a source image from Chapter Source", 400
 
     if not is_animation and request.args.get("workflow_image_template"):
         workflow_template = request.args.get("workflow_image_template")
@@ -2087,6 +2155,8 @@ def draw_all_missing_images():
             log.info(f"Drawing missing image {image_index}")
 
             workflow_template = image_xml.attrs.get("workflow_image_template", "")
+            if workflow_template == SOURCE_WORKFLOW:
+                return f"Choose a source image for image {image_index} from Chapter Source", 400
             if not workflow_template:
                 workflow_template = const.DEFAULT_IMAGE_TEMPLATE
                 image_xml.attrs["workflow_image_template"] = workflow_template

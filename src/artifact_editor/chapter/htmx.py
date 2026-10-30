@@ -79,7 +79,25 @@ def generate_missing_animation_button(chapter):
     return missing_asset_button(chapter, "chapter_missing_animations", "Add Missing Animations")
 
 
-def missing_asset_button(chapter, action, label):
+def generate_missing_characters_button(chapter):
+    return missing_asset_button(chapter, "chapter_missing_characters", "Add Missing Characters")
+
+
+def generate_missing_props_button(chapter):
+    return missing_asset_button(chapter, "chapter_missing_props", "Add Missing Props")
+
+
+def add_all_button(chapter):
+    return missing_asset_button(chapter, "chapter_add_all", "Add All", jumbo=True)
+
+
+def process_character_appearances_button(chapter):
+    return missing_asset_button(
+        chapter, "chapter_character_appearances", "Process Appearance Changes for All Characters"
+    )
+
+
+def missing_asset_button(chapter, action, label, jumbo=False):
     import json
     import uuid
 
@@ -89,10 +107,12 @@ def missing_asset_button(chapter, action, label):
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
+    size = "large" if jumbo else "medium"
+    variant = "brand" if jumbo else "neutral"
     return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
-        data-chapter-assets="{job_id}">
+        data-chapter-assets="{job_id}" data-chapter-action="{action}">
         <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
-            variant="neutral" appearance="accent" size="medium">{label}</wa-button>
+            variant="{variant}" appearance="accent" size="{size}">{label}</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 

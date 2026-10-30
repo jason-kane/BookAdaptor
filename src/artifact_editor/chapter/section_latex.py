@@ -1,18 +1,29 @@
 """Typeset Quill sections without introducing audio phrase paragraph breaks."""
 
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from ncdeltaprocess.latex_line_render import LineRenderLaTeX
+import logger
+
+
+log = logger.log(__name__)
 
 
 RASTER_DPI = 300
+# Keep a small horizontal safety gutter after rasterization. The page is sized
+# to the video panel, while the narrower text block is centered within it.
+HORIZONTAL_SAFETY_GUTTER = 6 / RASTER_DPI
 
 
 def video_page_geometry(text_width):
-    """Size the PDF page to the video text panel at native raster resolution."""
+    """Size the PDF page to the video panel with a rasterization safety gutter."""
+    page_width = text_width / RASTER_DPI
+    text_width_in = page_width - 2 * HORIZONTAL_SAFETY_GUTTER
     return (
-        rf"\usepackage[paperheight=200in,paperwidth={text_width / RASTER_DPI:.10f}in,"
-        r"top=0.5in,bottom=4in,left=0.1in,right=0.1in,heightrounded]{geometry}"
+        rf"\usepackage[paperheight=200in,paperwidth={page_width:.10f}in,"
+        rf"textwidth={text_width_in:.10f}in,textheight=195.5in,"
+        r"hcentering,top=0.5in,bottom=4in,heightrounded]{geometry}"
     )
 
 
@@ -105,26 +116,58 @@ def render_sections(sections, phrases=None):
     normalizes whitespace. Formatting and line breaks always come from Quill.
     """
     phrase_characters = []
+    phrase_colors = []
     if phrases is not None:
         for index, phrase in enumerate(phrases):
             color = f"B{(10 + 2654435 * int(phrase.get('index', index))) % 16777216:X}"
-            phrase_characters.extend(
-                (character, color)
-                for character in phrase["spoken"]
-                if not character.isspace()
-            )
-        source = "".join(
+            for character in phrase["spoken"]:
+                if not character.isspace():
+                    phrase_characters.append(character)
+                    phrase_colors.append(color)
+        source_characters = [
             character
             for section in sections
             for operation in section["ops"]
             for character in operation.get("insert", "")
             if not character.isspace()
-        )
-        if source != "".join(character for character, _ in phrase_characters):
-            raise ValueError("Audio phrase text does not match chapter sections")
+        ]
+        source = "".join(source_characters)
+        spoken = "".join(phrase_characters)
+        aligned_colors = [None] * len(source_characters)
+        matcher = SequenceMatcher(None, source, spoken, autojunk=False)
+        for source_start, spoken_start, size in matcher.get_matching_blocks():
+            for offset in range(size):
+                aligned_colors[source_start + offset] = phrase_colors[spoken_start + offset]
+        if source != spoken:
+            log.warning(
+                "Audio phrase text differs from chapter sections; aligning matching text for rainbow typesetting",
+                chapter_characters=len(source), phrase_characters=len(spoken),
+            )
+        # Keep unmatched punctuation or edited characters in the nearest phrase
+        # color, so text differences do not prevent the rainbow document from
+        # being generated or shift highlighting for the rest of the chapter.
+        previous = None
+        for index, color in enumerate(aligned_colors):
+            if color is not None:
+                previous = color
+            elif previous is not None:
+                aligned_colors[index] = previous
+        following = None
+        for index in range(len(aligned_colors) - 1, -1, -1):
+            if aligned_colors[index] is not None:
+                following = aligned_colors[index]
+            elif following is not None:
+                aligned_colors[index] = following
+        phrase_character_colors = aligned_colors
 
     character_index = 0
-    output = [r"\begingroup", r"\quillHelvetica", r"\setlength{\parskip}{0pt}", r"\setlength{\parindent}{0pt}"]
+    output = [
+        r"\begingroup", r"\quillHelvetica",
+        r"\setlength{\parskip}{0pt}", r"\setlength{\parindent}{0pt}",
+        # Permit a little extra inter-word stretch instead of allowing TeX to
+        # leave an overfull line whose final glyph can be cut by the page edge.
+        r"\emergencystretch=2em",
+    ]
     for section in sections:
         method = section["typesetting_method"]
         if method not in {"plain", "verse"}:
@@ -148,7 +191,7 @@ def render_sections(sections, phrases=None):
                     continue
                 colored_runs = []
                 for character in text:
-                    color = phrase_characters[min(character_index, len(phrase_characters) - 1)][1] if phrase_characters else None
+                    color = phrase_character_colors[character_index] if character_index < len(phrase_character_colors) else None
                     if not character.isspace():
                         character_index += 1
                     if colored_runs and colored_runs[-1][0] == color:
@@ -214,11 +257,31 @@ def render_chapter_xml(soup, text_width, sections=None):
             phrases.append({"index": phrase["index"], "spoken": formatted_text})
     if not phrases:
         raise ValueError("Chapter XML has no visible phrases to typeset")
-    # Editor sections retain layout choices that older XML imports discarded.
-    # Phrase-span validation below rejects text changes that would desynchronize
-    # the page and its rainbow map from the existing narration.
+    # Editor sections retain layout choices that older XML imports discarded,
+    # but phrase deltas are updated by the timeline editor. If their text has
+    # changed since the section file was saved, render the current phrase deltas
+    # instead of silently typesetting stale section text.
     if saved_sections is not None:
-        sections = saved_sections
+        section_text = "".join(
+            character
+            for section in saved_sections
+            for operation in section["ops"]
+            for character in operation.get("insert", "")
+            if not character.isspace()
+        )
+        phrase_text = "".join(
+            character
+            for phrase in phrases
+            for character in phrase["spoken"]
+            if not character.isspace()
+        )
+        if section_text == phrase_text:
+            sections = saved_sections
+        else:
+            log.warning(
+                "Saved chapter sections differ from timeline phrase text; using current phrase deltas for typesetting",
+                chapter_characters=len(section_text), phrase_characters=len(phrase_text),
+            )
     colors = []
     for phrase in phrases:
         number = (10 + 2654435 * int(phrase["index"])) % 16777216

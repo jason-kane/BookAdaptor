@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock
 from bs4 import BeautifulSoup
 from flask import Flask, redirect, request
+from artifact_editor.images.source import SOURCE_WORKFLOW
 
 
 class WorkflowOpenTests(unittest.TestCase):
@@ -26,7 +27,10 @@ class WorkflowOpenTests(unittest.TestCase):
                 workflow = Mock(side_effect=lambda image, **kw: 'resolved.json' if kw['workflow_name'] == expected else None)
                 chapter = SimpleNamespace(get_image=lambda index: image, get_workflow=workflow, save_xml=Mock(), nice='book')
                 ns = dict(image_workflow_name=helper_ns['image_workflow_name'], g=SimpleNamespace(chapter=chapter), request=request, redirect=redirect,
-                          log=Mock(), const=SimpleNamespace(COMFYUI_UI_URL='http://comfy.local/'),
+                          SOURCE_WORKFLOW=SOURCE_WORKFLOW,
+                          workflow_destination=Mock(return_value='http://comfy.local/?workflow=resolved.json'),
+                          os=SimpleNamespace(environ={}),
+                          log=Mock(), const=SimpleNamespace(COMFYUI_API_URL='http://comfy.api/', COMFYUI_UI_URL='http://comfy.local/'),
                           images=SimpleNamespace(generate_metadata_from_text=Mock()))
                 exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), ns)
                 with app.test_request_context('/', query_string={'workflow_image_template': template}):

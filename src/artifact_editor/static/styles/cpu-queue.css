@@ -22,8 +22,15 @@
 .cpu-queue-row { padding: 0.35rem; border-bottom: 1px solid var(--wa-color-surface-border); font-size: 0.78rem; }
 .cpu-queue-row[data-state="running"] { background: color-mix(in srgb, #a9c8e8 20%, transparent); }
 .cpu-queue-row[data-state="failed"] { position: relative; padding-right: 2rem; color: var(--wa-color-danger-text, #f3a1a6); }
+.cpu-queue-row[data-state="failed"], .cpu-queue-row[data-state="complete"] { position: relative; padding-right: 6.5rem; }
+.cpu-queue-row-fading { pointer-events: none; animation: cpu-queue-failure-fade 1.2s ease-out forwards; }
+@keyframes cpu-queue-failure-fade { to { opacity: 0; } }
 .cpu-queue-row p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cpu-queue-row wa-button.cpu-queue-copy { position: absolute; top: 0.2rem; right: 0.2rem; margin: 0; font-size: 0.75rem; }
+.cpu-queue-row wa-button.cpu-queue-copy { position: absolute; top: 0.2rem; right: 3.4rem; margin: 0; font-size: 0.75rem; }
+.cpu-queue-row wa-button.cpu-queue-retry { position: absolute; top: 0.2rem; right: 0.2rem; margin: 0; font-size: 0.75rem; }
+.cpu-queue-row[data-cancellable="true"] { position: relative; padding-right: 6.5rem; }
+.cpu-queue-row wa-button.cpu-queue-cancel { position: absolute; top: 0.2rem; right: 0.2rem; margin: 0; font-size: 0.75rem; }
+.cpu-queue-row[data-state="cancelled"] { position: relative; padding-right: 6.5rem; opacity: 0.75; }
 .cpu-queue-row wa-button.cpu-queue-copy::part(base) {
     box-sizing: border-box;
     width: 1.35rem;

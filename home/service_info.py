@@ -7,6 +7,7 @@ from .programs import compose_command
 
 PANEL_SERVICES = {
     "library": ("artifactserver", "redis"),
+    "theater": ("artifactserver", "redis"),
     "therapy": ("artifactserver", "redis"),
     "styles": ("artifactserver", "redis"),
     "glances": ("glances",),
@@ -18,6 +19,7 @@ PANEL_SERVICES = {
 
 TABLE_ROWS = (
     {"panel": "library", "name": "Library", "service": "artifactserver", "program": "artifactserver", "status": "Beta"},
+    {"panel": "theater", "name": "Theater", "service": "artifactserver", "path": "/theater/", "port": 8082, "status": "Beta"},
     {"panel": "therapy", "name": "Therapy", "service": "artifactserver", "path": "/therapy/", "port": 8082, "status": "Broken"},
     {"panel": "styles", "name": "Styler", "service": "artifactserver", "program": "styler", "status": "Beta"},
     {"panel": "glances", "name": "Glances", "service": "glances", "program": "glances"},

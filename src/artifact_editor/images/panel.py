@@ -23,6 +23,8 @@ def panel_controls(markup, image_index, image_url, editor_url):
         action = None
         if element.get("id") == prefix + "workflow-run-button":
             action = "generate"
+        elif element.get("id") == prefix + "source-image-choose-button":
+            action = "source"
         elif element.get("hx-target") == "#" + prefix + "strip-centerpiece":
             action = "metadata"
         if action:
@@ -31,6 +33,9 @@ def panel_controls(markup, image_index, image_url, editor_url):
             element["hx-target"] = f"#timeline-image-editor-{int(image_index)}"
             element["hx-swap"] = "innerHTML"
             element["hx-include"] = "closest .chapter-mini-image-editor"
+            if action == "source":
+                element["hx-include"] = "closest .source-image-picker"
+                element["hx-disabled-elt"] = "this"
             if action in ("generate", "metadata"):
                 element["hx-target"] = f"#timeline-image-status-{int(image_index)}"
                 element["hx-disabled-elt"] = "this"

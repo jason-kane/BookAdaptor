@@ -57,6 +57,8 @@ def audio_helpers():
 def test_render_commands_leave_gpu_worker_available_for_dependencies():
     for task in [dict(action='textoviva_rerender', job_id='one'),
                  dict(action='textoviva_regenerate_animation', job_id='two'),
+                 dict(action='chapter_missing_images', job_id='images'),
+                 dict(action='chapter_missing_animations', job_id='animations'),
                  dict(job_id='three', aspect='widescreen')]:
         client = Mock()
         enqueue_task(client, VIDEO_QUEUE, task)
@@ -64,6 +66,34 @@ def test_render_commands_leave_gpu_worker_available_for_dependencies():
         assert queue == RENDER_QUEUE
         assert json.loads(payload)['provider'] == 'none'
     assert task_provider(dict(action='gpu_workflow', provider='comfyui')) == 'comfyui'
+
+
+@pytest.mark.parametrize('action', ['chapter_missing_images', 'chapter_missing_animations',
+                                  'textoviva_rerender', 'gpu_workflow'])
+def test_retry_routes_coordinators_away_from_gpu_consumer(action, monkeypatch):
+    import worker_startup
+    from task_queue import PRIORITY_QUEUE, TAG_QUEUE, IDLE_QUEUE, RENDER_ACTIONS
+    startup = Mock()
+    monkeypatch.setattr(worker_startup, 'ensure_worker_services', startup)
+    task = dict(job_id='retry-me', action=action, author='Aesop', title='Fables',
+                chapter_number=27, language='english', arguments={'input': 'same'})
+    client = Mock()
+    client.get.return_value = None
+    client.lrange.return_value = []
+    client.set.return_value = True
+    ns = load_functions('src/websocket/server.py', {'retry_failed_task'}, dict(
+        json=json, log=Mock(), recent_failures=lambda _: [dict(task, state='failed')],
+        recent_completions=lambda _: [], enqueue_task=enqueue_task,
+        PRIORITY_QUEUE=PRIORITY_QUEUE, VIDEO_QUEUE=VIDEO_QUEUE, TAG_QUEUE=TAG_QUEUE,
+        IDLE_QUEUE=IDLE_QUEUE, styler_queue_entry=lambda item, priority: dict(item, job_type=action)))
+    result = ns['retry_failed_task'](client, task['job_id'])
+    assert result['state'] == 'retry_queued'
+    queue, payload = client.lpush.call_args.args
+    retried = json.loads(payload)
+    assert retried['arguments'] == task['arguments']
+    assert retried['job_id'] == task['job_id']
+    assert queue == (RENDER_QUEUE if action in RENDER_ACTIONS else PRIORITY_QUEUE)
+    assert startup.call_count == (1 if action in RENDER_ACTIONS else 0)
 
 
 def test_render_is_durable_before_worker_startup_can_disconnect_request(monkeypatch):

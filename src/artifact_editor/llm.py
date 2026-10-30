@@ -72,12 +72,25 @@ def get_cached_prompt(prompt, format="json", force=False):
         log.info("Forcing cache miss")
         return None
 
-    cache_fn = os.path.join(LLM_CACHE_DIR, f"{cache_tag(f'{format}_{prompt}')}.json")
+    extension = "txt" if format == "txt" else "json"
+    cache_fn = os.path.join(LLM_CACHE_DIR, f"{cache_tag(f'{format}_{prompt}')}.{extension}")
 
     if os.path.exists(cache_fn):
         log.info(f"Cache hit {cache_fn}")
-        with open(cache_fn, "r") as f:
-            return json.load(f)
+        try:
+            with open(cache_fn, "r", encoding="utf-8") as f:
+                return f.read() if format == "txt" else json.load(f)
+        except FileNotFoundError:
+            # Another worker may replace the cache between exists() and open().
+            pass
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            log.warning("Discarding invalid prompt cache %s: %s", cache_fn, exc)
+            try:
+                os.unlink(cache_fn)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                log.exception("Could not remove invalid prompt cache %s", cache_fn)
 
     log.info("Cache miss")
     return None
@@ -86,12 +99,32 @@ def get_cached_prompt(prompt, format="json", force=False):
 def set_cached_prompt(prompt, content, format="json"):
     if format == "json":
         cache_fn = os.path.join(LLM_CACHE_DIR, f"{cache_tag(f'{format}_{prompt}')}.json")
-        with open(cache_fn, "w") as f:
-            json.dump(content, f)
     elif format == "txt":
         cache_fn = os.path.join(LLM_CACHE_DIR, f"{cache_tag(f'{format}_{prompt}')}.txt")
-        with open(cache_fn, "w") as f:
-            f.write(content)
+    else:
+        raise ValueError(f"Unsupported prompt cache format: {format}")
+
+    temporary_fn = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=os.path.dirname(cache_fn),
+            prefix=".prompt-cache-", suffix=".tmp", delete=False,
+        ) as f:
+            temporary_fn = f.name
+            if format == "json":
+                json.dump(content, f)
+            else:
+                f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_fn, cache_fn)
+        temporary_fn = None
+    finally:
+        if temporary_fn is not None:
+            try:
+                os.unlink(temporary_fn)
+            except FileNotFoundError:
+                pass
 
 
 def str_prompt_old(prompt, system_prompt="You are a helpful assistant.", force=False):
@@ -122,8 +155,10 @@ def text_2_audio(
     phrase_xml: Tag,
     character_name: str,
     wavfile: str,
-    force: bool=False
-) -> str:
+    force: bool=False,
+    *,
+    queue_only: bool = False,
+) -> str | dict:
     """
     Submit a new ComfyUI api job to generate audio from this text.
 
@@ -161,6 +196,8 @@ def text_2_audio(
         else:
             log.info(f"Audio file already exists at {outputfile}, skipping generation")
             shutil.copy(outputfile, wavfile)
+            if queue_only:
+                return {"ready": True, "wavfile": wavfile, "outputfile": outputfile}
             return wavfile
     
     # magic file used by Misaki to override single word pronunciation
@@ -180,13 +217,26 @@ def text_2_audio(
     template_environment["LANGUAGE"] = _kokoro_language(character_dict)
     # anything inside a template gets the "comfyui" version of the
     # COMFY_DIRS.
-    log.info('Including %s layers of voice data', len(character_dict["voices"]))
-    for voice_index, voice_dict in enumerate(character_dict["voices"]):
+    voices = character_dict["voices"]
+    has_active_voice = any(
+        int(voice.get("strength", 0) or 0) > 0
+        for voice in voices
+        if isinstance(voice, dict)
+    )
+    if not has_active_voice:
+        # Theater director scripts can introduce characters before the user
+        # configures character assets. Keep ComfyUI's Kokoro workflow valid
+        # with a neutral default voice instead of submitting zero active
+        # speaker layers (which makes SaveAudio receive no audio).
+        # Match the known-good voice configured in the bundled Kokoro template.
+        voices = [{"id": "am_adam", "strength": 95}]
+    log.info('Including %s layers of voice data', len(voices))
+    for voice_index, voice_dict in enumerate(voices):
         template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = voice_dict["id"]
         template_environment[f"SPEAKER_{voice_index:02d}_WEIGHT"] = int(voice_dict["strength"]) / 100
     
     # zero out any remaining entries
-    for voice_index in range(len(character_dict["voices"]), 10):
+    for voice_index in range(len(voices), 10):
         template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = "af_heart"
         template_environment[f"SPEAKER_{voice_index:02d}_WEIGHT"] = 0.0
 
@@ -223,7 +273,25 @@ def text_2_audio(
         template_environment=template_environment
     )
     
-    comfy.run_workflow_fn(workflow_filename)
+    line_index = phrase_xml.attrs.get("index", "?")
+    label = f"Create dialogue audio · {chapter.title} · line {line_index} · {character_name}"
+    request = {"ready": False, "wavfile": wavfile, "outputfile": outputfile,
+               "workflow_fn": workflow_filename, "label": label,
+               "prepare_vram": True}
+    if queue_only:
+        return request
+    from gpu_tasks import task_label
+    with task_label(label):
+        comfy.run_workflow_fn(workflow_filename, prepare_vram=True)
+    return collect_text_2_audio(request)
+
+
+def collect_text_2_audio(request: dict) -> str:
+    """Convert a completed Kokoro workflow's FLAC output into the phrase WAV."""
+    wavfile = request["wavfile"]
+    outputfile = request["outputfile"]
+    if request.get("ready"):
+        return wavfile
 
     # convert flac to wav while we copy it into place.
     glob_filename = os.path.join(
@@ -290,6 +358,27 @@ def str_prompt(
     content = None
     filename = f"llm_str_{uuid.uuid4().hex}.txt"
     if not (content := get_cached_prompt(prompt, format="txt", force=force)):
+
+        # Render coordination must stay off the GPU worker while each model
+        # request runs. Route its text prompts through the visible Llama queue;
+        # image/audio workflows continue to use their owning ComfyUI path.
+        if (os.environ.get("RENDER_WORKER_PROCESS") == "1"
+                and os.environ.get("VIDEO_WORKER_PROCESS") != "1"):
+            from gpu_tasks import gpu_label
+            from llama_inference import chat_completion
+
+            stage = gpu_label.get().strip()
+            label = f"Image metadata · {stage}" if stage else "Image metadata · LLM request"
+            content = chat_completion(
+                None,
+                prompt,
+                system_prompt=system_prompt,
+                max_tokens=max_output_tokens or 2048,
+                thinking_budget_tokens=0,
+                label=label,
+            )
+            set_cached_prompt(prompt, content, format="txt")
+            return content.strip()
 
         # Chapter imports the phrase/LLM stack while initializing.
         from artifact_editor.chapter.chapter import get_prompt_workflow_by_filename
@@ -376,34 +465,27 @@ def str_fast_prompt(prompt, system_prompt="You are a helpful assistant.", force=
 
 
 def json_prompt(prompt, force=False):
-    content = None
-    if not (content := get_cached_prompt(prompt, format="json", force=force)):
+    content = get_cached_prompt(prompt, format="json", force=force)
+    if content is None:
+        from gpu_tasks import gpu_label
+        from llama_inference import chat_completion
 
-        workflow = comfy.load_workflow_template("api", "t2json", "qwen35-json_Qwen 3.5 JSON")
-
-        output_filename = f"llm_json_{uuid.uuid4().hex}.txt"
-        outputfile = os.path.join(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], output_filename)
-        if os.path.exists(outputfile):
-            os.remove(outputfile)
-        
-        log.info("Running LLM workflow", prompt=prompt)
-
-        # The template uses placeholders in its API-format workflow inputs.
-        template_environment = {
-            "PROMPT": prompt,
-            "OUTPUT_DIR": const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-            "FILE_NAME": os.path.splitext(output_filename)[0],
-        }
-
-        from gpu_tasks import task_label, gpu_label
-        with task_label("LLM · " + gpu_label.get()):
-            response = comfy.run_workflow(workflow, template_environment=template_environment)
-        log.info("LLM workflow response: %s", response)
-
-        with open(outputfile, "r") as f:
-            content = json.load(f)
-        os.remove(outputfile)
-
+        log.info("Running JSON prompt through Llama", prompt=prompt)
+        content = json.loads(chat_completion(
+            None,
+            prompt,
+            system_prompt=(
+                "Return only the JSON object or JSON array requested by the user. "
+                "Do not include explanations or markdown."
+            ),
+            max_tokens=2048,
+            response_format={
+                "type": "json_object",
+                "schema": {"anyOf": [{"type": "object"}, {"type": "array"}]},
+            },
+            thinking_budget_tokens=0,
+            label="JSON prompt · " + gpu_label.get(),
+        ))
         set_cached_prompt(prompt, content, format="json")
 
     log.info("LLM responce is: %s", content)

@@ -189,7 +189,7 @@ class Estimator:
                 survivors = [value for value in samples if value > elapsed]
                 remaining = sum(survivors) / len(survivors) - elapsed if survivors else None
                 status = 'estimated' if survivors else 'overrun'
-        if state in ('complete', 'failed'):
+        if state in ('complete', 'failed', 'cancelled'):
             elapsed = duration if duration is not None else elapsed
             remaining = 0 if state == 'complete' else None
             status = state
@@ -270,9 +270,10 @@ def format_seconds(value):
 def eta_label(event):
     timing = event.get('timing') or {}
     state = event.get('state', 'running')
-    if state in ('complete', 'failed'):
+    if state in ('complete', 'failed', 'cancelled'):
         duration = number(event.get('duration_seconds'), number(timing.get('elapsed_seconds')))
-        return ('Done' if state == 'complete' else 'Failed') + (f' · {format_seconds(duration)}' if duration is not None else '')
+        label = {'complete': 'Done', 'failed': 'Failed', 'cancelled': 'Cancelled'}[state]
+        return label + (f' · {format_seconds(duration)}' if duration is not None else '')
     remaining = number(timing.get('eta_seconds'))
     if remaining is not None and remaining > 0:
         return ('Queued · ' if state == 'queued' else '') + f'~{format_seconds(remaining)} ' + ('to finish' if state == 'queued' else 'left')

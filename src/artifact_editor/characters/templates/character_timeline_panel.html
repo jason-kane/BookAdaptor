@@ -1,0 +1,62 @@
+<div id="character-timeline-panel" class="wa-stack">
+    <p>Appearance changes take effect at the selected phrase and continue until the next change.</p>
+    {% for tag, character in characters.items() if tag != 'Narrator' %}
+    <details class="wa-stack">
+        <summary><strong>{{ character.name }}</strong> <small>({{ tag }})</small></summary>
+        <p><strong>Starting appearance in this chapter:</strong> {{ starting_descriptions.get(tag) or 'No baseline description yet.' }}</p>
+        {% set invalid_descriptions = ['No description found.', 'No baseline description yet.'] %}
+        {% set history = character.get('description_timeline', [])|rejectattr('description', 'in', invalid_descriptions)|sort(attribute='chapter') %}
+        {% if history %}
+        <details class="wa-stack character-appearance-history">
+            <summary>Appearance change history ({{ history|length }})</summary>
+            <ol>
+                {% for event in history %}
+                <li>
+                    <strong>Chapter {{ event.chapter }}, phrase {{ event.phrase }}:</strong>
+                    {{ event.description }}
+                    {% if event.get('evidence') %}<blockquote>{{ event.evidence }}</blockquote>{% endif %}
+                </li>
+                {% endfor %}
+            </ol>
+        </details>
+        {% endif %}
+        {% set scanned = chapter.number in character.get('description_timeline_scanned', []) %}
+        <wa-button type="button"
+            hx-post="{{ url_for('library.book.chapter.characters.extract_character_timeline', character_tag=tag, **chapter.kwargs) }}"
+            hx-target="#character-timeline-panel" hx-swap="outerHTML"
+            hx-disabled-elt="this">Build appearance timeline through this chapter</wa-button>
+        {% set events = character.get('description_timeline', [])|selectattr('chapter', 'equalto', chapter.number)|rejectattr('description', 'in', invalid_descriptions)|list %}
+        {% if not events %}
+        <p class="character-appearance-status" role="status">
+            {% if scanned %}No appearance changes were found in this chapter.{% else %}Appearance changes have not been scanned for this chapter yet.{% endif %}
+        </p>
+        {% endif %}
+        {% for event in events %}
+        <form class="wa-stack" style="border-top: 1px solid var(--wa-color-neutral-300); padding-block: .75rem"
+            hx-put="{{ url_for('library.book.chapter.characters.save_character_timeline_event', character_tag=tag, **chapter.kwargs) }}"
+            hx-target="#character-timeline-panel" hx-swap="outerHTML">
+            <wa-input type="number" label="Starts at phrase" name="phrase" min="0" value="{{ event.phrase }}" required></wa-input>
+            <wa-textarea label="Appearance from this phrase onward" name="description" rows="3" value="{{ event.description }}" required></wa-textarea>
+            <wa-textarea label="Story evidence" name="evidence" rows="2" value="{{ event.get('evidence', '') }}"></wa-textarea>
+            <div class="wa-cluster">
+                <wa-button type="submit">Save change</wa-button>
+                <wa-button type="button" appearance="outlined" variant="danger"
+                    hx-delete="{{ url_for('library.book.chapter.characters.delete_character_timeline_event', character_tag=tag, phrase_index=event.phrase, **chapter.kwargs) }}"
+                    hx-target="#character-timeline-panel" hx-swap="outerHTML">Delete</wa-button>
+            </div>
+        </form>
+        {% endfor %}
+        <form class="wa-stack" style="border-top: 1px solid var(--wa-color-neutral-300); padding-block: .75rem"
+            hx-put="{{ url_for('library.book.chapter.characters.save_character_timeline_event', character_tag=tag, **chapter.kwargs) }}"
+            hx-target="#character-timeline-panel" hx-swap="outerHTML">
+            <strong>Add appearance change</strong>
+            <wa-input type="number" label="Starts at phrase" name="phrase" min="0" required></wa-input>
+            <wa-textarea label="Appearance from this phrase onward" name="description" rows="3" required></wa-textarea>
+            <wa-textarea label="Story evidence" name="evidence" rows="2"></wa-textarea>
+            <wa-button type="submit">Add change</wa-button>
+        </form>
+    </details>
+    {% else %}
+    <p>No book characters yet. Add characters from the book page.</p>
+    {% endfor %}
+</div>

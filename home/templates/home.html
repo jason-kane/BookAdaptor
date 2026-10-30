@@ -623,6 +623,15 @@
         </div>
       {% endcall %}
 
+      {% call service_panel('theater', 'Theater', 'theater.svg', status='Beta', version_service='artifactserver') %}
+        <div class="wa-stack">
+          <a href="/theater/" data-service-port="8082">
+            <p>Enter Theater</p>
+          </a>
+          <p>Shape a story with a director and develop it into a film.</p>
+        </div>
+      {% endcall %}
+
       {% call service_panel('therapy', 'Therapy', 'therapy.png', status='Broken', version_service='artifactserver') %}
         <a href="/therapy/">
 

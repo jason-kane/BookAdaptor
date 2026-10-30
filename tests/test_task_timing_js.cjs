@@ -18,6 +18,8 @@ assert.match(timing.describe(job).title, /Min 10s · Avg 20s · Max 30s · 3 run
 assert.equal(timing.describe({state: 'running', timing: {elapsed_seconds: 5}}).label, 'Learning duration · 5s elapsed');
 assert.equal(timing.describe({state: 'queued', timing: {eta_seconds: 45}}, 5).label, 'Queued · ~40s to finish');
 assert.equal(timing.describe({...job, state: 'complete', duration_seconds: 12}).label, 'Done · 12s');
+assert.equal(timing.describe({...job, state: 'cancelled', duration_seconds: 8}, 99).label, 'Cancelled · 8s');
+assert.equal(timing.describe({...job, state: 'cancelled', duration_seconds: 8}).value, null);
 assert.equal(timing.duration(0.003), '3ms');
 assert.equal(timing.cleanMessage('Rendering (99%) — frames'), 'Rendering frames');
 timing.remember({...job, parent_job_id: 'render'});

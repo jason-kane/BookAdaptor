@@ -5,7 +5,8 @@
 {% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261027-eta-1">
+<link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261028-gpu-traceback-1">
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
     html,
@@ -80,6 +81,12 @@
     }
     .chapter-column-content > wa-tab-group > wa-tab-panel[active] {
         display: block;
+    }
+    #chapter-output-content > wa-tab-group > wa-tab-panel[name="textoviva"],
+    #chapter-output-content > wa-tab-group > wa-tab-panel[name="publish"] {
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
     }
     .chapter-editor-column wa-tab-panel[name="mood"],
     .chapter-editor-column wa-tab-panel[name="theme"] {
@@ -194,13 +201,13 @@
         justify-items: stretch;
         min-width: 0;
     }
-    .chapter-action-group:first-child .chapter-action-grid {
+    .chapter-action-group-audio .chapter-action-grid {
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
     }
-    .chapter-action-group:first-child .chapter-action-item:nth-child(-n + 2) {
+    .chapter-action-group-audio .chapter-action-item:nth-child(-n + 2) {
         grid-column: span 1;
     }
-    .chapter-action-group:first-child .chapter-action-item:nth-child(n + 3) {
+    .chapter-action-group-audio .chapter-action-item:nth-child(n + 3) {
         grid-column: span 1;
     }
     .chapter-action-item > wa-button,
@@ -210,6 +217,9 @@
     }
     .chapter-action-item > .wa-stack {
         gap: 0.25rem;
+    }
+    .chapter-action-item-jumbo {
+        grid-column: 1 / -1;
     }
     .chapter-action-status,
     .chapter-action-item [role="status"] {
@@ -315,6 +325,11 @@
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
         overflow: hidden;
+    }
+    .chapter-phrase-column wa-tab-panel[name="characters"] {
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > #chapter-timeline-scroll {
         position: absolute;
@@ -664,13 +679,17 @@
 {% endblock %}
 
 {% block scripts %}
+<script defer src="/static/js/image-leaves.js?v=1"></script>
+<script defer src="/static/js/library-image-leaves.js?v=2"></script>
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='5') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-columns.js', v='5') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='6') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-columns.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-drag-2') }}" defer></script>
 <script src="/static/js/chapter-typesetting.js?v=1" defer></script>
-<script defer src="/static/js/styler-samples.js?v=20261027-eta-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
+<script defer src="/static/js/styler-samples.js?v=chapter-image-events-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.
@@ -788,14 +807,37 @@
     function saveChapterSections() {
         clearTimeout(sectionSaveTimer);
         sectionSaveTimer = setTimeout(() => {
-            fetch('sections', {
+            window.saveChapterSectionsNow().catch(error => console.error(error));
+        }, 200);
+    }
+
+    window.saveChapterSectionsNow = async () => {
+        clearTimeout(sectionSaveTimer);
+        const response = await fetch('sections', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                 body: new URLSearchParams({sections: JSON.stringify(window.getChapterSectionsPayload())})
-            }).then(response => {
-                if (!response.ok) throw new Error(`Section save failed: ${response.status}`);
-            }).catch(error => console.error(error));
-        }, 200);
+        });
+        if (!response.ok) throw new Error(`Section save failed: ${response.status}`);
+    };
+
+    window.reflowChapterParagraphs = async button => {
+        const label = button.textContent;
+        button.setAttribute('loading', '');
+        try {
+            // Flush editor contents first so a pending autosave cannot race
+            // with or overwrite the reflow request.
+            await window.saveChapterSectionsNow();
+            const response = await fetch(button.dataset.reflowUrl, {method: 'PUT'});
+            if (!response.ok) throw new Error(`Reflow failed: ${response.status}`);
+            window.location.reload();
+        } catch (error) {
+            console.error(error);
+            button.textContent = 'Reflow failed';
+            window.setTimeout(() => { button.textContent = label; }, 3000);
+        } finally {
+            button.removeAttribute('loading');
+        }
     }
 
     function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}) {
@@ -870,6 +912,9 @@
 
 {% block body %}
 {% include "job-queue.html" %}
+<div class="image-reveal-stage" data-library-image-leaves
+     data-chapter-identity='{{ chapter.kwargs|tojson }}'
+     aria-hidden="true"></div>
 <wa-dialog id="chapter-image-viewer" label="Chapter image" style="--width: 96vw;">
     <div class="chapter-image-viewer-layout">
         <wa-button id="chapter-image-previous" aria-label="Previous image" appearance="plain">❮</wa-button>
@@ -917,10 +962,8 @@
                     <div class="chapter-actions-grid">
                         <wa-button
                             id="reflow_btn"
-                            hx-put="{{ url_for('library.book.chapter.reflow_paragraphs') }}"
-                            hx-on::before-request="beforeRequest(this,event)"
-                            hx-on::after-request="afterRequest(this,event)"
-                            hx-swap="none"
+                            data-reflow-url="{{ url_for('library.book.chapter.reflow_paragraphs') }}"
+                            onclick="reflowChapterParagraphs(this)"
                             variant="neutral" appearance="accent" size="medium"
                         >Reflow Paragraphs</wa-button>
                         {{import_button|safe}}
@@ -955,7 +998,7 @@
         <wa-tab-group active="timeline"
             hx-on:wa-tab-show="if (event.target.closest('wa-tab-group') === this) htmx.trigger(this.querySelector('wa-tab-panel[name=' + this.active + ']'), 'load-column')">
             <wa-tab panel="timeline">Timeline</wa-tab>
-            <wa-tab panel="characters">Characters</wa-tab>
+            <wa-tab panel="characters">Character Changes</wa-tab>
             <wa-tab panel="props">Props</wa-tab>
             <wa-tab panel="pronunciation">Pronunciation</wa-tab>
             <wa-tab-panel name="timeline"
@@ -964,7 +1007,9 @@
             </wa-tab-panel>
             <wa-tab-panel name="characters"
                 hx-get="{{ url_for('library.book.chapter.characters.base', panel=1, **chapter.kwargs) }}"
-                hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
+                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace"
+                hx-on::response-error="if (event.detail.elt === this) this.textContent = 'Could not load character changes. Reload the page to retry.'">
+                <p role="status">Loading character changes…</p>
             </wa-tab-panel>
             <wa-tab-panel name="props"
                 hx-get="{{ url_for('library.book.chapter.props.base', **chapter.kwargs) }}"
@@ -976,7 +1021,8 @@
             </wa-tab-panel>
         </wa-tab-group>
         </div>
-        <button type="button" class="chapter-actions-trigger" data-drawer="chapter-timeline-actions" aria-label="Open Timeline actions" title="Timeline actions" onclick="const d=document.getElementById(this.dataset.drawer),r=this.closest('.chapter-column').getBoundingClientRect();d.style.setProperty('--chapter-drawer-left',r.left+'px');d.style.setProperty('--chapter-drawer-width',r.width+'px');d.open=true"><wa-icon name="chevron-up" aria-hidden="true"></wa-icon></button>
+        <button type="button" class="chapter-actions-trigger" data-drawer="chapter-timeline-actions" aria-controls="chapter-timeline-actions" aria-label="Open Timeline actions" title="Timeline actions"><wa-icon name="chevron-up" aria-hidden="true"></wa-icon></button>
+        {% include "chapter_timeline_actions.html" %}
     </div>
     <div class="chapter-column wa-stack chapter-rendered-column">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
@@ -993,12 +1039,12 @@
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="image">
-                <div class="chapter-rendered-scroll">
+                <div class="chapter-rendered-scroll chapter-preview-image-scroll">
                     <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="rainbow">
-                <div class="chapter-rendered-scroll">
+                <div class="chapter-rendered-scroll chapter-preview-rainbow-scroll">
                     <div class="chapter-rainbow-overlay">
                         <div class="chapter-rainbow-background" aria-hidden="true"></div>
                         <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">

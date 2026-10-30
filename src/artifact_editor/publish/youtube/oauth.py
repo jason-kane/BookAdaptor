@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, redirect, request
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 bp = Blueprint("youtube_oauth", __name__)
 COOKIE = "youtube_oauth_state"
+DEFAULT_REDIRECT_URI = "http://localhost:8082/oauth/youtube/callback"
 
 
 def directory():
@@ -36,7 +37,7 @@ def make_flow(**kwargs):
     return Flow.from_client_secrets_file(
         str(directory() / "client_secret.json"), scopes=SCOPES,
         redirect_uri=current_app.config.get("YOUTUBE_REDIRECT_URI") or os.environ.get(
-            "YOUTUBE_REDIRECT_URI", "http://localhost:8080/oauth/youtube/callback"),
+            "YOUTUBE_REDIRECT_URI", DEFAULT_REDIRECT_URI),
         **kwargs,
     )
 

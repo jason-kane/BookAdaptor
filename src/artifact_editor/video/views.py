@@ -12,6 +12,7 @@ from flask import (
     Blueprint,
     render_template,
     send_file,
+    url_for,
     g,
 )
 import redis
@@ -154,6 +155,21 @@ def deliver_video(filename=""):
     )
 
 
+@bp.route("/download.mp4")
+def download_video():
+    """Download the rendered chapter MP4 for playback in a desktop player."""
+    filename = g.chapter.get_video_filename()
+    if not os.path.isfile(filename):
+        return "Video file not found", 404
+    return send_file(
+        filename,
+        mimetype="video/mp4",
+        as_attachment=True,
+        download_name=os.path.basename(filename),
+        etag=True,
+    )
+
+
 @bp.route("/")
 def base_video():
     filename = g.chapter.get_video_filename()
@@ -181,6 +197,11 @@ def base_video():
         pretty_title=pretty_title,
         chapter=g.chapter,
         filename=filename,
+        video_download_url=(url_for("library.book.chapter.video.download_video")
+                            if filename else None),
+        video_stream_url=(url_for("library.book.chapter.video.deliver_video", filename=filename.rsplit(".", 1)[0])
+                          if filename else None),
+        video_path=g.chapter.get_video_filename() if filename else None,
         replace_masterplan_button=masterplan_htmx.regenerate_masterplan_button(
             g.chapter
         ),

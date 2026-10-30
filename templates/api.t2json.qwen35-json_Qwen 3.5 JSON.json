@@ -16,7 +16,7 @@
         "9",
         0
       ],
-      "max_length": 256,
+      "max_length": 1024,
       "sampling_mode": "on",
       "sampling_mode.temperature": 0.7,
       "sampling_mode.top_k": 64,
@@ -67,7 +67,7 @@
   },
   "8": {
     "inputs": {
-      "string": "\"You are a specialized JSON generator. Return ONLY a JSON object. No markdown, no 'Here is your JSON', no preamble. \n"
+      "string": "\"You are a specialized JSON generator. Return ONLY the JSON object or array requested by the user. No markdown, no preamble. \n"
     },
     "class_type": "BetterString",
     "_meta": {

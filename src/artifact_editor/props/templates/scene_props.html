@@ -7,7 +7,4 @@
         <wa-option value="{{ tag }}"{% if tag in selected %} selected{% endif %}>{{ prop.name }}</wa-option>
         {% endfor %}
     </wa-select>
-    {% for tag in selected if tag in props %}
-    <div><strong>{{ props[tag].name }}</strong>: {{ props[tag].description }}</div>
-    {% endfor %}
 </div>

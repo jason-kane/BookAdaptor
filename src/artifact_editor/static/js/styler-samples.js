@@ -697,6 +697,62 @@
         button.title = `Retry ${job.state === 'complete' ? 'completed' : 'failed'} task`;
     }
 
+    // Give failed GPU jobs a direct way to copy the provider traceback.
+    function updateQueueTracebackButton(row, job) {
+        const supported = job.state === 'failed' && Boolean(job.traceback || job.message);
+        let button = row.querySelector('[data-queue-traceback]');
+        if (!supported) {
+            button?.remove();
+            return;
+        }
+        if (!button) {
+            button = document.createElement('wa-button');
+            button.dataset.queueTraceback = '';
+            button.className = 'styler-queue-traceback';
+            button.setAttribute('type', 'button');
+            button.setAttribute('size', 'small');
+            button.setAttribute('appearance', 'plain');
+            const icon = document.createElement('wa-icon');
+            icon.setAttribute('src', '/static/fontawesome7/svgs/solid/copy.svg');
+            icon.setAttribute('aria-hidden', 'true');
+            button.append(icon);
+            button.addEventListener('click', async event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const details = [
+                    'GPU task traceback',
+                    `Task: ${job.label || job.job_type || 'GPU task'}`,
+                    `Job ID: ${job.job_id || ''}`,
+                    job.message ? `Error: ${job.message}` : '',
+                    job.traceback || job.message || '',
+                ].filter(Boolean).join('\n');
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(details);
+                    } else {
+                        const field = document.createElement('textarea');
+                        field.value = details;
+                        field.setAttribute('readonly', '');
+                        field.style.position = 'fixed';
+                        field.style.opacity = '0';
+                        document.body.append(field);
+                        field.select();
+                        const copied = document.execCommand('copy');
+                        field.remove();
+                        if (!copied) throw new Error('Clipboard copy was rejected');
+                    }
+                    button.title = 'Traceback copied';
+                } catch (_) {
+                    button.title = 'Copy failed';
+                }
+                setTimeout(() => { button.title = 'Copy traceback'; }, 1800);
+            });
+            row.querySelector('.styler-queue-other-slot').append(button);
+        }
+        button.setAttribute('aria-label', `Copy traceback for ${job.label || job.job_type || 'GPU task'}`);
+        button.title = 'Copy traceback';
+    }
+
     // Create, update, or remove a queued job’s delete button.
     function updateQueueDeleteButton(row, job) {
         const supported = job.state === 'queued' && Boolean(job.job_id);
@@ -744,6 +800,7 @@
         updateQueueFindButton(row, job);
         updateQueueDeleteButton(row, job);
         updateQueueRetryButton(row, job);
+        updateQueueTracebackButton(row, job);
         const label = row.querySelector('.styler-queue-task-label');
         const name = queueTaskName(job);
         if (label.textContent !== name) label.textContent = name;
@@ -1984,9 +2041,21 @@
             return;
         }
         if (!event || typeof event !== 'object' || Array.isArray(event)) return;
+        if (['chapter_image_snapshot', 'chapter_image_complete'].includes(event.state)) {
+            document.dispatchEvent(new CustomEvent('chapter:image-event', {detail: event}));
+            return;
+        }
         event = window.TaskTiming?.enrich(event) || event;
+        if (event.state === 'cpu_retry_queued' || event.state === 'cpu_retry_rejected') {
+            document.dispatchEvent(new CustomEvent('cpu:retry-result', {detail: event}));
+            return;
+        }
         if (event.state === 'cpu_queue_plan') {
             document.dispatchEvent(new CustomEvent('cpu:queue-plan', {detail: event}));
+            return;
+        }
+        if (['cpu_cancelled', 'cpu_cancelling', 'cpu_cancel_rejected'].includes(event.state)) {
+            document.dispatchEvent(new CustomEvent('cpu:cancel-result', {detail: event}));
             return;
         }
         // TODO(MONITOR): sample state/action/engine/job_type values at this ingress point to find
@@ -1997,11 +2066,40 @@
         handleSampleEvent(event);
     }
 
+    document.addEventListener('cpu:retry-send', ({detail}) => {
+        if (socket?.readyState !== WebSocket.OPEN) {
+            document.dispatchEvent(new CustomEvent('cpu:retry-result', {detail: {
+                state: 'cpu_retry_rejected', job_id: detail?.job_id,
+                message: 'Queue connection is unavailable',
+            }}));
+            return;
+        }
+        socket.send(JSON.stringify({action: 'retry_cpu_job', job_id: detail?.job_id}));
+    });
+
+    document.addEventListener('cpu:cancel-send', ({detail}) => {
+        if (socket?.readyState !== WebSocket.OPEN) {
+            document.dispatchEvent(new CustomEvent('cpu:cancel-result', {detail: {
+                state: 'cpu_cancel_rejected', job_id: detail?.job_id,
+                message: 'Queue connection is unavailable',
+            }}));
+            return;
+        }
+        socket.send(JSON.stringify({action: 'cancel_cpu_job', job_id: detail?.job_id,
+            allow_running: detail?.allow_running === true}));
+    });
+
     // Reset connection-scoped caches and request the work visible in the DOM.
     function handleSocketOpen() {
         sent = new WeakSet();
         lastReportedQueueCapacity = -1;
         targets.clear();
+        const imageStage = document.querySelector('[data-library-image-leaves]');
+        if (imageStage?.dataset.chapterIdentity) {
+            socket.send(JSON.stringify({
+                ...JSON.parse(imageStage.dataset.chapterIdentity), action: 'watch_chapter_images',
+            }));
+        }
         updateWorkerResetControl(false);
         if (pendingGPUProvider) {
             socket.send(JSON.stringify({

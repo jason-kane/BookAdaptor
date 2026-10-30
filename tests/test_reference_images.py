@@ -25,12 +25,15 @@ class ReferenceTests(unittest.TestCase):
             'comfy': SimpleNamespace(load_workflow_template=template),
             'const': SimpleNamespace(COMFY_DIRS={'artifactserver': {'WORKFLOWS_DIR': root}}, COMFYUI_UI_URL='http://localhost:8188/'),
         }):
-            for kind, size in [('props', (1024,1024)), ('characters', (768,1152))]:
+            for kind, size in [('props', (1024,1024)), ('characters', (768,1152)), ('scenes', (1536,1024))]:
                 url = reference.open_reference_workflow(kind, 'Current edited description')
                 filename = url.split('workflow=')[1]
                 data = json.loads((Path(root) / filename).read_text())
                 self.assertIn('Current edited description', data['text']['inputs']['text'])
-                self.assertIn('strong contrast', data['text']['inputs']['text'])
+                if kind != 'scenes':
+                    self.assertIn('strong contrast', data['text']['inputs']['text'])
+                for word in ('signboard', 'goblet', 'pigeon'):
+                    self.assertNotIn(word, data['text']['inputs']['text'].lower())
                 self.assertEqual(data['latent']['inputs'], dict(width=size[0], height=size[1]))
                 self.assertTrue(data['save']['inputs']['filename_prefix'].startswith(kind + '/'))
             with self.assertRaises(ValueError):

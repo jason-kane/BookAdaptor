@@ -1,7 +1,7 @@
 (() => {
     const jobs = new Map();
     const bindings = new Map();
-    const terminal = new Set(['complete', 'loaded', 'failed']);
+    const terminal = new Set(['complete', 'loaded', 'failed', 'cancelled']);
     const numeric = value => value === null || value === undefined || value === '' ? null
         : Number.isFinite(Number(value)) ? Number(value) : null;
 
@@ -44,10 +44,10 @@
         let value = null;
         let label;
         if (stopped) {
-            label = state === 'failed' ? 'Failed' : 'Done';
+            label = state === 'cancelled' ? 'Cancelled' : state === 'failed' ? 'Failed' : 'Done';
             const measured = numeric(job.duration_seconds) ?? seconds;
             if (measured !== null) label += ` · ${duration(measured)}`;
-            value = state === 'failed' ? null : 100;
+            value = ['failed', 'cancelled'].includes(state) ? null : 100;
         } else if (state === 'queued') {
             const finish = numeric(timing.eta_seconds);
             remaining = finish === null ? null : finish - age;

@@ -26,3 +26,9 @@ def test_explicit_selection_takes_precedence_over_previous_image_filename():
                  SimpleNamespace(id='t2i.old', path='ui.t2i.old_Old.json')]
     image = dict(index='0', workflow_image_template='t2i.new', src='img_0_old_Old.png')
     assert selected_image_workflow(image, templates, 't2i.old') == 't2i.new'
+
+
+def test_source_workflow_stays_selected_after_replacing_a_generated_image():
+    templates = [SimpleNamespace(id='t2i.old', path='ui.t2i.old_Old.json')]
+    image = dict(index='0', workflow_image_template='source.chapter', src='img_0_old_Old.png')
+    assert selected_image_workflow(image, templates, 't2i.old') == 'source.chapter'

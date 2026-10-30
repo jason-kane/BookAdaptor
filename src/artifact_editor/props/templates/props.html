@@ -8,7 +8,7 @@
     {% endfor %}
         <wa-tab panel="new">New</wa-tab>
     {% for tag, prop in props.items() %}
-    <wa-tab-panel name="prop-{{ tag }}">
+    <wa-tab-panel name="prop-{{ tag }}" style="max-height: min(70vh, 42rem); overflow-y: auto; overscroll-behavior: contain;">
     <div class="wa-stack" style="position:relative;padding-top:40px">
         <wa-button type="button" size="small" variant="danger" appearance="plain"
             aria-label="Delete prop" title="Delete prop"

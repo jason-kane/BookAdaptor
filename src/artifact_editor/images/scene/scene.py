@@ -143,7 +143,33 @@ def generate_scene_characters(chapter, image_xml: Tag):
         "Single JSON format list of characters only.  Do not explain."
     )
     
-    scene_characters = list(llm.json_prompt(prompt))
+    response = llm.json_prompt(prompt)
+    if isinstance(response, dict):
+        response = response.get("characters", response.get("scene_characters", [response]))
+    if isinstance(response, str):
+        response = [response]
+    if not isinstance(response, (list, tuple, set)):
+        response = []
+
+    # Models may return either a list of names or structured records such as
+    # [{"name": "Fly"}]. Canonicalize both forms to known character names
+    # before storing the comma-separated XML attribute.
+    scene_characters = []
+    for item in response:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("character") or item.get("tag")
+        else:
+            name = item
+        if not isinstance(name, str) or not name.strip():
+            continue
+        tag = characters.resolve_character_tag(all_characters, name)
+        if tag is None:
+            log.warning("Ignoring unknown scene character %r for image %s", name, image_xml.attrs.get("index"))
+            continue
+        canonical_name = all_characters[tag].get("name", tag)
+        if canonical_name not in scene_characters:
+            scene_characters.append(canonical_name)
+
     if 'Narrator' in scene_characters:
         # we don't allow the narrator to be _in_ the scene.  If you want that, you need
         # to make a "real" character for the narrator.

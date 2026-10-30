@@ -171,8 +171,19 @@ def set_pronunciation():
 
     pronunciation_dict = pronunciation.get_global_pronunciations(g.chapter)
 
+    old_pronunciation = pronunciation_dict.get(key, {}).get("pronunciation", "")
     pronunciation_dict[key].update({"pronunciation": pronun})
     pronunciation.save_global_pronunciations(g.chapter, pronunciation_dict)
+
+    if pronun != old_pronunciation:
+        pronunciation_wav = os.path.join(
+            const.LIBRARY_DIR,
+            g.chapter.bookdir.lstrip("/"),
+            "pronunciation",
+            f"{key}.wav",
+        )
+        if os.path.exists(pronunciation_wav):
+            os.unlink(pronunciation_wav)
 
     return htmx.edit_row(g.chapter, key=key)
 
@@ -263,10 +274,7 @@ def get_pronunciation_audio(key):
 
     wavfile = os.path.join(pronunciation_dir, f"{key}.wav")
 
-    if os.path.exists(wavfile):
-        os.unlink(wavfile)
-
-    if True:
+    if not os.path.exists(wavfile):
         log.info(f"Generating pronunciation audio for '{word}' as '{pronun}'")
         # so sloppy phrases.speak(), you are embarassing.
         phrase_xml = BeautifulSoup(

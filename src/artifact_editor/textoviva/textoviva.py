@@ -33,6 +33,42 @@ import comfy
 log = logger.log(__name__)
 from artifact_editor.cache import r
 
+
+def _is_cuda_oom(error):
+    message = str(error).casefold()
+    return "out of memory" in message or "outofmemoryerror" in message
+
+
+def _lower_quality_after_oom(image_xml, workflow_template, required_frames, error):
+    """Choose the next Turbo preset without changing the requested duration."""
+    if workflow_template != "h3turbo":
+        raise RuntimeError(
+            f"Shot {image_xml.attrs.get('index', '?')} ran out of GPU memory at its full "
+            "requested duration. This workflow has no automatic resolution fallback; "
+            "the duration was not shortened. " + str(error)
+        ) from error
+
+    current = image_xml.attrs.get("animation_quality", "low").casefold()
+    lower = {"high": "medium", "medium": "low"}.get(current)
+    if lower:
+        return lower
+
+    duration = max(0, int(required_frames)) / const.FPS
+    if duration < 15:
+        detail = (
+            f"Low-quality shot {image_xml.attrs.get('index', '?')} ran out of GPU memory at "
+            f"{duration:.2f} seconds. A Low-quality animation under 15 seconds should fit; "
+            "this points to a workflow or VRAM-preparation problem. The full requested "
+            "duration was preserved and no shorter retry was attempted."
+        )
+    else:
+        detail = (
+            f"Shot {image_xml.attrs.get('index', '?')} ran out of GPU memory at Low quality "
+            f"for its full {duration:.2f}-second duration. No lower quality preset is available, "
+            "and the duration was not shortened."
+        )
+    raise RuntimeError(f"{detail} ComfyUI error: {error}") from error
+
 if TYPE_CHECKING:
     from artifact_editor.chapter.chapter import Chapter
 
@@ -42,7 +78,7 @@ class Textoviva:
         self.chapter = chapter
         self.videofile = chapter.get_video_filename()
 
-    def create_video(self, force: bool = False, progress=None, regenerate_image_index=None, regenerate_image_indices=None, regenerate_insufficient=False, rebuild=False):
+    def create_video(self, force: bool = False, progress=None, regenerate_image_index=None, regenerate_image_indices=None, regenerate_insufficient=False, rebuild=False, fast_draft=False):
         """
         Create a video from narration, still images, and existing animations.
         """
@@ -220,9 +256,24 @@ class Textoviva:
         # but.. if we do that, we could use a human voice just as easily as a
         # generated one.
         # Start with Audio to establish our base timeline.
-        report(5, "Preparing narration audio")
+        report(5, "Aligning spoken-line timing with generated voice audio")
         total_duration = 0
-        for phrase in self.chapter.phrases():
+        chapter_phrases = list(self.chapter.phrases())
+        phrases_needing_speaker_review = [
+            phrase.phrase_xml for phrase in chapter_phrases
+            if (phrase.phrase_xml.get('speaker_source') in ('', None)
+                and (not phrase.phrase_xml.get('speaker')
+                     or phrase.phrase_xml.get('speaker') == 'Narrator'))
+        ]
+        if phrases_needing_speaker_review:
+            from artifact_editor.characters.characters import extract_characters, assign_phrase_speakers
+
+            report(3, 'Finding story characters before assigning phrase speakers')
+            extract_characters(self.chapter)
+            assign_phrase_speakers(self.chapter, progress=lambda percent, message: report(
+                3 + int(percent * 0.07), message
+            ))
+        for phrase_position, phrase in enumerate(chapter_phrases, start=1):
             # Chapter.phrases() yields Phrase wrappers; video generation needs
             # the underlying BeautifulSoup tag so it can read and update XML
             # attributes.
@@ -238,7 +289,11 @@ class Textoviva:
 
             audio_filename = phrases.get_wavfile_filename(phrase_xml, self.chapter)
             if not os.path.isfile(audio_filename):
-                report(5, f"Phrase {phrase.index}: Generating Audio")
+                speaker = phrase_xml.attrs.get("speaker", "Narrator")
+                report(
+                    5,
+                    f"Creating speech audio for line {phrase_position}/{len(chapter_phrases)} · {speaker}",
+                )
                 phrase_xml = self.speak(
                     chapter=self.chapter,
                     phrase_xml=phrase_xml,
@@ -308,14 +363,23 @@ class Textoviva:
         self.chapter.save_xml()
 
         # generate scene metadata and descriptions
-        for image_xml in self.chapter.images():
-            report(10, f"Image {image_xml.attrs['index']}: Preparing Metadata")
-            images.generate_metadata_from_text(
-                chapter=self.chapter,
-                image_xml=image_xml,
-                force_all=False,
-            )
-        self.chapter.save_xml()
+        if not fast_draft:
+            from artifact_editor.images.source_motion import active_motion
+            metadata_images = [image for image in self.chapter.images() if not active_motion(image)]
+            for position, image_xml in enumerate(metadata_images):
+                image_label = f"Image {position + 1}/{len(metadata_images)}"
+
+                def report_metadata(percent, message):
+                    report(10, f"{image_label} · {message}")
+
+                report_metadata(0, "Preparing metadata")
+                images.generate_metadata_from_text(
+                    chapter=self.chapter,
+                    image_xml=image_xml,
+                    force_all=False,
+                    progress=report_metadata,
+                )
+            self.chapter.save_xml()
 
         self.generate_missing_images(progress=progress)
         # Animation generation is an explicit action. A complete still image
@@ -332,7 +396,11 @@ class Textoviva:
         # retained by "generate missing". Never reuse a partial or mixed-width
         # PNG sequence from an interrupted/older extraction.
         from artifact_editor import tools
-        from artifact_editor.images.animation_source import animation_filename
+        from artifact_editor.images.animation_source import (
+            animation_filename,
+            extracted_frames_are_current,
+            mark_extracted_frames_current,
+        )
         for image_xml in self.chapter.images():
             paragraph = image_xml.find_parent("paragraph")
             paragraph_dir = os.path.join(
@@ -342,23 +410,36 @@ class Textoviva:
             filename = animation_filename(image_xml, paragraph_dir)
             if not filename:
                 continue
+            animation_path = os.path.join(paragraph_dir, filename)
             animation_root = os.path.join(paragraph_dir, "animation")
             prefix = f"image_{int(image_xml['index']):06d}_"
+            frame_dir = os.path.join(animation_root, prefix + "00")
+            from artifact_editor.images.animation_quality import prepare_animation_source, upscale_animation
+            target_size = prepare_animation_source(self.chapter, image_xml)
+            if extracted_frames_are_current(animation_path, frame_dir, const.FPS, target_size):
+                log.info("Reusing extracted animation frames", image_index=image_xml["index"])
+                continue
+
+            upscale_animation(animation_path, target_size)
             for directory in glob.glob(os.path.join(animation_root, prefix + "*")):
                 if os.path.isdir(directory):
                     shutil.rmtree(directory)
             report(65, f"Image {image_xml['index']}: Expanding Animation")
             tools.extract_frames(
-                os.path.join(paragraph_dir, filename),
-                os.path.join(animation_root, prefix + "00"),
+                animation_path,
+                frame_dir,
             )
+            if not mark_extracted_frames_current(animation_path, frame_dir, const.FPS, target_size):
+                raise RuntimeError(f"Animation extraction produced no frames for image {image_xml['index']}")
+
+        # Rebuild the masterplan before camera preparation. Camera generation
+        # reads it, and a rerender may otherwise reuse a stale cached plan
+        # created before this chapter had timed silence entries.
+        self.chapter.get_masterplan(force=True)
 
         # generate text scrolling rate
         report(65, "Preparing camera movement")
         self.chapter.build_frame_to_camera(aspect=self.chapter.get_aspect())
-
-        # rebuild masterplan
-        self.chapter.get_masterplan(force=True)
 
         # if everything is where it belongs, this should assemble it into a
         # video.
@@ -374,9 +455,11 @@ class Textoviva:
 
     def generate_missing_images(self, progress=None):
         """Generate still images only; preserve existing images."""
+        from artifact_editor.images.images import reuse_existing_image
+        from artifact_editor.images.source import SOURCE_WORKFLOW
+
         report = progress or (lambda percent, message: None)
-        # second pass is massively more efficent so we don't have to
-        # toggle between models.
+        pending = []
         for image_index, image_xml in enumerate(self.chapter.images()):
             # Keep the prompt tab's workflow selector populated, including for
             # images whose files already exist and therefore skip generation.
@@ -386,7 +469,7 @@ class Textoviva:
                     workflow_template = image_workflow_name(workflow_template)
                 image_xml.attrs["workflow_image_template"] = workflow_template
 
-            image_fn = self.chapter.get_image_filename(image_xml)
+            image_fn = reuse_existing_image(self.chapter, image_xml)
             if image_fn:
                 if os.path.exists(image_fn):
                     log.info("[%s] Image %s already exists, skipping generation", image_index, image_fn)
@@ -395,6 +478,9 @@ class Textoviva:
                     log.warning("[%s] Image %s does not exist. generating replacement...", image_index, image_xml)
             else:
                 log.warning("[%s] Image %s has no filename...", image_index, image_xml)
+
+            if image_xml.get("workflow_image_template") == SOURCE_WORKFLOW:
+                raise ValueError(f"Choose a source image for image {image_xml['index']} from Chapter Source")
 
             # a "paragraph" image has the entire paragraph available and highlighted to
             # the image generator.  The specific phrases unique to _this_ image
@@ -407,27 +493,81 @@ class Textoviva:
 
             image_xml.attrs["workflow_image_template"] = workflow_template
 
+            template_environment = {}
+            if image_xml.attrs.get("render_profile") == "theater":
+                # Keep the diffusion pass modest while using the final film
+                # aspect from the outset. ComfyUI then scales the saved image
+                # to the exact full-screen dimensions in the same workflow.
+                aspect = self.chapter.get_aspect()
+                target_width, target_height = const.GEOMETRY[aspect]["SIZE"]
+                if aspect == "portrait":
+                    template_environment.update({"WIDTH": 576, "HEIGHT": 1024})
+                else:
+                    template_environment.update({"WIDTH": 1024, "HEIGHT": 576})
+                template_environment.update({
+                    "UPSCALE_WIDTH": target_width,
+                    "UPSCALE_HEIGHT": target_height,
+                })
+
             workflow_fn = self.chapter.get_workflow(
                 image_xml,
                 workflow_name=workflow_template,
                 video_index=None,
-                template_environment={}
+                template_environment=template_environment,
             )
-            report(20, f"Image {image_xml.attrs['index']}: Generating Image")
-            comfy.run_workflow_fn(workflow_fn)
+            pending.append((image_xml, workflow_fn))
 
-            candidates = selector_htmx.gather_candidate_images(image_xml, self.chapter)
-            image_xml.attrs['src'] = candidates[0] if candidates else ""
+        if pending:
+            for image_xml, _ in pending:
+                report(20, f"Queued still image for shot {image_xml.attrs['index']}")
+
+            def collect_image(position, result):
+                image_xml, _ = pending[position]
+                if isinstance(result, Exception):
+                    return
+                report(
+                    20 + int(40 * (position + 1) / len(pending)),
+                    f"Saving generated still for shot {image_xml.attrs['index']}",
+                )
+                candidates = selector_htmx.gather_candidate_images(image_xml, self.chapter)
+                image_xml.attrs['src'] = candidates[0] if candidates else ""
+                if image_xml.attrs['src']:
+                    # Persist each completed still immediately. Theater's live
+                    # progress view can then reveal it while later GPU tasks
+                    # remain queued.
+                    image_xml.attrs['image_generation_id'] = uuid.uuid4().hex
+                    self.chapter.save_xml()
+                    from artifact_editor.images.completions import publish_image_completion
+                    publish_image_completion(self.chapter, image_xml)
+
+            results = comfy.run_workflow_fn_batch(
+                [
+                    {
+                        "workflow_fn": workflow_fn,
+                        "label": f"Generate still image · {self.chapter.title} · shot {image_xml.attrs['index']}",
+                    }
+                    for image_xml, workflow_fn in pending
+                ],
+                on_complete=collect_image,
+                return_exceptions=True,
+            )
+            failures = [result for result in results if isinstance(result, Exception)]
+            if failures:
+                raise RuntimeError(
+                    f"Could not generate {len(failures)} of {len(pending)} missing shot images: {failures[0]}"
+                ) from failures[0]
 
         self.chapter.save_xml()
 
 
     def generate_missing_animations(self, progress=None, force=False,
                                     regenerate_image_index=None, regenerate_image_indices=None,
-                                    regenerate_insufficient=False):
+                                    regenerate_insufficient=False, _allow_batch=True):
         """Generate animations from existing stills without building a video."""
         report = progress or (lambda percent, message: None)
-        animation_images = list(self.chapter.images())
+        from artifact_editor.images.source_motion import active_motion
+
+        animation_images = [image for image in self.chapter.images() if not active_motion(image)]
         selected = None
         if regenerate_image_index is not None or regenerate_image_indices is not None:
             selected = {int(index) for index in (regenerate_image_indices or ())}
@@ -439,6 +579,11 @@ class Textoviva:
                    or not os.path.isfile(self.chapter.get_image_filename(image))]
         if missing:
             raise ValueError("Generate missing images before generating animations")
+        required_frames_by_image = {}
+        if regenerate_insufficient:
+            from artifact_editor.chapter.timeline import image_timings
+
+            required_frames_by_image = image_timings(self.chapter.get_xml())
         for image_xml in animation_images:
             if "animation_prompt" in image_xml.attrs and image_xml.attrs["animation_prompt"] not in ["", None]:
                 continue  # already has an animation prompt
@@ -469,8 +614,18 @@ class Textoviva:
                     self.chapter.get_paragraph_dir(int(paragraph["index"])),
                 )
                 count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
-                required = int(image_xml.attrs.get("frames", 0))
-                if count is not None and count >= required:
+                required = int(
+                    required_frames_by_image.get(str(image_xml["index"]), {}).get(
+                        "frames", image_xml.attrs.get("frames", 0)
+                    )
+                )
+                if required > 0 and int(image_xml.attrs.get("frames", 0) or 0) != required:
+                    # Image XML frame counts can lag the phrases and silence
+                    # that now define the timeline. Keep the workflow target,
+                    # sufficiency check, and displayed duration in sync.
+                    image_xml.attrs["frames"] = str(required)
+                    self.chapter.save_xml()
+                if count is not None and count >= required and selected is None:
                     continue
                 if count is None or count < required:
                     force = True
@@ -479,6 +634,15 @@ class Textoviva:
                     for attribute in ("animation_oom_audio_frames", "animation_oom_success_frames",
                                       "animation_oom_failure_frames"):
                         image_xml.attrs.pop(attribute, None)
+
+            # Theater and multi-shot edits can enqueue all independent shot
+            # animations together. The serial GPU worker sequences inference;
+            # this CPU worker collects each result as it finishes.
+            if _allow_batch and selected is not None and len(animation_images) > 1:
+                return self._generate_animation_batch(
+                    animation_images, progress=progress, force=True,
+                    regenerate_insufficient=regenerate_insufficient,
+                )
 
             if "animated_src" in image_xml.attrs and image_xml.attrs["animated_src"] not in ["", None]:
                 animated_src = image_xml.attrs["animated_src"]
@@ -521,7 +685,12 @@ class Textoviva:
                 if image_fn:
                     paragraph = image_xml.find_parent("paragraph")
                     image_index = int(image_xml.attrs["index"])
-                    paragraph_dir = self.chapter.get_paragraph_dir(paragraph.attrs["index"])
+                    # Keep frame checks rooted in the library after a forced
+                    # render; this value is also used below to verify output.
+                    paragraph_dir = os.path.join(
+                        const.LIBRARY_DIR,
+                        self.chapter.get_paragraph_dir(paragraph.attrs["index"]),
+                    )
 
                     # Remove cached ComfyUI outputs and chapter-side variants;
                     # otherwise gather_candidate_videos can select an old MP4
@@ -570,13 +739,28 @@ class Textoviva:
             workflow_template = image_xml.attrs.get("workflow_i2v_template") or const.DEFAULT_I2V_TEMPLATE
             workflow_template = animation_workflow_name(workflow_template)
 
+            from artifact_editor.images.animation_quality import prepare_animation_source, dimensions_for_quality
+
+            animation_target_size = prepare_animation_source(self.chapter, image_xml)
+            animation_environment = {}
+            if workflow_template == "h3turbo":
+                quality_width, quality_height = dimensions_for_quality(
+                    image_xml.attrs.get("animation_quality", "low"), *animation_target_size
+                )
+                animation_environment.update({"WIDTH": quality_width, "HEIGHT": quality_height})
+
             image_xml.attrs["workflow_i2v_template"] = (
                 image_xml.attrs.get("workflow_i2v_template") or const.DEFAULT_I2V_TEMPLATE
             )
 
-            audio_frames = int(image_xml.attrs.get("frames", 0))
+            audio_frames = int(
+                required_frames_by_image.get(str(image_xml["index"]), {}).get(
+                    "frames", image_xml.attrs.get("frames", 0)
+                )
+            )
             workflow_video_index = 0
-            animation_environment = {"SEED": uuid.uuid4().int % (2**63)} if force else {}
+            if force:
+                animation_environment["SEED"] = uuid.uuid4().int % (2**63)
 
             def build_animation_workflow(frame_count: int):
                 saved_frames = image_xml.attrs.get("frames")
@@ -597,150 +781,75 @@ class Textoviva:
                     else:
                         image_xml.attrs["frames"] = saved_frames
 
-            bounds_audio_frames = int(
-                image_xml.attrs.get("animation_oom_audio_frames", "0") or 0
-            )
-            if bounds_audio_frames != audio_frames:
-                image_xml.attrs.pop("animation_oom_audio_frames", None)
-                image_xml.attrs.pop("animation_oom_success_frames", None)
-                image_xml.attrs.pop("animation_oom_failure_frames", None)
-
-            lower_bound = int(
-                image_xml.attrs.get("animation_oom_success_frames", "0") or 0
-            )
-            upper_bound = int(
-                image_xml.attrs.get("animation_oom_failure_frames", "0") or 0
-            )
-            if force and 0 < lower_bound < upper_bound:
-                attempted_frames = (lower_bound + upper_bound + 1) // 2
-            else:
-                # Cover the entire audio span, including silence. Shorter
-                # requests are reserved for retries after an actual OOM.
-                default_animation_frames = max(1, audio_frames)
-                attempted_frames = default_animation_frames
-            workflow_fn = build_animation_workflow(attempted_frames)
-            if not workflow_fn:
-                raise RuntimeError(
-                    f"Could not build animation workflow {workflow_template} "
-                    f"for image {image_xml.attrs['index']}"
-                )
+            attempted_frames = max(1, audio_frames)
             attempted_duration = attempted_frames / const.FPS
-            log.info(
-                "Attempting animation generation",
-                image_index=image_xml.attrs["index"],
-                frames=attempted_frames,
-                duration_seconds=attempted_duration,
-            )
-            report(animation_percent, f"Image {image_xml.attrs['index']}: Generating Animation")
-            try:
-                comfy.run_workflow_fn(
-                    workflow_fn,
-                    duration_seconds=attempted_duration,
-                )
-            except RuntimeError as error:
-                error_text = str(error).lower()
-                if "out of memory" not in error_text and "outofmemoryerror" not in error_text:
-                    raise
-                if regenerate_insufficient:
-                    raise RuntimeError(
-                        f"Image {image_xml.attrs['index']}: full-duration animation "
-                        f"({audio_frames / const.FPS:g}s) ran out of memory. "
-                        "Generate missing animations requires the full audio duration; "
-                        "reduce workflow resolution or memory usage and retry. "
-                        f"ComfyUI error: {error}"
-                    ) from error
-
-                # The first failed full-duration run follows a half-duration
-                # trial; use their midpoint. Later trials bisect the saved
-                # successful/failed frame bounds for this image.
-                if force:
-                    if not lower_bound and attempted_frames == default_animation_frames:
-                        lower_bound = max(0, attempted_frames // 2)
-                    upper_bound = min(
-                        upper_bound or attempted_frames,
-                        attempted_frames,
-                    )
-                    image_xml.attrs["animation_oom_audio_frames"] = str(audio_frames)
-                    image_xml.attrs["animation_oom_success_frames"] = str(lower_bound)
-                    image_xml.attrs["animation_oom_failure_frames"] = str(upper_bound)
-                    self.chapter.save_xml()
-                    retry_frames = (lower_bound + upper_bound + 1) // 2
-                else:
-                    retry_frames = max(1, attempted_frames // 2)
-                if retry_frames >= attempted_frames:
-                    raise
-
-                log.warning(
-                    "Retrying animation after CUDA out-of-memory at binary-search midpoint",
-                    image_index=image_xml.attrs["index"],
-                    failed_duration_seconds=attempted_duration,
-                    lower_bound_duration_seconds=lower_bound / const.FPS,
-                    retry_duration_seconds=retry_frames / const.FPS,
-                    retry_frames=retry_frames,
-                )
-                comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
-                output_prefix = f"{self.chapter.nice}_img_{image_xml.attrs['index']}"
-                for partial_output in glob.glob(
-                    os.path.join(comfy_output_dir, output_prefix + "*.mp4")
-                ):
-                    os.remove(partial_output)
-
-                workflow_fn = build_animation_workflow(retry_frames)
+            while True:
+                workflow_fn = build_animation_workflow(attempted_frames)
                 if not workflow_fn:
                     raise RuntimeError(
-                        f"Could not build half-duration animation workflow for image "
-                        f"{image_xml.attrs['index']}"
-                    ) from error
-                attempted_frames = retry_frames
-                attempted_duration = attempted_frames / const.FPS
-                log.info(
-                    "Attempting animation generation after OOM",
-                    image_index=image_xml.attrs["index"],
-                    frames=attempted_frames,
-                    duration_seconds=attempted_duration,
+                        f"Could not build animation workflow {workflow_template} "
+                        f"for image {image_xml.attrs['index']}"
+                    )
+                quality = image_xml.attrs.get("animation_quality", "low").title()
+                report(
+                    animation_percent,
+                    f"Image {image_xml.attrs['index']}: Generating Animation · "
+                    f"{attempted_duration:.2f}s · {quality} quality",
                 )
-                report(animation_percent, f"Image {image_xml.attrs['index']}: Retrying Animation after out of memory")
                 try:
                     comfy.run_workflow_fn(
                         workflow_fn,
                         duration_seconds=attempted_duration,
+                        prepare_vram=workflow_template == "h3turbo",
                     )
-                except RuntimeError as retry_error:
-                    retry_error_text = str(retry_error).lower()
-                    if force and (
-                        "out of memory" in retry_error_text
-                        or "outofmemoryerror" in retry_error_text
+                    break
+                except RuntimeError as error:
+                    if not _is_cuda_oom(error):
+                        raise
+                    next_quality = _lower_quality_after_oom(
+                        image_xml, workflow_template, attempted_frames, error
+                    )
+                    image_xml.attrs["animation_quality"] = next_quality
+                    if workflow_template == "h3turbo" and animation_target_size:
+                        from artifact_editor.images.animation_quality import dimensions_for_quality
+                        quality_width, quality_height = dimensions_for_quality(
+                            next_quality, *animation_target_size
+                        )
+                        animation_environment.update({"WIDTH": quality_width, "HEIGHT": quality_height})
+                    self.chapter.save_xml()
+                    comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+                    output_prefix = f"{self.chapter.nice}_img_{image_xml.attrs['index']}"
+                    for partial_output in glob.glob(
+                        os.path.join(comfy_output_dir, output_prefix + "*.mp4")
                     ):
-                        image_xml.attrs["animation_oom_failure_frames"] = str(retry_frames)
-                        self.chapter.save_xml()
-                    raise
+                        os.remove(partial_output)
+                    report(
+                        animation_percent,
+                        f"Image {image_xml.attrs['index']}: Retrying at "
+                        f"{next_quality.title()} quality · full {attempted_duration:.2f}s duration",
+                    )
             log.info(
                 "Animation workflow completed; collecting generated videos",
                 image_index=image_xml.attrs["index"],
                 workflow=workflow_fn,
             )
-            if force and image_xml.attrs.get("animation_oom_failure_frames"):
-                previous_success = int(
-                    image_xml.attrs.get("animation_oom_success_frames", "0") or 0
-                )
-                image_xml.attrs["animation_oom_audio_frames"] = str(audio_frames)
-                image_xml.attrs["animation_oom_success_frames"] = str(
-                    max(previous_success, attempted_frames)
-                )
-                self.chapter.save_xml()
-
             report(animation_percent, f"Image {image_xml.attrs['index']}: Collecting Animation")
             # find the video file
             # put it in os.path.exists(os.path.join(const.LIBRARY_DIR, animated_src))
 
             candidates = selector_htmx.gather_candidate_videos(image_xml, self.chapter)
             if candidates:
+                candidate = max(candidates, key=os.path.getmtime)
                 log.info(
                     "Using newly generated animation candidate",
                     image_index=image_xml.attrs["index"],
-                    candidate=candidates[0],
+                    candidate=candidate,
                 )
-                shutil.move(candidates[0], animated_path)
+                if animation_target_size:
+                    from artifact_editor.images.animation_quality import upscale_animation
+
+                    upscale_animation(candidate, animation_target_size)
+                shutil.move(candidate, animated_path)
                 image_xml['animated_src'] = animated_src
                 self.chapter.save_xml()
                 if regenerate_insufficient:
@@ -752,6 +861,10 @@ class Textoviva:
                             f"the audio requires {audio_frames}. Check the workflow's "
                             "duration and output frame rate."
                         )
+                report(
+                    animation_percent,
+                    f"Image {image_xml['index']}: Animation complete",
+                )
             else:
                 raise RuntimeError(
                     f"Animation workflow completed for image {image_xml.attrs['index']} "
@@ -759,6 +872,195 @@ class Textoviva:
                     f"{const.COMFY_DIRS['artifactserver']['OUTPUT_DIR']}"
                 )
 
+        self.chapter.save_xml()
+
+
+    def _generate_animation_batch(self, animation_images, progress=None, force=False,
+                                  regenerate_insufficient=False):
+        """Queue independent shot animations together and collect them in order."""
+        report = progress or (lambda percent, message: None)
+        from artifact_editor.images.animation_source import animation_frame_count
+        from PIL import Image
+
+        items = {}
+        for image_xml in animation_images:
+            for attribute in ("animation_oom_audio_frames", "animation_oom_success_frames",
+                              "animation_oom_failure_frames"):
+                image_xml.attrs.pop(attribute, None)
+            image_index = int(image_xml["index"])
+            image_fn = self.chapter.get_image_filename(image_xml)
+            paragraph = image_xml.find_parent("paragraph")
+            paragraph_dir = os.path.join(
+                const.LIBRARY_DIR,
+                self.chapter.get_paragraph_dir(int(paragraph["index"])),
+            )
+            workflow_template = animation_workflow_name(
+                image_xml.attrs.get("workflow_i2v_template") or const.DEFAULT_I2V_TEMPLATE
+            )
+            animated_src = image_xml.attrs.get("animated_src") or image_fn.replace(".png", ".mp4")
+            animated_path = (
+                animated_src if os.path.isabs(animated_src)
+                else os.path.join(const.LIBRARY_DIR, animated_src.lstrip("/"))
+            )
+            if os.path.exists(animated_path):
+                os.remove(animated_path)
+            comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+            comfy_prefix = f"{self.chapter.nice}_img_{image_index}"
+            for stale_video in glob.glob(os.path.join(comfy_output_dir, comfy_prefix + "*.mp4")):
+                os.remove(stale_video)
+            for stale_video in images.all_videos_by_image_index(paragraph_dir, image_index):
+                os.remove(stale_video)
+            animation_dir = os.path.join(
+                const.LIBRARY_DIR,
+                self.chapter.get_paragraphdir(int(paragraph["index"])),
+                "animation", f"image_{image_index:06d}_00",
+            )
+            shutil.rmtree(animation_dir, ignore_errors=True)
+            extraction_source = image_fn.replace(".png", ".mp4")
+            if os.path.isfile(extraction_source):
+                os.remove(extraction_source)
+
+            from artifact_editor.images.animation_quality import prepare_animation_source
+            target_size = prepare_animation_source(self.chapter, image_xml)
+            required_frames = max(1, int(image_xml.attrs.get("frames", 0) or 0))
+            items[image_index] = {
+                "image": image_xml,
+                "image_index": image_index,
+                "image_fn": image_fn,
+                "paragraph_dir": paragraph_dir,
+                "animated_src": animated_src,
+                "animated_path": animated_path,
+                "target_size": target_size,
+                "required_frames": required_frames,
+                "workflow_template": workflow_template,
+            }
+
+        remaining = list(items)
+        completed = set()
+        while remaining:
+            pending = []
+            failures = []
+            for image_index in remaining:
+                item = items[image_index]
+                image_xml = item["image"]
+                image_fn = item["image_fn"]
+                for output in (item["animated_path"], image_fn.replace(".png", ".mp4")):
+                    if os.path.isfile(output):
+                        os.remove(output)
+                comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+                comfy_prefix = f"{self.chapter.nice}_img_{image_index}"
+                for stale_video in glob.glob(os.path.join(comfy_output_dir, comfy_prefix + "*.mp4")):
+                    os.remove(stale_video)
+                for stale_video in images.all_videos_by_image_index(item["paragraph_dir"], image_index):
+                    os.remove(stale_video)
+                animation_dir = os.path.join(
+                    const.LIBRARY_DIR,
+                    self.chapter.get_paragraphdir(int(image_xml.find_parent("paragraph")["index"])),
+                    "animation", f"image_{image_index:06d}_00",
+                )
+                shutil.rmtree(animation_dir, ignore_errors=True)
+
+                animation_environment = {}
+                if item["workflow_template"] == "h3turbo":
+                    from artifact_editor.images.animation_quality import dimensions_for_quality
+                    quality = image_xml.attrs.get("animation_quality", "low")
+                    animation_width, animation_height = dimensions_for_quality(
+                        quality, *item["target_size"]
+                    )
+                    animation_environment.update({"WIDTH": animation_width, "HEIGHT": animation_height})
+                if force:
+                    animation_environment["SEED"] = uuid.uuid4().int % (2**63)
+
+                original_frames = image_xml.attrs.get("frames")
+                image_xml.attrs["frames"] = str(item["required_frames"])
+                try:
+                    workflow_fn = self.chapter.get_workflow(
+                        image_xml,
+                        workflow_name=item["workflow_template"],
+                        video_index=0,
+                        template_environment=animation_environment,
+                        use_image_source=force,
+                    )
+                finally:
+                    if original_frames is None:
+                        image_xml.attrs.pop("frames", None)
+                    else:
+                        image_xml.attrs["frames"] = original_frames
+                if not workflow_fn:
+                    failures.append((image_index, RuntimeError("Could not build animation workflow")))
+                    continue
+                quality = image_xml.attrs.get("animation_quality", "default").title()
+                pending.append({
+                    **item,
+                    "workflow_fn": workflow_fn,
+                    "prepare_vram": item["workflow_template"] == "h3turbo",
+                    "label": f"Animate film shot · {self.chapter.title} · shot {image_index} · {quality} quality",
+                })
+
+            def collect_animation(position, result):
+                item = pending[position]
+                if isinstance(result, Exception):
+                    failures.append((item["image_index"], result))
+                    return
+                image_xml = item["image"]
+                candidates = selector_htmx.gather_candidate_videos(image_xml, self.chapter)
+                if not candidates:
+                    failures.append((item["image_index"], RuntimeError("ComfyUI produced no matching MP4")))
+                    return
+                candidate = max(candidates, key=os.path.getmtime)
+                from artifact_editor.images.animation_quality import upscale_animation
+                upscale_animation(candidate, item["target_size"])
+                shutil.move(candidate, item["animated_path"])
+                image_xml["animated_src"] = item["animated_src"]
+                self.chapter.save_xml()
+                completed.add(item["image_index"])
+                report(35 + int(30 * len(completed) / max(1, len(items))),
+                       f"Image {item['image_index']}: Animation complete")
+
+            if pending:
+                results = comfy.run_workflow_fn_batch(
+                    [{"workflow_fn": item["workflow_fn"], "label": item["label"],
+                      "prepare_vram": item["prepare_vram"]} for item in pending],
+                    on_complete=collect_animation,
+                    return_exceptions=True,
+                )
+                failures.extend(
+                    (pending[position]["image_index"], result)
+                    for position, result in enumerate(results)
+                    if isinstance(result, Exception)
+                    and not any(image_index == pending[position]["image_index"] for image_index, _ in failures)
+                )
+
+            oom_failures = [(image_index, error) for image_index, error in failures if _is_cuda_oom(error)]
+            non_oom_failures = [failure for failure in failures if not _is_cuda_oom(failure[1])]
+            if non_oom_failures:
+                image_index, error = non_oom_failures[0]
+                raise RuntimeError(f"Animation for shot {image_index} failed: {error}") from error
+            next_remaining = []
+            seen_oom = set()
+            for image_index, error in oom_failures:
+                if image_index in seen_oom:
+                    continue
+                seen_oom.add(image_index)
+                item = items[image_index]
+                next_quality = _lower_quality_after_oom(
+                    item["image"], item["workflow_template"], item["required_frames"], error
+                )
+                item["image"].attrs["animation_quality"] = next_quality
+                self.chapter.save_xml()
+                next_remaining.append(image_index)
+                duration = item["required_frames"] / const.FPS
+                report(35, f"Shot {image_index}: retrying at {next_quality.title()} quality · full {duration:.2f}s duration")
+            remaining = next_remaining
+
+        if regenerate_insufficient:
+            for item in items.values():
+                count = animation_frame_count(item["image"], item["paragraph_dir"], const.FPS)
+                if count is None or count < item["required_frames"]:
+                    raise RuntimeError(
+                        f"Shot {item['image_index']} animation has {count if count is not None else 'unknown'} "
+                        f"frames; the narration requires {item['required_frames']}."
+                    )
         self.chapter.save_xml()
 
 

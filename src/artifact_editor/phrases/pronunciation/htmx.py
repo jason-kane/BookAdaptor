@@ -72,10 +72,14 @@ def edit_row(chapter, key):
         f"{key}.wav"
     )
     
-    cachebuster = ""
+    # Include the IPA in the audio URL so a changed pronunciation causes the
+    # browser to request a fresh example, even if the file timestamp is reused.
+    pronunciation_version = hashlib.sha256(
+        p['pronunciation'].encode('utf-8')
+    ).hexdigest()[:12]
+    cachebuster = pronunciation_version
     if os.path.exists(pronunciation_wav):
-        # cache buster is the modify time
-        cachebuster = os.path.getmtime(pronunciation_wav)
+        cachebuster = f"{pronunciation_version}-{os.path.getmtime(pronunciation_wav)}"
 
     syllables_str = "-".join([s['syllable'] for s in syllables])
 

@@ -2,6 +2,7 @@
 import importlib.util
 import ast
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -26,9 +27,12 @@ class SceneTests(unittest.TestCase):
         scene_llm = SimpleNamespace(str_prompt=Mock(return_value='Stone hall'))
         with patch.dict(sys.modules, {'artifact_editor': SimpleNamespace(llm=scene_llm)}):
             scenes.generate_description(self.chapter, scene)
-        image_llm = SimpleNamespace(str_prompt=Mock(return_value='A bird approaches a sign'))
+        image_llm = SimpleNamespace(get_cached_prompt=Mock(return_value=None), set_cached_prompt=Mock())
+        completion = Mock(return_value='A bird approaches a sign')
         namespace = {
             'llm': image_llm,
+            'os': os,
+            'redis': SimpleNamespace(Redis=Mock()),
             'get_text_to_next': lambda **kwargs: 'A bird approaches a sign.',
             'get_image_narration_context': lambda image: '',
         }
@@ -39,16 +43,20 @@ class SceneTests(unittest.TestCase):
         image = self.soup.find('image', index='1')
         image['Pigeon_action'] = 'Invented action: drinks from a golden fountain'
         image['Pigeon_description'] = 'Invented costume: a velvet cape'
-        with patch.dict(sys.modules, {'artifact_editor.chapter.scenes': scenes}):
+        with patch.dict(sys.modules, {'artifact_editor.chapter.scenes': scenes,
+                                     'llama_inference': SimpleNamespace(chat_completion=completion),
+                                     'gpu_tasks': SimpleNamespace(gpu_label=SimpleNamespace(get=lambda: 'Description'))}):
             namespace['generate_image_description'](image, force=True)
-        image_prompt = image_llm.str_prompt.call_args.args[0]
+        image_prompt = completion.call_args.args[1]
         scene_prompt = scene_llm.str_prompt.call_args.kwargs
         self.assertIn('visible characters, animals, props, actions', image_prompt)
         self.assertIn('CURRENT SOURCE PASSAGE (authoritative)', image_prompt)
-        self.assertIn('A title or heading is a label', image_prompt)
+        self.assertIn('minimal introductory composition', image_prompt)
         self.assertNotIn('golden fountain', image_prompt)
         self.assertNotIn('velvet cape', image_prompt)
         self.assertIn('empty environmental backdrop', scene_prompt['system_prompt'])
+        for word in ('signboard', 'goblet', 'pigeon'):
+            self.assertNotIn(word, scene_prompt['system_prompt'].lower())
         self.assertNotEqual(image_prompt, scene_prompt['prompt'])
         self.assertEqual(scene['description'], 'Stone hall')
         self.assertEqual(image['description'], 'A bird approaches a sign')
@@ -210,7 +218,9 @@ class SceneTests(unittest.TestCase):
                     if isinstance(n, ast.FunctionDef) and n.name == 'timeline_scene_editor')
         node.decorator_list = []
         client = Mock()
+        from task_queue import enqueue_task, VIDEO_QUEUE
         namespace = dict(g=SimpleNamespace(chapter=self.chapter), request=request, os=os, json=json,
+                         enqueue_task=enqueue_task, VIDEO_QUEUE=VIDEO_QUEUE,
                          render_template=Mock(return_value='panel'))
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), namespace)
         app = Flask(__name__)

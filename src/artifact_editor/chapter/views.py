@@ -292,9 +292,11 @@ def timeline_image_editor(image_index):
             "metadata",
             "generate",
             "select",
+            "source",
             "animation_description",
             "regenerate_animation_description",
             "animation_workflow",
+            "animation_quality",
         ):
             return "Invalid image action", 400
         if action == "regenerate_animation_description":
@@ -323,6 +325,15 @@ def timeline_image_editor(image_index):
             image["workflow_i2v_template"] = selected
             g.chapter.save_xml()
             return "", 204
+        if action == "animation_quality":
+            from artifact_editor.images.animation_quality import QUALITY_REFERENCE_SIZES
+
+            selected = request.form.get("animation_quality", "")
+            if selected not in QUALITY_REFERENCE_SIZES:
+                return "Invalid animation quality", 400
+            image["animation_quality"] = selected
+            g.chapter.save_xml()
+            return "", 204
         if action == "animation_description":
             image["animation_prompt"] = request.form.get("animation_prompt", "")
             g.chapter.save_xml()
@@ -336,12 +347,29 @@ def timeline_image_editor(image_index):
             from artifact_editor.cache import cache
 
             cache.clear()
+        if action == "source":
+            from artifact_editor.images.source import choose_source_image
+            from artifact_editor.images.completions import publish_image_completion
+            from artifact_editor.cache import cache
+
+            try:
+                choose_source_image(g.chapter, image, request.form.get("image_source", ""),
+                                    motion=request.form.get("source_motion"))
+            except (ValueError, FileNotFoundError, OSError):
+                return "Source image is unavailable or invalid", 400
+            cache.clear()
+            publish_image_completion(g.chapter, image)
         if "description" in request.form:
             image["description"] = request.form["description"]
             g.chapter.save_xml()
         if action == "description":
             return "", 204
         if action in ("metadata", "generate"):
+            if action == "generate":
+                from artifact_editor.images.source import SOURCE_WORKFLOW
+
+                if image.get("workflow_image_template") == SOURCE_WORKFLOW:
+                    return "Choose a source image from Chapter Source", 400
             from worker_startup import ensure_worker_services
 
             try:
@@ -417,25 +445,52 @@ def timeline_image_editor(image_index):
         )
     from artifact_editor.phrases.htmx import chapter_timing_updates
 
+    image_timing = next(
+        (
+            entry["timing"]
+            for entry in g.chapter.timeline()
+            if entry["type"] == "image"
+            and str(entry["image"]["index"]) == str(image_index)
+        ),
+        None,
+    )
+    from artifact_editor.images.animation_quality import (
+        dimensions_for_quality,
+        estimate_wall_seconds,
+        format_wall_time,
+        is_turbo_workflow,
+    )
+    selected_i2v_template = image.get("workflow_i2v_template") or const.DEFAULT_I2V_TEMPLATE
+    animation_quality = image.get("animation_quality", "low")
+    from artifact_editor.images.animation_quality import animation_output_size
+    target_width, target_height = animation_output_size(g.chapter, image)
+    animation_duration = (
+        image_timing["frames"] / const.FPS if image_timing else 0
+    )
+    animation_quality_options = []
+    for quality, label in (("low", "Low"), ("medium", "Medium"), ("high", "High")):
+        width, height = dimensions_for_quality(quality, target_width, target_height)
+        animation_quality_options.append({
+            "id": quality,
+            "label": label,
+            "width": width,
+            "height": height,
+            "estimate": format_wall_time(estimate_wall_seconds(animation_duration, quality)),
+        })
+
     return render_template(
         "chapter_timeline_image_editor.html",
         chapter=g.chapter,
         image=image,
-        timing=next(
-            (
-                entry["timing"]
-                for entry in g.chapter.timeline()
-                if entry["type"] == "image"
-                and str(entry["image"]["index"]) == str(image_index)
-            ),
-            None,
-        ),
+        timing=image_timing,
         animation_fps=const.FPS,
         prompt_controls=prompt_controls,
         animation_url=animation_url,
         i2v_templates=list(get_workflow_templates(mode="i2v")),
-        selected_i2v_template=image.get("workflow_i2v_template")
-        or const.DEFAULT_I2V_TEMPLATE,
+        selected_i2v_template=selected_i2v_template,
+        show_animation_quality=is_turbo_workflow(selected_i2v_template),
+        animation_quality=animation_quality,
+        animation_quality_options=animation_quality_options,
         preview_version=time.time_ns(),
         default_image_template=const.DEFAULT_IMAGE_TEMPLATE,
         thumbnails=thumbnails,
@@ -723,23 +778,10 @@ def remove_all_images():
 
 @bp.get("/timeline")
 def timeline_panel():
-    from artifact_editor.phrases import htmx as phrases_htmx
-
     return render_template(
         "chapter_timeline_panel.html",
         chapter=g.chapter,
         speakers=g.chapter.speakers(),
-        time_align_button=htmx.time_align_button(g.chapter),
-        generate_missing_animation_button=htmx.generate_missing_animation_button(
-            g.chapter
-        ),
-        generate_missing_metadata_button=htmx.generate_missing_metadata_button(
-            g.chapter
-        ),
-        generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
-        generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
-            g.chapter, label="Add Missing Audio"
-        ),
     )
 
 
@@ -771,6 +813,10 @@ def chapter_base():
             g.chapter
         ),
         generate_missing_images_button=htmx.generate_missing_images_button(g.chapter),
+        generate_missing_characters_button=htmx.generate_missing_characters_button(g.chapter),
+        generate_missing_props_button=htmx.generate_missing_props_button(g.chapter),
+        add_all_button=htmx.add_all_button(g.chapter),
+        process_character_appearances_button=htmx.process_character_appearances_button(g.chapter),
         generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
             g.chapter, label="Add Missing Audio"
         ),
@@ -851,6 +897,29 @@ def extract_author(delta, chapter, chapter_xml):
     return {"ops": ops}
 
 
+@bp.get("/generated_images")
+def generated_images():
+    """Small completion snapshot for the library's falling-image previews."""
+    images = []
+    for image in g.chapter.get_xml().find_all("image"):
+        generation_id = image.get("image_generation_id")
+        if not generation_id or not image.get("src"):
+            continue
+        filename = g.chapter.get_image_filename(image)
+        if not filename or not os.path.isfile(filename):
+            continue
+        images.append({
+            "id": generation_id,
+            "index": int(image["index"]),
+            "url": url_for("library.book.chapter.images.show_image_by_index",
+                           height=640, image_index=int(image["index"]),
+                           v=generation_id, **g.chapter.kwargs),
+        })
+    response = flask.jsonify(images)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @bp.route("/reflow_paragraphs", methods=["PUT"])
 def reflow_paragraphs():
     """
@@ -862,25 +931,85 @@ def reflow_paragraphs():
 
     # The trouble, or the challenge, is they are in delta format which
     # is not paragraph aware.
-    delta = g.chapter.load_delta()
-    out_ops = []
-    for operation in delta["ops"]:
-        if "insert" in operation:
-            operation["insert"] = re.sub(
-                r"\n{2,}", "**PARAGRAPH**", operation["insert"]
-            )
+    def reflow_operations(operations):
+        out_ops = [dict(operation) for operation in operations]
+        text_ops = [
+            index
+            for index, operation in enumerate(out_ops)
+            if isinstance(operation.get("insert"), str)
+        ]
+        # Paragraph boundaries may span adjacent Delta operations when
+        # formatting changes. Reflow the combined text, then restore each
+        # character to its original operation and formatting attributes.
+        original_text = [out_ops[index]["insert"] for index in text_ops]
+        combined_text = "".join(original_text)
+        transformed = []
+        index = 0
+        while index < len(combined_text):
+            if combined_text[index] != "\n":
+                transformed.append((index, combined_text[index]))
+                index += 1
+                continue
 
-            # remove all newlines that are not followed by a newline
-            # (reducing our \n\n\n to \n\n)
-            operation["insert"] = re.sub(r"\n([^\n])", r" \1", operation["insert"])
+            end = index + 1
+            while end < len(combined_text) and combined_text[end] == "\n":
+                end += 1
+            run_length = end - index
+            if run_length == 1:
+                # Keep Quill's required final newline; single line breaks
+                # inside a paragraph become spaces.
+                replacement = "\n" if end == len(combined_text) else " "
+                transformed.append((index, replacement))
+            else:
+                transformed.extend(((index, "\n"), (index + 1, "\n")))
+            index = end
 
-            operation["insert"] = re.sub(
-                r"\*\*PARAGRAPH\*\*", "\n\n", operation["insert"]
-            )
-        out_ops.append(operation)
+        output_text = [""] * len(text_ops)
+        source_operation = [
+            op_index
+            for op_index, value in enumerate(original_text)
+            for _ in value
+        ]
+        for source_index, char in transformed:
+            output_text[source_operation[source_index]] += char
+        for op_index, value in zip(text_ops, output_text):
+            out_ops[op_index]["insert"] = value
+        return out_ops
 
-    g.chapter.save_delta({"ops": out_ops})
-    return "", 200
+    sections_fn = os.path.join(
+        const.LIBRARY_DIR,
+        g.chapter.get_chapterdir(),
+        g.chapter.language,
+        "chapter.sections.json",
+    )
+    if os.path.exists(sections_fn):
+        with open(sections_fn, "r", encoding="utf-8") as section_file:
+            sections = json.load(section_file)
+        if not isinstance(sections, list) or any(
+            not isinstance(section, dict) or not isinstance(section.get("ops"), list)
+            for section in sections
+        ):
+            return "Invalid chapter sections", 400
+        for section in sections:
+            section["ops"] = reflow_operations(section["ops"])
+        with open(sections_fn, "w", encoding="utf-8") as section_file:
+            json.dump(sections, section_file, indent=2)
+    else:
+        delta = g.chapter.load_delta()
+        if isinstance(delta, dict) and isinstance(delta.get("ops"), list):
+            operations = delta["ops"]
+        elif isinstance(delta, list):
+            operations = delta
+        elif isinstance(delta, dict):
+            text = g.chapter.load_txt()
+            operations = [{"insert": text}] if text else []
+        else:
+            return "Invalid chapter delta", 400
+        g.chapter.save_delta({"ops": reflow_operations(operations)})
+
+    response = flask.make_response("", 200)
+    response.headers["HX-Refresh"] = "true"
+    return response
 
 
 def compress_ops(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2459,7 +2588,41 @@ def save_phrase_delta(phrase_index: int):
     phrase_xml.attrs["latex"] = html.escape(latex.replace("\n", r"\n"))
     phrase_xml.attrs.pop("latex_rainbow", None)
     g.chapter.save_xml()
+    _sync_sections_from_phrase_deltas(g.chapter)
     return "", 200
+
+
+def _sync_sections_from_phrase_deltas(chapter):
+    """Refresh saved section text and formatting from the current phrase deltas."""
+    sections = []
+    for paragraph in chapter.soup.find_all("paragraph"):
+        if "has-text=false" in paragraph.get("tags", "").replace(" ", "").lower():
+            continue
+        current_section = None
+        for phrase in paragraph.find_all("phrase"):
+            raw_delta = phrase.get("delta")
+            operations = json.loads(raw_delta) if raw_delta else [{"insert": phrase.get_text()}]
+            if isinstance(operations, dict):
+                operations = operations.get("ops", [])
+            method = phrase.get(
+                "typesetting_method", paragraph.get("typesetting_method", "verse")
+            )
+            if current_section is None or current_section["typesetting_method"] != method:
+                current_section = {"typesetting_method": method, "ops": []}
+                sections.append(current_section)
+            current_section["ops"].extend(operations)
+
+    if not sections:
+        return
+    sections_fn = os.path.join(
+        const.LIBRARY_DIR,
+        chapter.get_chapterdir(),
+        chapter.language,
+        "chapter.sections.json",
+    )
+    os.makedirs(os.path.dirname(sections_fn), exist_ok=True)
+    with open(sections_fn, "w", encoding="utf-8") as section_file:
+        json.dump(sections, section_file, indent=2)
 
 
 @bp.route("/title_delta", methods=["POST"])

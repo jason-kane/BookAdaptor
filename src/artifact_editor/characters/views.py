@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import random
 import shutil
@@ -88,6 +89,29 @@ def import_character():
 @bp.route("/", methods=["GET"])
 def base(embedded=False, extraction_message=""):
     log.info(f'author: "{g.author}", title: "{g.title}", chapter: "{g.chapter_number}"')
+
+    if request.args.get("panel") == "1":
+        book_characters = characters.get_all_characters(g.chapter, is_global=True)
+        chapter_characters = characters.get_all_characters(g.chapter)
+        for tag, reference in chapter_characters.items():
+            if tag == "Narrator" or tag in book_characters:
+                continue
+            resolved = characters.get_character(g.chapter, tag)
+            if resolved:
+                book_characters[tag] = resolved
+        book_characters = {
+            tag: record for tag, record in book_characters.items()
+            if tag != "Narrator"
+        }
+        return render_template(
+            "character_timeline_panel.html",
+            chapter=g.chapter,
+            characters=book_characters,
+            starting_descriptions={
+                tag: characters.character_description_at(record, g.chapter.number, -1)
+                for tag, record in book_characters.items()
+            },
+        )
 
     all_characters = characters.get_all_characters(g.chapter)
     unattached_speakers = set()
@@ -191,6 +215,58 @@ def base(embedded=False, extraction_message=""):
     )
 
 
+@bp.route("<character_tag>/timeline", methods=["PUT"])
+def save_character_timeline_event(character_tag):
+    phrase_index = request.form.get("phrase", "")
+    description = request.form.get("description", "").strip()
+    if not phrase_index.isdigit() or not description:
+        return "Choose a phrase and enter the appearance at that point.", 400
+    if g.chapter.get_phrase(phrase_index) is None:
+        return "Phrase not found in this chapter.", 404
+    characters.save_description_timeline_event(
+        g.chapter, character_tag, int(phrase_index), description,
+        request.form.get("evidence", ""),
+    )
+    return render_template(
+        "character_timeline_panel.html",
+        chapter=g.chapter,
+        characters=(book_characters := characters.get_all_characters(g.chapter, is_global=True)),
+        starting_descriptions={
+            tag: characters.character_description_at(record, g.chapter.number, -1)
+            for tag, record in book_characters.items()
+        },
+    )
+
+
+@bp.route("<character_tag>/timeline/extract", methods=["POST"])
+def extract_character_timeline(character_tag):
+    characters.extract_description_timeline(g.chapter, character_tag)
+    book_characters = characters.get_all_characters(g.chapter, is_global=True)
+    return render_template(
+        "character_timeline_panel.html",
+        chapter=g.chapter,
+        characters=book_characters,
+        starting_descriptions={
+            tag: characters.character_description_at(record, g.chapter.number, -1)
+            for tag, record in book_characters.items()
+        },
+    )
+
+
+@bp.route("<character_tag>/timeline/<int:phrase_index>", methods=["DELETE"])
+def delete_character_timeline_event(character_tag, phrase_index):
+    characters.delete_description_timeline_event(g.chapter, character_tag, phrase_index)
+    return render_template(
+        "character_timeline_panel.html",
+        chapter=g.chapter,
+        characters=(book_characters := characters.get_all_characters(g.chapter, is_global=True)),
+        starting_descriptions={
+            tag: characters.character_description_at(record, g.chapter.number, -1)
+            for tag, record in book_characters.items()
+        },
+    )
+
+
 # PUT /Malory/LeMorteDArthur_V01_B01/0001/characters/Ulfius/pronunciation_filter
 @bp.route("<character_name>/pronunciation_filter", methods=["PUT"])
 def htmx_pronunciation_filter(character_name):
@@ -237,7 +313,7 @@ def condense_description(character_name):
 @bp.route("<character_tag>/actions/generate_description", methods=["POST"])
 def generate_description(character_tag):
     """
-    Generate a description for the character based on the entire chapter.
+    Extract a character description from matching passages across the book.
     """
     description = characters.generate_description(g.chapter, character_tag)
 
@@ -310,14 +386,20 @@ def set_name(character_tag):
     """
     Update the character's name.
     """
-    all_characters = characters.get_all_characters(g.chapter)
-    character_dict = characters.tag_to_character(g.chapter, character_tag)
+    chapter_catalog = characters.get_all_characters(g.chapter)
+    is_global = chapter_catalog.get(character_tag, {}).get("is_global", False)
+    all_characters = characters.get_all_characters(g.chapter, is_global=is_global)
+    character_dict = characters.get_character(g.chapter, character_tag)
 
     name = request.form.get("name", "").strip()
     # don't allow a blank name
     if name:
         tag = characters.name_to_tag(name)
-        if tag not in all_characters:
+        if is_global:
+            # The tag is the stable identity referenced by every chapter.
+            character_dict["name"] = name
+            characters.save_character(g.chapter, character_tag, character_dict)
+        elif tag not in all_characters:
             # remove the old entry
             del all_characters[character_tag]
             # update the character entry
@@ -325,13 +407,14 @@ def set_name(character_tag):
             character_dict["name"] = name
 
             all_characters[tag] = character_dict
-            characters.save_characters(chapter, all_characters)
+            characters.save_characters(g.chapter, all_characters,
+                                       is_global=character_dict.get("is_global", False))
         elif character_tag == tag:
             # we can do some cleanup, just in case.  This lets users fix things
             # like whitespace in the 'name' that results in the same tag.
             character_dict["name"] = name
             all_characters[tag] = character_dict
-            characters.save_characters(chapter, all_characters)
+            characters.save_characters(g.chapter, all_characters)
 
     return htmx.character_data(g.chapter, character_dict)
 
@@ -352,7 +435,7 @@ def update_character_description(character_tag):
     """
     Update the character's description.
     """
-    character_dict = characters.tag_to_character(g.chapter, character_tag)
+    character_dict = characters.get_character(g.chapter, character_tag)
 
     description = request.form.get("description", "").strip()
 
@@ -372,14 +455,14 @@ def set_gender(character_tag: str):
     """
     Update the character's gender.
     """
-    character_dict = characters.tag_to_character(g.chapter, character_tag)
+    character_dict = characters.get_character(g.chapter, character_tag)
 
     gender = request.form.get("gender", "").strip()
 
     if gender:
         character_dict["gender"] = gender
         characters.save_character(
-            chapter,
+            g.chapter,
             character_tag,
             character_dict,
         )
@@ -402,7 +485,7 @@ def update_tts_engine(character_tag: str):
     """
     Update the character's TTS engine.
     """
-    character_dict = characters.tag_to_character(g.chapter, character_tag)
+    character_dict = characters.get_character(g.chapter, character_tag)
 
     tts_engine = request.form.get("tts_engine", "").strip()
 
@@ -420,7 +503,7 @@ def set_age(character_tag):
     """
     Update the character's age.
     """
-    character_dict = characters.tag_to_character(g.chapter, character_tag)
+    character_dict = characters.get_character(g.chapter, character_tag)
 
     age = request.form.get("age", "").strip()
 
@@ -436,6 +519,29 @@ def delete_character(character_tag):
     all_characters = characters.get_all_characters(g.chapter)
 
     if character_tag in all_characters:
+        if all_characters[character_tag].get("is_global"):
+            book_characters = characters.get_all_characters(g.chapter, is_global=True)
+            book_characters.pop(character_tag, None)
+            characters.save_characters(g.chapter, book_characters, is_global=True)
+            chapter_root = os.path.join(const.LIBRARY_DIR, g.chapter.bookdir, "chapter")
+            if os.path.isdir(chapter_root):
+                for entry in os.listdir(chapter_root):
+                    reference_fn = os.path.join(chapter_root, entry, "characters.json")
+                    if not os.path.isfile(reference_fn):
+                        continue
+                    try:
+                        with open(reference_fn, "r") as handle:
+                            references = json.load(handle)
+                    except (OSError, ValueError):
+                        continue
+                    if references.pop(character_tag, None) is not None:
+                        with open(reference_fn, "w") as handle:
+                            json.dump(references, handle, indent=2)
+            return (
+                '<div id="character_cards">'
+                + htmx.all_character_cards(g.chapter, book_characters)
+                + '</div>'
+            )
         del all_characters[character_tag]
         characters.save_characters(g.chapter, all_characters)
         log.info(
@@ -788,8 +894,7 @@ def voice_set_gender(character_tag=""):
     rebuild the language, accent and voices selection fields to take
     the new value of this field into account.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     character = characters.get_character(chapter, character_tag)
     character["voice_gender"] = request.form.get("gender", "all")
@@ -809,8 +914,7 @@ def voice_set_language(character_tag=""):
     rebuild the language, accent and voices selection fields to take
     the new value of this field into account.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     character = characters.get_character(chapter, character_tag)
     character["voice_language"] = request.form.get("language", "all")
@@ -831,8 +935,7 @@ def voice_set_accent(character_tag=""):
     rebuild the language, accent and voices selection fields to take
     the new value of this field into account.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     character = characters.get_character(chapter, character_tag)
     character["voice_accent"] = request.form.get("accent", "all")
@@ -880,10 +983,9 @@ def extract():
 def aliases(character_tag):
     try:
         characters.set_aliases(g.chapter, character_tag, request.form.get('aliases', '').splitlines())
-        message = 'Aliases saved.'
+        return 'Aliases saved.'
     except ValueError as exc:
-        message = str(exc)
-    return base(embedded=True, extraction_message=message)
+        return str(exc)
 
 
 @bp.route('/<character_tag>/merge', methods=['POST'])

@@ -178,8 +178,9 @@ def pop_tag_job(
     style_tag: str | None = None,
     *,
     provider: str | None = None,
+    allow_background: bool = True,
 ) -> dict[str, Any] | None:
-    """Atomically pop a style/provider-matching task without bypassing builders."""
+    """Atomically pop an eligible style/provider task without bypassing builders."""
     payload = client.eval(
         """
         local function take(queue, payload)
@@ -213,6 +214,12 @@ def pop_tag_job(
                 'EXISTS', 'styler:description-pending:' .. job_id
             ) == 1
         end
+        local function background_allowed(payload)
+            if ARGV[3] == '1' then return true end
+            local ok, task = pcall(cjson.decode, payload)
+            if not ok or type(task) ~= 'table' then return false end
+            return not task.idle_maintenance and task.background_category == nil
+        end
         local function provider_matches(payload)
             if ARGV[2] == '' then return true end
             local ok, task = pcall(cjson.decode, payload)
@@ -237,6 +244,7 @@ def pop_tag_job(
                 local ok, job = pcall(cjson.decode, payload)
                 if ok and job.style_tag == ARGV[1] and not building(payload)
                     and not waiting_for_description(payload)
+                    and background_allowed(payload)
                     and provider_matches(payload) then
                     return take(KEYS[1], payload)
                 end
@@ -244,7 +252,8 @@ def pop_tag_job(
         end
         if ARGV[2] ~= '' then
             for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
-                if provider_matches(payload) and not building(payload)
+                if provider_matches(payload) and background_allowed(payload)
+                    and not building(payload)
                     and not waiting_for_description(payload) then
                     return take(KEYS[1], payload)
                 end
@@ -252,7 +261,8 @@ def pop_tag_job(
             return nil
         end
         for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
-            if not building(payload) and not waiting_for_description(payload) then
+            if background_allowed(payload) and not building(payload)
+                and not waiting_for_description(payload) then
                 return take(KEYS[1], payload)
             end
         end
@@ -262,6 +272,7 @@ def pop_tag_job(
         queue,
         style_tag or "",
         provider or "",
+        "1" if allow_background else "0",
     )
     return json.loads(payload) if payload else None
 

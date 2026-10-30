@@ -20,6 +20,8 @@ from artifact_editor import (
 from artifact_editor.author.author import Author
 from artifact_editor.chapter import htmx as chapter_htmx
 from artifact_editor.chapter.chapter import Chapter
+from artifact_editor.characters import characters as character_store
+from artifact_editor.characters import htmx as character_htmx
 
 from . import htmx
 from .book import Book
@@ -112,6 +114,49 @@ def table_of_contents(author, title):
         bookdir=book.bookdir,
         chapter_list=chapter_htmx.chapter_list(author=author, title=title),
     )
+
+
+@bp.route("/characters", methods=["GET"])
+def characters_panel(author, title):
+    author_obj = Author(author)
+    chapter = Chapter(author_obj, title, 1, language="english")
+    catalog = character_store.get_all_characters(chapter, is_global=True)
+    character_cards = {
+        tag: character_htmx.character_data(chapter, character)
+        for tag, character in catalog.items()
+    }
+    return render_template(
+        "book_characters_panel.html",
+        author=author_obj,
+        title=title,
+        chapter=chapter,
+        characters=catalog,
+        character_cards=character_cards,
+    )
+
+
+@bp.route("/characters", methods=["POST"])
+def add_book_character(author, title):
+    author_obj = Author(author)
+    chapter = Chapter(author_obj, title, 1, language="english")
+    name = request.form.get("name", "").strip()
+    if not name:
+        return "Enter a character name.", 400
+    tag = character_store.name_to_tag(name)
+    catalog = character_store.get_all_characters(chapter, is_global=True)
+    if tag in catalog:
+        return "That character already exists in this book.", 409
+    catalog[tag] = {
+        "name": name,
+        "tag": tag,
+        "description": request.form.get("description", "").strip(),
+        "tts_engine": "kokoro",
+        "voices": [],
+        "alias": [],
+        "is_global": True,
+    }
+    character_store.save_characters(chapter, catalog, is_global=True)
+    return characters_panel(author, title)
 
 
 def ireplace(old, new, text):

@@ -99,10 +99,18 @@ def _requires_gpu_service(service: str):
                 bound = inspect.signature(function).bind(*args, **kwargs)
                 arguments = dict(bound.arguments)
                 workflow = arguments["workflow"]
+                prepare_vram = bool(arguments.pop("prepare_vram", False))
                 if isinstance(workflow, Workflow):
                     arguments["workflow"] = workflow.serialize()
-                return submit("gpu_workflow", arguments,
-                              timeout=max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600))
+                from gpu_tasks import gpu_task_priority
+
+                return submit(
+                    "gpu_workflow",
+                    arguments,
+                    timeout=max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600),
+                    priority=gpu_task_priority.get(),
+                    prepare_vram=prepare_vram,
+                )
             from gpu_service import use_gpu_service
 
             with use_gpu_service(None, service):
@@ -182,7 +190,7 @@ def free_vram(
 
                 available_gib = available_bytes / 1024**3
                 raise TimeoutError(
-                    "ComfyUI did not free enough VRAM for image tagging "
+                    "ComfyUI did not free enough VRAM for the queued GPU workflow "
                     f"({available_gib:.2f} GiB free; need {minimum_free_gib:.2f} GiB)"
                 )
 
@@ -401,6 +409,7 @@ def run_workflow(
     workflow: Workflow | dict[Any, Any],
     template_environment: dict[str, Any] | None = None,
     duration_seconds: float | None = None,
+    prepare_vram: bool = False,
 ) -> None:
     """Submit a UI/API workflow and wait for its matching completion event.
 
@@ -479,7 +488,8 @@ def run_workflow(
         connection.close()
 
 
-def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None) -> None:
+def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None,
+                    prepare_vram: bool = False) -> None:
     """Read a named workflow JSON file and submit it through ``run_workflow``."""
     log.info("Running %s with direct API call", workflow_fn)
     workflow_path = os.path.join(
@@ -488,4 +498,35 @@ def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None) -> 
     )
     with open(workflow_path, "r") as workflow_file:
         workflow = json.load(workflow_file)
-    return run_workflow(workflow, duration_seconds=duration_seconds)
+    return run_workflow(
+        workflow, duration_seconds=duration_seconds, prepare_vram=prepare_vram
+    )
+
+
+def run_workflow_fn_batch(workflows, *, on_complete=None, return_exceptions=False):
+    """Queue independent saved workflows together; the GPU queue sequences execution."""
+    from gpu_tasks import gpu_task_priority, submit_many
+
+    requests = []
+    timeout = max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600)
+    for item in workflows:
+        workflow_fn = item["workflow_fn"]
+        workflow_path = os.path.join(
+            const.COMFY_DIRS["artifactserver"]["WORKFLOWS_DIR"], workflow_fn
+        )
+        with open(workflow_path, "r") as workflow_file:
+            workflow = json.load(workflow_file)
+        arguments = {"workflow": workflow}
+        if item.get("duration_seconds") is not None:
+            arguments["duration_seconds"] = item["duration_seconds"]
+        requests.append({
+            "action": "gpu_workflow",
+            "arguments": arguments,
+            "provider": "comfyui",
+            "label": item.get("label") or "ComfyUI workflow",
+            "timeout": timeout,
+            "priority": gpu_task_priority.get(),
+            "prepare_vram": bool(item.get("prepare_vram", False)),
+        })
+    return submit_many(requests, on_complete=on_complete,
+                       return_exceptions=return_exceptions)

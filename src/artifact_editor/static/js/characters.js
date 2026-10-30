@@ -42,7 +42,14 @@ document.addEventListener('htmx:wsConfigSend', event => {
 });
 document.addEventListener('htmx:wsAfterSend', event => {
     const container = event.detail.elt?.closest('[data-character-image]');
-    if (container) container.querySelector('wa-button').disabled = true;
+    if (!container) return;
+    container.querySelector('wa-button').disabled = true;
+    const status = container.querySelector('[role="status"]');
+    if (status) {
+        delete status.dataset.videoState;
+        delete status.dataset.imageRefreshed;
+        status.textContent = 'Waiting for image service to accept the request…';
+    }
 });
 document.addEventListener('htmx:wsAfterMessage', () => {
     document.querySelectorAll('[data-character-image]').forEach(container => {
@@ -57,6 +64,13 @@ document.addEventListener('htmx:wsAfterMessage', () => {
             image.alt = 'Full-body character image';
             image.style.cssText = 'max-width:100%;max-height:600px;object-fit:contain';
             container.querySelector('[data-character-preview]').replaceChildren(image);
+            const panel = container.closest('[data-character-panel]');
+            if (panel) {
+                panel.style.backgroundImage = `linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,.38)), url("${image.src}")`;
+                panel.style.backgroundSize = 'cover';
+                panel.style.backgroundPosition = 'center 20%';
+                panel.style.backgroundRepeat = 'no-repeat';
+            }
             button.textContent = 'Regenerate Image';
             status.dataset.imageRefreshed = 'true';
         }

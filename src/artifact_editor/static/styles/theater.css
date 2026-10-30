@@ -1,0 +1,55 @@
+.theater-shell { max-width: 1440px; margin: 0 auto; padding: 2rem; }
+.theater-heading { display: flex; justify-content: space-between; align-items: end; gap: 2rem; margin-bottom: 2rem; }
+.theater-heading-actions { display: flex; align-items: center; gap: .75rem; }
+.theater-heading h1 { margin: .2rem 0; font-size: clamp(2.5rem, 7vw, 5rem); }
+.eyebrow { color: var(--wa-color-brand-300, #b7a2ff); text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; font-weight: 700; }
+.theater-create { max-width: 760px; padding: 1.5rem; border: 1px solid var(--wa-color-neutral-300); border-radius: 1rem; margin-bottom: 2rem; }
+.theater-project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.theater-project-card { color: inherit; text-decoration: none; border: 1px solid var(--wa-color-neutral-300); border-radius: 1rem; padding: 1.25rem; }
+.theater-project-card:hover { border-color: var(--wa-color-brand-500, #895dff); }
+.theater-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.theater-controls { position: sticky; top: 1rem; padding: 1.25rem; border: 1px solid var(--wa-color-neutral-300); border-radius: 1rem; }
+.director-room { min-width: 0; }
+.director-conversation { min-height: 160px; max-height: 420px; overflow: auto; padding: 1rem; border: 1px solid var(--wa-color-neutral-300); border-radius: 1rem; }
+.dialogue-line { white-space: pre-wrap; }
+.dialogue-line.user { color: var(--wa-color-neutral-200); }
+.dialogue-line.assistant { color: var(--wa-color-brand-300, #c2adff); }
+.director-chat-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: end; margin: 1rem 0; }
+.director-options, .sample-stills { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; margin: 1rem 0; }
+.director-option, .sample-still { padding: 1rem; border: 1px solid var(--wa-color-neutral-300); border-radius: .75rem; }
+.director-option { cursor: pointer; }
+.director-option:hover { border-color: var(--wa-color-brand-500, #895dff); }
+.script-section { margin-top: 2rem; }
+.script-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.script-heading h2 { margin: .2rem 0; }
+.script-hint, .theater-status, .director-profile-summary { color: var(--wa-color-neutral-300, #aaa); }
+.script-preview { display: grid; gap: 1rem; }
+.film-title { font-size: 1.5rem; font-weight: 650; margin: .35rem 0; }
+.film-production { margin-top: 2rem; padding: 1.25rem; border: 1px solid var(--wa-color-neutral-300); border-radius: 1rem; }
+.production-status { min-height: 1.5em; }
+.production-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+.editor-room-link { align-self: center; }
+.video-previews { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 1rem; }
+.video-preview { min-width: 0; }
+.video-preview h3 { margin: .5rem 0; }
+.video-preview video { display: block; width: 100%; max-height: 72vh; background: #000; }
+.script-rewrite, .script-requirements, .script-continuity, .director-scene { padding: 1rem; border: 1px solid var(--wa-color-neutral-300); border-radius: .75rem; }
+.script-preview h3, .script-preview h4 { margin: 0 0 .65rem; }
+.script-rewrite p, .script-note { white-space: pre-wrap; line-height: 1.5; }
+.script-requirements ol { display: grid; gap: .6rem; padding-left: 1.5rem; }
+.script-requirements li p { margin: .25rem 0; }
+.script-requirements li small { color: var(--wa-color-neutral-300, #aaa); }
+.script-continuity summary, .shot-prompts summary, .script-source summary { cursor: pointer; font-weight: 700; }
+.continuity-card { padding: .75rem 0; border-top: 1px solid var(--wa-color-neutral-300); }
+.continuity-card .script-note { margin: .35rem 0; }
+.director-scenes { display: grid; gap: .9rem; }
+.director-shot { margin-top: .9rem; padding: .8rem; border-left: 3px solid var(--wa-color-brand-500, #895dff); background: color-mix(in srgb, var(--wa-color-surface-raised, #333) 65%, transparent); }
+.director-shot .script-note { margin: .35rem 0; }
+.shot-prompts { margin-top: .75rem; }
+.script-source { margin-top: 1rem; }
+.script-source wa-textarea { display: block; margin-top: .75rem; }
+.script-empty { color: var(--wa-color-neutral-300, #aaa); }
+.script-task-status { color: var(--wa-color-brand-300, #c2adff); }
+.script-task-status:empty { display: none; }
+.theater-status:empty { display: none; }
+@media (max-width: 850px) { .theater-layout { grid-template-columns: 1fr; } .theater-controls { position: static; } .theater-shell { padding: 1rem; } }

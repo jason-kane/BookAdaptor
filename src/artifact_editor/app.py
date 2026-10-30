@@ -38,6 +38,7 @@ from artifact_editor.todo.views import bp as todo
 from artifact_editor.typography.views import bp as typography
 from artifact_editor.video.views import bp as video
 from artifact_editor.textoviva.views import bp as textoviva
+from artifact_editor.theater.views import bp as theater
 
 
 if t.TYPE_CHECKING:
@@ -192,6 +193,8 @@ def create_app(config_dict: t.Optional[dict] = None) -> Flask:
         therapy,
         url_prefix="/therapy"
     )
+
+    app.register_blueprint(theater, url_prefix="/theater")
 
     app.register_blueprint(
         workflow_templates,

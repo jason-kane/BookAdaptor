@@ -64,6 +64,7 @@ class FrameCacheTests(unittest.TestCase):
         module = ast.fix_missing_locations(ast.Module(body=[probe], type_ignores=[]))
         text_image = Path(self.directory.name) / 'chapter-1.png'
         text_image.write_bytes(b'text')
+        (Path(self.directory.name) / 'chapter.rainbow-1.png').write_bytes(b'rainbow')
         animation_image = Path(self.directory.name) / 'animation_000005.png'
         animation_image.write_bytes(b'old image')
         ns = dict(os=os, const=SimpleNamespace(LIBRARY_DIR=self.directory.name),
@@ -75,7 +76,10 @@ class FrameCacheTests(unittest.TestCase):
                   scroll_lock=123.5, phrase_id=2, image_dict={}, force=False, frame_fn=self.frame)
         exec(compile(module, '<renderer-cache-probe>', 'exec'), ns)
         Path(self.frame).write_bytes(b'png')
-        inputs = dict(self.inputs, text_revision=text_image.stat().st_mtime_ns, text_source='chapter-png', image_filename='animation_000005.png',
+        inputs = dict(self.inputs, text_revision=text_image.stat().st_mtime_ns,
+                      rainbow_revision=(Path(self.directory.name) / 'chapter.rainbow-1.png').stat().st_mtime_ns,
+                      source_motion=None, source_motion_target=None,
+                      text_source='chapter-png', image_filename='animation_000005.png',
                       image_path=str(animation_image), image_revision=animation_image.stat().st_mtime_ns,
                       image_size=animation_image.stat().st_size, phrase_id=2,
                       fullscreen=False, mode='fit-to-width', animate='', first_frame_index=4, max_frame_index=8)

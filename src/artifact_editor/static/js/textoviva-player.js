@@ -43,12 +43,15 @@
             });
             let timeline = null;
             let centeredPhrase = null;
+            let pauseRequested = false;
             function syncTimeline() {
                 if (!timeline || player.isDisposed()) return;
                 const frame = Math.floor(player.currentTime() * timeline.fps);
                 const phrase = timeline.phrases.find(item => item.start <= frame && frame <= item.end);
                 // Images begin at their XML positions and persist until the next image.
                 const image = timeline.images.filter(item => item.start <= frame).at(-1);
+                document.documentElement.dataset.playbackFrame = String(frame);
+                document.documentElement.dataset.playbackImageIndex = image ? String(image.index) : '';
                 let activePhrase = null;
                 document.querySelectorAll('[data-timeline-type]').forEach(item => {
                     const current = item.dataset.timelineType === 'phrase' ? phrase : image;
@@ -94,7 +97,11 @@
                 return fetch(timelineUrl, { cache: 'no-store' }).then(response => {
                     if (!response.ok) throw new Error('Could not load playback timeline');
                     return response.json();
-                }).then(data => { timeline = data; syncTimeline(); })
+                }).then(data => {
+                    timeline = data;
+                    syncTimeline();
+                    if (pauseRequested) reportPausedFrame();
+                })
                     .catch(error => console.error(error));
             }
             function refreshVideo() {
@@ -102,6 +109,15 @@
                 stopFollowing();
                 timeline = null;
                 centeredPhrase = null;
+                // A completed render can replace the first frame while keeping
+                // the poster URL unchanged. Bust its cache alongside the video
+                // so Video.js doesn't keep a stale (or missing) poster.
+                const poster = player.poster();
+                if (poster) {
+                    const posterUrl = new URL(poster, window.location.href);
+                    posterUrl.searchParams.set('render', Date.now());
+                    player.poster(posterUrl.href);
+                }
                 const source = player.currentSource();
                 const url = new URL(source.src, window.location.href);
                 url.searchParams.set('render', Date.now());
@@ -119,7 +135,24 @@
                     player.on(name, syncTimeline);
                 });
                 player.on('play', () => { stopFollowing(); followPlayback(); });
-                player.on('pause', stopFollowing);
+                function reportPausedFrame() {
+                    stopFollowing();
+                    pauseRequested = true;
+                    if (!timeline) return;
+                    syncTimeline();
+                    const frameIndex = Math.floor(player.currentTime() * timeline.fps);
+                    const image = timeline.images.filter(item => item.start <= frameIndex).at(-1);
+                    if (image) {
+                        pauseRequested = false;
+                        document.dispatchEvent(new CustomEvent('textoviva:paused', {
+                            detail: {frameIndex, imageIndex: image.index}
+                        }));
+                    }
+                }
+                player.on('pause', reportPausedFrame);
+                player.on('seeked', () => {
+                    if (player.paused()) reportPausedFrame();
+                });
                 player.on('ended', stopFollowing);
                 document.addEventListener('htmx:afterSettle', syncTimeline);
                 document.addEventListener('column-expanded', syncTimeline);
@@ -150,10 +183,20 @@
     }
 
     const completedJobs = new Set();
+    document.addEventListener('htmx:wsAfterSend', event => {
+        const button = event.detail.elt?.closest('#video-generation-notice')
+            ?.querySelector('wa-button');
+        if (button) button.disabled = true;
+    });
     document.addEventListener('htmx:wsAfterMessage', () => {
         let refresh = false;
         document.querySelectorAll('[data-video-job][data-video-state]').forEach(status => {
             const job = status.dataset.videoJob;
+            if (status.closest('#video-generation-notice') &&
+                ['complete', 'failed'].includes(status.dataset.videoState)) {
+                const button = status.closest('#video-generation-notice').querySelector('wa-button');
+                if (button) button.disabled = false;
+            }
             if (status.dataset.videoState !== 'complete') {
                 completedJobs.delete(job);
             } else if (!completedJobs.has(job)) {

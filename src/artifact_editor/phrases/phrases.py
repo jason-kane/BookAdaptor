@@ -1427,7 +1427,14 @@ def generate_all_audio(chapter, force=True, progress=None):
 
 def save_speaker(chapter, phrase_index: int, speaker):
     phrase_xml = chapter.get_phrase(phrase_index)
-    phrase_xml.attrs["speaker"] = name_to_tag(speaker)
+    speaker_tag = name_to_tag(speaker)
+    if phrase_xml.get("speaker") != speaker_tag:
+        wavfile = get_wavfile_filename(phrase_xml, chapter)
+        for stale in (wavfile, wavfile + ".pronunciation", wavfile + ".pronunciation.txt"):
+            if os.path.isfile(stale):
+                os.remove(stale)
+    phrase_xml.attrs["speaker"] = speaker_tag
+    phrase_xml.attrs["speaker_source"] = "manual"
     chapter.save_xml()
     return True
 

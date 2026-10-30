@@ -266,7 +266,7 @@ def draw_frame(
 
             # # we ain't got nothin, but there is a video.. 
             base_video_fn = ii_pfn.replace('.png', '.mp4')
-            if not animation_frames and os.path.exists(base_video_fn):
+            if not animation_frames and os.path.exists(base_video_fn) and not image_dict.get("source_motion"):
                 # no frames.. but we have a video?  no problem.
                 video_index = 0
                 finding_frames = True
@@ -341,6 +341,8 @@ def draw_frame(
 
             # Resolve the exact animation/camera/static image before comparing
             # inputs, and before building text layers or composing a canvas.
+            if image_dict.get("source_motion"):
+                image_cycle = [image_dict["source_motion_image"]]
             last_image_pfn = None
             for i, image_pfn in enumerate(image_cycle):
                 if image_pfn is None:
@@ -371,10 +373,23 @@ def draw_frame(
                 "animate": image_dict.get("animate", ""),
                 "first_frame_index": first_frame_index,
                 "max_frame_index": max_frame_index,
+                "source_motion": image_dict.get("source_motion"),
+                "source_motion_target": list(G["SIZE"] if fullscreen else
+                                             (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT))
+                if image_dict.get("source_motion") else None,
             }
             if not force and frame_is_current(frame_fn, frame_inputs):
                 return
             invalidate_frame_metadata(frame_fn)
+
+            motion_image = None
+            if image_dict.get("source_motion"):
+                from artifact_editor.images.source_motion import render_frame as render_source_frame
+
+                progress = (frame_index - first_frame_index) / max(1, max_frame_index - first_frame_index)
+                target = G["SIZE"] if fullscreen else (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
+                with Image.open(image_pfn) as illustration:
+                    motion_image = render_source_frame(illustration, image_dict["source_motion"], progress, target)
 
             if not fullscreen:
                 if scroll_lock is None:
@@ -425,11 +440,15 @@ def draw_frame(
                     continue
 
                 try:
-                    imaginative_image = Image.open(image_pfn)
-                    imaginative_image.verify()
-                    
-                    imaginative_image = Image.open(image_pfn)
-                    imaginative_image.load()
+                    if motion_image is not None:
+                        imaginative_image = motion_image
+                        mode = "scale"
+                    else:
+                        imaginative_image = Image.open(image_pfn)
+                        imaginative_image.verify()
+
+                        imaginative_image = Image.open(image_pfn)
+                        imaginative_image.load()
                 except OSError as err:
                     log.error(
                         "Failed to open imaginative image for frame",
@@ -554,7 +573,9 @@ def draw_frame(
 
                 mode = image_dict.get("mode", "fit-to-width")  # image scaling method
 
-                imaginative_image = ImageSafetyDanceOpen(image_pfn)
+                imaginative_image = motion_image if motion_image is not None else ImageSafetyDanceOpen(image_pfn)
+                if motion_image is not None:
+                    mode = "scale"
                 # imaginative_image = Image.open(image_pfn)
                 # imaginative_image.load()
                 

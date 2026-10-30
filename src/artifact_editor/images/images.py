@@ -6,7 +6,11 @@ import shutil
 import subprocess
 import textwrap
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
+from copy import copy, deepcopy
 from functools import lru_cache
+from threading import Lock
 
 import redis
 from ascii_magic import AsciiArt
@@ -536,6 +540,37 @@ def generate_metadata_setting(image_xml, force=False):
 
 
 def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=False, all_props=None):
+    # Merge canonical book records over chapter references while retaining
+    # chapter-local aliases.
+    book_characters_fn = os.path.join(const.LIBRARY_DIR, bookdir, "characters.json")
+    if os.path.isfile(book_characters_fn):
+        try:
+            with open(book_characters_fn, "r") as handle:
+                book_characters = json.load(handle)
+            for tag, reference in list(all_characters.items()):
+                if isinstance(reference, dict) and reference.get("is_global") and tag in book_characters:
+                    canonical = dict(book_characters[tag])
+                    if reference.get("alias"):
+                        canonical["alias"] = reference["alias"]
+                    all_characters[tag] = canonical
+        except (OSError, json.JSONDecodeError):
+            log.exception("Could not load book character descriptions for prompt")
+
+    paragraph = image_xml.find_parent("paragraph")
+    paragraph_dir = paragraph.get("dir", "") if paragraph else ""
+    path_parts = paragraph_dir.split(os.sep)
+    chapter_number = 0
+    if "chapter" in path_parts:
+        try:
+            chapter_number = int(path_parts[path_parts.index("chapter") + 1])
+        except (IndexError, ValueError):
+            chapter_number = 0
+    phrase_at_scene = image_xml.find_next("phrase") or image_xml.find_previous("phrase")
+    try:
+        phrase_index = int(phrase_at_scene.get("index", 0)) if phrase_at_scene else 0
+    except (TypeError, ValueError):
+        phrase_index = 0
+
     # start with meta_prompt
     prompt = image_xml.attrs.get(
         "meta_prompt", "[SETTING] [TOD] [CAMERA] [FOCUS_CHARACTER] [CHARACTERS]"
@@ -579,20 +614,30 @@ def build_replacement_prompt(all_characters, bookdir, image_xml, build_clip=Fals
 
             cd = all_characters.get(character_tag)
 
-            if image_xml.attrs.get(f"{character_tag}_description", ""):
+            saved_description = image_xml.attrs.get(f"{character_tag}_description", "")
+            if cd and cd.get("is_global") and chapter_number:
+                current_state = characters.character_description_at(
+                    cd, chapter_number, phrase_index
+                )
+                legacy_default = f"{character_name} is {cd.get('description', '')}"
+                if saved_description == legacy_default:
+                    # Older prompt builds cached the book baseline as though it
+                    # were an explicit scene override. Let the timeline resolve it.
+                    saved_description = ""
+            if saved_description:
                 # use the character description provided for this image
-                description = image_xml.attrs.get(f"{character_tag}_description", "")
+                description = saved_description
             else:
                 # use the default character description
                 log.info(f"Using default description for {character_name}")
                 cd = all_characters.get(character_tag)
                 if cd:
-                    description = f"{character_name} is {cd.get('description', '')}"
+                    description_text = cd.get("description", "")
+                    if cd.get("is_global") and chapter_number:
+                        description_text = current_state
+                    description = f"{character_name} is {description_text}"
 
             if description:
-                # save it for next time
-                image_xml.attrs[f"{character_tag}_description"] = description
-
                 if pose:
                     pose = " " + pose
 
@@ -748,10 +793,12 @@ def OBSOLETE_generate_metadata_scene_characters(mybook, image_xml, chapterdir, f
         image_xml.attrs["scene_characters"] = ",".join(as_list)
 
 
-def generate_metadata_character_pose(character, image_xml, chapter):
+def generate_metadata_character_pose(character, image_xml, chapter, force=False):
     """
     Choose a pose, location, and action for the character in this image.
     """
+    if f"{character['tag']}_pose" in image_xml.attrs and not force:
+        return
     surrounding_text = get_image_narration_context(image_xml)
 
     text = get_text_to_next(
@@ -770,7 +817,28 @@ def generate_metadata_character_pose(character, image_xml, chapter):
         + '\nReturn only a JSON object with one key, "pose", containing the chosen pose key.'
     )
 
-    pose = llm.json_prompt(prompt)
+    from llama_inference import chat_completion
+    from gpu_tasks import gpu_label
+
+    client = redis.Redis(
+        host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+    )
+    try:
+        raw_pose = chat_completion(
+            client,
+            prompt,
+            system_prompt=(
+                'Choose exactly one pose key from the supplied choices. '
+                'Return only a JSON object with one string field named "pose".'
+            ),
+            max_tokens=128,
+            thinking_budget_tokens=0,
+            response_format={"type": "json_object"},
+            label=gpu_label.get() or "Choosing pose",
+        )
+        pose = json.loads(raw_pose)
+    finally:
+        client.close()
     valid_pose = {key for key, label in scene_const.POSE_CHOICES}
     candidates = ([pose.get(key) for key in ("pose", "character_pose", "pose_selection")]
                   if isinstance(pose, dict) else [pose])
@@ -806,7 +874,9 @@ def generate_metadata_character_pose(character, image_xml, chapter):
     # )
 
 
-def generate_metadata_character_location(character, image_xml, chapter):
+def generate_metadata_character_location(character, image_xml, chapter, force=False):
+    if f"{character['tag']}_location" in image_xml.attrs and not force:
+        return
     # location
     surrounding_text = get_image_narration_context(image_xml)
 
@@ -856,6 +926,11 @@ def generate_metadata_character_action(character_dict, image_xml: Tag, force=Fal
     Ooh, the smart thing, the clever thing, is to generate a _motivation_ for 
     the character, in addition to the actual action(s)
     """
+    if f"{character_dict['tag']}_action" in image_xml.attrs and not force:
+        return {
+            "action": image_xml.attrs[f"{character_dict['tag']}_action"],
+            "motivation": image_xml.attrs.get(f"{character_dict['tag']}_motivation", ""),
+        }
     character_detail = llm.json_prompt(
         f"""
     Generate a concise description of what {character_dict['name']} is doing in
@@ -878,7 +953,8 @@ def generate_metadata_character_action(character_dict, image_xml: Tag, force=Fal
     The value for 'action' should be a short description of what the character
     is doing, and the value for 'motivation' should be a short description of
     why they are doing it, if that can be inferred from the text.
-    """.strip()
+    """.strip(),
+        force=force,
     )
     log.info(
         "Generated Character detail",
@@ -1000,6 +1076,8 @@ def generate_metadata_character_action_old(character_dict, image_xml, force=Fals
 
 def generate_image_description(image_xml, force=False):
     """Describe the complete illustration, separately from its scene backdrop."""
+    if not force and image_xml.get("description", "").strip():
+        return image_xml["description"]
     text = get_text_to_next(
         image_xml=image_xml, next_image_xml=image_xml.find_next("image")
     )
@@ -1012,7 +1090,7 @@ def generate_image_description(image_xml, force=False):
     metadata["tod"] = time_of_day(image_xml)
     for aspect, value in lighting(image_xml).items():
         metadata["lighting_" + aspect] = value
-    description = llm.str_prompt(
+    prompt = (
         "Describe one literal illustration of the current source passage. Fidelity to the text is the first priority. "
         "Describe the visible characters, animals, props, actions, spatial relationships, setting, lighting, and composition. "
         "Include only subjects, objects, actions, and relationships supported by the current passage. "
@@ -1020,34 +1098,200 @@ def generate_image_description(image_xml, force=False):
         "Seeing is not approaching, thirst is not drinking, and an intention is not a completed action. "
         "Do not add later events, inferred outcomes, symbolism, decorative objects, inscriptions, or invented staging. "
         "Earlier narration may resolve identities and pronouns, but must not supply new action for this image. "
-        "A title or heading is a label, not a physical object or an event: do not put it on a sign, "
-        "invent a painting to illustrate it, or act out the plot from the title. Keep its illustration minimal. "
+        "For a title or heading, use a minimal introductory composition grounded in the setting. "
         "The shared scene setting describes only the environmental backdrop; it does not restrict which "
         "characters or props belong in this illustration. Use the passage to determine those subjects and actions. "
         "Environmental metadata is secondary and may be inaccurate; omit anything that conflicts with the passage "
         "or adds unsupported narrative content. Leave unspecified details unspecified rather than embellishing. "
-        "Preserve depictions as depictions: a goblet painted on a signboard is a picture on its surface, "
-        "not a separate physical goblet; do not replace the depicted goblet with a picture of the pigeon. "
+        "Keep any depicted image within its stated medium and preserve the distinction from physical objects. "
         "Before answering, check each subject, action, and object against the passage and remove unsupported additions. "
         "Return only a short, factual illustration description, with no stylistic embellishment.\n\n"
-        f"CURRENT SOURCE PASSAGE (authoritative):\n{text}\n\nContinuity context and narration constraints:\n{context}\n\nSecondary environmental metadata:\n{metadata}",
-        force=force,
-    ).strip()
+        f"CURRENT SOURCE PASSAGE (authoritative):\n{text}\n\nContinuity context and narration constraints:\n{context}\n\nSecondary environmental metadata:\n{metadata}"
+    )
+    cache_prompt = "illustration_description:v1\n" + prompt
+    cached = llm.get_cached_prompt(cache_prompt, format="json", force=force)
+    if isinstance(cached, str) and cached.strip():
+        # Older responses may include the server's end-of-reasoning marker.
+        if "</think>" in cached:
+            cached = cached.rsplit("</think>", 1)[-1].strip()
+        if not cached:
+            cached = None
+    if isinstance(cached, str) and cached.strip():
+        image_xml["description"] = cached.strip()
+        return image_xml["description"]
+
+    from llama_inference import chat_completion
+    from gpu_tasks import gpu_label
+
+    client = redis.Redis(
+        host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+    )
+    try:
+        label = gpu_label.get()
+        if not label or label == "Video generation":
+            label = "Writing illustration description"
+        description = chat_completion(
+            client,
+            prompt,
+            system_prompt=(
+                "Return only a short, factual illustration description that follows "
+                "the supplied story evidence and instructions."
+            ),
+            max_tokens=2048,
+            thinking_budget_tokens=0,
+            label=label,
+        ).strip()
+    finally:
+        client.close()
+    if not description:
+        raise ValueError("Llama returned an empty illustration description")
+    llm.set_cached_prompt(cache_prompt, description, format="json")
     image_xml["description"] = description
     return description
 
 
-def generate_missing_metadata(chapter, progress=None):
-    """Fill missing image metadata and descriptions, saving after each image."""
+def reuse_existing_image(chapter, image_xml):
+    """Reuse a selected still or recover a completed output after an interrupted save."""
+    image_fn = chapter.get_image_filename(image_xml)
+    if image_fn and os.path.isfile(image_fn):
+        return image_fn
+
+    from artifact_editor.images.selector.htmx import gather_candidate_images
+
+    candidates = gather_candidate_images(image_xml, chapter)
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            image_xml.attrs["src"] = os.path.basename(candidate)
+            chapter.save_xml()
+            return candidate
+    return None
+
+
+def generate_missing_metadata(chapter, progress=None, skip_existing_images=False):
+    """Fill missing metadata, queueing independent image prompts concurrently."""
     progress = progress or (lambda percent, message: None)
-    image_list = chapter.get_xml().find_all("image")
-    for position, image in enumerate(image_list):
-        progress(position * 100 / len(image_list),
-                 f"Generating metadata: image {position + 1} of {len(image_list)}")
-        generate_metadata_from_text(chapter, image, force_all=False)
-        if not image.get("description", "").strip():
-            generate_image_description(image)
-        chapter.save_xml()
+    image_list = list(chapter.get_xml().find_all("image"))
+    if not image_list:
+        progress(100, "Missing metadata complete")
+        return
+
+    # Prime/migrate the chapter catalog once before worker threads read it.
+    characters.get_all_characters(chapter)
+    max_parallel = 3
+    progress_lock = Lock()
+    reported_percent = 0
+    image_positions = {
+        str(image.attrs["index"]): position
+        for position, image in enumerate(image_list)
+    }
+
+    def report_monotonic(value, message):
+        nonlocal reported_percent
+        with progress_lock:
+            value = min(99, value)
+            if value < reported_percent:
+                return
+            reported_percent = value
+            progress(value, message)
+
+    def process_batch(batch):
+        source_soup = chapter.get_xml()
+
+        def process_image(source_image):
+            local_soup = deepcopy(source_soup)
+            local_chapter = copy(chapter)
+            local_chapter.soup = local_soup
+            # Metadata routines save after individual fields. Keep those writes
+            # isolated until this image's complete result is merged below.
+            local_chapter.save_xml = lambda: None
+            image_index = str(source_image.attrs["index"])
+            local_image = local_soup.find("image", index=image_index)
+            if local_image is None:
+                raise ValueError(f"Image {image_index} disappeared during metadata generation")
+            original_attrs = dict(local_image.attrs)
+            image_position = image_positions[image_index]
+            image_label = f"Image {image_position + 1}/{len(image_list)}"
+
+            def report_image(percent, message):
+                from gpu_tasks import gpu_label
+
+                detail = f"{image_label} · {message}"
+                gpu_label.set(detail)
+                value = (image_position + percent / 100) * 100 / len(image_list)
+                report_monotonic(value, detail)
+
+            error = None
+            try:
+                report_image(0, "Preparing metadata")
+                generate_metadata_from_text(
+                    local_chapter, local_image, force_all=False, progress=report_image
+                )
+                if not local_image.get("description", "").strip():
+                    report_image(90, "Writing illustration description")
+                    generate_image_description(local_image)
+            except Exception as exc:
+                error = exc
+            changed_attrs = {
+                key: value for key, value in local_image.attrs.items()
+                if original_attrs.get(key) != value
+            }
+            removed_attrs = set(original_attrs) - set(local_image.attrs)
+            return image_index, changed_attrs, removed_attrs, error
+
+        errors = []
+        with ThreadPoolExecutor(max_workers=min(max_parallel, len(batch))) as pool:
+            futures = {
+                pool.submit(copy_context().run, process_image, image): image
+                for image in batch
+            }
+            for future in as_completed(futures):
+                image_index, changed_attrs, removed_attrs, error = future.result()
+                image = chapter.get_xml().find("image", index=image_index)
+                if image is None:
+                    errors.append(ValueError(f"Image {image_index} disappeared during metadata generation"))
+                    continue
+                image.attrs.update(changed_attrs)
+                for key in removed_attrs:
+                    image.attrs.pop(key, None)
+                chapter.save_xml()
+                if error:
+                    errors.append(error)
+                else:
+                    position = image_positions[image_index]
+                    report_monotonic(
+                        (position + 1) * 100 / len(image_list),
+                        f"Image {position + 1}/{len(image_list)} · Metadata complete",
+                    )
+        if errors:
+            raise errors[0]
+
+    batch = []
+    batch_ids = set()
+    from artifact_editor.chapter.scenes import active_scene
+
+    for image in image_list:
+        if skip_existing_images and reuse_existing_image(chapter, image):
+            continue
+        previous = image.find_previous_sibling("image")
+        previous_index = str(previous.attrs.get("index")) if previous else None
+        dependent_on_previous = bool(previous and (
+            ("style" not in image.attrs and "style" not in previous.attrs)
+            or (active_scene(image) is None and "setting" not in image.attrs
+                and "setting" not in previous.attrs)
+        ))
+        if batch and dependent_on_previous and previous_index in batch_ids:
+            process_batch(batch)
+            batch = []
+            batch_ids = set()
+        batch.append(image)
+        batch_ids.add(str(image.attrs["index"]))
+        if len(batch) >= max_parallel:
+            process_batch(batch)
+            batch = []
+            batch_ids = set()
+    if batch:
+        process_batch(batch)
+
     progress(100, "Missing metadata complete")
 
 
@@ -1140,7 +1384,6 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             image_xml.attrs["focus_character"] = focus_character
             chapter.save_xml()
 
-    progress(75, "Generating character poses and actions")
     # new characters may have been created, reload them
     # log.info("Reloading all characters for chapter %s", chapter)
     all_characters = characters.get_all_characters(chapter)
@@ -1168,17 +1411,20 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             if character_dict:
                 log.info(f"Found character {character_name} in {chapter}")
                 # choose an appropriate pose, location, and action
-                if f"{character_dict['tag']}_pose" not in image_xml.attrs:
+                if f"{character_dict['tag']}_pose" not in image_xml.attrs or force_all:
                     log.warning('Missing pose for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
-                    generate_metadata_character_pose(character_dict, image_xml, chapter)
+                    progress(76, f"Choosing pose for {character_name}")
+                    generate_metadata_character_pose(character_dict, image_xml, chapter, force=force_all)
 
-                if f"{character_dict['tag']}_location" not in image_xml.attrs:
+                if f"{character_dict['tag']}_location" not in image_xml.attrs or force_all:
                     log.warning('Missing location for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
-                    generate_metadata_character_location(character_dict, image_xml, chapter)
+                    progress(82, f"Choosing location for {character_name}")
+                    generate_metadata_character_location(character_dict, image_xml, chapter, force=force_all)
 
-                if f"{character_dict['tag']}_action" not in image_xml.attrs:
+                if f"{character_dict['tag']}_action" not in image_xml.attrs or force_all:
                     log.warning('Missing action for character %s in image %s, generating...', character_name, image_xml.attrs['index'])
-                    generate_metadata_character_action(character_dict, image_xml)
+                    progress(88, f"Choosing action for {character_name}")
+                    generate_metadata_character_action(character_dict, image_xml, force=force_all)
 
             else:
                 log.warning(f"Character {character_name} not found")

@@ -169,14 +169,9 @@ def get_image_narration_context(image_xml, context_min=600):
         "Do not summarize the story, foreshadow later events, or advance beyond the narration. "
         "For a title, heading, or introduction, use a quiet introductory illustration and "
         "subtle ambient motion; do not act out the plot. Infer no future actions or motivations. "
-        "Preserve what is real versus depicted: a painting, reflection, sign illustration, "
-        "dream, or imagined object must remain attached to its stated medium. "
-        "Describe the physical surface first, then the image ON that surface. "
-        "For example, a goblet of water painted on a signboard means a flat signboard "
-        "bearing a two-dimensional picture of a goblet containing water, not a real "
-        "painted goblet holding actual water. Keep depicted contents inside the picture. "
-        "Do not turn seeing or noticing into approaching, diving, touching, or drinking "
-        "unless the current narration explicitly describes that action. "
+        "Use only subjects and objects supported by the current passage. "
+        "Keep any two-dimensional picture within its stated medium rather than making its contents physical. "
+        "Preserve the actions stated in the narration without advancing them or inventing outcomes. "
         "Earlier narration is for continuity only.\n"
         + "Earlier narration:\n" + " ".join(reversed(previous))
         + "\nOpening narration for this image:\n" + opening_text

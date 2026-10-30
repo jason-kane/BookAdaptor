@@ -52,3 +52,28 @@ window.openChapterActions = button => {
     drawer.setAttribute('open', '');
     drawer.addEventListener('wa-after-hide', () => drawer.removeAttribute('open'), { once: true });
 };
+
+// Keep the appearance controls responsive while their queued bulk job runs.
+document.addEventListener('htmx:wsAfterSend', event => {
+    const group = event.detail.elt?.closest('[data-chapter-action="chapter_character_appearances"]');
+    if (!group) return;
+    group.querySelector('wa-button').disabled = true;
+    const status = document.getElementById(`video-progress-${group.dataset.chapterAssets}`);
+    if (status) {
+        delete status.dataset.videoState;
+        delete status.dataset.appearanceRefreshed;
+        status.textContent = 'Queued for character appearance processing…';
+    }
+});
+
+document.addEventListener('htmx:wsAfterMessage', () => {
+    document.querySelectorAll('[data-chapter-action="chapter_character_appearances"]').forEach(group => {
+        const status = group.querySelector('[data-video-state]');
+        if (!status || !['complete', 'failed', 'cancelled'].includes(status.dataset.videoState)) return;
+        group.querySelector('wa-button').disabled = false;
+        if (status.dataset.appearanceRefreshed) return;
+        status.dataset.appearanceRefreshed = 'true';
+        const panel = document.querySelector('#chapter-timeline-content > wa-tab-group > wa-tab-panel[name="characters"]');
+        if (panel) htmx.trigger(panel, 'load-column');
+    });
+});

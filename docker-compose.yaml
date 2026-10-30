@@ -192,7 +192,7 @@ services:
     networks:
       - home-network
 
-  # Llama.cpp serves the existing Qwen2.5-VL GGUF directly. It has a separate
+  # Llama.cpp serves Qwen3.5-9B Q5_K_M directly. It has a separate
   # profile so Compose never starts it beside ComfyUI on the shared GPU.
   llama:
     profiles: ["llama"]
@@ -200,9 +200,11 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     command:
       - "--model"
-      - "/models/Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+      - "/models/Qwen_Qwen3.5-9B-Q5_K_M.gguf"
       - "--mmproj"
-      - "/models/mmproj-Qwen_Qwen2.5-VL-7B-Instruct-f16.gguf"
+      - "/models/mmproj-Qwen3.5-9B-f16.gguf"
+      - "--alias"
+      - "Qwen3.5-9B"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -210,9 +212,13 @@ services:
       - "--n-gpu-layers"
       - "99"
       - "--ctx-size"
-      - "24576"
+      - "16384"
       - "--parallel"
-      - "3"
+      - "1"
+      - "--reasoning-budget"
+      - "1024"
+      - "--reasoning-budget-message"
+      - "The reasoning budget is finished. Produce the final response now."
     volumes:
       - ./comfy/ComfyUI/models/text_encoders:/models:ro
     deploy:

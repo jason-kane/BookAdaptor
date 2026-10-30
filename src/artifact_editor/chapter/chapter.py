@@ -45,7 +45,6 @@ def chapter_url_defaults_helper(endpoint: str, values: dict[str, str | int]):
     Automatically add author, title, chapter_number, and language to the URL
     if they are not already present.
     """
-    log.info("bp.url_defaults() called", endpoint=endpoint, values=values)
 
     if "author" not in values and hasattr(g, "author"):
         values["author"] = g.author.name
@@ -1367,8 +1366,21 @@ class Chapter:
         except IndexError:
             workflow_name = os.path.splitext(os.path.basename(workflow_filename))[0]
 
-        if template_environment is None:
-            template_environment = {}
+        template_environment = dict(template_environment or {})
+        if image_xml.name == "image":
+            if video_index not in (None, ""):
+                from artifact_editor.images.animation_quality import prepare_animation_source, dimensions_for_quality
+
+                target_size = prepare_animation_source(self, image_xml)
+                if workflow_name.split("_", 1)[0] == "h3turbo":
+                    model_width, model_height = dimensions_for_quality(
+                        image_xml.get("animation_quality", "low"), *target_size
+                    )
+                    template_environment.setdefault("WIDTH", model_width)
+                    template_environment.setdefault("HEIGHT", model_height)
+            elif os.path.basename(workflow_filename).split(".")[1] in ("t2i", "ti2i", "ref2i"):
+                template_environment.setdefault("UPSCALE_WIDTH", const.IMG_TARGET_WIDTH)
+                template_environment.setdefault("UPSCALE_HEIGHT", const.IMG_TARGET_HEIGHT)
 
         height = int(template_environment.get("HEIGHT", 1024))
         width = int(template_environment.get("WIDTH", 1024))
@@ -1647,6 +1659,82 @@ class Chapter:
             out_nodes.append(node)
 
         workflow["nodes"] = out_nodes
+
+        # Final sizing for Library and Theater Generate Image workflows.
+        # It stays inside the ComfyUI graph so the collected candidate is
+        # already at the selected film dimensions.
+        if "UPSCALE_WIDTH" in template_environment and "UPSCALE_HEIGHT" in template_environment:
+            save_node = next(
+                (node for node in workflow["nodes"] if node.get("type") == "SaveImage"),
+                None,
+            )
+            if save_node is None:
+                raise ValueError("The selected image workflow has no SaveImage node for final sizing")
+            image_input = next(
+                (item for item in save_node.get("inputs", []) if item.get("name") == "images"),
+                None,
+            )
+            if image_input is None or image_input.get("link") is None:
+                raise ValueError("The selected image workflow has no connected image input to scale")
+            source_link_id = image_input["link"]
+            source_link = next(
+                (link for link in workflow.get("links", []) if link[0] == source_link_id),
+                None,
+            )
+            if source_link is None:
+                raise ValueError("Could not find the image workflow's SaveImage connection")
+
+            node_id = max(
+                [int(node.get("id", 0)) for node in workflow["nodes"]]
+                + [int(workflow.get("last_node_id", 0))]
+            ) + 1
+            link_id = max(
+                [int(link[0]) for link in workflow.get("links", [])]
+                + [int(workflow.get("last_link_id", 0))]
+            ) + 1
+            scaled_link_id = link_id + 1
+            source_node = next(
+                node for node in workflow["nodes"] if node.get("id") == source_link[1]
+            )
+            source_output = source_node["outputs"][source_link[2]]
+            source_output["links"] = [
+                existing for existing in (source_output.get("links") or [])
+                if existing != source_link_id
+            ] + [link_id]
+            image_input["link"] = scaled_link_id
+            workflow["links"] = [
+                link for link in workflow["links"] if link[0] != source_link_id
+            ] + [
+                [link_id, source_link[1], source_link[2], node_id, 0, "IMAGE"],
+                [scaled_link_id, node_id, 0, save_node["id"], 0, "IMAGE"],
+            ]
+            workflow["nodes"].append({
+                "id": node_id,
+                "type": "ImageScale",
+                "pos": [float(save_node.get("pos", [0, 0])[0]) - 360, float(save_node.get("pos", [0, 0])[1])],
+                "size": [315, 130],
+                "flags": {},
+                "order": max((int(node.get("order", 0)) for node in workflow["nodes"]), default=0) + 1,
+                "mode": 0,
+                "inputs": [
+                    {"name": "image", "type": "IMAGE", "link": link_id},
+                    {"name": "upscale_method", "type": "COMBO", "widget": {"name": "upscale_method"}, "link": None},
+                    {"name": "width", "type": "INT", "widget": {"name": "width"}, "link": None},
+                    {"name": "height", "type": "INT", "widget": {"name": "height"}, "link": None},
+                    {"name": "crop", "type": "COMBO", "widget": {"name": "crop"}, "link": None},
+                ],
+                "outputs": [{"name": "IMAGE", "type": "IMAGE", "links": [scaled_link_id]}],
+                "properties": {"Node name for S&R": "ImageScale"},
+                "widgets_values": ["lanczos", int(template_environment["UPSCALE_WIDTH"]), int(template_environment["UPSCALE_HEIGHT"]), "disabled"],
+                "widgets_values_named": {
+                    "upscale_method": "lanczos",
+                    "width": int(template_environment["UPSCALE_WIDTH"]),
+                    "height": int(template_environment["UPSCALE_HEIGHT"]),
+                    "crop": "disabled",
+                },
+            })
+            workflow["last_node_id"] = node_id
+            workflow["last_link_id"] = scaled_link_id
 
         if force_name:
             workflow_fn = os.path.join(
@@ -2609,12 +2697,23 @@ class Chapter:
             log.info("Camera loaded from disk, skipping build_frame_to_camera")
             return
 
+        if not mplan.words:
+            raise ValueError(
+                "The chapter timeline has no timed speech or silence to render."
+            )
         last_frame = mplan.words[-1].end_frame
         # Slots for every frame, we want the scroll_lock value for each frame.
         _frame_to_camera: list[float|None] = [None] * (last_frame + 1)
         G = const.GEOMETRY[aspect]
         viewport_center = G["TEXT_HEIGHT"] / 2
-        max_scroll = max(0, self.get_bottom_height(force=force) - int(viewport_center))
+        # Full-screen phrases have no scrolling text layer. Theater drafts
+        # deliberately use that presentation, so do not require chapter-1.png
+        # when every timeline word is fullscreen.
+        has_scrolling_text = any(not word.fullscreen for word in mplan.words)
+        max_scroll = (
+            max(0, self.get_bottom_height(force=force) - int(viewport_center))
+            if has_scrolling_text else 0
+        )
 
         # A chapter's phrases are irregular in both line count and spoken
         # duration. Distributing the complete text height uniformly across
@@ -2646,7 +2745,10 @@ class Chapter:
                 )
                 continue
 
-            phrase_center = (y_min + y_max) / 2
+            # The color bounds include extra vertical whitespace below the
+            # descenders. Shift the highlight region upward by half that
+            # excess; five pixels is the midpoint of the observed 3–8 px range.
+            phrase_center = (y_min + y_max) / 2 - 5
             scroll_target = min(
                 max_scroll,
                 max(0.0, phrase_center - viewport_center),
@@ -2670,13 +2772,42 @@ class Chapter:
         else:
             key_times = np.array([frame for frame, _ in camera_keyframes], dtype=float)
             key_offsets = np.array([offset for _, offset in camera_keyframes], dtype=float)
+            active_frames: list[int] = []
+            target_offsets: list[float] = []
             for current_frame in range(last_frame + 1):
                 word = self.frame_to_word(mplan, current_frame)
                 if word.fullscreen:
                     continue
-                _frame_to_camera[current_frame] = float(
-                    np.interp(current_frame, key_times, key_offsets)
-                )
+                active_frames.append(current_frame)
+                target_offsets.append(float(np.interp(current_frame, key_times, key_offsets)))
+
+            # Smooth the per-frame camera velocity over a longer window. A
+            # low-pass filter keeps phrase timing as the target while spreading
+            # rate changes across several seconds instead of applying them at
+            # each phrase boundary.
+            raw_offsets = np.asarray(target_offsets, dtype=float)
+            if raw_offsets.size:
+                raw_rates = np.diff(raw_offsets, prepend=raw_offsets[0])
+                smoothing_frames = max(1, round(const.FPS * 5))
+                alpha = 1.0 / smoothing_frames
+                smoothed_rates = np.empty_like(raw_rates)
+                smoothed_rates[0] = raw_rates[0]
+                for index in range(1, raw_rates.size):
+                    smoothed_rates[index] = (
+                        smoothed_rates[index - 1]
+                        + alpha * (raw_rates[index] - smoothed_rates[index - 1])
+                    )
+
+                # Preserve the original start and end positions after filtering.
+                raw_distance = raw_offsets[-1] - raw_offsets[0]
+                smoothed_distance = smoothed_rates.sum()
+                if abs(smoothed_distance) > 1e-9:
+                    smoothed_rates *= raw_distance / smoothed_distance
+                smoothed_offsets = raw_offsets[0] + np.cumsum(smoothed_rates)
+                smoothed_offsets += raw_offsets[-1] - smoothed_offsets[-1]
+
+                for frame, offset in zip(active_frames, smoothed_offsets):
+                    _frame_to_camera[frame] = float(offset)
 
         log.info(
             "Built phrase-aligned camera using %s rainbow geometry keyframes",

@@ -1,8 +1,14 @@
-<table id="global_pronunciation" style="width: 80%" class="wa-zebra-rows wa-hover-rows">
+<table id="global_pronunciation" class="wa-zebra-rows wa-hover-rows pronunciation-table">
+    <colgroup>
+        <col class="pronunciation-word-column">
+        <col>
+        <col class="pronunciation-action-column">
+    </colgroup>
     <thead>
         <tr>
             <th>Word</th>
             <th>IPA Pronunciation</th>
+            <th aria-label="Actions"></th>
         </tr>
     </thead>
 
@@ -11,9 +17,9 @@
 {% endfor %}
 
     <tr>
-        <td><wa-input name="add_word" placeholder="Word"></wa-input></td>
-        <td><wa-input name="add_pron" placeholder="IPA Pronunciation"></wa-input></td>
-        <td><wa-button
+        <td><wa-input class="pronunciation-table-input" name="add_word" placeholder="Word"></wa-input></td>
+        <td><wa-input class="pronunciation-table-input" name="add_pron" placeholder="IPA Pronunciation"></wa-input></td>
+        <td class="pronunciation-table-action"><wa-button
                 hx-post="{{add_global_pronunciation_url}}"
                 hx-target="#global_pronunciation"
                 hx-include="[name='add_word'], [name='add_pron']"

@@ -370,6 +370,16 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                                 "mode": "scale"
                             }
 
+                            from artifact_editor.images.source_motion import active_motion
+                            source_motion = active_motion(fragment)
+                            if source_motion:
+                                from artifact_editor.images.source import source_image_path
+
+                                image_config["source_motion"] = source_motion
+                                image_config["source_motion_image"] = str(source_image_path(
+                                    chapter, fragment["source_image"]
+                                ))
+
                             if 'recenter_x1' in fragment.attrs:
                                 image_config['recenter'] = {
                                     "x1": as_int(fragment.attrs.get("recenter_x1", 0)),
@@ -404,6 +414,29 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                         if words:
                             words[-1].frames += frame_duration
                             words[-1].end_frame += frame_duration
+                        elif frame_duration > 0:
+                            # A silent film still needs a frame-addressable
+                            # timeline for camera, image, and video rendering.
+                            # Use a fullscreen, textless WordPlan as its timed
+                            # segment; the audio track is assembled from the
+                            # matching silence WAV separately.
+                            tags = tags_to_dict(paragraph.attrs.get('tags'))
+                            words.append(WordPlan(
+                                start_frame=frame_index - frame_duration,
+                                frames=frame_duration,
+                                end_frame=frame_index - 1,
+                                text="",
+                                paragraph_tags=tags,
+                                paragraph_dir=chapter.get_paragraph_dir(
+                                    as_int(paragraph.attrs.get("index"))
+                                ),
+                                paragraph_index=as_int(paragraph.attrs.get("index")),
+                                fullscreen=True,
+                                index=-1,
+                                id=None,
+                                speaker="",
+                                src="",
+                            ))
 
                     elif fragment.name == "phrase":
                         spoken_text = as_str(fragment.get_text())
@@ -480,7 +513,7 @@ def frame_to_image(masterplan: Masterplan | Plan, frame_index: int) -> ImagePlan
                 f"frame_{frame_index - image.start_frame:06d}.png",
             )
 
-            if os.path.exists(frame_image):
+            if os.path.exists(frame_image) and not image.extra.get("source_motion"):
                 log.debug('Using frame image at %s', frame_image)
                 image.image = os.path.join(
                     "image_frames",

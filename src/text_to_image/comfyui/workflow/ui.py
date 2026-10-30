@@ -14,6 +14,7 @@ from text_to_image.base import TextToImageProviderUI
 from text_to_image.registry import registry
 from PIL import Image
 from artifact_editor import config
+from artifact_editor.images.source import SOURCE_WORKFLOW, source_picker
 
 # scene_htmx
 from artifact_editor.images.scene.htmx import (
@@ -46,6 +47,8 @@ class WorkflowTemplate:
         )  # remove the "ui." or "api." prefix
         # cosmetic name
         self.name = " ".join(aslist[1:]).replace(".json", "")
+        if self.id == "i2v.minimax":
+            self.name = "MiniMax H3 Baseline"
 
 
 def get_workflow_templates(interface="ui", mode="t2i"):
@@ -58,6 +61,9 @@ def get_workflow_templates(interface="ui", mode="t2i"):
 
 def selected_image_workflow(image, templates, default):
     """Resolve legacy selections and recover still workflows overwritten by animation."""
+    if image.get("workflow_image_template") == SOURCE_WORKFLOW:
+        return SOURCE_WORKFLOW
+
     def match(value):
         value = os.path.basename(value or "").removesuffix(".json")
         for prefix in ("ui.", "api."):
@@ -141,7 +147,8 @@ class ComfyWorkflowUI(TextToImageProviderUI):
                 name="workflow_image_template"
                 id="workflow-selector-select"
                 hx-put="{choose_workflow_url}"
-                hx-swap="none"
+                hx-target="#workflow-controls"
+                hx-swap="innerHTML"
                 hx-trigger="change"
                 value="{html.escape(selected_workflow, quote=True)}">
         """
@@ -164,9 +171,23 @@ class ComfyWorkflowUI(TextToImageProviderUI):
                     f'{html.escape(template.name)}</wa-option>'
                 )
 
-        workflow_selector += """
+        selected = " selected" if selected_workflow == SOURCE_WORKFLOW else ""
+        workflow_selector += f"""
+                <wa-divider></wa-divider>
+                <small>Source</small>
+                <wa-option{selected} value="{SOURCE_WORKFLOW}">Chapter Source</wa-option>
             </wa-select>
         </div>"""
+
+        return f"""{workflow_selector}
+            <div id="workflow-controls" class="wa-stack wa-gap-s" style="width: 100%; min-width: 0;">
+                {self.workflow_controls(image_xml, with_class)}
+            </div>"""
+
+    def workflow_controls(self, image_xml, with_class=""):
+        chapter = g.chapter
+        if image_xml.get("workflow_image_template") == SOURCE_WORKFLOW:
+            return source_picker(chapter, image_xml)
 
         workflow_url = url_for(
             "library.book.chapter.images.comfyui_workflow_run",
@@ -216,8 +237,6 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         # prompt = chapter.get_prompt(image_xml)
 
         out = f"""
-        {workflow_selector}
-    
         {scene_workshop}
        
         <div class="wa-cluster">

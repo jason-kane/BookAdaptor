@@ -235,6 +235,48 @@ def test_character_image_worker_reports_result(monkeypatch, fails):
     assert publish.call_args.args[-1] == ('failed' if fails else 'complete')
 
 
+@pytest.mark.parametrize('failures', [[], ['Tip: model unavailable']])
+def test_bulk_character_appearance_worker_reports_result(monkeypatch, failures):
+    from artifact_editor.characters import characters
+    from artifact_editor.chapter.chapter import Chapter
+    processor = MagicMock(return_value={"characters": 2, "changes": 3, "failures": failures})
+    monkeypatch.setattr(characters, 'extract_all_description_timelines', processor)
+    monkeypatch.setattr(Chapter, '__init__', lambda self, **kwargs: None)
+    publish = MagicMock()
+    monkeypatch.setattr(server, 'publish_progress', publish)
+    server.run_video_job(MagicMock(), dict(
+        job_id='e' * 32, action='chapter_character_appearances', author='Author',
+        title='Book', chapter_number=3, language='english',
+    ))
+    processor.assert_called_once()
+    assert callable(processor.call_args.kwargs['progress'])
+    assert publish.call_args.args[3].startswith('Processed appearance changes for 2 characters')
+    assert publish.call_args.args[4] == ('failed' if failures else 'complete')
+
+
+def test_bulk_character_appearance_websocket_queues_coordinator_job(monkeypatch):
+    import worker_startup
+    from task_queue import RENDER_QUEUE
+    client, ws = MagicMock(), MagicMock()
+    task = dict(job_id='f' * 32, action='chapter_character_appearances', author='Author',
+                title='Book', chapter_number='3', language='english', unwanted=True)
+    ws.receive.side_effect = [json.dumps(task), RuntimeError('end test connection')]
+    monkeypatch.setattr(server, 'redis_connection', lambda: client)
+    monkeypatch.setattr(server, 'pending_video_progress', lambda *args: [])
+    startup = MagicMock()
+    monkeypatch.setattr(worker_startup, 'ensure_worker_services', startup)
+    with pytest.raises(RuntimeError, match='end test'):
+        server.handle_websocket(ws)
+    queue, payload = client.lpush.call_args.args
+    queued = json.loads(payload)
+    assert queue == RENDER_QUEUE
+    assert queued['provider'] == 'none'
+    assert queued['action'] == task['action']
+    assert queued['chapter_number'] == 3
+    assert 'unwanted' not in queued
+    startup.assert_called_once()
+
+
 def test_character_image_uses_full_body_contrasting_background_and_saves_output(monkeypatch, tmp_path):
     import comfy
     from artifact_editor.characters import characters

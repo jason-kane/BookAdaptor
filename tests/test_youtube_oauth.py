@@ -1,6 +1,7 @@
 """Exercise OAuth browser binding, expiry, and private token persistence offline."""
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -81,3 +82,22 @@ def test_token_failure_does_not_expose_details(setup):
     assert response.location.endswith('youtube_connection=failed')
     assert b'sensitive' not in response.data
     assert not (directory / 'credentials.json').exists()
+
+
+def test_default_callback_uses_published_editor_port(tmp_path, monkeypatch):
+    monkeypatch.delenv('YOUTUBE_REDIRECT_URI', raising=False)
+    monkeypatch.setitem(sys.modules, 'google_auth_oauthlib.flow', SimpleNamespace(
+        Flow=SimpleNamespace(from_client_secrets_file=lambda *args, **kwargs: SimpleNamespace(**kwargs))))
+    app = Flask(__name__)
+    app.config['YOUTUBE_OAUTH_DIR'] = str(tmp_path)
+    with app.app_context():
+        assert oauth.make_flow().redirect_uri == 'http://localhost:8082/oauth/youtube/callback'
+        app.config['YOUTUBE_REDIRECT_URI'] = 'https://editor.example/oauth/youtube/callback'
+        assert oauth.make_flow().redirect_uri == app.config['YOUTUBE_REDIRECT_URI']
+
+
+def test_connection_accepts_editor_port_and_rejects_wrong_origin(setup):
+    app, client, directory, flow, _ = setup
+    flow.redirect_uri = 'http://localhost:8082/oauth/youtube/callback'
+    assert client.get('/connect', base_url='http://localhost:8082').status_code == 302
+    assert client.get('/connect', base_url='http://localhost:8080').status_code == 400
