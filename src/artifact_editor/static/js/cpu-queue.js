@@ -12,7 +12,9 @@
     function animationThumbnail(task, message = task.message || '') {
         if (!['chapter_missing_animations', 'textoviva_regenerate_animation',
               'textoviva_missing_animation'].includes(task.action)) return '';
-        const index = task.image_index ?? message.match(/(?:image|shot)\s+(\d+)/i)?.[1];
+        const index = task.image_index
+            ?? message.match(/(?:image|shot)\s+(\d+)/i)?.[1]
+            ?? (task.action === 'chapter_missing_animations' ? 0 : undefined);
         if (index === undefined || index === null || !/^\d+$/.test(String(index))) return '';
         const chapter = task.chapter || {};
         const author = task.author || chapter.author;
