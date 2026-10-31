@@ -1,3 +1,28 @@
+// Only user interaction changes the active column; playback and HTMX may scroll others.
+let chapterTabNavigation = false;
+let chapterTabNavigationTimer;
+function activateChapterColumn(event) {
+    const column = event.composedPath().find(node => node.matches?.('.chapter-column'));
+    if (!column) return;
+    document.querySelectorAll('.chapter-column.is-active-panel').forEach(active => {
+        if (active !== column) active.classList.remove('is-active-panel');
+    });
+    column.classList.add('is-active-panel');
+}
+document.addEventListener('pointerdown', activateChapterColumn, true);
+document.addEventListener('click', activateChapterColumn, true);
+document.addEventListener('wheel', activateChapterColumn, { capture: true, passive: true });
+document.addEventListener('keydown', event => {
+    activateChapterColumn(event);
+    if (event.key !== 'Tab') return;
+    chapterTabNavigation = true;
+    clearTimeout(chapterTabNavigationTimer);
+    chapterTabNavigationTimer = setTimeout(() => { chapterTabNavigation = false; }, 0);
+}, true);
+document.addEventListener('focusin', event => {
+    if (chapterTabNavigation) activateChapterColumn(event);
+}, true);
+
 document.addEventListener('click', event => {
     const actionsButton = event.target.closest('.chapter-actions-trigger');
     if (actionsButton) {

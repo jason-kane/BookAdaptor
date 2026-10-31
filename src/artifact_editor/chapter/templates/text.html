@@ -6,7 +6,7 @@
 
 {% block styles %}
 <link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
-<link rel="stylesheet" href="{{ url_for('static', filename='styles/custom-scrollbar.css', v='1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/custom-scrollbar.css', v='2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261028-gpu-traceback-1">
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
@@ -73,6 +73,7 @@
         overflow: hidden;
     }
     .chapter-column-content > wa-tab-group > wa-tab-panel {
+        position: relative;
         height: 100%;
         min-height: 0;
         overflow: hidden;
@@ -83,22 +84,13 @@
     .chapter-column-content > wa-tab-group > wa-tab-panel[active] {
         display: block;
     }
-    #chapter-output-content > wa-tab-group > wa-tab-panel[name="textoviva"],
-    #chapter-output-content > wa-tab-group > wa-tab-panel[name="publish"] {
-        overflow-y: auto;
-        overscroll-behavior-y: contain;
-        scrollbar-gutter: stable;
+    .chapter-tab-scroll-area {
+        position: absolute;
+        inset: 0;
     }
-    .chapter-editor-column wa-tab-panel[name="mood"],
-    .chapter-editor-column wa-tab-panel[name="theme"] {
-        overflow-y: auto;
-    }
-    .chapter-editor-column wa-tab-panel[name="text"] > .chapter-text-scroll {
-        height: calc(100dvh - 12.5rem);
+    .chapter-text-scroll {
         min-height: 0;
-        overflow-y: auto;
         overscroll-behavior-y: contain;
-        scrollbar-gutter: stable;
     }
     .chapter-text-scroll > .wa-stack {
         min-height: min-content;
@@ -310,12 +302,15 @@
         display: none;
     }
     .chapter-rendered-scroll {
-        width: 100%;
-        height: calc(100dvh - 12.5rem);
         min-height: 0;
-        overflow-y: scroll;
+        overscroll-behavior-y: contain;
     }
     .chapter-timeline-scroll-area {
+        flex: 1 1 0;
+        height: 0;
+        min-height: 0;
+    }
+    .chapter-column.is-active-panel [data-custom-scrollbar] {
         --scrollbar-width: 55px;
         --scrollbar-radius: 999px;
         --scrollbar-track: linear-gradient(90deg, #171107, #46300e 50%, #171107);
@@ -325,14 +320,11 @@
         --scrollbar-thumb-hover:
             radial-gradient(ellipse at 28% 18%, #fffde6, rgba(255, 250, 199, 0.4) 25%, transparent 56%),
             radial-gradient(ellipse at 38% 32%, #fff0b0 0%, #f3c850 42%, #ba7d1a 76%, #70400a 100%);
-        flex: 1 1 0;
-        height: 0;
-        min-height: 0;
     }
-    .chapter-timeline-scroll-area > .custom-scrollbar-rail {
+    .chapter-column.is-active-panel [data-custom-scrollbar] > .custom-scrollbar-rail {
         box-shadow: inset 0 0 0 1px rgba(222, 172, 65, 0.4), inset 2px 0 7px rgba(0, 0, 0, 0.65);
     }
-    .chapter-timeline-scroll-area .custom-scrollbar-thumb {
+    .chapter-column.is-active-panel [data-custom-scrollbar] > .custom-scrollbar-rail > .custom-scrollbar-thumb {
         border: 1px solid #99701d;
         box-shadow: inset 1px 2px 3px rgba(255, 249, 199, 0.75), inset -3px -4px 7px rgba(75, 38, 0, 0.65), 0 3px 6px rgba(0, 0, 0, 0.65);
     }
@@ -342,11 +334,6 @@
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
         overflow: hidden;
-    }
-    .chapter-phrase-column wa-tab-panel[name="characters"] {
-        overflow-y: auto;
-        overscroll-behavior-y: contain;
-        scrollbar-gutter: stable;
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > .chapter-timeline-scroll-area {
         position: absolute;
@@ -732,9 +719,9 @@
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
 <script src="{{ url_for('static', filename='js/textoviva-player.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-columns.js', v='6') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-columns.js', v='7') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='2') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-timeline.js', v='continuous-image-background-contrast-1') }}" defer></script>
 <script src="/static/js/chapter-typesetting.js?v=1" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
@@ -1014,19 +1001,21 @@
             <wa-tab panel="mood">Mood</wa-tab>
             <wa-tab panel="theme">Theme</wa-tab>
             <wa-tab-panel name="text">
-                <div class="chapter-text-scroll">
-                <div class="wa-stack">
-                    <div id="chapter-sections" class="wa-stack"></div>
-                </div>
+                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll chapter text">
+                    <div id="chapter-text-scroll" class="chapter-text-scroll" data-scroll-viewport tabindex="0" aria-label="Chapter text">
+                        <div class="wa-stack">
+                            <div id="chapter-sections" class="wa-stack"></div>
+                        </div>
+                    </div>
                 </div>
             </wa-tab-panel>
-            <wa-tab-panel name="mood">
+            <wa-tab-panel name="mood" data-scrollbar-panel data-scrollbar-label="Scroll chapter mood">
                 <div class="wa-stack">
                     <div id="chapter-mood-editor">{{ chapter_mood|safe }}</div>
                     <p id="chapter-mood-status" role="status" aria-live="polite"></p>
                 </div>
             </wa-tab-panel>
-            <wa-tab-panel name="theme">
+            <wa-tab-panel name="theme" data-scrollbar-panel data-scrollbar-label="Scroll chapter theme">
                 <div class="wa-stack">
                     <div id="chapter-theme-editor">{{ chapter_theme|safe }}</div>
                     <p id="chapter-theme-status" role="status" aria-live="polite"></p>
@@ -1070,7 +1059,7 @@
             <button class="chapter-actions-close" type="button" aria-label="Close Text actions" title="Close Text actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></button>
         </wa-drawer>
     </div>
-    <div id="phrase-stack" class="chapter-column wa-stack wa-gap-0 chapter-phrase-column">
+    <div id="phrase-stack" class="chapter-column wa-stack wa-gap-0 chapter-phrase-column is-active-panel">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
             data-column-label="Timeline" aria-expanded="true" aria-controls="chapter-timeline-content"
             aria-label="Collapse Timeline column" title="Collapse Timeline column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
@@ -1085,17 +1074,17 @@
                 hx-get="{{ url_for('library.book.chapter.timeline_panel', **chapter.kwargs) }}"
                 hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace">
             </wa-tab-panel>
-            <wa-tab-panel name="characters"
+            <wa-tab-panel name="characters" data-scrollbar-panel data-scrollbar-label="Scroll character changes"
                 hx-get="{{ url_for('library.book.chapter.characters.base', panel=1, **chapter.kwargs) }}"
                 hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace"
                 hx-on::response-error="if (event.detail.elt === this) this.textContent = 'Could not load character changes. Reload the page to retry.'">
                 <p role="status">Loading character changes…</p>
             </wa-tab-panel>
-            <wa-tab-panel name="props"
+            <wa-tab-panel name="props" data-scrollbar-panel data-scrollbar-label="Scroll chapter props"
                 hx-get="{{ url_for('library.book.chapter.props.base', **chapter.kwargs) }}"
                 hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
             </wa-tab-panel>
-            <wa-tab-panel name="pronunciation"
+            <wa-tab-panel name="pronunciation" data-scrollbar-panel data-scrollbar-label="Scroll pronunciation"
                 hx-get="{{ url_for('library.book.chapter.phrases.pronunciation.base', panel=1, **chapter.kwargs) }}"
                 hx-trigger="load-column" hx-swap="innerHTML" hx-sync="this:replace">
             </wa-tab-panel>
@@ -1114,21 +1103,27 @@
             <wa-tab panel="image">Image</wa-tab>
             <wa-tab panel="rainbow">Rainbow</wa-tab>
             <wa-tab-panel name="pdf">
-                <div class="chapter-rendered-scroll">
-                    <canvas id="the-canvas"></canvas>
+                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll PDF preview">
+                    <div id="chapter-pdf-scroll" class="chapter-rendered-scroll" data-scroll-viewport tabindex="0" aria-label="PDF preview">
+                        <canvas id="the-canvas"></canvas>
+                    </div>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="image">
-                <div class="chapter-rendered-scroll chapter-preview-image-scroll">
-                    <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
+                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll image preview">
+                    <div id="chapter-image-scroll" class="chapter-rendered-scroll chapter-preview-image-scroll" data-scroll-viewport tabindex="0" aria-label="Image preview">
+                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
+                    </div>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="rainbow">
-                <div class="chapter-rendered-scroll chapter-preview-rainbow-scroll">
-                    <div class="chapter-rainbow-overlay">
-                        <div class="chapter-rainbow-background" aria-hidden="true"></div>
-                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
-                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Plain text overlay for comparing rainbow alignment" loading="lazy">
+                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll rainbow preview">
+                    <div id="chapter-rainbow-scroll" class="chapter-rendered-scroll chapter-preview-rainbow-scroll" data-scroll-viewport tabindex="0" aria-label="Rainbow preview">
+                        <div class="chapter-rainbow-overlay">
+                            <div class="chapter-rainbow-background" aria-hidden="true"></div>
+                            <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
+                            <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Plain text overlay for comparing rainbow alignment" loading="lazy">
+                        </div>
                     </div>
                 </div>
             </wa-tab-panel>
@@ -1154,11 +1149,11 @@
             <wa-tab-group active="textoviva">
                 <wa-tab panel="textoviva">Textoviva</wa-tab>
                 <wa-tab panel="publish">Publish</wa-tab>
-                <wa-tab-panel name="textoviva"
+                <wa-tab-panel name="textoviva" data-scrollbar-panel data-scrollbar-label="Scroll video controls"
                     hx-get="{{ url_for('library.book.chapter.textoviva.player', **chapter.kwargs) }}"
                     hx-trigger="load" hx-swap="innerHTML">
                 </wa-tab-panel>
-                <wa-tab-panel name="publish">
+                <wa-tab-panel name="publish" data-scrollbar-panel data-scrollbar-label="Scroll publishing controls">
                     <wa-tab-group active="publish-youtube">
                         <wa-tab panel="publish-youtube">YouTube</wa-tab>
                         <wa-tab panel="publish-tiktok">TikTok</wa-tab>

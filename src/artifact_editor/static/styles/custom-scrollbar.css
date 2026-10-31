@@ -14,6 +14,15 @@
 [data-custom-scrollbar] > [data-scroll-viewport] {
     height: 100%;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+[data-scrollbar-panel] {
+    position: relative;
+    overflow: hidden;
+}
+[data-scrollbar-panel] > [data-custom-scrollbar] {
+    position: absolute;
+    inset: 0;
 }
 .custom-scrollbar-ready > [data-scroll-viewport] {
     position: absolute;

@@ -1,5 +1,23 @@
 (() => {
     const instances = new WeakMap();
+    let panelId = 0;
+
+    function preparePanel(panel) {
+        if (panel.querySelector(':scope > [data-custom-scrollbar]')) return;
+        const host = document.createElement('div');
+        host.setAttribute('data-custom-scrollbar', '');
+        host.dataset.scrollbarLabel = panel.dataset.scrollbarLabel || 'Scroll panel';
+        const viewport = document.createElement('div');
+        viewport.setAttribute('data-scroll-viewport', '');
+        viewport.id = panel.id ? `${panel.id}-scroll` : `custom-panel-scroll-${++panelId}`;
+        viewport.tabIndex = 0;
+        viewport.setAttribute('aria-label', host.dataset.scrollbarLabel);
+        const content = document.createElement('div');
+        content.append(...Array.from(panel.childNodes));
+        viewport.append(content);
+        host.append(viewport);
+        panel.append(host);
+    }
 
     function initialize(host) {
         if (instances.has(host)) return;
@@ -31,9 +49,15 @@
         };
         const update = () => {
             animationFrame = 0;
-            const overflowing = viewport.scrollHeight > viewport.clientHeight + 1;
-            host.classList.toggle('has-scrollbar-overflow', overflowing);
-            rail.hidden = !overflowing;
+            let reserveRail = viewport.scrollHeight > viewport.clientHeight + 1;
+            if (!reserveRail && host.classList.contains('has-scrollbar-overflow')) {
+                // Width-fitted previews can stop overflowing when the rail narrows
+                // them. Check the wider layout before giving its space back.
+                host.classList.remove('has-scrollbar-overflow');
+                reserveRail = viewport.scrollHeight > viewport.clientHeight + 1;
+            }
+            host.classList.toggle('has-scrollbar-overflow', reserveRail);
+            rail.hidden = viewport.scrollHeight <= viewport.clientHeight + 1;
             const { maximum, height, travel } = geometry();
             const position = Math.max(0, Math.min(maximum, viewport.scrollTop));
             thumb.style.height = `${height}px`;
@@ -123,6 +147,7 @@
     }
 
     function initializeAll() {
+        document.querySelectorAll('[data-scrollbar-panel]').forEach(preparePanel);
         document.querySelectorAll('[data-custom-scrollbar]').forEach(initialize);
     }
     document.addEventListener('DOMContentLoaded', initializeAll);
