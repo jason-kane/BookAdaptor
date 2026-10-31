@@ -1,0 +1,15 @@
+<div id="chapter-recent-images-{{ image['index'] }}" class="chapter-recent-images"
+    aria-label="Recent images for this slot"{% if image_gallery_oob %} hx-swap-oob="outerHTML"{% endif %}>
+    {% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
+    {% for thumbnail in thumbnails %}
+    <button type="button" class="chapter-image-thumbnail"
+        aria-label="{{ 'Current image' if thumbnail.selected else 'Use image ' ~ loop.index }}"
+        aria-pressed="{{ 'true' if thumbnail.selected else 'false' }}"
+        hx-post="{{ editor_url }}" hx-vals='{{ {"action": "select", "filename": thumbnail.filename}|tojson }}'
+        hx-target="#timeline-image-editor-{{ image['index'] }}" hx-swap="innerHTML">
+        <img loading="lazy" draggable="false"
+            src="{{ url_for('library.book.chapter.images.selector.get_alternate_image', image_index=image['index'], filename=thumbnail.filename, **chapter.kwargs) }}"
+            alt="{{ thumbnail.filename }}">
+    </button>
+    {% endfor %}
+</div>

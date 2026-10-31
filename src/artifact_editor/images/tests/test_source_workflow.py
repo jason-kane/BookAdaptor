@@ -141,9 +141,16 @@ def test_crop_creates_selectable_source_option_at_target_aspect(source_editor):
     assert crop["value"].startswith("cropped/art_")
     assert crop["value"].endswith(".png")
     assert len(picker.select(".source-image-thumbnail")) == 3
+    assert editor.image["source_image"] == crop["value"]
     crop_path = editor.root / crop["value"]
     with Image.open(crop_path) as cropped:
         assert cropped.size == (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
+    current_image_path = Path(editor.chapter.get_image_filename(editor.image))
+    with Image.open(current_image_path) as current_image:
+        assert current_image.size == (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
+    image_gallery = picker.select_one(f"#chapter-recent-images-{editor.image['index']}")
+    assert image_gallery is not None
+    assert image_gallery.select_one('.chapter-image-thumbnail[aria-pressed="true"] img')
     assert (editor.root / "images/art.jpg").is_file()
     assert editor.client.get(
         editor.base + "/images/4/source_image/" + crop["value"] + "?height=160"
