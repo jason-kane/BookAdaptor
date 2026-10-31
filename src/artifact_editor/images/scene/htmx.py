@@ -304,7 +304,11 @@ def scene_characters(chapter, image_xml):
     character_options = ""
     all_characters = characters.get_all_characters(chapter)
 
-    selected = image_xml.attrs.get("scene_characters", "").split(",")
+    selected = [
+        name.strip()
+        for name in image_xml.attrs.get("scene_characters", "").split(",")
+        if name.strip()
+    ]
 
     for character_tag in all_characters:
         if character_tag:
@@ -314,11 +318,11 @@ def scene_characters(chapter, image_xml):
             else:
                 character_options += f"<wa-option value=\"{character['tag']}\">{character['name']}</wa-option>\n"
 
-    # value="{' '.join(selected)}"
     return f"""<div class="wa-cluster" id="scene_characters">
         <wa-select             
             name="scene_characters" 
             label="Scene Characters"
+            value="{html.escape(' '.join(selected), quote=True)}"
             hx-put="scene/characters"
             hx-swap="outerHTML transition:true"
             hx-target="closest #characters_section"
