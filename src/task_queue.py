@@ -39,7 +39,8 @@ CHAPTER_IMAGE_EVENTS = "chapter_image_events"
 RENDER_QUEUE = "chapter_render_jobs"
 RENDER_ACTIONS = frozenset({
     "video_render", "textoviva_rerender", "textoviva_regenerate_animation",
-    "textoviva_missing_animation", "timeline_metadata", "chapter_missing_metadata",
+    "textoviva_missing_animation", "timeline_metadata", "chapter_import",
+    "chapter_missing_metadata",
     "chapter_missing_images", "chapter_missing_animations",
     "chapter_missing_characters", "chapter_missing_props", "chapter_add_all",
     "chapter_character_appearances",
@@ -54,7 +55,6 @@ DEFAULT_RUNNING_KEY = RUNNING_KEY
 DEFAULT_STYLER_EVENTS = STYLER_EVENTS
 DEFAULT_STATUS_TTL_SECONDS = 86_400
 LLAMA_TASK_ACTIONS = {
-    "chapter_import",
     "styler_tag_sample",
     "styler_tag_group",
     "styler_scan_image_tags",
