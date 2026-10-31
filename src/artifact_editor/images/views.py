@@ -243,44 +243,10 @@ def crop_source_picker_image(image_index):
         return "Choose an available source image to crop", 400
     cache.clear()
     from .completions import publish_image_completion
-    from .source import source_picker
-    from artifact_editor.chapter.timeline import recent_image_candidates
 
     publish_image_completion(g.chapter, image)
-    candidates = selector_htmx.gather_candidate_images(image, g.chapter)
-    thumbnails = recent_image_candidates(
-        candidates, g.chapter.get_image_filename(image)
-    )
-    gallery = render_template(
-        "chapter_timeline_image_gallery.html",
-        chapter=g.chapter, image=image, thumbnails=thumbnails,
-        image_gallery_oob=True,
-    )
-    response = make_response(
-        source_picker(
-            g.chapter, image, selected=cropped,
-            motion=request.form.get("source_motion"), expanded=True,
-        ) + gallery,
-        200,
-    )
-    preview_url = url_for(
-        "library.book.chapter.images.show_image_by_index",
-        height=360, image_index=image_index, v=image.get("image_generation_id"),
-        **g.chapter.kwargs,
-    )
-    full_image_url = url_for(
-        "library.book.chapter.images.show_image_by_index",
-        height=0, image_index=image_index, v=image.get("image_generation_id"),
-        **g.chapter.kwargs,
-    )
-    response.headers["HX-Trigger"] = json.dumps({
-        "chapter-image-selected": {
-            "image_index": image_index,
-            "preview_url": preview_url,
-            "full_image_url": full_image_url,
-            "alt": image.get("alt") or image.get("prompt") or "Chapter image",
-        }
-    })
+    response = make_response("", 200)
+    response.headers["HX-Refresh"] = "true"
     return response
 
 

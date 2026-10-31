@@ -123,6 +123,82 @@ function initializeChapterTimeline() {
 document.addEventListener('DOMContentLoaded', initializeChapterTimeline);
 document.addEventListener('htmx:afterSettle', initializeChapterTimeline);
 
+function timelineScrollStorageKey() {
+    return `chapter-timeline-scroll:${location.pathname}`;
+}
+
+function saveTimelineScrollPosition() {
+    const viewport = document.getElementById('chapter-timeline-scroll');
+    const list = document.getElementById('chapter-phrase-list');
+    if (!viewport || !list) return;
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const anchor = Array.from(list.children).find(item =>
+        item.matches('[data-timeline-type]') && item.getBoundingClientRect().bottom > viewportTop
+    );
+    const state = {
+        scrollTop: viewport.scrollTop,
+        anchorId: anchor?.id || null,
+        anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
+        openPanels: Array.from(list.querySelectorAll(':scope > details[open][id]'), panel => panel.id),
+    };
+    try {
+        sessionStorage.setItem(timelineScrollStorageKey(), JSON.stringify(state));
+    } catch (_) {
+        // Scroll restoration is best-effort when browser storage is unavailable.
+    }
+}
+
+async function restoreTimelineScrollPosition() {
+    let state;
+    try {
+        state = JSON.parse(sessionStorage.getItem(timelineScrollStorageKey()) || 'null');
+        if (!state) return;
+        sessionStorage.removeItem(timelineScrollStorageKey());
+    } catch (_) {
+        return;
+    }
+    const viewport = document.getElementById('chapter-timeline-scroll');
+    const list = document.getElementById('chapter-phrase-list');
+    if (!viewport || !list) return;
+    const requests = [];
+    for (const id of state.openPanels || []) {
+        const panel = document.getElementById(id);
+        if (!panel || !list.contains(panel)) continue;
+        panel.open = true;
+        const editor = panel.querySelector('.chapter-mini-image-editor');
+        const summary = panel.querySelector(':scope > summary[hx-get]');
+        if (editor?.textContent.includes('Loading image editor') && summary && window.htmx) {
+            requests.push(htmx.ajax('GET', summary.getAttribute('hx-get'), {
+                target: editor,
+                swap: 'innerHTML',
+            }).catch(() => {}));
+        }
+    }
+    await Promise.all(requests);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        const anchor = state.anchorId && document.getElementById(state.anchorId);
+        if (anchor && list.contains(anchor)) {
+            const offset = anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+            viewport.scrollTop += offset - Number(state.anchorOffset || 0);
+        } else {
+            viewport.scrollTop = Number(state.scrollTop || 0);
+        }
+    }));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const viewport = document.getElementById('chapter-timeline-scroll');
+    if (!viewport) return;
+    let saveTimer;
+    viewport.addEventListener('scroll', () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveTimelineScrollPosition, 120);
+    }, { passive: true });
+    viewport.addEventListener('toggle', saveTimelineScrollPosition, true);
+    window.addEventListener('pagehide', saveTimelineScrollPosition);
+    restoreTimelineScrollPosition();
+});
+
 document.addEventListener('chapter-image-selected', event => {
     const detail = event.detail || {};
     const panel = document.getElementById(`timeline-image-${detail.image_index}`);
