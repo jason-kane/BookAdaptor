@@ -1982,7 +1982,9 @@ def choose_video(image_index=0):
 
 
 @bp.route("/<int:height>/<int:image_index>.png", methods=["GET"])
-@cache.cached(timeout=600, query_string=True, key_prefix="image_index")
+# Include the full route so chapter, image index, and requested size cannot
+# share a cached response. Version the prefix to bypass existing collisions.
+@cache.cached(timeout=600, query_string=True, key_prefix="image_index:v2:%s")
 def show_image_by_index(height=0, image_index=0):
     image_index = int(image_index)
 
