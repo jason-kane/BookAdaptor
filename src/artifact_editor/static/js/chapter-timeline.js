@@ -123,81 +123,70 @@ function initializeChapterTimeline() {
 document.addEventListener('DOMContentLoaded', initializeChapterTimeline);
 document.addEventListener('htmx:afterSettle', initializeChapterTimeline);
 
-function timelineScrollStorageKey() {
-    return `chapter-timeline-scroll:${location.pathname}`;
+function timelineImageHashValue() {
+    const value = new URLSearchParams(location.hash.slice(1)).get('image');
+    const match = value?.trim().replace(/^['"]|['"]$/g, '').match(/^image\s+(\d+)$/i);
+    return match ? Number(match[1]) : null;
 }
 
-function saveTimelineScrollPosition() {
+function setTimelineImageHash(index) {
+    if (timelineImageHashValue() === Number(index)) return;
+    const fields = new URLSearchParams(location.hash.slice(1));
+    fields.set('image', `image ${index}`);
+    history.replaceState(history.state, '', `${location.pathname}${location.search}#${fields}`);
+}
+
+function scrollToTimelineImage(index) {
     const viewport = document.getElementById('chapter-timeline-scroll');
     const list = document.getElementById('chapter-phrase-list');
-    if (!viewport || !list) return;
-    const viewportTop = viewport.getBoundingClientRect().top;
-    const anchor = Array.from(list.children).find(item =>
-        item.matches('[data-timeline-type]') && item.getBoundingClientRect().bottom > viewportTop
+    const image = list && Array.from(list.children).find(item =>
+        item.dataset.timelineType === 'image' && Number(item.dataset.timelineIndex) === Number(index)
     );
-    const state = {
-        scrollTop: viewport.scrollTop,
-        anchorId: anchor?.id || null,
-        anchorOffset: anchor ? anchor.getBoundingClientRect().top - viewportTop : 0,
-        openPanels: Array.from(list.querySelectorAll(':scope > details[open][id]'), panel => panel.id),
-    };
-    try {
-        sessionStorage.setItem(timelineScrollStorageKey(), JSON.stringify(state));
-    } catch (_) {
-        // Scroll restoration is best-effort when browser storage is unavailable.
+    if (!viewport || !image) return false;
+    image.open = true;
+    const editor = image.querySelector('.chapter-mini-image-editor');
+    const summary = image.querySelector(':scope > summary[hx-get]');
+    if (editor?.textContent.includes('Loading image editor') && summary && window.htmx) {
+        htmx.ajax('GET', summary.getAttribute('hx-get'), { target: editor, swap: 'innerHTML' });
     }
+    requestAnimationFrame(() => {
+        const offset = image.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        viewport.scrollTop += offset;
+    });
+    return true;
 }
 
-async function restoreTimelineScrollPosition() {
-    let state;
-    try {
-        state = JSON.parse(sessionStorage.getItem(timelineScrollStorageKey()) || 'null');
-        if (!state) return;
-        sessionStorage.removeItem(timelineScrollStorageKey());
-    } catch (_) {
-        return;
-    }
+function initializeTimelineImageHash() {
     const viewport = document.getElementById('chapter-timeline-scroll');
     const list = document.getElementById('chapter-phrase-list');
-    if (!viewport || !list) return;
-    const requests = [];
-    for (const id of state.openPanels || []) {
-        const panel = document.getElementById(id);
-        if (!panel || !list.contains(panel)) continue;
-        panel.open = true;
-        const editor = panel.querySelector('.chapter-mini-image-editor');
-        const summary = panel.querySelector(':scope > summary[hx-get]');
-        if (editor?.textContent.includes('Loading image editor') && summary && window.htmx) {
-            requests.push(htmx.ajax('GET', summary.getAttribute('hx-get'), {
-                target: editor,
-                swap: 'innerHTML',
-            }).catch(() => {}));
-        }
-    }
-    await Promise.all(requests);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-        const anchor = state.anchorId && document.getElementById(state.anchorId);
-        if (anchor && list.contains(anchor)) {
-            const offset = anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-            viewport.scrollTop += offset - Number(state.anchorOffset || 0);
-        } else {
-            viewport.scrollTop = Number(state.scrollTop || 0);
-        }
-    }));
+    if (!viewport || !list || viewport.dataset.imageHashInitialized) return;
+    viewport.dataset.imageHashInitialized = 'true';
+    let updateTimer;
+    const updateHashFromScroll = () => {
+        const viewportTop = viewport.getBoundingClientRect().top + 1;
+        const images = Array.from(list.children).filter(item => item.dataset.timelineType === 'image');
+        if (!images.length) return;
+        const current = images.filter(image => image.getBoundingClientRect().top <= viewportTop).at(-1)
+            || images.find(image => image.getBoundingClientRect().bottom > viewportTop)
+            || images[0];
+        setTimelineImageHash(current.dataset.timelineIndex);
+    };
+    viewport.addEventListener('scroll', () => {
+        clearTimeout(updateTimer);
+        updateTimer = setTimeout(updateHashFromScroll, 80);
+    }, { passive: true });
+    window.addEventListener('pagehide', updateHashFromScroll);
+    window.addEventListener('hashchange', () => {
+        const imageIndex = timelineImageHashValue();
+        if (imageIndex !== null) scrollToTimelineImage(imageIndex);
+    });
+    const requestedImage = timelineImageHashValue();
+    if (requestedImage !== null && scrollToTimelineImage(requestedImage)) return;
+    requestAnimationFrame(updateHashFromScroll);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const viewport = document.getElementById('chapter-timeline-scroll');
-    if (!viewport) return;
-    let saveTimer;
-    viewport.addEventListener('scroll', () => {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(saveTimelineScrollPosition, 120);
-    }, { passive: true });
-    viewport.addEventListener('toggle', saveTimelineScrollPosition, true);
-    window.addEventListener('pagehide', saveTimelineScrollPosition);
-    restoreTimelineScrollPosition();
-});
+document.addEventListener('DOMContentLoaded', initializeTimelineImageHash);
+document.addEventListener('htmx:afterSettle', initializeTimelineImageHash);
 
 document.addEventListener('chapter-image-selected', event => {
     const detail = event.detail || {};
