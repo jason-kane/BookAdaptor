@@ -14,8 +14,8 @@ and the ``workflow_progress`` context variable. Workflows are dictionaries;
 templates and workflow files are JSON. API workflows contain nodes with
 ``class_type`` and ``inputs``; UI workflows contain a top-level ``nodes`` key.
 Template substitutions recursively replace ``{{KEY}}`` in string values.
-``run_workflow`` submits the prompt and returns ``None`` after the matching
-ComfyUI completion event. Optional progress callbacks receive integer
+``run_workflow`` submits the prompt and returns the exact output paths recorded
+for that ComfyUI prompt. Optional progress callbacks receive integer
 percentages and human-readable status text. ``duration_seconds`` is retained
 for callers that describe generated media duration; the configured job timeout
 continues to bound inference independently.
@@ -23,10 +23,10 @@ continues to bound inference independently.
 ## Responsibility and design
 
 This adapter owns transport, workflow-format detection, template file access,
-and progress translation. It does not interpret generated artifacts or decide
-where a workflow writes its outputs; those belong to the feature that requested
-the job. Functions below separate file/CLI boundaries, workflow preparation,
-and job event handling so each contract can be reasoned about independently.
+output path resolution, and progress translation. It does not decide the final
+application destination for generated artifacts; that belongs to the feature
+that requested the job. Functions below separate file/CLI boundaries, workflow
+preparation, and job event handling so each contract can be reasoned about independently.
 When adding behavior, preserve the public names and event meaning unless all
 consumers are updated in the same change. Never log workflow payloads: they may
 contain user content.
@@ -404,14 +404,43 @@ def _report_workflow_event(event: dict[str, Any], prompt: dict[str, Any], active
     return active_node
 
 
+def _workflow_output_paths(api_url: str, job_id: str) -> list[str]:
+    """Resolve the exact files ComfyUI recorded for a completed prompt."""
+    response = httpx.get(
+        f"{api_url.rstrip('/')}/history/{job_id}",
+        timeout=WORKFLOW_HTTP_TIMEOUT,
+    )
+    response.raise_for_status()
+    history = response.json().get(job_id, {})
+    output_root = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
+    paths = []
+    for node_output in history.get("outputs", {}).values():
+        for values in node_output.values():
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                if not isinstance(value, dict) or not value.get("filename"):
+                    continue
+                if value.get("type", "output") != "output":
+                    continue
+                path = os.path.join(
+                    output_root,
+                    value.get("subfolder", ""),
+                    value["filename"],
+                )
+                if os.path.isfile(path):
+                    paths.append(path)
+    return list(dict.fromkeys(paths))
+
+
 @_requires_gpu_service("comfy")
 def run_workflow(
     workflow: Workflow | dict[Any, Any],
     template_environment: dict[str, Any] | None = None,
     duration_seconds: float | None = None,
     prepare_vram: bool = False,
-) -> None:
-    """Submit a UI/API workflow and wait for its matching completion event.
+) -> list[str]:
+    """Run a UI/API workflow and return its exact output files.
 
     ``duration_seconds`` remains accepted because feature callers use it to
     describe the media they requested. Job safety is bounded by the configured
@@ -484,12 +513,13 @@ def run_workflow(
             active_node = _report_workflow_event(event, prompt, active_node, report)
             if kind == "executing" and data.get("node") is None:
                 break
+        return _workflow_output_paths(api_url, job_id)
     finally:
         connection.close()
 
 
 def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None,
-                    prepare_vram: bool = False) -> None:
+                    prepare_vram: bool = False) -> list[str]:
     """Read a named workflow JSON file and submit it through ``run_workflow``."""
     log.info("Running %s with direct API call", workflow_fn)
     workflow_path = os.path.join(

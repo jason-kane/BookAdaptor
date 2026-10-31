@@ -864,6 +864,7 @@ class Textoviva:
 
             attempted_frames = max(1, audio_frames)
             attempted_duration = attempted_frames / const.FPS
+            workflow_outputs = []
             while True:
                 workflow_fn = build_animation_workflow(attempted_frames)
                 if not workflow_fn:
@@ -895,7 +896,7 @@ class Textoviva:
 
                     progress_token = workflow_progress.set(report_workflow_progress)
                     try:
-                        comfy.run_workflow_fn(
+                        workflow_outputs = comfy.run_workflow_fn(
                             workflow_fn,
                             duration_seconds=attempted_duration,
                             prepare_vram=workflow_template == "h3turbo",
@@ -937,15 +938,10 @@ class Textoviva:
             # find the video file
             # put it in os.path.exists(os.path.join(const.LIBRARY_DIR, animated_src))
 
-            candidates = selector_htmx.gather_candidate_videos(image_xml, self.chapter)
-            if workflow_template == "h3turbo":
-                h3_prefix = f"img_{image_xml.attrs['index']}_h3turbo"
-                h3_candidates = [
-                    candidate for candidate in candidates
-                    if os.path.basename(candidate).startswith(h3_prefix)
-                ]
-                if h3_candidates:
-                    candidates = h3_candidates
+            candidates = [
+                path for path in workflow_outputs
+                if path.lower().endswith(".mp4") and os.path.isfile(path)
+            ]
             if candidates:
                 candidate = max(candidates, key=os.path.getmtime)
                 log.info(
@@ -1111,17 +1107,16 @@ class Textoviva:
                     failures.append((item["image_index"], result))
                     return
                 image_xml = item["image"]
-                candidates = selector_htmx.gather_candidate_videos(image_xml, self.chapter)
-                if item["workflow_template"] == "h3turbo":
-                    h3_prefix = f"img_{item['image_index']}_h3turbo"
-                    h3_candidates = [
-                        candidate for candidate in candidates
-                        if os.path.basename(candidate).startswith(h3_prefix)
-                    ]
-                    if h3_candidates:
-                        candidates = h3_candidates
+                candidates = [
+                    path for path in (result or [])
+                    if isinstance(path, str)
+                    and path.lower().endswith(".mp4")
+                    and os.path.isfile(path)
+                ]
                 if not candidates:
-                    failures.append((item["image_index"], RuntimeError("ComfyUI produced no matching MP4")))
+                    failures.append((item["image_index"], RuntimeError(
+                        "ComfyUI completed but returned no MP4 output for this workflow"
+                    )))
                     return
                 candidate = max(candidates, key=os.path.getmtime)
                 from artifact_editor.images.animation_quality import upscale_animation

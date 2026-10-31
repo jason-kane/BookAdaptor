@@ -117,9 +117,9 @@ def gather_candidate_videos(image_xml: Tag, chapter: Chapter):
         )
 
         if not os.path.exists(destination):
-            # copy, not move so it doesn't disappear from comfyui
-            shutil.copy(fn, destination)
-            log.info(f"Copied {fn} to {destination}")
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.move(fn, destination)
+            log.info("Moved ComfyUI video output into chapter assets", source=fn, destination=destination)
 
     # if 'index' in image_xml.attrs:
     image_index = as_int(image_xml.attrs["index"])
