@@ -160,7 +160,7 @@ function initializeTimelineImageBackgrounds(list) {
                     entry.style.backgroundSize = `auto ${spanHeight}px`;
                     entry.style.backgroundPosition = `0px -${offset}px`;
                     entry.style.backgroundRepeat = 'no-repeat';
-                    entry.style.backgroundColor = 'rgba(0, 0, 0, 0.58)';
+                    entry.style.backgroundColor = 'rgba(0, 0, 0, 0.38)';
                     entry.style.backgroundBlendMode = 'multiply';
                     entry.dataset.imageBackground = 'true';
                 });
