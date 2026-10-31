@@ -6,6 +6,7 @@
     <div data-source-chooser{% if not expanded %} hidden{% endif %}>
         <input type="hidden" name="image_source" value="{{ selected }}">
         <input type="hidden" name="source_motion" value='{{ motion|tojson }}'>
+        <input type="hidden" name="source_crop" value="">
         <figure style="margin: 0; text-align: center;">
             <img src="{{ url_for('library.book.chapter.images.chapter_source_image', image_index=image['index'], filename=selected, height=800, **chapter.kwargs) }}"
                 data-source-preview alt="{{ selected }}" hidden style="display: none;">
@@ -14,12 +15,18 @@
             <figcaption data-source-caption style="overflow-wrap: anywhere;">{{ selected }}</figcaption>
         </figure>
         <small>Drag a frame region to position it. Both regions keep the {{ target_size[0] }} × {{ target_size[1] }} output ratio. Use zoom to change how much of the illustration is visible.</small>
-        <wa-button type="button"
-            hx-post="{{ url_for('library.book.chapter.images.crop_source_picker_image', image_index=image['index'], **chapter.kwargs) }}"
-            hx-include="closest .source-image-picker"
-            hx-target="closest .source-image-picker" hx-swap="outerHTML"
-            hx-disabled-elt="this">Create {{ target_size[0] }} × {{ target_size[1] }} crop</wa-button>
-        <small>Creates a centered crop as another source option. The original stays available.</small>
+        <div class="source-crop-actions">
+            <wa-button type="button" data-source-crop-start>Crop image</wa-button>
+            <wa-button type="button" data-source-crop-cancel hidden>Cancel crop</wa-button>
+            <wa-button type="button" data-source-crop-save hidden
+                hx-post="{{ url_for('library.book.chapter.images.crop_source_picker_image', image_index=image['index'], **chapter.kwargs) }}"
+                hx-include="closest .source-image-picker"
+                hx-target="closest .source-image-picker" hx-swap="outerHTML"
+                hx-disabled-elt="this" aria-label="Save cropped image" title="Save cropped image">
+                <wa-icon name="camera" label="Save crop"></wa-icon>
+            </wa-button>
+        </div>
+        <small data-source-crop-help>Draw and position a crop rectangle, then use the camera button to add it as a source option.</small>
         <div class="source-frame-controls">
             {% for frame, label in [('first', 'First'), ('last', 'Last')] %}
             <div class="wa-stack wa-gap-xs">

@@ -1,6 +1,7 @@
 """Original book illustrations available to the Chapter Source workflow."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -54,8 +55,8 @@ def source_images(chapter, library_dir=None):
     return sorted(filenames, key=str.casefold)
 
 
-def crop_source_image(chapter, filename, image, library_dir=None):
-    """Create a reusable center-cropped source option at this image's aspect ratio."""
+def crop_source_image(chapter, filename, image, crop, library_dir=None):
+    """Create a reusable source option from a user-positioned crop rectangle."""
     source = source_image_path(chapter, filename, library_dir)
     if library_dir is None:
         import const
@@ -64,18 +65,34 @@ def crop_source_image(chapter, filename, image, library_dir=None):
     from .source_motion import output_size
 
     target_width, target_height = output_size(chapter, image)
+    if not isinstance(crop, dict):
+        raise TypeError("Choose a crop region")
+    try:
+        x, y, width, height = (float(crop[key]) for key in ("x", "y", "width", "height"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Invalid crop region") from exc
+    if (not all(map(math.isfinite, (x, y, width, height)))
+            or x < 0 or y < 0 or width <= 0 or height <= 0
+            or x + width > 1 or y + height > 1):
+        raise ValueError("Crop region is outside the source image")
+    if abs(width / height - target_width / target_height) > 0.02:
+        raise ValueError("Crop region does not match the output aspect ratio")
     with Image.open(source) as original:
         illustration = ImageOps.exif_transpose(original)
-        cropped = ImageOps.fit(
-            illustration,
-            (target_width, target_height),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5),
+        left = round(x * illustration.width)
+        top = round(y * illustration.height)
+        right = round((x + width) * illustration.width)
+        bottom = round((y + height) * illustration.height)
+        cropped = illustration.crop((left, top, right, bottom)).resize(
+            (target_width, target_height), Image.Resampling.LANCZOS
         )
         mode = "RGBA" if "A" in cropped.getbands() or "transparency" in cropped.info else "RGB"
         cropped = cropped.convert(mode)
         digest = hashlib.sha256(
-            source.read_bytes() + f"\0{target_width}x{target_height}".encode()
+            source.read_bytes() + json.dumps(
+                [x, y, width, height, target_width, target_height],
+                separators=(",", ":"),
+            ).encode()
         ).hexdigest()[:16]
         destination_name = f"cropped/{source.stem}_{target_width}x{target_height}_{digest}.png"
         root = source_directory(chapter, library_dir)

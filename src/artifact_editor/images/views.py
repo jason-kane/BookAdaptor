@@ -233,8 +233,9 @@ def crop_source_picker_image(image_index):
         abort(404)
     filename = request.form.get("image_source", "")
     try:
-        cropped = crop_source_image(g.chapter, filename, image)
-    except (ValueError, FileNotFoundError, OSError):
+        crop = json.loads(request.form.get("source_crop", ""))
+        cropped = crop_source_image(g.chapter, filename, image, crop)
+    except (TypeError, ValueError, FileNotFoundError, OSError):
         return "Choose an available source image to crop", 400
     from .source import source_picker
 

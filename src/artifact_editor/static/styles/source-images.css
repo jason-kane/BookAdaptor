@@ -21,6 +21,14 @@
     cursor: move;
     touch-action: none;
 }
+.source-crop-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.source-crop-actions [data-source-crop-save] wa-icon {
+    font-size: 1.2rem;
+}
 .source-crop-canvas:focus-visible {
     outline: 2px solid var(--wa-color-brand-fill-loud, #7560ca);
     outline-offset: 3px;

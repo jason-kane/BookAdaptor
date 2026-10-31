@@ -13,6 +13,12 @@ function sourceMotionBox(first, last, progress) {
     return Object.fromEntries(['x', 'y', 'w', 'h'].map(key => [key, first[key] + (last[key] - first[key]) * t]));
 }
 
+function newSourceCrop(width, height, aspect) {
+    const w = Math.min(1, height * aspect / width);
+    const h = Math.min(1, width / aspect / height);
+    return { x: (1 - w) / 2, y: (1 - h) / 2, width: w, height: h };
+}
+
 function initializeSourcePicker(picker) {
     if (sourceImagePickers.has(picker) || !picker.querySelector('[data-source-editor]')) return;
     const image = picker.querySelector('[data-source-preview]');
@@ -23,7 +29,7 @@ function initializeSourcePicker(picker) {
         picker, image, canvas, field, selected,
         aspect: Number(picker.dataset.outputWidth) / Number(picker.dataset.outputHeight),
         motion: JSON.parse(field.value), active: 'first', progress: 0, playing: false,
-        regions: new Map(), request: null,
+        regions: new Map(), request: null, cropMode: false, crop: null, cropDrag: null,
     };
     sourceImagePickers.set(picker, state);
     state.regions.set(selected.value, state.motion);
@@ -86,6 +92,25 @@ function initializeSourcePicker(picker) {
             edit.setAttribute('aria-pressed', String(frame === state.active));
             edit.setAttribute('appearance', frame === state.active ? 'accent' : 'outlined');
         }
+        if (state.cropMode && state.crop) {
+            const box = state.crop;
+            const x = box.x * width, y = box.y * height;
+            const w = box.width * width, h = box.height * height;
+            context.setLineDash([]);
+            context.lineWidth = Math.max(2, 3 * scale);
+            context.strokeStyle = '#000';
+            context.strokeRect(x, y, w, h);
+            context.lineWidth = Math.max(1, scale);
+            context.strokeStyle = '#fff';
+            context.strokeRect(x + scale, y + scale, w - 2 * scale, h - 2 * scale);
+            context.fillStyle = '#000';
+            for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+                context.fillRect(hx - 5 * scale, hy - 5 * scale, 10 * scale, 10 * scale);
+                context.strokeStyle = '#fff';
+                context.lineWidth = scale;
+                context.strokeRect(hx - 5 * scale, hy - 5 * scale, 10 * scale, 10 * scale);
+            }
+        }
         field.value = JSON.stringify(state.motion);
         drawCrop(picker.querySelector('[data-source-motion-preview]'), sourceMotionBox(boxes.first, boxes.last, state.progress));
         picker.querySelector('[data-source-scrub]').value = Math.round(state.progress * 1000);
@@ -98,6 +123,30 @@ function initializeSourcePicker(picker) {
         if (event.button !== 0 || !image.naturalWidth) return;
         state.stop();
         const point = position(event);
+        if (state.cropMode) {
+            const crop = state.crop;
+            const px = point.x, py = point.y;
+            const handleRadiusX = 12 / canvas.getBoundingClientRect().width;
+            const handleRadiusY = 12 / canvas.getBoundingClientRect().height;
+            const corners = {
+                nw: [crop.x, crop.y], ne: [crop.x + crop.width, crop.y],
+                sw: [crop.x, crop.y + crop.height], se: [crop.x + crop.width, crop.y + crop.height],
+            };
+            const handle = Object.entries(corners).find(([, p]) =>
+                Math.abs(px - p[0]) <= handleRadiusX && Math.abs(py - p[1]) <= handleRadiusY
+            )?.[0];
+            if (handle) {
+                state.cropDrag = { mode: handle, point, crop: { ...crop } };
+            } else if (px >= crop.x && px <= crop.x + crop.width
+                && py >= crop.y && py <= crop.y + crop.height) {
+                state.cropDrag = { mode: 'move', point, crop: { ...crop } };
+            } else {
+                return;
+            }
+            canvas.setPointerCapture(event.pointerId);
+            event.preventDefault();
+            return;
+        }
         const hits = ['first', 'last'].filter(frame => {
             const box = sourceCropBox(image.naturalWidth, image.naturalHeight, state.aspect, state.motion[frame]);
             return point.x * image.naturalWidth >= box.x && point.x * image.naturalWidth <= box.x + box.w
@@ -117,6 +166,38 @@ function initializeSourcePicker(picker) {
         event.preventDefault();
     });
     canvas.addEventListener('pointermove', event => {
+        if (state.cropDrag) {
+            const point = position(event);
+            const drag = state.cropDrag;
+            const dx = point.x - drag.point.x, dy = point.y - drag.point.y;
+            if (drag.mode === 'move') {
+                state.crop.x = Math.max(0, Math.min(1 - drag.crop.width, drag.crop.x + dx));
+                state.crop.y = Math.max(0, Math.min(1 - drag.crop.height, drag.crop.y + dy));
+            } else {
+                const opposite = {
+                    nw: [drag.crop.x + drag.crop.width, drag.crop.y + drag.crop.height],
+                    ne: [drag.crop.x, drag.crop.y + drag.crop.height],
+                    sw: [drag.crop.x + drag.crop.width, drag.crop.y],
+                    se: [drag.crop.x, drag.crop.y],
+                }[drag.mode];
+                const cornerX = drag.mode.endsWith('w') ? drag.crop.x + dx : drag.crop.x + drag.crop.width + dx;
+                const cornerY = drag.mode.startsWith('n') ? drag.crop.y + dy : drag.crop.y + drag.crop.height + dy;
+                const aspect = state.aspect * image.naturalHeight / image.naturalWidth;
+                let w = Math.abs(cornerX - opposite[0]);
+                let h = Math.abs(cornerY - opposite[1]);
+                if (w / Math.max(h, 1e-6) > aspect) h = w / aspect;
+                else w = h * aspect;
+                w = Math.min(w, drag.mode.endsWith('w') ? opposite[0] : 1 - opposite[0]);
+                h = w / aspect;
+                h = Math.min(h, drag.mode.startsWith('n') ? opposite[1] : 1 - opposite[1]);
+                w = h * aspect;
+                const movingX = drag.mode.endsWith('w') ? opposite[0] - w : opposite[0];
+                const movingY = drag.mode.startsWith('n') ? opposite[1] - h : opposite[1];
+                state.crop = { x: movingX, y: movingY, width: w, height: h };
+            }
+            state.paint();
+            return;
+        }
         if (!state.drag) return;
         const point = position(event);
         const region = state.motion[state.active];
@@ -124,7 +205,7 @@ function initializeSourcePicker(picker) {
         region.y = state.drag.region.y + point.y - state.drag.point.y;
         state.paint();
     });
-    const finish = () => { state.drag = null; };
+    const finish = () => { state.drag = null; state.cropDrag = null; };
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
     canvas.addEventListener('lostpointercapture', finish);
@@ -143,6 +224,37 @@ function initializeSourcePicker(picker) {
         state.stop();
         state.paint();
     }));
+    const cropStart = picker.querySelector('[data-source-crop-start]');
+    const cropCancel = picker.querySelector('[data-source-crop-cancel]');
+    const cropSave = picker.querySelector('[data-source-crop-save]');
+    const cropField = picker.querySelector('input[name="source_crop"]');
+    const cropHelp = picker.querySelector('[data-source-crop-help]');
+    cropStart.addEventListener('click', () => {
+        state.stop();
+        state.cropMode = true;
+        state.crop = newSourceCrop(image.naturalWidth, image.naturalHeight, state.aspect);
+        cropStart.hidden = true;
+        cropCancel.hidden = false;
+        cropSave.hidden = false;
+        cropHelp.textContent = 'Drag inside the rectangle to position it; drag a corner to resize. The black border shows the saved crop.';
+        state.paint();
+    });
+    cropCancel.addEventListener('click', () => {
+        state.cropMode = false;
+        state.crop = null;
+        cropStart.hidden = false;
+        cropCancel.hidden = true;
+        cropSave.hidden = true;
+        cropHelp.textContent = 'Draw and position a crop rectangle, then use the camera button to add it as a source option.';
+        state.paint();
+    });
+    cropSave.addEventListener('click', event => {
+        if (!state.cropMode || !state.crop) {
+            event.preventDefault();
+            return;
+        }
+        cropField.value = JSON.stringify(state.crop);
+    });
     picker.querySelectorAll('[data-source-zoom]').forEach(input => input.addEventListener('input', () => {
         state.active = input.dataset.sourceZoom;
         state.motion[state.active].zoom = Number(input.value);
@@ -200,6 +312,15 @@ document.addEventListener('click', event => {
     }
     state.motion = state.regions.get(filename);
     state.progress = 0;
+    if (state.cropMode) {
+        state.cropMode = false;
+        state.crop = null;
+        picker.querySelector('[data-source-crop-start]').hidden = false;
+        picker.querySelector('[data-source-crop-cancel]').hidden = true;
+        picker.querySelector('[data-source-crop-save]').hidden = true;
+        picker.querySelector('[data-source-crop-help]').textContent = 'Draw and position a crop rectangle, then use the camera button to add it as a source option.';
+    }
+    picker.querySelector('input[name="source_crop"]').value = '';
     state.selected.value = filename;
     state.field.value = JSON.stringify(state.motion);
     state.image.src = button.dataset.sourceUrl;
