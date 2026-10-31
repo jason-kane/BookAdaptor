@@ -1,0 +1,19 @@
+{% set speaker_tag = phrase_xml.get('speaker') or 'Narrator' %}
+{% set selected_speaker = namespace(name=speaker_tag) %}
+{% for speaker in speakers %}
+    {% if speaker.tag == speaker_tag %}{% set selected_speaker.name = speaker.name %}{% endif %}
+{% endfor %}
+<div id="chapter-phrase-speaker-{{ phrase_xml['index'] }}" class="chapter-phrase-speaker">
+    <wa-avatar class="chapter-phrase-speaker-thumbnail" shape="rounded" loading="lazy"
+        {% if speaker_tag|lower != 'narrator' %}image="{{ url_for('library.book.chapter.characters.headshot', character_tag=speaker_tag, **chapter.kwargs) }}"{% endif %}
+        initials="{{ selected_speaker.name[:1] }}" label="Speaker: {{ selected_speaker.name }}"
+        title="{{ selected_speaker.name }}"></wa-avatar>
+    <wa-select name="speaker" label="Speaker" value="{{ speaker_tag }}"
+        hx-post="{{ url_for('library.book.chapter.phrases.assign_phrase_speaker', phrase_index=phrase_xml['index'], **chapter.kwargs) }}"
+        hx-vals='{"timeline_speaker":"1"}' hx-trigger="change"
+        hx-target="closest .chapter-phrase-speaker" hx-swap="outerHTML">
+        {% for speaker in speakers %}
+        <wa-option value="{{ speaker.tag }}"{% if speaker_tag == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
+        {% endfor %}
+    </wa-select>
+</div>

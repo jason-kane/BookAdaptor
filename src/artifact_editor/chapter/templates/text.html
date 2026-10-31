@@ -387,6 +387,25 @@
     .phrase-container:hover {
         border: 1px solid #613737;
     }
+    .chapter-phrase-speaker {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        min-width: 0;
+    }
+    .chapter-phrase-speaker-thumbnail {
+        --size: 4rem;
+        flex: 0 0 auto;
+    }
+    .chapter-phrase-speaker-thumbnail::part(image) {
+        object-fit: contain;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    .chapter-phrase-speaker > wa-select {
+        flex: 1 1 0;
+        min-width: 0;
+    }
     #chapter-phrase-list .chapter-timeline-delete {
         display: none;
         position: absolute;

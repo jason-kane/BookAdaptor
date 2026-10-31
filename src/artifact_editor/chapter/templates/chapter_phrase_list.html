@@ -26,19 +26,7 @@
         hx-swap="none"
         value="{{ phrase.simple_text() }}"
     ></wa-textarea>
-    <div class="wa-cluster">
-        <wa-icon></wa-icon>
-        <wa-select
-            name="speaker"
-            hx-post="{{ url_for('library.book.chapter.phrases.assign_phrase_speaker', phrase_index=phrase.index, **chapter.kwargs) }}"
-            hx-trigger="change"
-            hx-swap="none"
-        >
-            {% for speaker in speakers %}
-            <wa-option value="{{ speaker.tag }}"{% if phrase.speaker == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
-            {% endfor %}
-        </wa-select>
-    </div>
+    {% with phrase_xml=phrase.phrase_xml %}{% include "chapter_phrase_speaker.html" %}{% endwith %}
     <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs"></div>
 </div>
 {% endif %}

@@ -350,6 +350,13 @@ def assign_phrase_speaker(phrase_index: int):
     speaker = request.form.get("speaker", None)
 
     phrases.save_speaker(chapter, phrase_index, speaker)
+    if request.form.get("timeline_speaker") == "1":
+        return render_template(
+            "chapter_phrase_speaker.html",
+            chapter=chapter,
+            phrase_xml=chapter.get_phrase(phrase_index),
+            speakers=chapter.speakers(),
+        )
     return htmx.speaker_selector(
         chapter,
         chapter.get_phrase(phrase_index),
