@@ -76,7 +76,39 @@ def generate_missing_images_button(chapter):
 
 
 def generate_missing_animation_button(chapter):
-    return missing_asset_button(chapter, "chapter_missing_animations", "Add Missing Animations")
+    return missing_asset_button(
+        chapter,
+        "chapter_missing_animations",
+        "Add Missing Animations",
+        thumbnail_image_index=first_missing_animation_index(chapter),
+    )
+
+
+def first_missing_animation_index(chapter):
+    """Return the first image the missing-animation job is likely to process."""
+    from artifact_editor.images.animation_source import animation_frame_count
+    from artifact_editor.images.source_motion import active_motion
+    from artifact_editor.chapter.timeline import image_timings
+
+    timings = image_timings(chapter.get_xml())
+    for image in chapter.images():
+        if active_motion(image):
+            continue
+        image_index = int(image["index"])
+        paragraph = image.find_parent("paragraph")
+        if paragraph is None:
+            continue
+        paragraph_dir = os.path.join(
+            const.LIBRARY_DIR,
+            chapter.get_paragraph_dir(int(paragraph["index"])),
+        )
+        frame_count = animation_frame_count(image, paragraph_dir, const.FPS)
+        required = int(
+            timings.get(str(image_index), {}).get("frames", image.attrs.get("frames", 0))
+        )
+        if frame_count is None or frame_count < required:
+            return image_index
+    return None
 
 
 def generate_missing_characters_button(chapter):
@@ -97,7 +129,7 @@ def process_character_appearances_button(chapter):
     )
 
 
-def missing_asset_button(chapter, action, label, jumbo=False):
+def missing_asset_button(chapter, action, label, jumbo=False, thumbnail_image_index=None):
     import json
     import uuid
 
@@ -106,6 +138,8 @@ def missing_asset_button(chapter, action, label, jumbo=False):
         "action": action, "job_id": job_id,
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
+        **({"thumbnail_image_index": thumbnail_image_index}
+           if thumbnail_image_index is not None else {}),
     }))
     size = "large" if jumbo else "medium"
     variant = "brand" if jumbo else "neutral"

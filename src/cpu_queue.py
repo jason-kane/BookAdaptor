@@ -482,6 +482,7 @@ def snapshot(client, capacity=12):
     fields = ("job_id", "batch_id", "parent_job_id", "label", "action", "worker_id",
               "state", "message", "started_at", "duration_seconds", "chapter",
               "author", "title", "chapter_number", "language", "image_index",
+              "thumbnail_image_index",
               "debug_details",
               "percent", "timing", "timing_key",
               "timing_units", "timing_unit")

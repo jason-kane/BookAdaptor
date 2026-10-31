@@ -14,7 +14,7 @@
               'textoviva_missing_animation'].includes(task.action)) return '';
         const index = task.image_index
             ?? message.match(/(?:image|shot)\s+(\d+)/i)?.[1]
-            ?? (task.action === 'chapter_missing_animations' ? 0 : undefined);
+            ?? task.thumbnail_image_index;
         if (index === undefined || index === null || !/^\d+$/.test(String(index))) return '';
         const chapter = task.chapter || {};
         const author = task.author || chapter.author;
@@ -37,7 +37,7 @@
             const thumbnail = document.createElement('img');
             thumbnail.className = 'cpu-queue-thumbnail';
             thumbnail.src = thumbnailUrl;
-            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? ''}`;
+            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? task.thumbnail_image_index ?? ''}`;
             thumbnail.loading = 'lazy';
             item.append(thumbnail);
         }
@@ -186,7 +186,7 @@
         }
         if (thumbnailUrl && thumbnail) {
             if (thumbnail.getAttribute('src') !== thumbnailUrl) thumbnail.src = thumbnailUrl;
-            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? ''}`;
+            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? task.thumbnail_image_index ?? ''}`;
             existing.classList.add('has-animation-thumbnail');
         }
         if (labelElement) {

@@ -2651,6 +2651,14 @@ def handle_websocket(ws):
                                 json.loads(sections), list
                             ):
                                 raise ValueError("Invalid chapter sections")
+                        thumbnail_fields = {}
+                        thumbnail_index = task.get("thumbnail_image_index")
+                        if (
+                            task["action"] == "chapter_missing_animations"
+                            and isinstance(thumbnail_index, int)
+                            and thumbnail_index >= 0
+                        ):
+                            thumbnail_fields["thumbnail_image_index"] = thumbnail_index
                         # Accept only the explicit render command and chapter identity.
                         task = {
                             key: task[key]
@@ -2664,6 +2672,7 @@ def handle_websocket(ws):
                             )
                         }
                         task.update(character_fields)
+                        task.update(thumbnail_fields)
                         task["job_id"] = uuid.UUID(task["job_id"]).hex
                         task["chapter_number"] = int(task["chapter_number"])
                         if task["action"] == "chapter_import":
