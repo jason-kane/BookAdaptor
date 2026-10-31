@@ -70,6 +70,7 @@
         if (!stopped && state !== 'queued' && frameProgress) {
             const completed = Number(frameProgress[1]);
             const total = Number(frameProgress[2]);
+            if (total > 0) value = Math.min(100, completed / total * 100);
             if (total > 0 && completed > 0 && seconds !== null) {
                 remaining = seconds * (total - completed) / completed;
                 label = `Best Guess: ~${duration(remaining)} remaining`;
