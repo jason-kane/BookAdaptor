@@ -321,6 +321,23 @@
         overflow-y: auto;
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable;
+        scrollbar-color: #9b9b9b #181818;
+        scrollbar-width: auto;
+    }
+    #chapter-timeline-scroll::-webkit-scrollbar {
+        width: 20px;
+    }
+    #chapter-timeline-scroll::-webkit-scrollbar-track {
+        background: #181818;
+    }
+    #chapter-timeline-scroll::-webkit-scrollbar-thumb {
+        min-height: 48px;
+        border: 4px solid #181818;
+        border-radius: 10px;
+        background: #9b9b9b;
+    }
+    #chapter-timeline-scroll::-webkit-scrollbar-thumb:hover {
+        background: #d0d0d0;
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
