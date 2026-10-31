@@ -15,7 +15,7 @@ class TimelineTests(unittest.TestCase):
     def setUp(self):
         self.soup = BeautifulSoup('''<chapter><paragraph index="0"><image index="4" src="picture.png"/><phrase index="0" frames="10">First</phrase></paragraph><paragraph index="1"><phrase index="1" frames="20">Second</phrase><image index="7"/><phrase index="2" frames="30">Third</phrase></paragraph></chapter>''', 'xml')
         self.saved = False
-        self.chapter = SimpleNamespace(get_xml=lambda: self.soup, get_paragraphdir=lambda index: f'paragraphs/{index:06d}', save_xml=self.save)
+        self.chapter = SimpleNamespace(nice='test', get_xml=lambda: self.soup, get_paragraphdir=lambda index: f'paragraphs/{index:06d}', save_timeline=self.save, save_timing=self.save, save_images=self.save)
 
     def save(self):
         self.saved = True

@@ -19,7 +19,7 @@ def delete_timeline_item(chapter, item_type, item_index):
         raise ValueError("Timeline item no longer exists; reload the chapter")
     item.decompose()
     update_image_frames(soup)
-    chapter.save_xml()
+    chapter.save_timeline()
 
 
 def recent_image_candidates(paths, current_path=None, limit=18):
@@ -96,7 +96,7 @@ def add_image_below(chapter, phrase_index):
     image = soup.new_tag("image", attrs={"index": str(image_index)})
     phrase.insert_after(image)
     update_image_frames(soup)
-    chapter.save_xml()
+    chapter.save_timeline()
     return image
 
 
@@ -148,7 +148,7 @@ def move_image(chapter, image_index, target_type, target_index, position, librar
         target.insert_after(image)
     # Image indices identify workshop assets and remain stable after a move.
     update_image_frames(soup)
-    chapter.save_xml()
+    chapter.save_timeline()
 
 
 def update_image_frames(soup):
@@ -180,7 +180,7 @@ def save_silence(chapter, silence, value, fps):
     silence["duration"] = format(duration, ".3f")
     silence["frames"] = str(round(duration * fps))
     update_image_frames(chapter.get_xml())
-    chapter.save_xml()
+    chapter.save_timing()
 
 
 def add_silence(chapter, target_type, target_index, fps):
@@ -207,7 +207,7 @@ def add_phrase_below(chapter, phrase_index):
     target.insert_after(phrase)
     for index, tag in enumerate(soup.find_all("phrase")):
         tag["index"] = str(index)
-    chapter.save_xml()
+    chapter.save_timeline()
     return phrase
 
 
@@ -347,7 +347,7 @@ def detach_all_images(chapter):
         for key in list(image.attrs):
             if key != "description" and key.endswith("_description"):
                 image.attrs.pop(key, None)
-    chapter.save_xml()
+    chapter.save_images()
 
 
 def remove_all_animations(chapter):
@@ -406,7 +406,7 @@ def remove_all_animations(chapter):
             video = paragraph_dir / video_name
             if video.is_file():
                 video.unlink()
-    chapter.save_xml()
+    chapter.save_images()
 
 
 def remove_all_image_metadata(chapter):
@@ -421,4 +421,4 @@ def remove_all_image_metadata(chapter):
         for key in list(image.attrs):
             if key in fields or key.startswith("lighting_") or key.endswith(character_suffixes):
                 del image.attrs[key]
-    chapter.save_xml()
+    chapter.save_images()

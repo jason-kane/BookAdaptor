@@ -183,5 +183,5 @@ def delete_prop(chapter, tag):
         if 'scene_props' in image.attrs:
             image['scene_props'] = ','.join(value.strip() for value in image['scene_props'].split(',')
                                           if value.strip() and value.strip() != tag)
-    chapter.save_xml()
+    chapter.save_images()
     save_props(chapter, records)

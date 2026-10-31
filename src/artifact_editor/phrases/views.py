@@ -93,7 +93,7 @@ def add_image_slot(phrase_index: str, after: str | bool = True):
         image_xml.attrs["index"] = str(image_index)
         image_index += 1
 
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
 
     return htmx.image_placeholder(g.chapter, new_image_xml), 200
 
@@ -114,7 +114,7 @@ def add_delay(phrase_id: int):
 
     phrase_xml.attrs["delay"] = "0"
 
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     return audio_phrases()
 
@@ -138,7 +138,7 @@ def add_sound(phrase_index: int):
     )
     phrase_xml.insert_after(new_sound_xml)
 
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
 
     return audio_phrases()
 
@@ -158,7 +158,7 @@ def remove_delay(phrase_index: int):
     if "delay" in phrase_xml.attrs:
         del phrase_xml.attrs["delay"]
 
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     return audio_phrases()
 
@@ -178,7 +178,7 @@ def set_delay(phrase_index: int):
 
     phrase_xml.attrs["delay"] = str(delay)
 
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     return audio_phrase(phrase_index)
 
@@ -239,7 +239,7 @@ def set_paragraph_fullscreen():
         paragraph_tags["spoken-only"] = "false"
         paragraph.attrs["tags"] = tools.dict_to_tags(paragraph_tags)
 
-    g.chapter.save_xml()
+    g.chapter.save_paragraph(paragraph)
 
     return phrases.phrase_sequence(g.chapter, page=paragraph_index + 1)
 
@@ -315,7 +315,7 @@ def recalculate_all_phrase_frames():
             log.warning(
                 f"Wav file {wavfile} not found for phrase {phrase_xml['index']}"
             )
-    g.chapter.save_xml()
+    g.chapter.save_phrases()
 
     phrases.recalculate_image_frames(g.chapter)
 
@@ -334,7 +334,7 @@ def delete_image_slot(image_index: int):
         image_xml.decompose()
 
         # Save the book after removing the image slot
-        g.chapter.save_xml()
+        g.chapter.save_timeline()
         g.chapter.load_xml(force=True)
         return "", 204
     else:
@@ -369,7 +369,7 @@ def set_latex(phrase_index: int):
         phrase_xml.attrs["latex"] = new_latex
     else:
         phrase_xml.attrs["latex"] = ""
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     # you can't just re-set the latex and run away.
 
@@ -452,7 +452,7 @@ def set_linebreak(
     linebreak = request.form.get("no_linebreak", "false")
     phrase_xml.attrs["no_linebreak"] = linebreak
     log.info("Saving no_linebreak=%s for phrase %s", linebreak, phrase_xml["index"])
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
 
     page = request.form.get("page", None)
     return htmx.phrase_editor(chapter, phrase_xml, page), 200
@@ -522,7 +522,7 @@ def save_split_phrase(phrase_index: int):
 
         fragdex += 1
 
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
 
     page = request.form.get("page", None)
     return phrases.phrase_sequence(g.chapter, page=page)
@@ -652,7 +652,7 @@ def regenerate_phrase(phrase_index: int, force=True):
     log.warning(f"Test phrase after regeneration: {test_phrase}")
 
     log.info(f"Before: {phrase_xml.attrs=}")
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     log.info(f"After 1: {phrase_xml.attrs=}")
     phrase_xml = g.chapter.get_phrase(phrase_index)
@@ -660,7 +660,7 @@ def regenerate_phrase(phrase_index: int, force=True):
 
     phrases.recalculate_image_frames(g.chapter)
 
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
     if chapter_audio_target:
         return htmx.chapter_audio_controls(g.chapter, phrase_xml), 200
     return htmx.phrase_editor(g.chapter, phrase_xml, page), 200
@@ -829,7 +829,7 @@ def merge_with_previous():
     phrases.reindex_phrases(chapter)
 
     # save the book xml
-    chapter.save_xml()
+    chapter.save_timeline()
 
     if request.headers.get("HX-Target") == "chapter-phrase-list":
         return render_template(
@@ -866,7 +866,7 @@ def reset_audio_cache_json(author: str, title: str, chapter_number: int, languag
         phrase_xml.attrs.pop("duration", None)
         phrase_xml.attrs.pop("frames", None)
 
-    chapter.save_xml()
+    chapter.save_phrases()
 
     return htmx.reset_audio_cache_json_button(chapter)
 
@@ -890,7 +890,7 @@ def set_dinkus_style(
     if new_dinkus_style:
         phrase_xml.attrs["style"] = new_dinkus_style
 
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
 
     phrase_out = f'<div id="phrase-{phrase_id}" class="wa-card">'
     phrase_out += htmx.dinkus_editor(phrase_xml)
@@ -917,7 +917,7 @@ def set_dinkus_duration(
     if new_dinkus_duration:
         phrase_xml.attrs["duration"] = new_dinkus_duration
 
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
 
     phrase_out = f'<div id="phrase-{phrase_id}" class="wa-card">'
     phrase_out += htmx.dinkus_editor(phrase_xml)

@@ -132,7 +132,7 @@ class ComfyUi_ripple(ComfyBase):
                 image_xml.attrs[f"{self.mode}_prompt"] = prompt
 
 
-        chapter.save_xml()
+        chapter.save_image(image_xml)
 
 
 registry.add_module(ComfyUi_ripple)

@@ -67,7 +67,7 @@ class MetadataReuseTests(unittest.TestCase):
                     del image.attrs['jack_' + missing]
                 with patch.dict(sys.modules, {'artifact_editor.chapter.scenes':
                                              SimpleNamespace(active_scene=lambda _: object())}):
-                    function(SimpleNamespace(save_xml=Mock()), image, force_all=force)
+                    function(SimpleNamespace(save_image=Mock()), image, force_all=force)
                 for field, generator in generators.items():
                     if force or field == missing:
                         generator.assert_called_once()

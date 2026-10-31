@@ -31,7 +31,7 @@ def generate_time_of_day(chapter, scene):
                        + ', '.join(TIME_OF_DAY_VALUES) + '. Return unknown when unspecified.'),
     ).strip().lower()
     save_time_of_day(scene, value)
-    chapter.save_xml()
+    chapter.save_scene(scene)
 
 
 def lighting(image):
@@ -67,7 +67,7 @@ def generate_lighting(chapter, scene):
     if not isinstance(values, dict) or set(values) != set(LIGHTING_CHOICES):
         raise ValueError('Invalid generated scene lighting')
     save_lighting(scene, values)
-    chapter.save_xml()
+    chapter.save_scene(scene)
 
 
 def active_scene(image):
@@ -93,7 +93,7 @@ def add_scene(chapter, image_index):
     document = soup if isinstance(soup, BeautifulSoup) else BeautifulSoup('', 'xml')
     scene = document.new_tag('scene', attrs={'index': str(index), 'description': '', 'tod': 'unknown'})
     image.insert_after(scene)
-    chapter.save_xml()
+    chapter.save_timeline()
     return scene
 
 
@@ -114,7 +114,7 @@ def move_scene(chapter, scene_index, target_type, target_index, position):
         target.insert_before(scene)
     else:
         target.insert_after(scene)
-    chapter.save_xml()
+    chapter.save_timeline()
 
 
 def source_text(scene):
@@ -154,7 +154,7 @@ def generate_description(chapter, scene):
     if not description:
         raise ValueError('Scene description generation returned no description.')
     scene['description'] = description
-    chapter.save_xml()
+    chapter.save_scene(scene)
 
 
 def generate_image(chapter, scene, description):
@@ -171,4 +171,4 @@ def generate_image(chapter, scene, description):
     shutil.copyfile(max(candidates, key=os.path.getmtime), destination)
     scene['src'] = destination.name
     scene['image_version'] = uuid.uuid4().hex
-    chapter.save_xml()
+    chapter.save_scene(scene)

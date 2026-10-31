@@ -40,7 +40,7 @@ class TextToImageProviderUI:
 
     def generate_image(self, image_xml, force=False) -> bytes:
         """
-        You're going to want to .save_xml() after calling this to persist the change
+        Call chapter.save_image(image_xml) after this to persist the change.
         """
         # prefer the styled prompt if there is one.
         if "styled_prompt" in image_xml.attrs:

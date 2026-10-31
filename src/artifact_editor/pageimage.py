@@ -371,5 +371,5 @@ def calculate_page_offsets(chapter):
             starting_scroll_lock, _ = page_to_offset[paragraph.attrs['page_index']]
             paragraph.attrs['page_offset'] = starting_scroll_lock
 
-    chapter.save_xml()
+    chapter.save_layout()
   

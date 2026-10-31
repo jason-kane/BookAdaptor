@@ -486,7 +486,7 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                         frame_index += frame_duration 
                         phrase_index += 1
 
-        chapter.save_xml()
+        chapter.save_timing()
 
         masterplan.plan = Plan()
         masterplan.plan.words = words

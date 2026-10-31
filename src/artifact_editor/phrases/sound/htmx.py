@@ -104,7 +104,7 @@ def sound_editor(chapter, sound_xml, page):
                     duration = frames / float(rate)
                 
                 sound_xml.attrs["duration"] = duration
-                chapter.save_xml()
+                chapter.save_sound(sound_xml)
             else:
                 log.error(f"Sound file not found for duration calculation: {fn}")
 

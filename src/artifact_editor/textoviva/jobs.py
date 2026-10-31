@@ -15,7 +15,7 @@ def rerender_chapter(chapter, progress=None, image_index=None, animation_prompt=
         if image_xml is None:
             raise ValueError(f"Image {image_index} not found")
         image_xml.attrs['animation_prompt'] = animation_prompt
-        chapter.save_xml()
+        chapter.save_image(image_xml)
     # Keep frame PNGs and their metadata; draw_frame invalidates changed inputs.
 
     # Theater's rough film is intentionally quick; the final film replaces its
@@ -25,7 +25,7 @@ def rerender_chapter(chapter, progress=None, image_index=None, animation_prompt=
         for image in chapter.images():
             image.attrs["workflow_i2v_template"] = "i2v.h3turbo"
             image.attrs["animation_quality"] = "low" if theater_stage == "rough_film" else "high"
-        chapter.save_xml()
+        chapter.save_images()
 
     chapter.load_xml(force=True)
     log.info(

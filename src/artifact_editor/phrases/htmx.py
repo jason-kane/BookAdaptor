@@ -836,7 +836,7 @@ def phrase_editor(chapter, phrase_xml: Tag, page, split=None):
         # no visible text == no latex typography
         phrase_latex_image = get_phrase_latex_image(chapter, phrase_xml)
 
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
 
     return render_template(
         "phrase.html",

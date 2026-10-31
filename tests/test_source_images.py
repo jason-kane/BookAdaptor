@@ -18,7 +18,7 @@ def book(tmp_path, monkeypatch):
     root = tmp_path / "Author" / "Book" / "source"
     (root / "images").mkdir(parents=True)
     chapter = SimpleNamespace(
-        bookdir="Author/Book", kwargs={}, save_xml=Mock(),
+        bookdir="Author/Book", kwargs={}, save_image=Mock(),
         get_paragraph_dir=lambda index: f"Author/Book/chapter/0001/paragraphs/{int(index):06}",
     )
     image = BeautifulSoup('<paragraph index="3"><image index="4" src="previous.png"/></paragraph>', "xml").image
@@ -44,7 +44,7 @@ def test_rejects_invalid_selection_without_changing_image(book, filename):
     with pytest.raises(ValueError):
         source.choose_source_image(chapter, image, filename, library)
     assert image["src"] == "previous.png"
-    chapter.save_xml.assert_not_called()
+    chapter.save_image.assert_not_called()
 
 
 def test_choosing_jpeg_preserves_original_and_creates_full_size_png(book):
@@ -61,7 +61,7 @@ def test_choosing_jpeg_preserves_original_and_creates_full_size_png(book):
     assert image["source_image"] == "images/illustration.jpg"
     assert image["workflow_image_template"] == source.SOURCE_WORKFLOW
     assert image["image_generation_id"]
-    chapter.save_xml.assert_called_once()
+    chapter.save_image.assert_called_once()
 
 
 def test_transparency_and_same_named_illustrations_are_preserved(book):
@@ -84,7 +84,7 @@ def test_broken_image_does_not_replace_current_selection(book):
     with pytest.raises(OSError):
         source.choose_source_image(chapter, image, "broken.png", library)
     assert image["src"] == "previous.png"
-    chapter.save_xml.assert_not_called()
+    chapter.save_image.assert_not_called()
 
 
 def picker_app():
@@ -104,7 +104,7 @@ def test_browsing_only_changes_preview_and_inline_choice_targets_own_slot(book, 
     with picker_app().test_request_context():
         markup = source.source_picker(chapter, image, "other.png")
     assert image["src"] == "previous.png"
-    chapter.save_xml.assert_not_called()
+    chapter.save_image.assert_not_called()
     for index in (4, 7):
         parsed = BeautifulSoup(panel_controls(markup, index, f"/images/{index}/", f"/timeline/image/{index}"), "html.parser")
         assert parsed.select_one('input[name="image_source"]')["value"] == "other.png"

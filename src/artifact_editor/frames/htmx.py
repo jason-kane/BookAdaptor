@@ -80,7 +80,7 @@ def frame_navigator(chapter, frame_index: int):
         frame_index += int(phrase.attrs.get("frames", "0"))
 
     if change:
-        chapter.save_xml()
+        chapter.save_timeline()
 
     if aspect == "widescreen":
         height = 228
@@ -107,7 +107,7 @@ def frame_display(chapter, frame_index: int):
     for phrase in book.find_all("phrase"):
         total_frames += int(phrase.attrs.get("frames", "0"))
     book.attrs["total_frames"] = total_frames
-    chapter.save_xml()
+    chapter.save_chapter_metadata()
 
     # the currently selected phrase
     phrase_xml = frame_to_phrase(chapter, frame_index)

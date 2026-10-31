@@ -73,7 +73,7 @@ def use_image(image_index: int=0):
     log.info(f"Selected image: {selected_image}")
 
     image_xml.attrs["src"] = selected_image
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     cache.clear()  # clear cache to ensure new image is shown
 
@@ -173,7 +173,7 @@ def delete_image(author, title, chapter_number, language, image_index=0, force=T
     image_selector = htmx.image_selector(
         chapter=chapter, image_xml=image_xml, verify_variant="neutral"
     )
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     # response = make_response(f"""
     # <div id="selector" 
@@ -282,6 +282,6 @@ def apply_transformation(
 
     if image_pfn:
         image_xml.attrs["src"] = os.path.basename(image_pfn)
-        chapter.save_xml()
+        chapter.save_image(image_xml)
 
     return images_htmx.prompt_panel(chapter, image_xml), 200

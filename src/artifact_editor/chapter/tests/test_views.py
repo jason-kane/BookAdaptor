@@ -22,12 +22,14 @@ def test_import_chapter_runs_without_http_context_and_places_images_after_audio(
         language="en", aspect=next(iter(views.const.GEOMETRY)),
         title="Test", author=SimpleNamespace(name="Author"),
         get_chapterdir=lambda: "chapter", get_paragraph_dir=lambda index: f"paragraphs/{index}",
-        save_delta=Mock(), save_xml=Mock(),
+        save_delta=Mock(), replace_content=Mock(), save_timeline=Mock(),
     )
     chapter.get_xml = lambda: chapter.soup
+    chapter.replace_content.side_effect = lambda content: setattr(chapter, 'soup', content)
 
-    def generate_audio(chapter, force, progress):
+    def generate_audio(chapter, force, progress, batch):
         assert force is False
+        assert batch is True
         assert not chapter.soup.find_all("image")
         for tag in chapter.soup.find_all("phrase"):
             assert tag["speaker"] == "Narrator"

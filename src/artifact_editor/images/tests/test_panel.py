@@ -16,7 +16,7 @@ spec.loader.exec_module(module)
 class PanelTests(unittest.TestCase):
     def test_regenerated_description_is_scoped_once_by_response_hook(self):
         image = BeautifulSoup('<image index="4"/>', 'xml').image
-        chapter = SimpleNamespace(get_image=Mock(return_value=image), save_xml=Mock())
+        chapter = SimpleNamespace(get_image=Mock(return_value=image), save_image=Mock())
         images = SimpleNamespace(generate_image_description=Mock())
         markup = '<fieldset><wa-textarea id="4_description" value="New description"></wa-textarea></fieldset>'
         scope = {'g': SimpleNamespace(chapter=chapter), 'images': images,
@@ -29,7 +29,7 @@ class PanelTests(unittest.TestCase):
         body, status = scope['regenerate_description']('4')
         self.assertEqual(status, 200)
         images.generate_image_description.assert_called_once_with(image, force=True)
-        chapter.save_xml.assert_called_once()
+        chapter.save_image.assert_called_once()
         panel = self.render(body)
         self.assertEqual(panel.find('wa-textarea')['id'], 'timeline-prompt-4-4_description')
 

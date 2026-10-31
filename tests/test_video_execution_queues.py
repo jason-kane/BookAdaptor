@@ -171,7 +171,7 @@ def test_xml_image_starts_after_preceding_narration(tmp_path):
                          'Middle</phrase><image index="8" src="blue.png"/><phrase index="2" frames="4" duration="1">'
                          'Last</phrase></paragraph></chapter>', 'xml')
     chapter = SimpleNamespace(chapterdir='chapter', paragraphs=lambda: soup.find_all('paragraph'),
-                              get_paragraph_dir=lambda _: 'chapter/0', save_xml=Mock())
+                              get_paragraph_dir=lambda _: 'chapter/0', save_timing=Mock(), save_phrase=Mock(), save_images=Mock(), save_timeline=Mock(), save_image=Mock())
     plan = ns['generate_masterplan'](chapter, force=True)
     assert [(image.index, image.start_frame, image.end_frame) for image in plan.images] == [(3, 4, 11), (8, 12, 15)]
     assert ns['frame_to_image'](plan, 0) is None
@@ -198,7 +198,7 @@ def test_cpu_frames_encode_all_phrases_and_change_images_at_xml_boundary(tmp_pat
         tracks.append(str(track))
     for name, color in [('red', 'red'), ('blue', 'blue')]:
         Image.new('RGB', (32, 32), color).save(tmp_path / 'chapter/0' / f'{name}.png')
-    words = [SimpleNamespace(start_frame=i * 4, end_frame=i * 4 + 3,
+    words = [SimpleNamespace(id=str(i), start_frame=i * 4, end_frame=i * 4 + 3,
                              paragraph_index=0, index=i, fullscreen=True, paragraph_tags={}) for i in range(3)]
     def image(index, start, end, name):
         data = dict(index=index, start_frame=start, end_frame=end, image=name + '.png',
@@ -321,13 +321,16 @@ def test_parallel_pan_frames_keep_source_immutable_and_use_resized_bounds(tmp_pa
 ])
 def test_generate_video_accepts_stills_and_reuses_existing_animation(tmp_path, monkeypatch, options, animate):
     import artifact_editor
+    from artifact_editor.images import animation_quality
+    monkeypatch.setattr(animation_quality, 'prepare_animation_source', Mock(return_value=(32, 32)))
+    monkeypatch.setattr(animation_quality, 'upscale_animation', Mock())
     paragraph_dir = tmp_path / 'chapter/0'
     paragraph_dir.mkdir(parents=True)
     audio = paragraph_dir / 'phrase.wav'
     wav(audio, 1000)
     soup = BeautifulSoup('<chapter><paragraph index="0"><image index="0" src="still.png"/>'
-                         '<phrase index="0">First</phrase><image index="1" src="clip.png"/>'
-                         '<phrase index="1">Last</phrase></paragraph></chapter>', 'xml')
+                         '<phrase index="0" speaker="Narrator" speaker_source="manual">First</phrase><image index="1" src="clip.png"/>'
+                         '<phrase index="1" speaker="Narrator" speaker_source="manual">Last</phrase></paragraph></chapter>', 'xml')
     for name in ('still.png', 'clip.png'):
         Image.new('RGB', (32, 32), 'red').save(paragraph_dir / name)
     existing_clip = paragraph_dir / 'clip.mp4'
@@ -335,10 +338,14 @@ def test_generate_video_accepts_stills_and_reuses_existing_animation(tmp_path, m
     chapter = SimpleNamespace(
         get_video_filename=lambda: str(tmp_path / 'output.mp4'),
         get_xml=lambda: soup, phrases=lambda: [SimpleNamespace(phrase_xml=p, index=p['index']) for p in soup.find_all('phrase')],
-        images=lambda: iter(soup.find_all('image')), save_xml=Mock(),
+        images=lambda: iter(soup.find_all('image')), save_timing=Mock(), save_phrase=Mock(), save_images=Mock(), save_timeline=Mock(), save_image=Mock(),
         get_paragraph_dir=lambda _: 'chapter/0', get_aspect=lambda: 'widescreen',
         build_frame_to_camera=Mock(), get_masterplan=Mock())
-    tools = SimpleNamespace(extract_frames=Mock())
+    def extract_fixture_frames(source, destination):
+        folder = Path(destination)
+        folder.mkdir(parents=True, exist_ok=True)
+        Image.new('RGB', (32, 32), 'red').save(folder / 'frame_000000.png')
+    tools = SimpleNamespace(extract_frames=Mock(side_effect=extract_fixture_frames))
     monkeypatch.setattr(artifact_editor, 'tools', tools, raising=False)
     render = Mock()
     namespace = dict(Chapter=object, Tag=Tag, os=os, glob=SimpleNamespace(glob=glob), shutil=shutil, log=Mock(),
@@ -366,10 +373,12 @@ def test_selected_animation_does_not_require_or_prompt_unselected_stills(tmp_pat
     still.touch()
     chapter = SimpleNamespace(images=lambda: iter(soup.find_all('image')),
         get_image_filename=lambda image: str(still) if image['index'] == '1' else None,
-        get_video_filename=lambda: str(tmp_path / 'output.mp4'), save_xml=Mock())
+        get_paragraph_dir=lambda _: '',
+        get_video_filename=lambda: str(tmp_path / 'output.mp4'), save_timing=Mock(), save_phrase=Mock(), save_images=Mock(), save_timeline=Mock(), save_image=Mock())
     # Stop at the first model boundary; inspect which asset reached it.
     prompt = Mock(side_effect=RuntimeError('model boundary'))
-    namespace = dict(Chapter=object, Tag=Tag, os=os, images=SimpleNamespace(generate_animation_prompt=prompt))
+    namespace = dict(Chapter=object, Tag=Tag, os=os, const=SimpleNamespace(LIBRARY_DIR=str(tmp_path)),
+                     images=SimpleNamespace(generate_animation_prompt=prompt))
     cls = load_functions('src/artifact_editor/textoviva/textoviva.py', {'Textoviva'}, namespace)['Textoviva']
     with pytest.raises(RuntimeError, match='model boundary'):
         cls(chapter).generate_missing_animations(regenerate_image_index=1)

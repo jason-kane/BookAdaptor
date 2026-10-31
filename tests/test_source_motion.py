@@ -66,7 +66,7 @@ def test_saving_regions_preserves_original_and_makes_first_frame(tmp_path, monke
     Image.new("RGBA", (200, 400), (255, 0, 0, 100)).save(original)
     unchanged = original.read_bytes()
     image = BeautifulSoup('<paragraph index="0"><image index="0"/></paragraph>', "xml").image
-    chapter = SimpleNamespace(bookdir="Book", get_paragraph_dir=lambda _: "Book/paragraphs/0", save_xml=lambda: None)
+    chapter = SimpleNamespace(bookdir="Book", get_paragraph_dir=lambda _: "Book/paragraphs/0", save_image=lambda image: None)
     monkeypatch.setattr(source, "output_size", lambda *_: (160, 90))
     settings = motion.default_motion()
     settings["last"] = {"x": .8, "y": .8, "zoom": 3}

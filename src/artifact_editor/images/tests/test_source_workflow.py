@@ -40,7 +40,9 @@ def source_editor(app, tmp_path, monkeypatch):
         if element.get("src") else None
     )
     saved = tmp_path / "saved.xml"
-    chapter.save_xml = lambda: saved.write_text(str(soup))
+    chapter.save_image = lambda image: saved.write_text(str(soup))
+    chapter.save_images = lambda: saved.write_text(str(soup))
+    chapter.save_timing = lambda: saved.write_text(str(soup))
     root = tmp_path / chapter.bookdir / "source" / "images"
     root.mkdir(parents=True)
     Image.new("RGB", (240, 400), "red").save(root / "art.jpg")

@@ -196,7 +196,7 @@ class Textoviva:
 
                     paragraph_index += 1
 
-            self.chapter.save_xml()
+            self.chapter.save_timeline()
 
             # but.. won't that break all the highlighting stuff?
             # yup.  but we will fix it, and it will be better.
@@ -318,7 +318,7 @@ class Textoviva:
             total_duration += phrase_duration
             log.info('Total duration so far: %s', total_duration)
 
-            self.chapter.save_xml()
+            self.chapter.save_phrase(phrase_xml)
 
         total_images = len(list(self.chapter.images()))
 
@@ -332,7 +332,7 @@ class Textoviva:
             silence["frames"] = str(silence_frames)
             silence["duration"] = str(silence_frames / const.FPS)
 
-        self.chapter.save_xml()
+        self.chapter.save_timeline()
 
         # Derive each image slot's duration from the phrases and silence it covers.
         # Stored frame counts can be stale, so recalculate them unconditionally.
@@ -367,7 +367,7 @@ class Textoviva:
                 seconds=duration_frames / const.FPS,
             )
 
-        self.chapter.save_xml()
+        self.chapter.save_timing()
 
         # generate scene metadata and descriptions
         if not fast_draft:
@@ -386,7 +386,7 @@ class Textoviva:
                     force_all=False,
                     progress=report_metadata,
                 )
-            self.chapter.save_xml()
+            self.chapter.save_images()
 
         self.generate_missing_images(progress=progress)
         # Animation generation is an explicit action. A complete still image
@@ -574,7 +574,7 @@ class Textoviva:
                     # progress view can then reveal it while later GPU tasks
                     # remain queued.
                     image_xml.attrs['image_generation_id'] = uuid.uuid4().hex
-                    self.chapter.save_xml()
+                    self.chapter.save_image(image_xml)
                     from artifact_editor.images.completions import publish_image_completion
                     publish_image_completion(self.chapter, image_xml)
                 if position + 1 < total_pending:
@@ -603,7 +603,7 @@ class Textoviva:
                     f"Could not generate {len(failures)} of {len(pending)} missing shot images: {failures[0]}"
                 ) from failures[0]
 
-        self.chapter.save_xml()
+        self.chapter.save_images()
 
 
     def generate_missing_animations(self, progress=None, force=False,
@@ -653,7 +653,7 @@ class Textoviva:
                 )
                 if required > 0 and int(image_xml.attrs.get("frames", 0) or 0) != required:
                     image_xml.attrs["frames"] = str(required)
-                    self.chapter.save_xml()
+                    self.chapter.save_image(image_xml)
                 if frame_count is not None and frame_count >= required and selected is None and not force_all:
                     continue
                 if frame_count is None or frame_count < required:
@@ -691,7 +691,7 @@ class Textoviva:
 
         if not work_items:
             report(100, "All images already have complete animations")
-            self.chapter.save_xml()
+            self.chapter.save_images()
             return
 
         for animation_position, (image_xml, force) in enumerate(work_items):
@@ -706,7 +706,7 @@ class Textoviva:
                     chapter=self.chapter,
                     image_xml=image_xml,
                 )
-                self.chapter.save_xml()
+                self.chapter.save_image(image_xml)
 
             # Theater and multi-shot edits can enqueue all independent shot
             # animations together. The serial GPU worker sequences inference;
@@ -718,7 +718,7 @@ class Textoviva:
                             chapter=self.chapter,
                             image_xml=batch_image,
                         )
-                        self.chapter.save_xml()
+                        self.chapter.save_image(batch_image)
                 return self._generate_animation_batch(
                     [image for image, _ in work_items], progress=progress, force=True,
                     regenerate_insufficient=regenerate_insufficient,
@@ -917,7 +917,7 @@ class Textoviva:
                             next_quality, *animation_target_size
                         )
                         animation_environment.update({"WIDTH": quality_width, "HEIGHT": quality_height})
-                    self.chapter.save_xml()
+                    self.chapter.save_image(image_xml)
                     comfy_output_dir = const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"]
                     output_prefix = f"{self.chapter.nice}_img_{image_xml.attrs['index']}"
                     for partial_output in glob.glob(
@@ -955,7 +955,7 @@ class Textoviva:
                     upscale_animation(candidate, animation_target_size)
                 shutil.move(candidate, animated_path)
                 image_xml['animated_src'] = animated_src
-                self.chapter.save_xml()
+                self.chapter.save_image(image_xml)
                 if regenerate_insufficient:
                     count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
                     if count is None or count < audio_frames:
@@ -973,7 +973,7 @@ class Textoviva:
                     f"{const.COMFY_DIRS['artifactserver']['OUTPUT_DIR']}"
                 )
 
-        self.chapter.save_xml()
+        self.chapter.save_images()
 
 
     def _generate_animation_batch(self, animation_images, progress=None, force=False,
@@ -1123,7 +1123,7 @@ class Textoviva:
                 upscale_animation(candidate, item["target_size"])
                 shutil.move(candidate, item["animated_path"])
                 image_xml["animated_src"] = item["animated_src"]
-                self.chapter.save_xml()
+                self.chapter.save_image(image_xml)
                 completed.add(item["image_index"])
                 report(35 + int(30 * len(completed) / max(1, len(items))),
                        f"Image {item['image_index']}: Animation complete")
@@ -1158,7 +1158,7 @@ class Textoviva:
                     item["image"], item["workflow_template"], item["required_frames"], error
                 )
                 item["image"].attrs["animation_quality"] = next_quality
-                self.chapter.save_xml()
+                self.chapter.save_image(item["image"])
                 next_remaining.append(image_index)
                 duration = item["required_frames"] / const.FPS
                 report(35, f"Shot {image_index}: retrying at {next_quality.title()} quality · full {duration:.2f}s duration")
@@ -1172,7 +1172,7 @@ class Textoviva:
                         f"Shot {item['image_index']} animation has {count if count is not None else 'unknown'} "
                         f"frames; the narration requires {item['required_frames']}."
                     )
-        self.chapter.save_xml()
+        self.chapter.save_images()
 
 
     def speak(self, chapter: Chapter, phrase_xml:Tag) -> Tag:

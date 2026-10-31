@@ -38,7 +38,7 @@ class SceneCharacterTests(unittest.TestCase):
         rendered = BeautifulSoup(ui.image_scene_workshop(chapter, image), 'html.parser')
         props = rendered.select_one('#scene_props')
         self.assertEqual(props.find_previous_sibling()['id'], 'setting')
-        self.assertEqual(props.find_next_sibling()['id'], 'tod')
+        self.assertEqual(props.find_next_sibling()['id'], 'mood')
         self.assertIsNone(props.find_parent('wa-tab-panel'))
         self.assertIsNone(props.find_parent(id='characters_section'))
 
@@ -53,7 +53,7 @@ class SceneCharacterTests(unittest.TestCase):
             ),
         }
         ui = load_functions('htmx.py', {'scene_characters', 'characters_section'}, namespace)
-        chapter = SimpleNamespace(get_image=lambda index: image, save_xml=Mock())
+        chapter = SimpleNamespace(get_image=lambda index: image, save_image=Mock())
         views = load_functions('views.py', {'save_scene_characters', 'generate_scene_characters'}, {
             'g': g, 'request': request, 'log': logging.getLogger(__name__), 'htmx': ui,
             'scene': SimpleNamespace(generate_scene_characters=lambda chapter, image: ['Bob']),
@@ -69,7 +69,7 @@ class SceneCharacterTests(unittest.TestCase):
                 self.assertEqual([option['value'] for option in rendered.select('wa-option[selected]')], selected)
                 for control in rendered.select('[hx-target]'):
                     self.assertEqual(control['hx-target'], 'closest #characters_section')
-        self.assertEqual(chapter.save_xml.call_count, 2)
+        self.assertEqual(chapter.save_image.call_count, 2)
         with app.test_request_context('/', method='POST'):
             g.chapter = chapter
             rendered = BeautifulSoup(views.generate_scene_characters(), 'html.parser')

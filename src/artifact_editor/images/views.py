@@ -178,7 +178,7 @@ def comfyui_workflow_choose(image_index: int = 0):
 
     image_xml.attrs["workflow_image_template"] = workflow_image_template
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     from text_to_image.comfyui.workflow.ui import ComfyWorkflowUI
 
     return ComfyWorkflowUI(g.chapter).workflow_controls(image_xml), 200
@@ -279,7 +279,7 @@ def comfyui_workflow_run(image_index: int = 0):
                         target_size, Image.Resampling.LANCZOS
                     ).save(generated_image_fn)
             image_xml["src"] = os.path.basename(generated_image_fn)
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
             images.load_image.cache_clear()
     else:
         log.error("No workflow_image_template post parameter found!")
@@ -289,7 +289,7 @@ def comfyui_workflow_run(image_index: int = 0):
         candidates = selector_htmx.gather_candidate_images(image_xml, g.chapter)
         image_xml['src'] = candidates[0] if candidates else ""
         log.info('Assigned image_xml["src"] to %s', image_xml['src'])
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
         # clear cache
         #  + url_for("library.book.chapter.images.show_image_by_index", height="100", image_index=image_index)
@@ -422,7 +422,7 @@ def comfyui_workflow_open(
 
     # 3. This workflow needs to become the one we use from now on for this image.
     # image_xml.attrs["workflow_name"] = workflow_name
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     # 4. Unless the user (UX TBD) chooses to reset it.
     # TODO
@@ -437,7 +437,7 @@ def generate_meta(image_index=0):
     """
     image_xml = g.chapter.get_xml().findAll("image")[image_index]
     images.generate_metadata_from_text(g.chapter, image_xml, force_all=True)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.image_strip_centerpiece(
         g.chapter,
@@ -480,7 +480,7 @@ def rebuild_prompt(image_index=0):
     images.build_replacement_prompt(all_characters, g.chapter.bookdir, image_xml, all_props=get_all_props(g.chapter))
 
     value = htmx.prompt_panel(g.chapter, image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return value, 201
 
 
@@ -490,7 +490,7 @@ def save_style(image_index=0):
     image = g.chapter.get_xml().findAll("image")[image_index]
 
     image.attrs["style"] = request.form["style"]
-    g.chapter.save_xml()
+    g.chapter.save_image(image)
 
     return "", 200
 
@@ -555,7 +555,7 @@ def create_clip_prompt(image_index=0):
     if "prompt" in image_xml.attrs:
         del image_xml.attrs["prompt"]
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -614,7 +614,7 @@ def condense_prompt(image_index=0):
         )
 
     image_xml.attrs["prompt"] = prompt
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -709,13 +709,13 @@ def apply_zmi_here_to_end(image_index=0):
             as_str(image_xml.attrs.get("src")) in [None, ""]
         ):
             _apply_zmi(g.chapter, image_xml)
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
 
             image_model = "tsqn.zimageturbo"
             # finally generate the new image.
             image_module = t2i_registry.get(image_model)
             image_module().generate_image(image_xml)
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -727,14 +727,14 @@ def apply_zmi(image_index=0):
     image_index = int(image_index)
     image_xml = g.chapter.get_image(image_index)
     _apply_zmi(g.chapter, image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     image_model = "tsqn.zimageturbo"
 
     # finally generate the new image.
     image_module = t2i_registry.get(image_model)
     image_module().generate_image(image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -747,7 +747,7 @@ def create_fanciful_prompt(image_index=0):
     image_xml = g.chapter.get_image(image_index)
     set_fancyprompt(g.chapter, image_xml)
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -799,7 +799,7 @@ def create_t5_prompt(image_index=0):
     image_xml.attrs["t5_prompt"] = t5_prompt
     image_xml.attrs["clip_prompt"] = clip_prompt
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -827,7 +827,7 @@ def enhance_prompt(image_index=0):
     )
     image_xml.attrs["t5_prompt"] = prompt
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.image_strip_centerpiece(g.chapter, image_xml, default="image")
 
@@ -838,7 +838,7 @@ def set_meta_prompt(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
     image_xml.attrs["meta_prompt"] = request.form.get("meta_prompt", "")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.meta_prompt(g.chapter, image_xml, image_index), 200
 
@@ -864,7 +864,7 @@ def save_meta_prompt(image_index=0):
             elif key not in ["button"]:
                 image_xml.attrs[key] = values[0]
 
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     elif request.form["button"] == "Copy Previous":
         # copy the previous image's meta fields, so we can adjust to fit the 'new' shot insead of statrting from scratch.
@@ -890,7 +890,7 @@ def save_meta_prompt(image_index=0):
                         character_attribute
                     ]
 
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     # TODO: this redirect is wrong
     return redirect(
@@ -956,7 +956,7 @@ def use_uploaded_image(image_index=0):
 
     # update the image src to point to the new file
     image.attrs["src"] = new_filename
-    g.chapter.save_xml()
+    g.chapter.save_image(image)
 
     response = make_response(
         htmx.image_strip_centerpiece(g.chapter, image, default="image")
@@ -1014,7 +1014,7 @@ def set_image_source(image_index=0):
     log.info(f"Copied source image from {s} to {d}")
 
     image_xml.attrs["src"] = image_filename
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     response = make_response("<div></div>", 200)
     response.headers["HX-Refresh"] = "true"
@@ -1034,7 +1034,7 @@ def set_image_lock(image_index=0, state: str = "on"):
         image_xml.attrs["image_lock"] = "on"
     else:
         image_xml.attrs["image_lock"] = "off"
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     cache.delete("image_index")
 
@@ -1051,7 +1051,7 @@ def copy_previous(image_index=0):
     if previous_image:
         image_xml.attrs["clip_prompt"] = previous_image.attrs.get("clip_prompt", "")
         image_xml.attrs["t5_prompt"] = previous_image.attrs.get("t5_prompt", "")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -1106,7 +1106,7 @@ def htmx_rightsize_t5_prompt(image_index):
         return "Failed to rightsize T5 prompt.", 500
 
     image_xml.attrs["t5_prompt"] = new_t5_prompt
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -1143,7 +1143,7 @@ def set_animation_method(image_index: int, video_index: int):
         #     "comfy_ui_flf2v": ("LTX23_flf-LTX 2.3 First and Last Frame", "flf2v"),
         #     "comfy_ui_i2v": ("LTX23-LTX 2.3", "i2v")
         # }[new_animation_method]
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     return htmx.get_animation_configuration_widgets(
         chapter=g.chapter,
@@ -1182,7 +1182,7 @@ def build_animation(image_index: int):
     )
     image_xml.attrs["animation"] = "true"
     image_xml.attrs["animation_prompt"] = request.form.get("prompt", "")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     log.info(f"Invoking images.create_animation({image_xml=})")
     filename = images.create_animation(g.chapter, image_xml, force=True)
@@ -1191,7 +1191,7 @@ def build_animation(image_index: int):
 
     # add the tabpanel wrapper and activate the animation tab
     value = htmx.image_strip_centerpiece(g.chapter, image_xml, default="animation")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return value
 
 
@@ -1279,7 +1279,7 @@ def delete_animation(image_index: int, video_index: int):
                 os.unlink(mp4_filename)
 
     value = htmx.image_strip_centerpiece(g.chapter, image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return value
 
 
@@ -1454,7 +1454,7 @@ def create_new_image(image_index=0, styled=False, force=True):
     # this will be the UI side of the t2i module, 'generate_image' will place an entry
     # in a redis queue.  It will also block, until the image is generated.
     image_module(g.chapter).generate_image(g.chapter.key, image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     # record the prompt that we used for this image, next to the image.
     prompt_src = os.path.join(
@@ -1539,7 +1539,7 @@ def swap_with_previous_image(image_index: int):
     shutil.copy2(p_to_c_source, p_to_c_destination)
     log.info(f"Cross Copied {current_image_path} and {previous_image_path}")
 
-    g.chapter.save_xml()
+    g.chapter.save_images([image_xml, previous_image_xml])
     return "", 200
 
 
@@ -1605,7 +1605,7 @@ def base(image_index: int, override=None):
     if "/" in image_xml.attrs.get("src", ""):
         log.warning(f"Image src contains a path: {image_xml.attrs['src']}")
         image_xml.attrs["src"] = os.path.basename(image_xml.attrs["src"])
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     max_index = int(g.chapter.max_image_index())
 
@@ -1692,7 +1692,7 @@ def update(image_index=0):
         log.info("Setting image attribute %s to %s", key, request.form[key])
         image_xml.attrs[key] = request.form[key]
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     # what is our return when we get a generic attribute update?
     respond_with = request.form.get("respond_with", "")
@@ -1745,12 +1745,12 @@ def fancy_image(image_index: int):
     else:
         log.warning("No style found for chapter, skipping style application")
     # save in case there is a problem with 'generate_image'
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     # draw the image
     image_module = t2i_registry.get("tsqn.zimageturbo")
     image_module().generate_image(image_xml, force=True)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return "", 200
 
@@ -1811,7 +1811,7 @@ def apply_fancy_here_to_end(image_index: int):
                 # draw the image
                 image_module = t2i_registry.get("tsqn.zimageturbo")
                 image_module().generate_image(image_xml, force=True)
-                g.chapter.save_xml()
+                g.chapter.save_image(image_xml)
 
     response = make_response("")
     response.headers["HX-Refresh"] = "true"
@@ -1831,7 +1831,7 @@ def copy_previous_character_action(image_index: int):
         image_xml.attrs[f"{character_name}_action"] = previous_image.attrs.get(
             f"{character_name}_action", ""
         )
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
         return "", 200
     else:
         return "No previous image found", 404
@@ -1859,7 +1859,7 @@ def choose_file(image_index: int):
 
     path_fn.save(os.path.join(const.LIBRARY_DIR, image_fn))
 
-    g.chapter.save_xml()
+    g.chapter.save_image(g.chapter.get_image(image_index))
     return "", 201
 
 
@@ -2181,7 +2181,7 @@ def draw_all_missing_images():
             candidates = selector_htmx.gather_candidate_images(image_xml, g.chapter)
             image_xml['src'] = candidates[0] if candidates else ""
             log.info('Assigned image_xml["src"] to %s', image_xml['src'])
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
         else:
             log.info(f"Image {image_index} already has a source file, skipping.")
     
@@ -2200,7 +2200,7 @@ def generate_missing_image_metadata():
     """
     for image_xml in g.chapter.get_xml().findAll("image"):
         images.generate_metadata_from_text(chapter=g.chapter, image_xml=image_xml)
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
     return htmx.generate_missing_image_metadata_button()
 
 
@@ -2209,7 +2209,7 @@ def get_transition_configuration_widgets(image_index: int):
     image_index = int(image_index)
 
     value = htmx.get_transition_configuration_widgets(g.chapter.get_xml(), image_index)
-    g.chapter.save_xml()
+    g.chapter.save_images()
     log.info(f"Transition configuration widgets: {value}")
     return value, 200
 
@@ -2416,7 +2416,7 @@ def create_additional_video(image_index: int):
     image_xml.attrs["animation_count"] = str(
         int(image_xml.attrs.get("animation_count", "1")) + 1
     )
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     # we need the re-drawn "Animation" page with a second 'empty' video input set.
     # one layer below animation-panel..
@@ -2491,7 +2491,7 @@ def reindex_images():
             )
             image_xml.attrs["index"] = int(image_index)
 
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
 
     # can you redirect to an empty relative path?
     return redirect("", code=302)
@@ -2527,7 +2527,7 @@ def apply_prompt_template(image_index: int):
                 image_xml,
                 all_props=get_all_props(g.chapter),
             )
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
 
         else:
             prompt_templates = {
@@ -2568,7 +2568,7 @@ def apply_prompt_template(image_index: int):
             image_xml.attrs["tags"] = "has-text=false,spoken-only=true"
             log.info(f"Updated prompt to {prompt}")
 
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     return htmx.prompt_panel(g.chapter, image_xml), 200
 
@@ -2607,7 +2607,7 @@ def image_tab_selector(image_index: int):
             chapter,
             image_xml=image_xml,
         )
-        chapter.save_xml()
+        chapter.save_image(image_xml)
 
         wrap = f"""<div id="selector" 
             hx-swap-oob="true"

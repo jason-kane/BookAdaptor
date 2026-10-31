@@ -37,7 +37,7 @@ def generate_setting(image_index=0):
     image_xml = g.chapter.get_xml().findAll("image")[image_index]
 
     images.generate_metadata_setting(image_xml, force=True)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.setting(g.chapter, image_xml)
 
@@ -51,7 +51,7 @@ def generate_pose(image_index=0):
     pose = scene.generate_character_pose(image_xml, character)
     if pose:
         image_xml.attrs["pose"] = pose
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     return htmx.character_pose_selector(g.chapter, image_xml, character, pose)
 
@@ -68,7 +68,7 @@ def previous_setting(image_index=0):
     previous_image = all_images[previous_index]
 
     image_xml.attrs["setting"] = previous_image.attrs.get("setting", "")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return htmx.setting(g.chapter, image_xml)
 
 
@@ -78,7 +78,7 @@ def save_setting(image_index=0):
     image_xml = g.chapter.get_xml().findAll("image")[image_index]
 
     image_xml.attrs["setting"] = request.form["setting"]
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.setting(g.chapter, image_xml)
 
@@ -110,7 +110,7 @@ def save_tod(image_index=0):
         save_time_of_day(current_scene, request.form["tod"])
     except ValueError as error:
         return str(error), 400
-    g.chapter.save_xml()
+    g.chapter.save_scene(current_scene)
     return htmx.tod(g.chapter, image_xml)
 
 
@@ -123,7 +123,7 @@ def save_mood(image_index=0):
     log.info(f"{request.form}")
     image_xml = g.chapter.get_xml().findAll("image")[image_index]
     image_xml.attrs["mood"] = request.form["mood"]
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.mood(g.chapter, image_index)
 
@@ -134,7 +134,7 @@ def generate_camera(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
     scene.generate_camera(image_xml)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.camera_direction(g.chapter, image_xml)
 
@@ -149,7 +149,7 @@ def save_camera(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
     image_xml.attrs["camera"] = request.form["camera"]
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.camera_direction(g.chapter, image_index)
 
@@ -179,7 +179,7 @@ def set_lighting(image_index, aspect):
         save_lighting(current_scene, {aspect: value})
     except ValueError as error:
         return str(error), 400
-    g.chapter.save_xml()
+    g.chapter.save_scene(current_scene)
 
     # this is an hx-swap='none', there isn't anything the UI cares about other than success.
     return "", 200
@@ -216,7 +216,7 @@ def save_scene_characters(image_index=0):
     log.info(f"Processing scene_characters={scene_characters}")
     image_xml.attrs["scene_characters"] = ",".join(scene_characters)
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.characters_section(g.chapter, image_xml)
 
@@ -230,7 +230,7 @@ def generate_scene_characters(image_index=0):
 
     if scene_characters:
         image_xml.attrs["scene_characters"] = ",".join(scene_characters)
-        g.chapter.save_xml()
+        g.chapter.save_image(image_xml)
 
     return htmx.characters_section(g.chapter, image_xml)
 
@@ -260,7 +260,7 @@ def generate_character_description(image_index=0):
     g.chapter.load_xml(force=True)
     image_xml = g.chapter.get_image(image_index)
     image_xml.attrs[f"{character_tag}_description"] = description
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     character = characters.get_character(g.chapter, character_tag)
 
@@ -289,7 +289,7 @@ def set_character_description(image_index):
 
     image_xml = chapter.get_image(image_index)
     image_xml.attrs[f"{character_tag}_description"] = description
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     character = characters.get_character(chapter, character_tag)
 
@@ -311,7 +311,7 @@ def copy_previous_character_description(image_index=0):
             log.info(f"Copying description for {character_name} from previous image")
             image_xml.attrs[f"{character_name}_description"] = previous_description
             log.info(f"Previous description: {previous_description}")
-            g.chapter.save_xml()
+            g.chapter.save_image(image_xml)
         else:
             log.info(f"No description for {character_name} in previous image")
 
@@ -340,7 +340,7 @@ def set_character_pose(image_index):
 
     image = g.chapter.get_xml().findAll("image")[image_index]
     image.attrs[f"{character}_pose"] = pose
-    g.chapter.save_xml()
+    g.chapter.save_image(image)
 
     return htmx.character_pose_selector(g.chapter, image_index, character, pose)
 
@@ -358,7 +358,7 @@ def generate_character_pose(image_index):
 
     image_xml = g.chapter.get_image(image_index)
     image_xml.attrs[f"{character_tag}_pose"] = scene.generate_character_pose(image_xml, character_tag)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     character = characters.get_character(g.chapter, character_tag)
 
@@ -386,7 +386,7 @@ def set_character_location(image_index):
     log.info(f"Processing {character}={location}")
     image_xml.attrs[f"{character}_location"] = location
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.character_location_response(
         chapter=g.chapter,
@@ -398,7 +398,7 @@ def set_character_location(image_index):
 def regenerate_description(image_index):
     image_xml = g.chapter.get_image(int(image_index))
     images.generate_image_description(image_xml, force=True)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return htmx.description(g.chapter, image_xml), 200
 
 
@@ -414,7 +414,7 @@ def update_description(image_index):
 
     description = request.form.get("description", "")
     image_xml.attrs["description"] = description
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.description(g.chapter, image_xml), 200
 
@@ -439,7 +439,7 @@ def generate_character_action(image_index):
     )
 
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.character_action(g.chapter, character_dict, image_xml), 200
 
@@ -454,7 +454,7 @@ def set_character_action(image_index=0):
     action = request.form.get(f"{character_tag}_action", "")
 
     image_xml.attrs[f"{character_tag}_action"] = action
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     character = characters.get_character(g.chapter, character_tag)
 
@@ -470,7 +470,7 @@ def set_character_motivation(image_index=0):
     motivation = request.form.get(f"{character_tag}_motivation", "")
 
     image_xml.attrs[f"{character_tag}_motivation"] = motivation
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     character = characters.get_character(g.chapter, character_tag)
 
@@ -483,7 +483,7 @@ def set_focus_character(image_index=0):
     image_xml = g.chapter.get_image(image_index)
 
     image_xml.attrs["focus_character"] = request.form.get("focus_character", "")
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     return htmx.focus_character(
         g.chapter, image_xml
@@ -559,7 +559,7 @@ def copy_from_previous(image_index=0):
     else:
         log.info(f"No previous image to copy from (image_index == {image_index}).")
 
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     response = make_response(
         htmx.image_strip_centerpiece(g.chapter, image_xml, default="image")
@@ -579,5 +579,5 @@ def save_scene_props(image_index=0):
         return "Unknown prop", 400
     image_xml = g.chapter.get_image(image_index)
     image_xml.attrs["scene_props"] = ",".join(selected)
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return htmx.scene_props(g.chapter, image_xml)

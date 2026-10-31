@@ -58,7 +58,7 @@ def generate_timeline_image(chapter, image_index, force=True):
         candidates = fresh_candidates
     image['src'] = os.path.basename(candidates[0])
     image['image_generation_id'] = uuid.uuid4().hex
-    chapter.save_xml()
+    chapter.save_image(image)
     from artifact_editor.images.completions import publish_image_completion
     publish_image_completion(chapter, image)
     # The editor refresh uses a versioned preview URL, so no Flask cache is needed here.
@@ -82,4 +82,4 @@ def generate_timeline_metadata(chapter, image_index, progress):
     )
     report_detail(90, 'Writing illustration description')
     images.generate_image_description(image, force=True)
-    chapter.save_xml()
+    chapter.save_image(image)

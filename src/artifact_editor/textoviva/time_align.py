@@ -68,11 +68,11 @@ def align_chapter_time(chapter, progress=None):
             image['src'] = replacement
             image.attrs.pop('animation_prompt', None)
             image['time_align_pending'] = 'true'
-            chapter.save_xml()
+            chapter.save_image(image)
         except Exception:
             image.attrs.clear()
             image.attrs.update(old_attributes)
-            chapter.save_xml()
+            chapter.save_image(image)
             raise
 
         # Remove rejected candidates from active selectors while retaining an
@@ -106,5 +106,5 @@ def align_chapter_time(chapter, progress=None):
     for image in chapter.images():
         if int(image['index']) in repaired:
             image.attrs.pop('time_align_pending', None)
-    chapter.save_xml()
+    chapter.save_images()
     return len(repaired)

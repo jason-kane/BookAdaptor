@@ -137,7 +137,7 @@ def prepare_chapter(project_id: str, data: dict[str, Any]):
     # Chapter.mkdirs() creates paths relative to the process working directory,
     # while the chapter writers resolve them below const.LIBRARY_DIR. Theater
     # projects live under /active/Theater, so ensure the actual output folders
-    # exist before save_xml()/writing chapter.txt.
+    # exist before importing chapter content and writing chapter.txt.
     Path(chapter.get_xml_fn()).parent.mkdir(parents=True, exist_ok=True)
     Path(chapter.get_txt_fn()).parent.mkdir(parents=True, exist_ok=True)
     config.save_config(chapter.bookdir, {
@@ -234,8 +234,7 @@ def prepare_chapter(project_id: str, data: dict[str, Any]):
                 silence_index += 1
             image_index += 1
 
-    chapter.soup = soup
-    chapter.save_xml()
+    chapter.replace_content(soup)
     Path(chapter.get_txt_fn()).write_text("\n\n".join(plain_text), encoding="utf-8")
     return chapter
 
@@ -336,7 +335,7 @@ def prepare_audio_and_aspect(chapter, progress=None) -> tuple[float, str]:
     chapter.config["aspect_ratio"] = aspect
     chapter.aspect = aspect
     chapter.save_config()
-    chapter.save_xml()
+    chapter.save_timing()
     return total_seconds, aspect
 
 

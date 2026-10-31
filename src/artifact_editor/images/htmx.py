@@ -48,7 +48,7 @@ def reindex_images(chapter):
     for new_index, image_xml in enumerate(image_elements):
         image_xml.attrs["index"] = str(new_index)   
 
-    chapter.save_xml()
+    chapter.save_timeline()
 
 
 def workflow_link_button(chapter, image_xml, video_index=0, animation=False):

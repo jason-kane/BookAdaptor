@@ -25,7 +25,7 @@ class WorkflowOpenTests(unittest.TestCase):
             with self.subTest(template=template):
                 image = BeautifulSoup('<image index="8"/>', 'xml').image
                 workflow = Mock(side_effect=lambda image, **kw: 'resolved.json' if kw['workflow_name'] == expected else None)
-                chapter = SimpleNamespace(get_image=lambda index: image, get_workflow=workflow, save_xml=Mock(), nice='book')
+                chapter = SimpleNamespace(get_image=lambda index: image, get_workflow=workflow, save_image=Mock(), nice='book')
                 ns = dict(image_workflow_name=helper_ns['image_workflow_name'], g=SimpleNamespace(chapter=chapter), request=request, redirect=redirect,
                           SOURCE_WORKFLOW=SOURCE_WORKFLOW,
                           workflow_destination=Mock(return_value='http://comfy.local/?workflow=resolved.json'),
@@ -39,7 +39,7 @@ class WorkflowOpenTests(unittest.TestCase):
                 self.assertEqual(response.location, 'http://comfy.local/?workflow=resolved.json')
                 self.assertEqual(image['workflow_image_template'], expected)
                 self.assertIsNone(workflow.call_args.kwargs['video_index'])
-                chapter.save_xml.assert_called_once()
+                chapter.save_image.assert_called_once()
 
 
 if __name__ == '__main__':

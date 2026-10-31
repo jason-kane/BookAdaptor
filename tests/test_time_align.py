@@ -40,7 +40,7 @@ class TimeAlignTests(unittest.TestCase):
             soup = BeautifulSoup(f'<chapter><paragraph><image index="1" tod="dusk" src="{good}"/><image index="2" tod="morning" src="{old}" animation_prompt="old animation"/></paragraph></chapter>', 'xml')
             tags = soup.find_all('image')
             chapter = SimpleNamespace(load_xml=Mock(), images=lambda: iter(tags), nice='test',
-                                      save_xml=Mock(), get_workflow=Mock(return_value='workflow.json'))
+                                      save_image=Mock(), save_images=Mock(), get_workflow=Mock(return_value='workflow.json'))
             rerender = Mock()
             candidates = Mock(side_effect=[[str(old)], [str(old), str(new)]])
             modules = {

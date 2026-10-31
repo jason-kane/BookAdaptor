@@ -61,7 +61,7 @@ def outpaint_to_fullscreen(author, title, chapter_number, language, image_index)
         outpaint_description=outpaint_description
     )
     
-    chapter.save_xml()
+    chapter.save_image(image_xml)
     
     if result:
         return htmx.image_editor_workshop(chapter, image_xml)
@@ -127,7 +127,7 @@ def outpaint_to_fullscreen_ui(author, title, chapter_number, language, image_ind
     log.info('Opening workflow in ComfyUI: %s', workflow_name)
     workflow_url = const.COMFY_DIRS["comfyui"]["UI_URL"] + f"?workflow={workflow_name}.json"
 
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     return redirect(workflow_url, code=302)
 
@@ -155,7 +155,7 @@ def crop_to_fullscreen(author, title, chapter_number, language, image_index):
     # crop the image down to fullscreen dimensions
     result = editor.crop_to_aspect(chapter, image_xml, aspect)
     
-    chapter.save_xml()
+    chapter.save_image(image_xml)
     
     if result:
         return htmx.image_editor_workshop(chapter, image_xml)

@@ -256,7 +256,7 @@ def clear_highlight_dimensions():
             if "bottom" in phrase.attrs:
                 del phrase["bottom"]
 
-    g.chapter.save_xml()
+    g.chapter.save_layout()
 
     return htmx.clear_highlight_dimensions_button(g.chapter)
 
@@ -654,7 +654,7 @@ def build_missing_highlight_geometry():
                 or "page_offset" not in paragraph.attrs
             ):
                 # how tall are the pages before this one?
-                g.chapter.save_xml()
+                g.chapter.save_layout()
                 log.info("Calculating page offsets for %s", paragraph_dir)
                 pageimage.calculate_page_offsets(g.chapter)
                 g.chapter.load_xml()
@@ -695,8 +695,8 @@ def build_missing_highlight_geometry():
                         bottom_should_be,
                     )
                     paragraph.attrs["bottom"] = bottom_should_be
-                    # but only calling save_xml() when there _is_ a change is golden.
-                    g.chapter.save_xml()
+                    # Persist geometry only when it changes.
+                    g.chapter.save_layout()
 
     camera.delete_camera(g.chapter.chapterdir)
     return htmx.build_missing_highlight_geometry_button(g.chapter)

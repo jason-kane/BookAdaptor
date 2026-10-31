@@ -22,17 +22,17 @@ class ImageJobTests(unittest.TestCase):
                      'const': SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default')}
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
         image = BeautifulSoup('<image index="4" workflow_image_template="t2i.test"/>', 'xml').image
-        chapter = SimpleNamespace(get_image=Mock(return_value=image), get_workflow=Mock(return_value='workflow.json'), save_xml=Mock())
-        notify = Mock(side_effect=lambda *args: chapter.save_xml.assert_called_once())
+        chapter = SimpleNamespace(nice='test', get_image=Mock(return_value=image), get_workflow=Mock(return_value='workflow.json'), save_image=Mock())
+        notify = Mock(side_effect=lambda *args: chapter.save_image.assert_called_once())
         with patch.dict(sys.modules, {
             'artifact_editor.cache': SimpleNamespace(cache=cache),
-            'artifact_editor.images.selector.htmx': SimpleNamespace(gather_candidate_images=lambda image, chapter: ['/chapter/new.png']),
+            'artifact_editor.images.selector.htmx': SimpleNamespace(gather_candidate_images=Mock(side_effect=[[], ['/chapter/new.png']])),
             'artifact_editor.images.completions': SimpleNamespace(publish_image_completion=notify),
         }):
             namespace['generate_timeline_image'](chapter, 4)
             runner.assert_called_once_with('workflow.json')
             self.assertEqual(image['src'], 'new.png')
-            chapter.save_xml.assert_called_once()
+            chapter.save_image.assert_called_once()
             notify.assert_called_once_with(chapter, image)
             chapter.get_image.return_value = None
             with self.assertRaisesRegex(ValueError, 'no longer exists'):

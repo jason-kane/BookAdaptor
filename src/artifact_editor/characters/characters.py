@@ -1414,7 +1414,7 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
                 phrase['speaker'] = new_speaker
                 changed += 1
             phrase['speaker_source'] = 'llm'
-        chapter.save_xml()
+        chapter.save_phrases()
         progress(int(batch_number * 100 / len(batches)),
                  f'Checked phrase speakers {batch_number}/{len(batches)} · '
                  f'{changed} updated, {unresolved} unresolved')
@@ -1462,7 +1462,8 @@ def rewrite_character_references(chapter, records, target_tag):
                     if not image.get(target_tag + ending):
                         image[target_tag + ending] = image[key]
                     del image[key]
-    chapter.save_xml()
+    chapter.save_phrases()
+    chapter.save_images()
 
 
 def set_aliases(chapter, tag, aliases):

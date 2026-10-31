@@ -68,7 +68,7 @@ def set_camera_value(
         image_xml.attrs[f"{category}_{module_name}_{key}"] = request.form.get(key)
 
     log.info(f"Saving {image_xml.attrs}")
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     return htmx.get_camera_configuration_widgets(
         chapter=chapter, image_index=image_index
@@ -119,7 +119,7 @@ def build_camera(author, title, chapter_number, language, image_index):
                 image_match="frame_%06d.png",
             )
 
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     response = make_response(
         htmx.camera_workshop(
@@ -161,7 +161,7 @@ def delete_camera(author, title, chapter_number, language, image_index):
     if "camera_motion" in image_xml.attrs:
         del image_xml.attrs["camera_motion"]
 
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     response = make_response(
         htmx.camera_workshop(
@@ -209,6 +209,6 @@ def set_camera_attribute(author, title, chapter_number, language, image_index, a
 
     image_xml = chapter.get_image(image_index)
     image_xml.attrs[f"camera_{attribute}"] = value
-    chapter.save_xml()
+    chapter.save_image(image_xml)
 
     return htmx.camera_workshop(image_xml=image_xml, chapter=chapter)

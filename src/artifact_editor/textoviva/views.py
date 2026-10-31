@@ -343,7 +343,7 @@ def save_animation_description(image_index):
     if "animation_prompt" not in request.form:
         return "Missing animation description", 400
     image_xml.attrs["animation_prompt"] = request.form["animation_prompt"]
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
     return "Description saved."
 
 
@@ -376,7 +376,7 @@ def regenerate_animation(image_index):
         if workflow not in allowed:
             return "Invalid animation workflow", 400
         image_xml.attrs["workflow_i2v_template"] = workflow
-    g.chapter.save_xml()
+    g.chapter.save_image(image_xml)
 
     job_id = uuid.uuid4().hex
     task = {

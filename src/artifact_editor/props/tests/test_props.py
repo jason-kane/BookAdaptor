@@ -80,12 +80,12 @@ class PropTests(unittest.TestCase):
         with TemporaryDirectory() as root, patch.object(props.const, 'LIBRARY_DIR', root):
             xml = BeautifulSoup('<chapter><image scene_props="cup,key"/>'
                                 '<image scene_props="cup"/><image scene_props="key"/></chapter>', 'xml')
-            chapter = SimpleNamespace(chapterdir='a/b/1', get_xml=lambda: xml, save_xml=Mock())
+            chapter = SimpleNamespace(chapterdir='a/b/1', get_xml=lambda: xml, save_images=Mock())
             props.save_props(chapter, {'cup': {'name': 'Cup'}, 'key': {'name': 'Key'}})
             props.delete_prop(chapter, 'cup')
             self.assertEqual(props.get_all_props(chapter), {'key': {'name': 'Key'}})
             self.assertEqual([image['scene_props'] for image in xml.find_all('image')], ['key', '', 'key'])
-            chapter.save_xml.assert_called_once()
+            chapter.save_images.assert_called_once()
             with self.assertRaises(KeyError):
                 props.delete_prop(chapter, 'missing')
 

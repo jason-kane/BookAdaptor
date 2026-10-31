@@ -23,7 +23,7 @@ def select_local_sound(author, title, chapter_number, language):
     # choose the selected sound file for this <sound> element.
     sound_xml = chapter.get_sound(sound_index=request.form.get("index"))
     sound_xml.attrs["src"] = sound_file
-    chapter.save_xml()
+    chapter.save_sound(sound_xml)
     
     if not sound_file:
         return make_response("No sound file specified", 400)

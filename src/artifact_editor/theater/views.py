@@ -345,7 +345,7 @@ def reset_images(project_id: str):
             image.attrs.pop("src", None)
             image.attrs.pop("animated_src", None)
             image.attrs.pop("animation_prompt", None)
-        chapter.save_xml()
+        chapter.save_images()
 
     # Keep the current narration/timeline. Only obsolete video cuts and
     # user revisions are archived so they cannot be mistaken for this reset.

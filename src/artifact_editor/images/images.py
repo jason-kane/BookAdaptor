@@ -1166,7 +1166,7 @@ def reuse_existing_image(chapter, image_xml):
             continue
         if os.path.isfile(candidate):
             image_xml.attrs["src"] = os.path.basename(candidate)
-            chapter.save_xml()
+            chapter.save_image(image_xml)
             return candidate
     return None
 
@@ -1207,7 +1207,7 @@ def generate_missing_metadata(chapter, progress=None, skip_existing_images=False
             local_chapter.soup = local_soup
             # Metadata routines save after individual fields. Keep those writes
             # isolated until this image's complete result is merged below.
-            local_chapter.save_xml = lambda: None
+            local_chapter.save_image = lambda image: None
             image_index = str(source_image.attrs["index"])
             local_image = local_soup.find("image", index=image_index)
             if local_image is None:
@@ -1257,7 +1257,7 @@ def generate_missing_metadata(chapter, progress=None, skip_existing_images=False
                 image.attrs.update(changed_attrs)
                 for key in removed_attrs:
                     image.attrs.pop(key, None)
-                chapter.save_xml()
+                chapter.save_image(image)
                 if error:
                     errors.append(error)
                 else:
@@ -1335,7 +1335,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             setting = generate_metadata_setting(image_xml)
             log.info('Setting for image %s: %s', image_xml.attrs['index'], setting)
             image_xml.attrs["setting"] = setting
-            chapter.save_xml()
+            chapter.save_image(image_xml)
 
         if "camera" not in image_xml.attrs or force_all:
             # camera
@@ -1343,7 +1343,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             progress(35, "Generating camera")
             camera = scene.generate_camera(image_xml)
             image_xml.attrs["camera"] = camera
-            chapter.save_xml()
+            chapter.save_image(image_xml)
 
         if "scene_characters" not in image_xml.attrs or force_all:
             # scene characters
@@ -1351,7 +1351,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             progress(45, "Finding scene characters")
             scene_characters = scene.generate_scene_characters(chapter, image_xml)
             image_xml.attrs["scene_characters"] = ",".join(sorted(scene_characters))
-            chapter.save_xml()
+            chapter.save_image(image_xml)
 
         # if ("scene_characters" in image_xml.attrs) or force_all:
         #     # make sure the scene characters are valid.
@@ -1386,7 +1386,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
             progress(65, "Choosing focus character")
             focus_character = scene.generate_focus_character(chapter, image_xml)
             image_xml.attrs["focus_character"] = focus_character
-            chapter.save_xml()
+            chapter.save_image(image_xml)
 
     # new characters may have been created, reload them
     # log.info("Reloading all characters for chapter %s", chapter)
@@ -1404,7 +1404,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
                 clean_scene_characters.add(character_name)
 
         image_xml.attrs["scene_characters"] = ",".join(sorted(clean_scene_characters))
-        chapter.save_xml()
+        chapter.save_image(image_xml)
 
         for character_name in image_xml.attrs["scene_characters"].split(","):
             character_name = character_name.strip()
@@ -1639,7 +1639,7 @@ def assign_fragdex_and_index(chapter):
     for image_index, image_xml in enumerate(soup.findAll("image")):
         image_xml["index"] = int(image_index)
 
-    chapter.save_xml()
+    chapter.save_timeline()
 
     # used_index = set()
     # for image_xml in soup.findAll('image'):

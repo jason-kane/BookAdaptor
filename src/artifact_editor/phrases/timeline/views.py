@@ -61,7 +61,7 @@ def inject_image_slots():
 
     timeline.inject_image_slots(g.chapter)
     
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
     return {"status": "success", "message": "Injected 8-second image slots."}
 
 
@@ -85,7 +85,7 @@ def generate_scenes():
             force_all=False
         )
 
-        g.chapter.save_xml()
+        g.chapter.save_images()
 
     return {"status": "success", "message": "Scenes generated for all images."}, 200
 

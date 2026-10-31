@@ -18,7 +18,7 @@ class AliasTests(unittest.TestCase):
         self.xml = BeautifulSoup('<chapter><paragraph><phrase speaker="Rob">Hello</phrase>'
             '<image scene_characters="Mr_Stone,Rob" focus_character="Mr_S" Rob_pose="standing" '
             'Mr_Stone_description="Target" Rob_description="Source"/></paragraph></chapter>', 'xml')
-        self.chapter = SimpleNamespace(get_xml=lambda: self.xml, save_xml=lambda: None)
+        self.chapter = SimpleNamespace(get_xml=lambda: self.xml, save_phrases=lambda: None, save_images=lambda: None)
         def save(chapter, records):
             self.records = deepcopy(records)
         self.ns = {'get_all_characters': lambda chapter: deepcopy(self.records), 'save_characters': save}

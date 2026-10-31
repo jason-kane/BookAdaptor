@@ -101,7 +101,7 @@ def set_fragment_id():
                     fragdex = int(fragdex) + 1
         paragraph_index += 1
 
-    g.chapter.save_xml()
+    g.chapter.save_timeline()
 
     return htmx.set_fragment_id_button(g.chapter)
 
@@ -263,7 +263,7 @@ def base(aspect="widescreen", frame_index=0):
             total_frames += int(phrase.attrs.get("frames", "0"))
 
         book.attrs["total_frames"] = total_frames
-        g.chapter.save_xml()
+        g.chapter.save_chapter_metadata()
 
     buttons = "\n".join(
         [

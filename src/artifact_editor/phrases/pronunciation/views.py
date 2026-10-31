@@ -104,7 +104,7 @@ def save(phrase_index):
 
     phrase_xml = g.chapter.get_phrase(phrase_index)
     phrase_xml.attrs["pronunciation"] = pronunciation
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     return phrases_htmx.phrase_editor(
         g.chapter,
@@ -131,7 +131,7 @@ def save_pronunciation_filter(phrase_index):
     phrase_xml = g.chapter.get_phrase(phrase_index)
 
     phrase_xml.attrs["pronunciation_filter"] = pronunciation_filter
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     return phrases_htmx.phrase_editor(g.chapter, phrase_xml, page)
 
@@ -241,7 +241,7 @@ def repronounce_phrase(phrase_index, force=True):
 
     phrase_xml = g.chapter.get_phrase(phrase_index)
     phrase_xml.attrs["pronunciation"] = pronunciation
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
 
     log.info(f"Repronounced phrase {phrase_index} with new pronunciation: {phrase_xml.attrs.get('pronunciation', '')}")
     phrase_xml = g.chapter.get_phrase(phrase_index)

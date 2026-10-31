@@ -95,7 +95,7 @@ class Phrase:
         if self.speaker is not None:
             self.phrase_xml.attrs["speaker"] = self.speaker
 
-        self.chapter.save_xml()
+        self.chapter.save_phrase(self.phrase_xml)
 
 
 def reindex_phrases(chapter: Chapter):
@@ -108,7 +108,7 @@ def reindex_phrases(chapter: Chapter):
         for phrase in paragraph.findAll("phrase"):
             phrase.attrs["index"] = str(phrase_index)
             phrase_index += 1
-    chapter.save_xml()
+    chapter.save_timeline()
     log.info("Reindexing complete. Total phrases: %d", phrase_index)
 
 
@@ -124,7 +124,7 @@ def set_latex(chapter: Chapter, phrase_index: int, new_latex: str):
 
     # Update the LaTeX attribute
     phrase_xml.attrs["latex"] = new_latex
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
     log.info("LaTeX set successfully for phrase index %d", phrase_index)
 
 
@@ -619,7 +619,7 @@ def recalculate_image_frames(chapter: Chapter):
     if last_image is not None:
         last_image.attrs["frames"] = frames
 
-    chapter.save_xml()
+    chapter.save_images()
 
 
 def recalculate_paragraph_durations(chapter):
@@ -641,7 +641,7 @@ def recalculate_paragraph_durations(chapter):
                         float(fragment.attrs.get("frames", 0))
                     )
 
-    chapter.save_xml()
+    chapter.save_paragraphs()
 
 
 def get_wavfile_filename(phrase_xml: Tag, chapter: Chapter) -> str:
@@ -1039,7 +1039,7 @@ def repronounce_phrase(chapter, phrase_xml):
         phrase_xml.attrs["pronunciation"] = pronunciation
 
     recalculate_image_frames(chapter)
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
 
     return pronunciation
 
@@ -1070,7 +1070,7 @@ def repronounce_where_missing(chapter):
                 log.info(f"Found unpronouncable words in phrase: {pronunciation_ipa}")
                 repronounce_phrase(chapter, phrase_xml)
 
-    chapter.save_xml()
+    chapter.save_phrases()
     return
 
 
@@ -1301,7 +1301,7 @@ def generate_audio(chapter):
 
             paragraph_index += 1
 
-        chapter.save_xml()
+        chapter.save_layout()
 
         # Save the audio cache after processing all chapters
         audio_cache.save_audio_cache(chapter.chapterdir, paragraphs)
@@ -1428,7 +1428,7 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
             if new_pronunciation:
                 phrase_xml.attrs["pronunciation"] = new_pronunciation
 
-            chapter.save_xml()
+            chapter.save_phrase(phrase_xml)
 
     if batch and pending:
         import comfy
@@ -1500,11 +1500,11 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
             phrase_xml.attrs["frames"] = int(duration * const.FPS)
             if new_pronunciation:
                 phrase_xml.attrs["pronunciation"] = new_pronunciation
-            chapter.save_xml()
+            chapter.save_phrase(phrase_xml)
 
     generate_audio(chapter)
     recalculate_image_frames(chapter)
-    chapter.save_xml()
+    chapter.save_timing()
 
     if progress:
         progress(100, "Baseline audio complete")
@@ -1520,7 +1520,7 @@ def save_speaker(chapter, phrase_index: int, speaker):
                 os.remove(stale)
     phrase_xml.attrs["speaker"] = speaker_tag
     phrase_xml.attrs["speaker_source"] = "manual"
-    chapter.save_xml()
+    chapter.save_phrase(phrase_xml)
     return True
 
 

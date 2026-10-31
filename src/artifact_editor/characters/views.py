@@ -866,7 +866,7 @@ def drift_resolution(character_name=""):
         for phrase in chapter.phrases():
             if phrase.get("speaker") == character_name:
                 phrase["speaker"] = character["tag"]
-        chapter.save_xml()
+        chapter.save_phrases()
 
     all_characters = characters.get_all_characters(mybook, chapterdir)
 

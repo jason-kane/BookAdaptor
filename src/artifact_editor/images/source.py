@@ -116,5 +116,5 @@ def choose_source_image(chapter, image, filename, library_dir=None, motion=None)
     else:
         image.attrs.pop("source_motion", None)
         image.attrs.pop("source_motion_src", None)
-    chapter.save_xml()
+    chapter.save_image(image)
     return destination

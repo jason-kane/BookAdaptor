@@ -303,7 +303,7 @@ def timeline_image_editor(image_index):
             from artifact_editor.images import images
 
             images.generate_animation_prompt(g.chapter, image, force=True)
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             return render_template(
                 "chapter_timeline_animation_description.html",
                 chapter=g.chapter,
@@ -323,7 +323,7 @@ def timeline_image_editor(image_index):
             if selected not in allowed:
                 return "Invalid i2v workflow", 400
             image["workflow_i2v_template"] = selected
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             return "", 204
         if action == "animation_quality":
             from artifact_editor.images.animation_quality import QUALITY_REFERENCE_SIZES
@@ -332,18 +332,18 @@ def timeline_image_editor(image_index):
             if selected not in QUALITY_REFERENCE_SIZES:
                 return "Invalid animation quality", 400
             image["animation_quality"] = selected
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             return "", 204
         if action == "animation_description":
             image["animation_prompt"] = request.form.get("animation_prompt", "")
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             return "", 204
         if action == "select":
             filename = request.form.get("filename", "")
             if filename not in {item["filename"] for item in thumbnails}:
                 return "Image is not an available version for this slot", 400
             image["src"] = filename
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             from artifact_editor.cache import cache
 
             cache.clear()
@@ -361,7 +361,7 @@ def timeline_image_editor(image_index):
             publish_image_completion(g.chapter, image)
         if "description" in request.form:
             image["description"] = request.form["description"]
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
         if action == "description":
             return "", 204
         if action in ("metadata", "generate"):
@@ -381,7 +381,7 @@ def timeline_image_editor(image_index):
 
             if not image.get("workflow_image_template"):
                 image["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
-            g.chapter.save_xml()
+            g.chapter.save_image(image)
             job_id = uuid.uuid4().hex
             task = {
                 "action": "timeline_metadata"
@@ -600,7 +600,7 @@ def timeline_scene_editor(scene_index):
                 save_lighting(scene, lighting_values)
             except ValueError as error:
                 return str(error), 400
-            g.chapter.save_xml()
+            g.chapter.save_scene(scene)
         if "tod" in request.form:
             from .scenes import save_time_of_day
 
@@ -608,10 +608,10 @@ def timeline_scene_editor(scene_index):
                 save_time_of_day(scene, request.form["tod"])
             except ValueError as error:
                 return str(error), 400
-            g.chapter.save_xml()
+            g.chapter.save_scene(scene)
         if "description" in request.form:
             scene["description"] = request.form["description"].strip()
-            g.chapter.save_xml()
+            g.chapter.save_scene(scene)
         if action == "save":
             return "", 204
         if action == "generate" and not scene.get("description", "").strip():
@@ -1825,8 +1825,7 @@ def import_chapter_small_phrase():
         rainbow_h.write(r"""\end{document}""")
 
     # delta["ops"] = out_ops
-    g.chapter.soup = chapter_xml
-    g.chapter.save_xml()
+    g.chapter.replace_content(chapter_xml)
 
     cwd = os.path.join(
         const.LIBRARY_DIR,
@@ -2386,8 +2385,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         )
 
     # delta["ops"] = out_ops
-    chapter.soup = chapter_soup
-    chapter.save_xml()
+    chapter.replace_content(chapter_soup)
 
     cwd = os.path.join(
         const.LIBRARY_DIR,
@@ -2410,7 +2408,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     )
     progress(96, "Placing image slots")
     add_import_images(chapter.get_xml())
-    chapter.save_xml()
+    chapter.save_timeline()
 
     progress(97, "Generating chapter mood")
     generate_chapter_mood(chapter)
@@ -2600,7 +2598,7 @@ def save_phrase_delta(phrase_index: int):
     phrase_xml.attrs["delta"] = json.dumps(compress_ops(operations))
     phrase_xml.attrs["latex"] = html.escape(latex.replace("\n", r"\n"))
     phrase_xml.attrs.pop("latex_rainbow", None)
-    g.chapter.save_xml()
+    g.chapter.save_phrase(phrase_xml)
     _sync_sections_from_phrase_deltas(g.chapter)
     return "", 200
 

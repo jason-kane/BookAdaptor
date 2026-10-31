@@ -46,12 +46,14 @@ def test_completion_snapshot_only_includes_existing_generated_images(tmp_path):
 
 def test_manual_redraw_gets_a_new_generation_identity(monkeypatch):
     image = BeautifulSoup('<image index="4"/>', 'xml').image
-    chapter = SimpleNamespace(get_image=lambda _: image, get_workflow=Mock(return_value='workflow'), save_xml=Mock())
+    chapter = SimpleNamespace(nice='test', get_image=lambda _: image, get_workflow=Mock(return_value='workflow'), save_image=Mock())
     monkeypatch.setitem(sys.modules, 'artifact_editor.images.selector.htmx',
-                        SimpleNamespace(gather_candidate_images=lambda *_: ['/chapter/finished.png']))
+                        SimpleNamespace(gather_candidate_images=Mock(side_effect=[
+                            [], ['/chapter/first.png'], ['/chapter/first.png'], ['/chapter/second.png']
+                        ])))
     monkeypatch.setitem(sys.modules, 'artifact_editor.textoviva.workflow',
                         SimpleNamespace(image_workflow_name=lambda template: template))
-    notify = Mock(side_effect=lambda *args: chapter.save_xml.assert_called())
+    notify = Mock(side_effect=lambda *args: chapter.save_image.assert_called())
     monkeypatch.setitem(sys.modules, 'artifact_editor.images.completions',
                         SimpleNamespace(publish_image_completion=notify))
     generate = load_function('src/artifact_editor/images/jobs.py', 'generate_timeline_image', dict(
@@ -61,6 +63,6 @@ def test_manual_redraw_gets_a_new_generation_identity(monkeypatch):
     first = image['image_generation_id']
     generate(chapter, 4)
     assert first != image['image_generation_id']
-    assert image['src'] == 'finished.png'
-    assert chapter.save_xml.call_count == 2
+    assert image['src'] == 'second.png'
+    assert chapter.save_image.call_count == 2
     assert notify.call_count == 2

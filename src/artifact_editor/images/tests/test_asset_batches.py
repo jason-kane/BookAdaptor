@@ -7,20 +7,26 @@ from artifact_editor.textoviva import textoviva
 
 
 def test_images_only_generates_missing_stills(monkeypatch, tmp_path):
-    soup = BeautifulSoup('<chapter><paragraph><image index="0"/><image index="1"/></paragraph></chapter>', 'xml')
+    soup = BeautifulSoup('<chapter><paragraph><image index="0"/><image index="1" prompt="Prepared prompt"/></paragraph></chapter>', 'xml')
     existing = tmp_path / 'existing.png'
     existing.touch()
-    chapter = SimpleNamespace(images=lambda: iter(soup.find_all('image')),
+    chapter = SimpleNamespace(title='Test', images=lambda: iter(soup.find_all('image')),
         get_image_filename=lambda image: str(existing) if image['index'] == '0' else None,
         get_video_filename=lambda: str(tmp_path / 'video.mp4'),
-        get_workflow=Mock(return_value='still-workflow'), save_xml=Mock())
-    workflow = Mock()
-    monkeypatch.setattr(textoviva.comfy, 'run_workflow_fn', workflow)
+        get_workflow=Mock(return_value='still-workflow'), save_image=Mock(), save_images=Mock())
+    def complete(workflows, on_complete, **kwargs):
+        for position in range(len(workflows)):
+            on_complete(position, [])
+        return [[] for _ in workflows]
+    workflow = Mock(side_effect=complete)
+    monkeypatch.setattr(textoviva.comfy, 'run_workflow_fn_batch', workflow)
+    monkeypatch.setattr('artifact_editor.images.completions.publish_image_completion', Mock())
     monkeypatch.setattr(textoviva.selector_htmx, 'gather_candidate_images', lambda *args: ['new.png'])
     instance = textoviva.Textoviva(chapter)
     instance.generate_missing_animations = Mock(side_effect=AssertionError('Unexpected animation'))
     instance.generate_missing_images()
-    workflow.assert_called_once_with('still-workflow')
+    workflow.assert_called_once()
+    assert [item['workflow_fn'] for item in workflow.call_args.args[0]] == ['still-workflow']
     instance.generate_missing_animations.assert_not_called()
     assert soup.find('image', index='1')['src'] == 'new.png'
 

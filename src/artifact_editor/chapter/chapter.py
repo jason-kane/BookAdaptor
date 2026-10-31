@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import traceback
 from hashlib import md5
 from typing import Any, Generator, Iterable
 import uuid
@@ -36,6 +37,7 @@ from artifact_editor.types import aspect
 from artifact_editor.typography import page_segment
 
 from artifact_editor.characters import characters
+from .persistence import remember_content, replace_content, save_records
 
 log = logger.log(__name__)
 
@@ -719,7 +721,7 @@ class Chapter:
             f"Chapter {self.key} text height is {bottom} - {top} = {total_height}"
         )
 
-        self.save_xml()  # save any cached dimensions
+        self.save_layout()  # save any cached dimensions
         return total_height
 
     def get_highlighted_text_snippet_fn(self, phrase_xml: Tag) -> str:
@@ -937,7 +939,7 @@ class Chapter:
         else:
             del chapter.attrs["style"]
 
-        self.save_xml()
+        self.save_chapter_metadata()
 
     def get_image_style(self, image_xml: Tag) -> str:
 
@@ -2633,6 +2635,7 @@ class Chapter:
         """
         if self.stub:
             self.soup = BeautifulSoup("<chapter></chapter>", "xml")
+            remember_content(self)
             return self.soup
 
         if self.soup is not None:
@@ -2650,6 +2653,7 @@ class Chapter:
         if os.path.exists(xml_fn):
             with open(xml_fn, "r") as h:
                 self.soup = BeautifulSoup(h.read(), "xml")
+            remember_content(self)
 
             chapter_xml = self.soup.find("chapter")
             if chapter_xml is None:
@@ -2660,7 +2664,7 @@ class Chapter:
 
             new_version = as_float(chapter_xml.attrs.get("version", "0.0"))
             if f"{old_version}" != f"{new_version}":
-                self.save_xml()
+                self.save_timeline()
                 log.info(
                     "Upgraded XML from version %s to version %s",
                     old_version,
@@ -2668,6 +2672,7 @@ class Chapter:
                 )
         else:
             self.soup = BeautifulSoup("<chapter></chapter>", "xml")
+            remember_content(self)
 
         return self.soup
 
@@ -2686,30 +2691,69 @@ class Chapter:
         return best
 
     def save_xml(self):
-        """
-        Save the xml version of this chapter
-        """
-        book_fn = self.get_xml_fn()
-        # /home/jkane/books/active/Aesop/Fables/chapter/0025/book.xml
-        # /home/jkane/books/active/Aesop/Fables/chapter/0025/book.xml
-        log.info("Saving book as XML", book_fn=book_fn)
+        """Report callers that still bypass the explicit persistence API."""
+        log.error(
+            "Chapter.save_xml() is obsolete; use a record save, save_timeline(), or replace_content()",
+            traceback="".join(traceback.format_stack()[:-1]),
+        )
+
+    def replace_content(self, content):
+        """Replace all chapter content during import or a storage migration."""
+        replace_content(self, content)
+
+    def save_timeline(self):
+        """Persist added, removed, moved, or reindexed timeline records."""
         if self.soup is None:
-            log.error("book not loaded!", book_fn=book_fn)
             self.load_xml()
+        replace_content(self, self.soup)
 
-        pretty = self.soup.prettify()
+    def _save_entities(self, kind, records):
+        records = [record if isinstance(record, Tag) else getattr(record, "phrase_xml", record)
+                   for record in records]
+        if any(not isinstance(record, Tag) or record.name != kind for record in records):
+            raise TypeError(f"Expected {kind} records")
+        save_records(self, records)
 
-        as_split = pretty.splitlines()
-        if len(as_split) > 10:
-            beginning = as_split[:5]
-            ending = as_split[-5:]
-            # log.debug("pre-samples", beginning=beginning, ending=ending)
+    def save_image(self, image):
+        self._save_entities("image", [image])
 
-        log.info("Generated XML in bytes", len_pretty=len(pretty), book_fn=book_fn)
-        with open(book_fn, "w") as h:
-            h.write(pretty)
+    def save_images(self, images=None):
+        self._save_entities("image", self.get_xml().find_all("image") if images is None else images)
 
-        log.info("Finished saving book as XML")
+    def save_phrase(self, phrase):
+        self._save_entities("phrase", [phrase])
+
+    def save_phrases(self, phrases=None):
+        self._save_entities("phrase", self.get_xml().find_all("phrase") if phrases is None else phrases)
+
+    def save_scene(self, scene):
+        self._save_entities("scene", [scene])
+
+    def save_sound(self, sound):
+        self._save_entities("sound", [sound])
+
+    def save_paragraph(self, paragraph):
+        self._save_entities("paragraph", [paragraph])
+
+    def save_paragraphs(self):
+        save_records(self, self.get_xml().find_all("paragraph"), include_contents=False)
+
+    def save_chapter_metadata(self):
+        content = self.get_xml()
+        root = content if content.name in ("chapter", "book") else content.find(["chapter", "book"])
+        if root is None:
+            raise ValueError("Chapter content has no root record")
+        save_records(self, [root], include_contents=False)
+
+    def save_layout(self):
+        """Persist typography geometry and chapter/paragraph layout metadata."""
+        save_records(self, self.get_xml().find_all(["chapter", "book", "paragraph", "phrase"]),
+                     include_contents=False)
+
+    def save_timing(self):
+        """Persist measured audio and frame timing without replacing the timeline."""
+        save_records(self, self.get_xml().find_all(["chapter", "book", "paragraph", "phrase", "image", "silence", "sound"]),
+                     include_contents=False)
 
     def get_txt_fn(self):
         best = os.path.join(

@@ -67,7 +67,7 @@ class SceneTests(unittest.TestCase):
                                   '</paragraph><paragraph index="1"><phrase index="1" frames="20">A stone hall.</phrase>'
                                   '<image index="2"/><phrase index="2" frames="30">Tall windows.</phrase>'
                                   '</paragraph></chapter>', 'xml')
-        self.chapter = SimpleNamespace(get_xml=lambda: self.soup, save_xml=Mock(), chapterdir='book/chapter', kwargs={})
+        self.chapter = SimpleNamespace(get_xml=lambda: self.soup, save_timeline=Mock(), save_scene=Mock(), save_timing=Mock(), chapterdir='book/chapter', kwargs={})
 
     def test_add_empty_scene_after_image_and_inherit_across_paragraphs(self):
         scene = scenes.add_scene(self.chapter, 0)
