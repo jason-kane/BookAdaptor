@@ -74,7 +74,7 @@ from .scene.views import bp as images_scene
 from .selector import htmx as selector_htmx
 from .selector import selector as selector
 from .selector.views import bp as images_selector
-from .source import SOURCE_WORKFLOW, choose_source_image, source_image_path
+from .source import SOURCE_WORKFLOW, choose_source_image, crop_source_image, source_image_path
 
 log = logger.log(name=__name__)
 
@@ -224,6 +224,21 @@ def refresh_source_picker(image_index):
         motion=request.args.get("source_motion"),
         expanded=True,
     ), 200
+
+
+@bp.post("/<int:image_index>/source_picker/crop")
+def crop_source_picker_image(image_index):
+    image = g.chapter.get_image(image_index)
+    if image is None:
+        abort(404)
+    filename = request.form.get("image_source", "")
+    try:
+        cropped = crop_source_image(g.chapter, filename, image)
+    except (ValueError, FileNotFoundError, OSError):
+        return "Choose an available source image to crop", 400
+    from .source import source_picker
+
+    return source_picker(g.chapter, image, selected=cropped, expanded=True), 200
 
 
 @bp.post("/<int:image_index>/source_choose")

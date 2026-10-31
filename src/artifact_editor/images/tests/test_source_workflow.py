@@ -124,6 +124,27 @@ def test_source_previews_are_bounded_and_outside_files_are_not_served(source_edi
     assert not editor.saved.exists()
 
 
+def test_crop_creates_selectable_source_option_at_target_aspect(source_editor):
+    editor = source_editor
+    response = editor.client.post(
+        editor.base + "/images/4/source_picker/crop",
+        data={"image_source": "images/art.jpg"},
+    )
+    assert response.status_code == 200
+    picker = BeautifulSoup(response.data, "html.parser")
+    crop = picker.select_one('input[name="image_source"]')
+    assert crop["value"].startswith("cropped/art_")
+    assert crop["value"].endswith(".png")
+    assert len(picker.select(".source-image-thumbnail")) == 3
+    crop_path = editor.root / crop["value"]
+    with Image.open(crop_path) as cropped:
+        assert cropped.size == (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
+    assert (editor.root / "images/art.jpg").is_file()
+    assert editor.client.get(
+        editor.base + "/images/4/source_image/" + crop["value"] + "?height=160"
+    ).status_code == 200
+
+
 @pytest.mark.parametrize("aspect,size", [("widescreen", (160, 80)), ("portrait", (80, 160))])
 def test_saved_motion_reaches_video_frames_and_invalidates_cached_frames(source_editor, monkeypatch, tmp_path, aspect, size):
     from artifact_editor.masterplan.masterplan import generate_masterplan

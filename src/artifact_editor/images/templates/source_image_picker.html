@@ -14,6 +14,12 @@
             <figcaption data-source-caption style="overflow-wrap: anywhere;">{{ selected }}</figcaption>
         </figure>
         <small>Drag a frame region to position it. Both regions keep the {{ target_size[0] }} × {{ target_size[1] }} output ratio. Use zoom to change how much of the illustration is visible.</small>
+        <wa-button type="button"
+            hx-post="{{ url_for('library.book.chapter.images.crop_source_picker_image', image_index=image['index'], **chapter.kwargs) }}"
+            hx-include="closest .source-image-picker"
+            hx-target="closest .source-image-picker" hx-swap="outerHTML"
+            hx-disabled-elt="this">Create {{ target_size[0] }} × {{ target_size[1] }} crop</wa-button>
+        <small>Creates a centered crop as another source option. The original stays available.</small>
         <div class="source-frame-controls">
             {% for frame, label in [('first', 'First'), ('last', 'Last')] %}
             <div class="wa-stack wa-gap-xs">
@@ -56,7 +62,7 @@
             </button>
             {% endfor %}
         </div>
-        <small>{{ filenames|length }} original book illustrations</small>
+        <small>{{ filenames|length }} source image options</small>
     </div>
     <div class="wa-stack wa-gap-xs">
         <canvas class="source-frame-preview" data-source-motion-preview aria-label="Pan and zoom motion preview"></canvas>

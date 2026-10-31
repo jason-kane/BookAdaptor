@@ -54,6 +54,41 @@ def source_images(chapter, library_dir=None):
     return sorted(filenames, key=str.casefold)
 
 
+def crop_source_image(chapter, filename, image, library_dir=None):
+    """Create a reusable center-cropped source option at this image's aspect ratio."""
+    source = source_image_path(chapter, filename, library_dir)
+    if library_dir is None:
+        import const
+
+        library_dir = const.LIBRARY_DIR
+    from .source_motion import output_size
+
+    target_width, target_height = output_size(chapter, image)
+    with Image.open(source) as original:
+        illustration = ImageOps.exif_transpose(original)
+        cropped = ImageOps.fit(
+            illustration,
+            (target_width, target_height),
+            method=Image.Resampling.LANCZOS,
+            centering=(0.5, 0.5),
+        )
+        mode = "RGBA" if "A" in cropped.getbands() or "transparency" in cropped.info else "RGB"
+        cropped = cropped.convert(mode)
+        digest = hashlib.sha256(
+            source.read_bytes() + f"\0{target_width}x{target_height}".encode()
+        ).hexdigest()[:16]
+        destination_name = f"cropped/{source.stem}_{target_width}x{target_height}_{digest}.png"
+        root = source_directory(chapter, library_dir)
+        destination = root / destination_name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            with TemporaryDirectory(dir=destination.parent) as temporary:
+                output = Path(temporary) / "crop.png"
+                cropped.save(output, format="PNG")
+                os.replace(output, destination)
+    return destination_name
+
+
 def source_picker(chapter, image, selected=None, motion=None, expanded=False):
     from flask import render_template
 
