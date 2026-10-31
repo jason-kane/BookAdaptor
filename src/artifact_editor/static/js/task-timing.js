@@ -66,6 +66,17 @@
         } else {
             label = compact ? 'Learning' : `Learning duration${seconds === null ? '' : ` · ${duration(seconds)} elapsed`}`;
         }
+        const frameProgress = String(job.message || '').match(/Rendering frames\s*\((\d+)\/(\d+)\)/i);
+        if (!stopped && state !== 'queued' && frameProgress) {
+            const completed = Number(frameProgress[1]);
+            const total = Number(frameProgress[2]);
+            if (total > 0 && completed > 0 && seconds !== null) {
+                remaining = seconds * (total - completed) / completed;
+                label = `Best Guess: ~${duration(remaining)} remaining`;
+            } else {
+                label = 'Best Guess: estimating from completed frames';
+            }
+        }
         if (!stopped && state !== 'queued' && average === null && dependency && job.job_id) {
             const child = [...jobs.values()].find(item => item.parent_job_id === job.job_id && !terminal.has(item.state));
             if (child) {
