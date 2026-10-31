@@ -78,6 +78,17 @@
                 label = 'Best Guess: estimating from completed frames';
             }
         }
+        const message = String(job.message || '');
+        const audioProgress = message.match(/Generated audio for\s+(\d+)\s+of\s+(\d+)\s+phrases?/i)
+            || message.match(/Generating audio:\s*phrase\s+(\d+)\s+of\s+(\d+)/i);
+        if (!stopped && state !== 'queued' && audioProgress) {
+            const reportedPercent = numeric(job.percent);
+            const completed = Number(audioProgress[1]);
+            const total = Number(audioProgress[2]);
+            value = reportedPercent !== null
+                ? Math.max(0, Math.min(100, reportedPercent))
+                : total > 0 ? Math.max(0, Math.min(100, completed / total * 100)) : null;
+        }
         if (!stopped && state !== 'queued' && average === null && dependency && job.job_id) {
             const child = [...jobs.values()].find(item => item.parent_job_id === job.job_id && !terminal.has(item.state));
             if (child) {
