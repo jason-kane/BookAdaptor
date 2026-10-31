@@ -798,6 +798,7 @@
     // );
     const chapterSections = [];
     let sectionSaveTimer = null;
+    let nextChapterSectionId = 0;
 
     window.getChapterSectionsPayload = () => chapterSections.map(section => ({
         typesetting_method: section.typesetting_method,
@@ -821,6 +822,13 @@
         if (!response.ok) throw new Error(`Section save failed: ${response.status}`);
     };
 
+    function updateChapterSectionControls() {
+        const canDelete = chapterSections.length > 1;
+        document.querySelectorAll('#chapter-sections .delete-section').forEach(button => {
+            button.disabled = !canDelete;
+        });
+    }
+
     window.reflowChapterParagraphs = async button => {
         const label = button.textContent;
         button.setAttribute('loading', '');
@@ -841,21 +849,22 @@
     }
 
     function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}) {
-        const index = chapterSections.length;
+        const editorId = `text_editor_${nextChapterSectionId++}`;
         const sectionElement = document.createElement('section');
         sectionElement.className = 'chapter-section wa-stack';
         sectionElement.innerHTML = `
-            <div id="text_editor_${index}" class="text-editor chapter-section-editor"></div>
+            <div id="${editorId}" class="text-editor chapter-section-editor"></div>
             <div class="wa-cluster chapter-section-controls">
                 <wa-select class="typesetting-method" label="Typesetting method" value="verse">
                     <wa-option value="verse">Verse</wa-option>
                     <wa-option value="plain">Plain</wa-option>
                 </wa-select>
                 <wa-button class="add-section" type="button" variant="neutral" appearance="accent">Add Section</wa-button>
+                <wa-button class="delete-section" type="button" variant="danger" appearance="outlined" aria-label="Delete this section">Delete Section</wa-button>
             </div>`;
         document.getElementById('chapter-sections').appendChild(sectionElement);
 
-        const editor = new Quill(`#text_editor_${index}`, {
+        const editor = new Quill(`#${editorId}`, {
             modules: {
                 syntax: true,
                 toolbar: {
@@ -874,12 +883,23 @@
         editor.setContents({ops: sectionData.ops || []});
         showUniformTypography(editor);
         editor.on('text-change', saveChapterSections);
+        updateChapterSectionControls();
         sectionElement.querySelector('.typesetting-method').addEventListener('change', event => {
             section.typesetting_method = event.target.value;
             saveChapterSections();
         });
         sectionElement.querySelector('.add-section').addEventListener('click', () => {
             addChapterSection();
+            saveChapterSections();
+        });
+        sectionElement.querySelector('.delete-section').addEventListener('click', () => {
+            if (chapterSections.length <= 1) return;
+            if (!window.confirm('Delete this section and its text?')) return;
+            const sectionIndex = chapterSections.indexOf(section);
+            if (sectionIndex < 0) return;
+            chapterSections.splice(sectionIndex, 1);
+            sectionElement.remove();
+            updateChapterSectionControls();
             saveChapterSections();
         });
     }
