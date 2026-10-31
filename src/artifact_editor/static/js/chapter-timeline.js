@@ -141,6 +141,8 @@ function initializeTimelineImageBackgrounds(list) {
             entry.style.removeProperty('background-size');
             entry.style.removeProperty('background-position');
             entry.style.removeProperty('background-repeat');
+            entry.style.removeProperty('background-color');
+            entry.style.removeProperty('background-blend-mode');
             delete entry.dataset.imageBackground;
         });
         for (let start = 0; start < entries.length;) {
@@ -158,6 +160,8 @@ function initializeTimelineImageBackgrounds(list) {
                     entry.style.backgroundSize = `auto ${spanHeight}px`;
                     entry.style.backgroundPosition = `0px -${offset}px`;
                     entry.style.backgroundRepeat = 'no-repeat';
+                    entry.style.backgroundColor = 'rgba(0, 0, 0, 0.58)';
+                    entry.style.backgroundBlendMode = 'multiply';
                     entry.dataset.imageBackground = 'true';
                 });
             }
