@@ -11,6 +11,7 @@ import signal
 import traceback
 import time
 import uuid
+from werkzeug.routing import BuildError
 
 import redis
 from redis.maint_notifications import MaintNotificationsConfig
@@ -489,6 +490,32 @@ def snapshot(client, capacity=12):
     def public(task):
         item = {k: task[k] for k in fields if k in task}
         state = item.get("state", "queued")
+        if item.get("action") in {
+            "chapter_missing_animations",
+            "textoviva_regenerate_animation",
+            "textoviva_missing_animation",
+        }:
+            chapter = item.get("chapter") or {}
+            image_index = item.get("image_index", item.get("thumbnail_image_index"))
+            author = item.get("author") or chapter.get("author")
+            title = item.get("title") or chapter.get("title")
+            chapter_number = item.get("chapter_number") or chapter.get("chapter_number")
+            language = item.get("language") or chapter.get("language")
+            if image_index is not None and author and title and chapter_number and language:
+                try:
+                    from flask import url_for
+
+                    item["thumbnail_url"] = url_for(
+                        "library.book.chapter.images.show_image_by_index",
+                        author=author,
+                        title=title,
+                        chapter_number=int(chapter_number),
+                        language=language,
+                        height=128,
+                        image_index=int(image_index),
+                    )
+                except (BuildError, RuntimeError, ValueError):
+                    pass
         item["cancellable"] = state not in ("failed", "complete", "cancelled", "cancelling")
         if item["cancellable"] and cancellation_requested(client, task):
             item.update(state="cancelling", cancellable=False, message="Cancelling task…")

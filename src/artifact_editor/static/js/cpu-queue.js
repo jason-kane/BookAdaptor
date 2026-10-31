@@ -12,6 +12,7 @@
     function animationThumbnail(task, message = task.message || '') {
         if (!['chapter_missing_animations', 'textoviva_regenerate_animation',
               'textoviva_missing_animation'].includes(task.action)) return '';
+        if (task.thumbnail_url) return task.thumbnail_url;
         const index = task.image_index
             ?? message.match(/(?:image|shot)\s+(\d+)/i)?.[1]
             ?? task.thumbnail_image_index;

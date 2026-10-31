@@ -26,14 +26,14 @@
     padding-left: 5.25rem;
 }
 .cpu-queue-thumbnail {
+    display: block;
     position: absolute;
     top: 0.35rem;
     left: 0.35rem;
-    height: calc(100% - 0.7rem);
-    width: auto;
+    width: 4.5rem;
+    height: 4.5rem;
     aspect-ratio: 1;
     object-fit: cover;
-    max-width: 4.5rem;
     border-radius: var(--wa-border-radius-s, 0.25rem);
     background: var(--wa-color-surface-raised, #333);
 }

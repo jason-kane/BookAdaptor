@@ -86,6 +86,14 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
     action = action or previous.get("action")
     if action:
         event["action"] = action
+    if action in {
+        "chapter_missing_animations",
+        "textoviva_regenerate_animation",
+        "textoviva_missing_animation",
+    }:
+        image_match = re.search(r"(?:image|shot)\s+(\d+)", message, re.IGNORECASE)
+        if image_match:
+            event["image_index"] = int(image_match.group(1))
     if debug_details:
         event["debug_details"] = debug_details
     client.hset(f"video_job:{job_id}", mapping=event)
