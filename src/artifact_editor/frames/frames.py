@@ -318,7 +318,12 @@ def draw_frame(
                     )
 
             # # we ain't got nothin, but there is a video.. 
-            base_video_fn = ii_pfn.replace('.png', '.mp4')
+            # A same-stem MP4 may animate a still image regardless of its
+            # extension. Replacing only ".png" left JPEG paths unchanged,
+            # causing the still image itself to be treated as a video and
+            # making the numbered-video search loop forever on JPEG inputs.
+            image_stem = os.path.splitext(ii_pfn)[0]
+            base_video_fn = image_stem + ".mp4"
             if not animation_frames and os.path.exists(base_video_fn) and not image_dict.get("source_motion"):
                 # no frames.. but we have a video?  no problem.
                 video_index = 0
@@ -335,7 +340,7 @@ def draw_frame(
                     if video_index == 0:
                         video_filename = base_video_fn
                     else:
-                        video_filename = ii_pfn.replace('.png', f'_{video_index:02d}.mp4')
+                        video_filename = f"{image_stem}_{video_index:02d}.mp4"
 
                     if os.path.exists(video_filename):
                         log.info(f"Animation video found for {video_filename}, extracting frames...")

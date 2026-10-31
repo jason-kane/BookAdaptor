@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import copy
+import fcntl
 import random
 import re
 import subprocess
@@ -671,29 +672,49 @@ def expand_dir(directory_name, skip_endswith=None, reverse=False):
 
 def extract_frames(videofile, frame_dir):
     """
-    Extract frames from videofile into frame_dir.
+    Extract frames once into frame_dir, coordinating concurrent CPU workers.
     """
     log.info(f"Extracting frames from {videofile} to {frame_dir}...")
-    # Different extraction paths previously mixed four- and six-digit names,
-    # and shorter replacements left the previous video's tail behind.
-    shutil.rmtree(frame_dir, ignore_errors=True)
-    os.makedirs(frame_dir, exist_ok=True)
-    cmd = [
-        "/usr/bin/ffmpeg",
-        "-nostdin",
-        "-y",
-        "-i",
-        videofile,
-        "-vf",
-        f"fps={const.FPS}",
-        os.path.join(frame_dir, "frame_%06d.png"),
-    ]
-    # log.info(json.dumps(cmd, indent=2))
-    try:
-        subprocess.run(cmd, capture_output=False, check=True)
-    except BaseException:
+    frame_dir = os.path.abspath(frame_dir)
+    videofile = os.path.abspath(videofile)
+    lock_path = frame_dir.rstrip(os.sep) + ".extract.lock"
+    os.makedirs(os.path.dirname(frame_dir), exist_ok=True)
+    with open(lock_path, "a") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        marker = os.path.join(frame_dir, ".extract-complete")
+        existing_frames = glob.glob(os.path.join(frame_dir, "frame_*.png"))
+        source_stat = os.stat(videofile)
+        source_revision = f"{videofile}:{source_stat.st_mtime_ns}:{source_stat.st_size}"
+        if os.path.isfile(marker) and existing_frames:
+            with open(marker, encoding="utf-8") as marker_file:
+                if marker_file.read() == source_revision:
+                    return frame_dir
+
+        # Different extraction paths previously mixed four- and six-digit
+        # names, and shorter replacements left the previous video's tail.
         shutil.rmtree(frame_dir, ignore_errors=True)
-        raise
+        os.makedirs(frame_dir, exist_ok=True)
+        cmd = [
+            "/usr/bin/ffmpeg",
+            "-nostdin",
+            "-y",
+            "-i",
+            videofile,
+            "-vf",
+            f"fps={const.FPS}",
+            os.path.join(frame_dir, "frame_%06d.png"),
+        ]
+        try:
+            subprocess.run(cmd, capture_output=False, check=True)
+            if not glob.glob(os.path.join(frame_dir, "frame_*.png")):
+                raise RuntimeError(f"FFmpeg extracted no frames from {videofile}")
+            with open(marker, "w", encoding="utf-8") as marker_file:
+                marker_file.write(source_revision)
+        except BaseException:
+            shutil.rmtree(frame_dir, ignore_errors=True)
+            raise
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
     log.info(f"DONE extracting frames from {videofile} to {frame_dir}.")
     return frame_dir
 
