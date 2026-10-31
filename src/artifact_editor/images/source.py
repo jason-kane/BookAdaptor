@@ -75,10 +75,11 @@ def crop_source_image(chapter, filename, image, crop, library_dir=None):
             or x < 0 or y < 0 or width <= 0 or height <= 0
             or x + width > 1 or y + height > 1):
         raise ValueError("Crop region is outside the source image")
-    if abs(width / height - target_width / target_height) > 0.02:
-        raise ValueError("Crop region does not match the output aspect ratio")
     with Image.open(source) as original:
         illustration = ImageOps.exif_transpose(original)
+        crop_aspect = width * illustration.width / (height * illustration.height)
+        if abs(crop_aspect - target_width / target_height) > 0.02:
+            raise ValueError("Crop region does not match the output aspect ratio")
         left = round(x * illustration.width)
         top = round(y * illustration.height)
         right = round((x + width) * illustration.width)

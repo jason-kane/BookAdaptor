@@ -132,7 +132,7 @@ def test_crop_creates_selectable_source_option_at_target_aspect(source_editor):
         editor.base + "/images/4/source_picker/crop",
         data={
             "image_source": "images/art.jpg",
-            "source_crop": json.dumps({"x": .05, "y": .35, "width": .8888889, "height": .3}),
+            "source_crop": json.dumps({"x": 0, "y": .2, "width": 1, "height": .6}),
         },
     )
     assert response.status_code == 200
