@@ -8,6 +8,9 @@ import shutil
 import uuid
 
 import const
+import logger
+
+log = logger.log(__name__)
 
 PROP_EXTRACTION_CHUNK_CHARS = 2500
 
