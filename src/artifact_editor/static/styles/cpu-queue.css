@@ -28,8 +28,8 @@
 .cpu-queue-row p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cpu-queue-row wa-button.cpu-queue-copy { position: absolute; top: 0.2rem; right: 3.4rem; margin: 0; font-size: 0.75rem; }
 .cpu-queue-row wa-button.cpu-queue-retry { position: absolute; top: 0.2rem; right: 0.2rem; margin: 0; font-size: 0.75rem; }
-.cpu-queue-row[data-cancellable="true"] { position: relative; padding-right: 6.5rem; }
-.cpu-queue-row wa-button.cpu-queue-cancel { position: absolute; top: 0.2rem; right: 0.2rem; margin: 0; font-size: 0.75rem; }
+.cpu-queue-row[data-cancellable="true"] { position: relative; padding-right: 2rem; }
+.cpu-queue-row wa-button.cpu-queue-cancel { position: absolute; top: 0.05rem; right: 0.05rem; margin: 0; }
 .cpu-queue-row[data-state="cancelled"] { position: relative; padding-right: 6.5rem; opacity: 0.75; }
 .cpu-queue-row wa-button.cpu-queue-copy::part(base) {
     box-sizing: border-box;
@@ -41,6 +41,18 @@
     border: 0;
     color: #dc3545;
 }
+.cpu-queue-row wa-button.cpu-queue-cancel::part(base) {
+    box-sizing: border-box;
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    border: 0;
+    color: #dc3545;
+}
+.cpu-queue-row wa-button.cpu-queue-cancel::part(base):hover { color: #ff5a67; }
+.cpu-queue-row wa-button.cpu-queue-cancel[disabled]::part(base) { opacity: 0.55; }
 .cpu-queue-row wa-progress-bar { --track-height: 0.3rem; margin-block-start: 0.3rem; }
 #cpu-job-queue.is-minimized { width: 15rem; border-radius: 999px; }
 #cpu-job-queue.is-minimized .cpu-queue-body { display: none; }

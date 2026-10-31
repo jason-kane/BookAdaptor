@@ -33,7 +33,7 @@
             cancel.setAttribute('variant', 'danger');
             cancel.className = 'cpu-queue-cancel';
             cancel.dataset.cpuCancel = '';
-            cancel.textContent = 'Cancel Task';
+            cancel.innerHTML = '<wa-icon name="trash" aria-hidden="true"></wa-icon>';
             cancel.setAttribute('aria-label', `Cancel ${label.textContent}`);
             cancel.title = 'Cancel this task';
             cancel.addEventListener('click', () => {
@@ -43,7 +43,7 @@
                     `Cancel running task “${label.textContent}”?\n\nThis stops it immediately and cancels queued child work. Partial output files may remain. A GPU request already running may finish.`
                 )) return;
                 cancel.disabled = true;
-                cancel.textContent = 'Cancelling…';
+                cancel.title = 'Cancelling task';
                 document.dispatchEvent(new CustomEvent('cpu:cancel-send', {
                     detail: {job_id: task.job_id, allow_running: running},
                 }));
@@ -225,12 +225,11 @@
         if (!button) return;
         if (result.state === 'cpu_cancel_rejected') {
             button.disabled = false;
-            button.textContent = 'Cancel Task';
             button.title = result.message || 'Cancellation failed';
             const message = item.querySelector('.cpu-queue-message');
             if (message) message.textContent = button.title;
         } else {
-            button.textContent = result.state === 'cpu_cancelled' ? 'Cancelled' : 'Cancelling…';
+            button.title = result.state === 'cpu_cancelled' ? 'Task cancelled' : 'Cancelling task';
         }
     });
 })();
