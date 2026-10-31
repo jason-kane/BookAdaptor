@@ -263,11 +263,17 @@ def focus_character(chapter, image_xml):
         **chapter.kwargs,
         image_index=image_xml.attrs["index"],
     )
+    generate_focus_url = url_for(
+        "library.book.chapter.images.scene.generate_focus_character",
+        **chapter.kwargs,
+        image_index=image_xml.attrs["index"],
+    )
 
     if character:
-        return f"""<div>
+        return f"""<div id="focus-character" class="wa-cluster">
             <wa-select
                 hx-post="{set_focus_url}"
+                hx-target="#focus-character"
                 hx-swap="outerHTML transition:true"
                 hx-trigger="change"
                 value="{image_xml.attrs.get('focus_character', '')}" 
@@ -278,6 +284,13 @@ def focus_character(chapter, image_xml):
             >
             {character_options}
             </wa-select>
+            <wa-button
+                pill
+                style="align-self: flex-end; margin-left: 1em;"
+                hx-post="{generate_focus_url}"
+                hx-target="#focus-character"
+                hx-swap="outerHTML transition:true"
+            >Generate</wa-button>
         </div>"""
     else:
         return ""

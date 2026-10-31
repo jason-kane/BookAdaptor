@@ -490,6 +490,14 @@ def set_focus_character(image_index=0):
     ), 200
 
 
+@bp.route("generate_focus_character", methods=["POST"])
+def generate_focus_character(image_index=0):
+    image_xml = g.chapter.get_image(int(image_index))
+    scene.generate_focus_character(g.chapter, image_xml)
+    g.chapter.save_image(image_xml)
+    return htmx.focus_character(g.chapter, image_xml), 200
+
+
 @bp.route("copy_from_previous", methods=["POST"])
 def copy_from_previous(image_index=0):
     log.info(f"{request.form}")
