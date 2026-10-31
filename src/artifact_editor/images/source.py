@@ -54,7 +54,7 @@ def source_images(chapter, library_dir=None):
     return sorted(filenames, key=str.casefold)
 
 
-def source_picker(chapter, image, selected=None):
+def source_picker(chapter, image, selected=None, motion=None, expanded=False):
     from flask import render_template
 
     filenames = source_images(chapter)
@@ -67,14 +67,21 @@ def source_picker(chapter, image, selected=None):
                          if current.endswith("_" + Path(filename).name)), None)
     if selected not in filenames:
         selected = filenames[0] if filenames else None
-    motion = default_motion()
-    if selected == image.get("source_image") and image.get("source_motion"):
+    if motion:
+        try:
+            motion = normalize_motion(motion)
+        except (TypeError, ValueError):
+            motion = default_motion()
+    elif selected == image.get("source_image") and image.get("source_motion"):
         motion = normalize_motion(image["source_motion"])
+    else:
+        motion = default_motion()
     target_size = output_size(chapter, image)
     return render_template(
         "source_image_picker.html", chapter=chapter, image=image,
         filenames=filenames, selected=selected, motion=motion,
         target_size=target_size, motion_active=bool(active_motion(image)),
+        expanded=expanded,
     )
 
 

@@ -210,6 +210,22 @@ def chapter_source_image(image_index, filename):
     return send_file(output, mimetype="image/png", etag=fingerprint, max_age=3600)
 
 
+@bp.get("/<int:image_index>/source_picker/refresh")
+def refresh_source_picker(image_index):
+    image = g.chapter.get_image(image_index)
+    if image is None:
+        abort(404)
+    from .source import source_picker
+
+    return source_picker(
+        g.chapter,
+        image,
+        selected=request.args.get("image_source"),
+        motion=request.args.get("source_motion"),
+        expanded=True,
+    ), 200
+
+
 @bp.post("/<int:image_index>/source_choose")
 def choose_chapter_source(image_index):
     image = g.chapter.get_image(image_index)
