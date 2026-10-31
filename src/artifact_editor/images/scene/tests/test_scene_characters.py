@@ -47,7 +47,12 @@ class SceneCharacterTests(unittest.TestCase):
         image = soup.image
         catalog = {name: {'name': name, 'tag': name} for name in ('Alice', 'Bob')}
         namespace = {
-            'characters': SimpleNamespace(get_all_characters=lambda chapter: catalog),
+            'characters': SimpleNamespace(
+                get_all_characters=lambda chapter: catalog,
+                resolve_character_tag=lambda records, name: (
+                    name if name in records else None
+                ),
+            ),
             'character_breakdown': lambda chapter, image: ''.join(
                 f'<wa-tab>{name}</wa-tab>' for name in image['scene_characters'].split(',') if name
             ),

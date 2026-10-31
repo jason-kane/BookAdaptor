@@ -304,11 +304,15 @@ def scene_characters(chapter, image_xml):
     character_options = ""
     all_characters = characters.get_all_characters(chapter)
 
-    selected = [
+    selected_names = [
         name.strip()
         for name in image_xml.attrs.get("scene_characters", "").split(",")
         if name.strip()
     ]
+    selected = {
+        characters.resolve_character_tag(all_characters, name) or name
+        for name in selected_names
+    }
 
     for character_tag in all_characters:
         if character_tag:
@@ -322,7 +326,6 @@ def scene_characters(chapter, image_xml):
         <wa-select             
             name="scene_characters" 
             label="Scene Characters"
-            value="{html.escape(' '.join(selected), quote=True)}"
             hx-put="scene/characters"
             hx-swap="outerHTML transition:true"
             hx-target="closest #characters_section"
