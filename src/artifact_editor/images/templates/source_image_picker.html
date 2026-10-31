@@ -45,7 +45,8 @@
             data-source-scrub aria-label="Motion preview position">
         <wa-button id="source-image-choose-button" variant="brand" appearance="accent"
             hx-post="{{ url_for('library.book.chapter.images.choose_chapter_source', image_index=image['index'], **chapter.kwargs) }}"
-            hx-include="closest .source-image-picker" hx-swap="none" hx-disabled-elt="this">
+            hx-include="closest .source-image-picker"
+            hx-target="closest .source-image-picker" hx-swap="outerHTML" hx-disabled-elt="this">
             Choose this Image
         </wa-button>
         <small>Saves the illustration and both frame regions. The pan/zoom is applied when you rebuild the chapter video.</small>

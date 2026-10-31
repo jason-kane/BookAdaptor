@@ -256,8 +256,32 @@ def choose_chapter_source(image_index):
     from .completions import publish_image_completion
 
     publish_image_completion(g.chapter, image)
-    response = make_response("", 200)
-    response.headers["HX-Refresh"] = "true"
+    from .source import source_picker
+
+    response = make_response(source_picker(
+        g.chapter, image,
+        selected=request.form.get("image_source", ""),
+        motion=request.form.get("source_motion"),
+        expanded=True,
+    ), 200)
+    preview_url = url_for(
+        "library.book.chapter.images.show_image_by_index",
+        height=360, image_index=image_index, v=image.get("image_generation_id"),
+        **g.chapter.kwargs,
+    )
+    full_image_url = url_for(
+        "library.book.chapter.images.show_image_by_index",
+        height=0, image_index=image_index, v=image.get("image_generation_id"),
+        **g.chapter.kwargs,
+    )
+    response.headers["HX-Trigger"] = json.dumps({
+        "chapter-image-selected": {
+            "image_index": image_index,
+            "preview_url": preview_url,
+            "full_image_url": full_image_url,
+            "alt": image.get("alt") or image.get("prompt") or "Chapter image",
+        }
+    })
     return response
 
 

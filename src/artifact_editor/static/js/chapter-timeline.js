@@ -123,6 +123,30 @@ function initializeChapterTimeline() {
 document.addEventListener('DOMContentLoaded', initializeChapterTimeline);
 document.addEventListener('htmx:afterSettle', initializeChapterTimeline);
 
+document.addEventListener('chapter-image-selected', event => {
+    const detail = event.detail || {};
+    const panel = document.getElementById(`timeline-image-${detail.image_index}`);
+    if (!panel) return;
+    const preview = panel.querySelector('.chapter-mini-image-preview');
+    if (preview && detail.preview_url) {
+        preview.src = detail.preview_url;
+        preview.alt = detail.alt || 'Chapter image';
+    }
+    panel.querySelector('.chapter-image-viewer-open')?.removeAttribute('disabled');
+    if (detail.full_image_url) {
+        panel.dataset.timelineBackgroundUrl = detail.full_image_url;
+        panel.dataset.fullImageUrl = detail.full_image_url;
+        panel.dataset.imageAlt = detail.alt || 'Chapter image';
+        const marker = panel.querySelector('[data-timeline-background-marker]');
+        if (marker) {
+            marker.dataset.backgroundUrl = detail.full_image_url;
+            marker.dataset.fullImageUrl = detail.full_image_url;
+            marker.dataset.imageAlt = detail.alt || 'Chapter image';
+        }
+        panel.parentElement?._timelineBackgroundUpdate?.();
+    }
+});
+
 function initializeTimelineImageBackgrounds(list) {
     const syncBackgroundMarkers = () => {
         list.querySelectorAll(':scope > details[data-timeline-type="image"]').forEach(panel => {

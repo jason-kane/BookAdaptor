@@ -95,12 +95,14 @@ def test_switching_workflows_and_choosing_in_chapter_updates_gallery(source_edit
     assert editor.image["src"] == chosen.name
 
 
-def test_workshop_choice_refreshes_and_source_workflow_cannot_generate(source_editor):
+def test_workshop_choice_updates_in_place_and_source_workflow_cannot_generate(source_editor):
     editor = source_editor
     url = editor.base + "/images/4"
     response = editor.client.post(url + "/source_choose", data={"image_source": "images/art.jpg"})
     assert response.status_code == 200
-    assert response.headers["HX-Refresh"] == "true"
+    assert "HX-Refresh" not in response.headers
+    assert "chapter-image-selected" in response.headers["HX-Trigger"]
+    assert b"source-image-picker" in response.data
     assert editor.image["workflow_image_template"] == SOURCE_WORKFLOW
     assert Path(editor.chapter.get_image_filename(editor.image)).is_file()
     response = editor.client.post(url + "/workflow_run")
