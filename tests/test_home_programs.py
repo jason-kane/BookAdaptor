@@ -27,7 +27,7 @@ class GlancesTests(unittest.TestCase):
                 "docker", "compose", "--file", "/docker-compose.yaml",
                 "--project-directory", "/host/BookAdaptor",
                 "--project-name", "bookadaptor", "--profile", "on-demand",
-                "up", "-d", "--no-build", service,
+                "up", "-d", "--no-build", *programs.PROGRAMS[service].get("services", (service,)),
             ])
             self.assertTrue(run.call_args.kwargs["check"])
             self.assertEqual(run.call_args.kwargs["timeout"], 120)

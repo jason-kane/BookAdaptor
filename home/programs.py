@@ -44,6 +44,8 @@ PROGRAMS = {
                "ready_service": "artifactserver"},
     "glances": {"name": "Glances", "port": 61208, "image": "glances.png"},
     "redisinsight": {"name": "Redis Insight", "port": 5540, "image": "redis_insight.png"},
+    "pgadmin": {"name": "pgAdmin 4", "port": 5050, "internal_port": 80,
+                "timeout": 180, "image": "postgres.svg", "ready_path": "/misc/ping"},
 }
 GPU_PROVIDER_SERVICES = {"comfyui": "ComfyUI", "llama": "Llama"}
 
@@ -213,7 +215,7 @@ def program_ready(service_name):
         timeout=10 if ready_service == "artifactserver" else 1,
     )
     try:
-        connection.request("GET", program.get("path", "/"))
+        connection.request("GET", program.get("ready_path", program.get("path", "/")))
         response = connection.getresponse()
         return response.status == 200
     except (OSError, http.client.HTTPException):

@@ -9,6 +9,7 @@ from home.views import bp
 from home.service_info import PANEL_SERVICES, TABLE_ROWS
 from home.service_members import MEMBER_METADATA
 from src.redis.home_panel import home_panel
+from src.postgres.home_panel import home_panel as postgres_home_panel
 
 
 def create_app(config=None):
@@ -17,9 +18,10 @@ def create_app(config=None):
     if config:
         app.config.update(config)
     app.register_blueprint(bp)
-    app.extensions["home_panels"] = {"redis": home_panel(app)}
+    app.extensions["home_panels"] = {"redis": home_panel(app), "postgres": postgres_home_panel(app)}
     app.extensions["home_panel_services"] = {
-        **PANEL_SERVICES, "redis": app.extensions["home_panels"]["redis"].services,
+        **PANEL_SERVICES,
+        **{name: panel.services for name, panel in app.extensions["home_panels"].items()},
     }
     # Open entries describe the panel's UI, rather than its dependency graph.
     app.extensions["home_panel_members"] = {

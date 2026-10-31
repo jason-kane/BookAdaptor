@@ -4,11 +4,13 @@ services:
       context: ./home
       additional_contexts:
         redis_panel: ./src/redis
+        postgres_panel: ./src/postgres
     ports:
       - "8080:8080"
     volumes:
       - ./home:/app/home:ro
       - ./src/redis:/app/src/redis:ro
+      - ./src/postgres:/app/src/postgres:ro
       - ./src/todo:/data/todo
       - ./docker-compose.yaml:/docker-compose.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -45,6 +47,41 @@ services:
       - "5540:5540"
     depends_on:
       - redis
+    networks:
+      - home-network
+  postgres:
+    profiles: ["on-demand"]
+    image: postgres:18
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: bookadaptor
+      POSTGRES_USER: bookadaptor
+      POSTGRES_PASSWORD: bookadaptor
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookadaptor -d bookadaptor"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks:
+      - home-network
+  pgadmin:
+    profiles: ["on-demand"]
+    image: dpage/pgadmin4:latest
+    ports:
+      - "127.0.0.1:5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@bookadaptor.dev
+      PGADMIN_DEFAULT_PASSWORD: bookadaptor
+      PGADMIN_DISABLE_POSTFIX: "1"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./src/postgres/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - home-network
   nginx:
@@ -349,6 +386,10 @@ services:
               capabilities: [ gpu ]
     networks:
       - home-network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
 
 networks:
   home-network:

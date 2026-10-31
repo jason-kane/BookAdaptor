@@ -7,5 +7,6 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . ./home/
 COPY --from=redis_panel . ./src/redis/
+COPY --from=postgres_panel . ./src/postgres/
 EXPOSE 8080
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "600", "--access-logfile", "-", "home.app:create_app()"]

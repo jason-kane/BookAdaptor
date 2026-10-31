@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "BookAdaptor",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "bookadaptor",
+      "Username": "bookadaptor",
+      "SSLMode": "prefer"
+    }
+  }
+}

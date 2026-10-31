@@ -69,7 +69,8 @@ def test_default_list_is_a_text_table_with_explicit_actions():
     assert 'data-service-version="redisinsight"' in table
     assert 'data-service-image="artifactserver"' in table
     assert 'data-service-ports="redis"' in table
-    assert table.count('data-table-info=') == 10
+    from home.service_info import TABLE_ROWS
+    assert table.count('data-table-info=') == len(TABLE_ROWS)
     assert 'data-program-stop' not in table
     assert 'onclick' not in table
 

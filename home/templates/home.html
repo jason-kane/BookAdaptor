@@ -670,6 +670,7 @@
       {% endcall %}
 
       {{ home_panels.redis.render() }}
+      {{ home_panels.postgres.render() }}
 
       {% call service_panel('tests', 'Test Coverage', 'pytest.png', version_service='test') %}
         <a href="http://localhost/htmlcov/" target="_blank" rel="noopener">

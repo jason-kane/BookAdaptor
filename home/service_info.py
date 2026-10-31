@@ -26,6 +26,8 @@ TABLE_ROWS = (
     {"panel": "comfyui", "name": "Comfy UI", "service": "comfyui", "path": "/", "port": 8188},
     {"panel": "redis", "name": "Redis", "service": "redis"},
     {"panel": "redis", "name": "Redis Insight", "service": "redisinsight", "program": "redisinsight"},
+    {"panel": "postgres", "name": "PostgreSQL", "service": "postgres"},
+    {"panel": "postgres", "name": "pgAdmin 4", "service": "pgadmin", "program": "pgadmin"},
     {"panel": "tests", "name": "Test Coverage", "service": "test", "path": "/htmlcov/", "port": 80},
     {"panel": "workflows", "name": "Comfy Workflow Templates", "service": "artifactserver", "path": "/workflow_templates", "port": 8082},
 )

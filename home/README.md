@@ -11,6 +11,30 @@ Its status uses a bounded Redis PING on page load and every 60 seconds. Looking
 at the panel never starts Redis; choosing Redis Insight starts its dependencies.
 The nested Insight controls also poll at 60-second intervals.
 
+PostgreSQL has the same service-owned panel in `src/postgres`, with PostgreSQL
+and a nested **Open pgAdmin 4** launcher. Both are on-demand Compose services;
+opening pgAdmin starts PostgreSQL and waits for its health check. PostgreSQL
+data and pgAdmin settings use the `postgres_data` and `pgadmin_data` named
+volumes. The Home build includes both panel directories as additional contexts.
+
+Local development connections:
+
+| Service | Address | Account |
+| --- | --- | --- |
+| PostgreSQL | `localhost:5432`, database `bookadaptor` | `bookadaptor` / `bookadaptor` |
+| pgAdmin 4 | `http://localhost:5050` | `admin@bookadaptor.dev` / `bookadaptor` |
+
+These development services publish their ports on localhost. Containers on the
+Compose network connect to `postgres:5432`. pgAdmin imports the BookAdaptor
+server definition from `src/postgres/servers.json`; use the database password
+above when connecting. Configure credentials in Compose before initializing a
+new database if different local credentials are desired. Changing initialization
+environment values later does not change existing database or pgAdmin accounts.
+
+PostgreSQL 18 mounts its persistent volume at `/var/lib/postgresql`, following
+the [official image's data layout](https://hub.docker.com/_/postgres).
+pgAdmin uses its documented [container configuration and server import](https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment.html).
+
 Home defaults to a plain, selectable service table. List columns include the
 service name, Compose service, version, state, image, ports, and status. Open and
 Info are explicit actions; clicking or dragging across cells selects text.
