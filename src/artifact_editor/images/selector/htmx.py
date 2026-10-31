@@ -58,19 +58,30 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
             paragraph_dir,
             f"img_{image_index}_last_frame_of_previous.png",
         )
-        frame_filename = chapter.get_last_frame(previous_image)
-        if frame_filename and os.path.isfile(frame_filename):
-            if (
-                not os.path.isfile(destination_frame)
-                or os.path.getmtime(frame_filename) > os.path.getmtime(destination_frame)
-            ):
-                os.makedirs(os.path.dirname(destination_frame), exist_ok=True)
-                shutil.copy2(frame_filename, destination_frame)
-                log.info(
-                    "Copied previous image's final visual to the current image options",
-                    source=frame_filename,
-                    destination=destination_frame,
-                )
+        try:
+            frame_filename = chapter.get_last_frame(previous_image)
+            if frame_filename and os.path.isfile(frame_filename):
+                if (
+                    not os.path.isfile(destination_frame)
+                    or os.path.getmtime(frame_filename) > os.path.getmtime(destination_frame)
+                ):
+                    os.makedirs(os.path.dirname(destination_frame), exist_ok=True)
+                    shutil.copy2(frame_filename, destination_frame)
+                    log.info(
+                        "Copied previous image's final visual to the current image options",
+                        source=frame_filename,
+                        destination=destination_frame,
+                    )
+        except OSError:
+            # Frame extraction uses adjacent lock files and may replace a
+            # directory while the chooser is being opened. This optional
+            # candidate should not prevent the rest of the image editor loading.
+            log.warning(
+                "Could not load the previous image's final visual; omitting that source option",
+                image_index=image_xml.attrs.get("index"),
+                previous_image_index=previous_image.attrs.get("index"),
+                exc_info=True,
+            )
 
     #     for image_path in images.all_images_by_image_index(
     #         paragraph_dir,
