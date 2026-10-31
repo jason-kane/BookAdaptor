@@ -54,6 +54,7 @@ DEFAULT_RUNNING_KEY = RUNNING_KEY
 DEFAULT_STYLER_EVENTS = STYLER_EVENTS
 DEFAULT_STATUS_TTL_SECONDS = 86_400
 LLAMA_TASK_ACTIONS = {
+    "chapter_import",
     "styler_tag_sample",
     "styler_tag_group",
     "styler_scan_image_tags",
