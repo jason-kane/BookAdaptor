@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 VIDEO_QUEUE = "video_render_jobs"
 VIDEO_EVENTS = "video_render_events"
 CHAPTER_IMAGE_EVENTS = "chapter_image_events"
+FRAME_EVENTS = "chapter_frame_events"
 RENDER_QUEUE = "chapter_render_jobs"
 RENDER_ACTIONS = frozenset({
     "video_render", "textoviva_rerender", "textoviva_regenerate_animation",

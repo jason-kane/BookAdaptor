@@ -2,11 +2,14 @@
 import fcntl
 import functools
 from glob import glob
+import json
 import itertools
 import math
 import os
 import shutil
 import traceback
+import time
+from urllib.parse import quote
 
 import fnv_hash_fast
 import redis
@@ -27,6 +30,55 @@ from artifact_editor import (
 from text_to_image.registry import registry as t2i_registry
 
 log = logger.log(__name__)
+
+
+def publish_frame_completion(chapter, aspect, frame_index, identity=None):
+    """Tell open chapter pages that a frame PNG finished saving."""
+    try:
+        from artifact_editor.cache import r
+        from task_queue import FRAME_EVENTS
+
+        if identity is None and hasattr(chapter, "title"):
+            identity = {
+                "author": getattr(chapter.author, "name", chapter.author),
+                "title": chapter.title,
+                "chapter_number": chapter.number if hasattr(chapter, "number") else chapter.chapter_number,
+                "language": getattr(chapter, "language", "english"),
+            }
+        if identity is None:
+            parts = str(chapter).strip("/").split("/")
+            chapter_folder = parts.index("chapter")
+            identity = {
+                "author": parts[chapter_folder - 2],
+                "title": parts[chapter_folder - 1],
+                "chapter_number": int(parts[chapter_folder + 1]),
+                "language": "english",
+            }
+        author = identity["author"]
+        title = identity["title"]
+        language = identity["language"]
+        chapter_number = identity["chapter_number"]
+        completed_at = time.time_ns()
+        url = (
+            f"/library/{quote(author, safe='')}/{quote(title, safe='')}/"
+            f"{int(chapter_number)}/{quote(language, safe='')}/frames/"
+            f"{quote(aspect, safe='')}/{int(frame_index)}.png?v={completed_at}"
+        )
+        r.publish(FRAME_EVENTS, json.dumps({
+            "state": "chapter_frame_complete",
+            "author": author,
+            "title": title,
+            "chapter_number": int(chapter_number),
+            "language": language,
+            "aspect": aspect,
+            "frame_index": int(frame_index),
+            "url": url,
+            "completed_at": completed_at,
+        }))
+    except Exception:
+        # Redis notifications are an enhancement; a saved frame remains valid
+        # if the browser notification service is temporarily unavailable.
+        log.debug("Could not publish completed chapter frame", exc_info=True)
 
 
 def wrap_with_full_traceback(func):
@@ -106,6 +158,7 @@ def draw_frame(
     paragraph_index,
     phrase_id,
     force=False,
+    chapter_identity=None,
 ):
     """
     Oh what a ridiculous clusterfuck this is.
@@ -648,6 +701,7 @@ def draw_frame(
 
     if not success:
         raise RuntimeError(f"Failed to draw frame {frame_index} after {failcount} attempts")
+    publish_frame_completion(chapter, aspect, frame_index, chapter_identity)
     log.info(f"[{frame_index:08}/{max_frame_index:08}] draw_frame() complete")
 
 

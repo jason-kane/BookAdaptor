@@ -2045,6 +2045,10 @@
             document.dispatchEvent(new CustomEvent('chapter:image-event', {detail: event}));
             return;
         }
+        if (event.state === 'chapter_frame_complete') {
+            document.dispatchEvent(new CustomEvent('chapter:frame-event', {detail: event}));
+            return;
+        }
         event = window.TaskTiming?.enrich(event) || event;
         if (event.state === 'cpu_retry_queued' || event.state === 'cpu_retry_rejected') {
             document.dispatchEvent(new CustomEvent('cpu:retry-result', {detail: event}));
@@ -2098,6 +2102,11 @@
         if (imageStage?.dataset.chapterIdentity) {
             socket.send(JSON.stringify({
                 ...JSON.parse(imageStage.dataset.chapterIdentity), action: 'watch_chapter_images',
+            }));
+            socket.send(JSON.stringify({
+                ...JSON.parse(imageStage.dataset.chapterIdentity),
+                aspect: imageStage.dataset.frameAspect,
+                action: 'watch_chapter_frames',
             }));
         }
         updateWorkerResetControl(false);

@@ -17,6 +17,7 @@ from styler.queue_history import (
 )
 from task_queue import (
     CHAPTER_IMAGE_EVENTS,
+    FRAME_EVENTS,
     IDLE_QUEUE,
     PRIORITY_QUEUE,
     TAG_QUEUE,
@@ -1725,6 +1726,60 @@ def theater_render_websocket(ws, project_id):
         client.close()
 
 
+@sock.route("/chapter-frames-ws")
+def chapter_frames_websocket(ws):
+    """Send completed-frame notices to a single open Frames page."""
+    client = redis_connection()
+    pubsub = client.pubsub()
+    pubsub.subscribe(FRAME_EVENTS)
+    watched = None
+    last_cpu_update = 0.0
+    try:
+        while True:
+            incoming = ws.receive(timeout=0.1)
+            if incoming:
+                try:
+                    message = json.loads(incoming)
+                    from artifact_editor.images.completions import normalize_chapter_identity
+                    identity = normalize_chapter_identity(message)
+                    aspect = message.get("aspect")
+                    if message.get("action") != "watch_chapter_frames" or aspect not in ("widescreen", "portrait"):
+                        continue
+                    watched = {**identity, "aspect": aspect}
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    continue
+            event = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.2)
+            if event and event.get("type") == "message" and watched is not None:
+                try:
+                    payload = json.loads(event["data"])
+                except (ValueError, TypeError):
+                    payload = None
+                if payload and all(payload.get(key) == value for key, value in watched.items()):
+                    ws.send(json.dumps(payload))
+            if watched and time.monotonic() - last_cpu_update >= 1.0:
+                active_frames = []
+                for raw in client.hvals("cpu_jobs:running"):
+                    try:
+                        task = json.loads(raw)
+                    except (ValueError, TypeError):
+                        continue
+                    chapter = task.get("chapter") or {}
+                    if (task.get("action") == "draw_frame"
+                            and all(str(chapter.get(key)) == str(watched.get(key))
+                                    for key in ("author", "title", "chapter_number", "language"))
+                            and chapter.get("aspect") == watched["aspect"]):
+                        active_frames.append({
+                            "action": "draw_frame", "label": task.get("label"), "chapter": chapter,
+                        })
+                ws.send(json.dumps({"state": "cpu_queue_plan", "running": active_frames}))
+                last_cpu_update = time.monotonic()
+    except Exception:
+        log.debug("Chapter frame WebSocket closed")
+    finally:
+        pubsub.close()
+        client.close()
+
+
 @sock.route("/styler-ws")
 def styler_websocket(ws):
     from styler.jobs import EVENTS, sample_task, request_sample
@@ -1736,8 +1791,9 @@ def styler_websocket(ws):
 
     client = redis_connection()
     pubsub = client.pubsub()
-    pubsub.subscribe(EVENTS, VIDEO_EVENTS, CHAPTER_IMAGE_EVENTS)
+    pubsub.subscribe(EVENTS, VIDEO_EVENTS, CHAPTER_IMAGE_EVENTS, FRAME_EVENTS)
     watched_chapter = None
+    watched_frame_chapter = None
     requested = set()
     queue_capacity = 10
     queue_dirty = True
@@ -1787,6 +1843,13 @@ def styler_websocket(ws):
                         snapshot = chapter_image_snapshot(identity)
                         watched_chapter = identity
                         ws.send(json.dumps(snapshot))
+                    elif message.get("action") == "watch_chapter_frames":
+                        from artifact_editor.images.completions import normalize_chapter_identity
+                        identity = normalize_chapter_identity(message)
+                        aspect = message.get("aspect")
+                        if aspect not in ("widescreen", "portrait"):
+                            raise ValueError("Invalid frame aspect")
+                        watched_frame_chapter = {**identity, "aspect": aspect}
                     elif message.get("action") == "queue_capacity":
                         queue_capacity = max(0, min(200, int(message.get("rows", 10))))
                         queue_dirty = True
@@ -2094,6 +2157,7 @@ def styler_websocket(ws):
                         "style_duplicate_scan": "style_duplicate_scan_failed",
                         "queue_delete": "queue_delete_rejected",
                         "watch_chapter_images": "chapter_image_snapshot_failed",
+                        "watch_chapter_frames": "chapter_frame_watch_failed",
                         "gpu_service_switch": "gpu_service_switch_failed",
                     }.get(
                         message.get("action") if isinstance(message, dict) else None,
@@ -2163,6 +2227,11 @@ def styler_websocket(ws):
                 try:
                     payload = json.loads(event["data"])
                 except (ValueError, TypeError):
+                    continue
+                if isinstance(payload, dict) and payload.get("state") == "chapter_frame_complete":
+                    if watched_frame_chapter and all(
+                            payload.get(key) == value for key, value in watched_frame_chapter.items()):
+                        ws.send(json.dumps(payload))
                     continue
                 if isinstance(payload, dict) and payload.get("state") == "chapter_image_complete":
                     if watched_chapter and all(payload.get(key) == value for key, value in watched_chapter.items()):

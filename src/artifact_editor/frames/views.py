@@ -434,7 +434,7 @@ def redraw_frame(aspect="_widescreen"):
                         word_dict["paragraph_index"],
                         word_dict.get("id") or word_dict["index"],
                     ),
-                    kwds={"force": force},
+                    kwds={"force": force, "chapter_identity": chapter.kwargs},
                 )
     else:
         # single frame
@@ -453,6 +453,7 @@ def redraw_frame(aspect="_widescreen"):
             paragraph_index=word_dict["paragraph_index"],
             phrase_id=word_dict.get("id") or word_dict["index"],
             force=force,
+            chapter_identity=chapter.kwargs,
         )
 
     # mybook = chapter.get_book(chapter.chapterdir)

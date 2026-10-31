@@ -2,7 +2,9 @@
 {% extends "base.html" %}
 
 {% block scripts %}
-<script src="/static/js/frames.js"></script>
+<script defer src="/static/js/image-leaves.js?v=1"></script>
+<script defer src="/static/js/frame-image-leaves.js?v=1"></script>
+<script defer src="/static/js/frames.js"></script>
 {% endblock %}
 
 {% block title %}
@@ -10,6 +12,7 @@
 {% endblock %}
 
 {% block styles %}
+<link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
 <style>
     .frame-nav {
         flex-shrink: 0;
@@ -39,6 +42,11 @@
 {% endblock %}
 
 {% block body %}
+<div class="image-reveal-stage" data-chapter-frame-leaves
+     data-chapter-identity='{{ chapter.kwargs|tojson }}'
+     data-frame-aspect="{{ aspect }}"
+     data-frame-websocket="{{ websocket_url().replace('/ws', '/chapter-frames-ws') }}"
+     aria-hidden="true"></div>
 <div class="wa-cluster">
     <h1>Frames</h1>
     <p>({{aspect}})</p>
