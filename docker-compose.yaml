@@ -182,6 +182,7 @@ services:
       - COMFYUI_CONTAINER_NAME=comfyui-megapak
       - LLAMA_CONTAINER_NAME=llama-vision
       - LLAMA_API_URL=http://llama:8080
+      - PGHOST=postgres
     networks:
       - home-network
 
@@ -280,6 +281,7 @@ services:
       - ./active:/active:ro
     environment:
       - GPU_SERVICE_SWITCHING=1
+      - PGHOST=postgres
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
     networks:
       - home-network
@@ -314,6 +316,7 @@ services:
       - GPU_SERVICE_SWITCHING=1
       - HOME_API_URL=http://home:8080
       - LLAMA_API_URL=http://llama:8080
+      - PGHOST=postgres
     deploy:
       resources:
         reservations:

@@ -50,6 +50,10 @@ RUN pip install -r /app/requirements.txt --ignore-installed
 # (new)
 RUN spacy download en_core_web_sm
 
+# Keep database tooling independent of the large model dependency layer.
+COPY requirements-database.txt /app/requirements-database.txt
+RUN pip install -r /app/requirements-database.txt
+
 COPY . /app/
 # imagemagic defaults are too restrictive for our needs, so we override them
 # with a custom policy.xml
