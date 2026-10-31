@@ -37,7 +37,7 @@ from artifact_editor.types import aspect
 from artifact_editor.typography import page_segment
 
 from artifact_editor.characters import characters
-from .persistence import remember_content, replace_content, save_records
+from .persistence import remember_content, replace_content, save_records, uses_postgres
 
 log = logger.log(__name__)
 
@@ -2558,6 +2558,10 @@ class Chapter:
         """
         full_path = os.path.join(const.LIBRARY_DIR, self.chapterdir)
 
+        if uses_postgres():
+            from artifact_editor.db.chapter_content import delete_content
+            delete_content(self)
+
         if os.path.exists(full_path):
             log.info("Deleting chapter directory: %s", full_path)
             shutil.rmtree(full_path)
@@ -2629,9 +2633,9 @@ class Chapter:
 
     def load_xml(self, force=False):
         """
-        Read the xml of the book into self.soup
+        Load the chapter's parsed-tag view from the selected storage backend.
 
-        returns true if we got contents
+        PostgreSQL imports legacy XML only on the first load.
         """
         if self.stub:
             self.soup = BeautifulSoup("<chapter></chapter>", "xml")
@@ -2645,6 +2649,10 @@ class Chapter:
                 return self.soup
             else:
                 log.info("** Forced reload of chapter XML **")
+
+        if uses_postgres():
+            from artifact_editor.db.chapter_content import load_content
+            return load_content(self, upgrade=lambda chapter, tree: xml_upgrade(chapter, tree, migrate_files=False))
 
         xml_fn = self.get_xml_fn()
 
@@ -2685,7 +2693,6 @@ class Chapter:
 
         common = os.path.join(const.LIBRARY_DIR, self.chapterdir, "book.xml")
         if os.path.exists(common):
-            shutil.copy(common, best)
             return common
 
         return best
@@ -3047,9 +3054,12 @@ class Chapter:
         )
 
 
-def xml_upgrade(chapter: Chapter, soup: Tag) -> Tag:
+def xml_upgrade(chapter: Chapter, soup: Tag, *, migrate_files=True) -> Tag:
     """
     Upgrade the XML to the latest version.
+
+    Database import disables historical media cleanup/renames so importing
+    content never changes the source XML or its associated media files.
     """
     log.info("xml_upgrade called")
     chapter_xml = soup.find("chapter")
@@ -3271,57 +3281,78 @@ def xml_upgrade(chapter: Chapter, soup: Tag) -> Tag:
                 log.info("Removing obsolete clip_prompt field")
                 del image_xml.attrs["clip_prompt"]
 
-        for paragraph_xml in chapter_xml.findAll("paragraph"):
-            paragraph_dir = chapter.get_paragraph_dir(paragraph_xml.attrs["index"])
-            animation_dir = os.path.join(const.LIBRARY_DIR, paragraph_dir, "animation")
+        if migrate_files:
+            for paragraph_xml in chapter_xml.findAll("paragraph"):
+                paragraph_dir = chapter.get_paragraph_dir(paragraph_xml.attrs["index"])
+                animation_dir = os.path.join(const.LIBRARY_DIR, paragraph_dir, "animation")
 
-            if os.path.exists(animation_dir):
-                for dirname in os.listdir(animation_dir):
-                    if dirname.endswith(","):
-                        # remove animation directories ending with a comma (was a bug)
-                        dirpath = os.path.join(animation_dir, dirname)
-                        if os.path.isdir(dirpath):
-                            shutil.rmtree(dirpath)
+                if os.path.exists(animation_dir):
+                    for dirname in os.listdir(animation_dir):
+                        if dirname.endswith(","):
+                            # remove animation directories ending with a comma (was a bug)
+                            dirpath = os.path.join(animation_dir, dirname)
+                            if os.path.isdir(dirpath):
+                                shutil.rmtree(dirpath)
 
-                    split_under = dirname.split("_")
-                    image_index = split_under[-1]
-                    if image_index[0] != "0":
-                        # different bug, the first digit would only legit be
-                        # non-zero if there are more than 100000, we can just delete it.
-                        dirpath = os.path.join(animation_dir, dirname)
-                        if os.path.isdir(dirpath):
-                            shutil.rmtree(dirpath)
-                            # os.rmdir(dirpath)
+                        split_under = dirname.split("_")
+                        image_index = split_under[-1]
+                        if image_index[0] != "0":
+                            # different bug, the first digit would only legit be
+                            # non-zero if there are more than 100000, we can just delete it.
+                            dirpath = os.path.join(animation_dir, dirname)
+                            if os.path.isdir(dirpath):
+                                shutil.rmtree(dirpath)
+                                # os.rmdir(dirpath)
 
-                    if len(split_under) == 3:
-                        # good... ish.
-                        _, image_index, video_index = split_under
+                        if len(split_under) == 3:
+                            # good... ish.
+                            _, image_index, video_index = split_under
 
-                        if len(image_index) != 6:
-                            # we have a problem.
-                            if len(video_index) == 2:
-                                # image_00_03 sort of directory name (oops), the trouble
-                                # is we don't really know which is supposed to be the image_index and which is the video_index.
-                                # so we guess.
-                                if image_index == "00" and video_index != "00":
-                                    # odds are the video index is the one that is _supposed_ to be 00
-                                    video_index, image_index = image_index, video_index
+                            if len(image_index) != 6:
+                                # we have a problem.
+                                if len(video_index) == 2:
+                                    # image_00_03 sort of directory name (oops), the trouble
+                                    # is we don't really know which is supposed to be the image_index and which is the video_index.
+                                    # so we guess.
+                                    if image_index == "00" and video_index != "00":
+                                        # odds are the video index is the one that is _supposed_ to be 00
+                                        video_index, image_index = image_index, video_index
 
-                            image_index = int(image_index)
-                            video_index = int(video_index)
+                                image_index = int(image_index)
+                                video_index = int(video_index)
 
+                                new_dirname = f"image_{image_index:06d}_{video_index:02d}"
+
+                                new_dirpath = os.path.join(animation_dir, new_dirname)
+                                old_dirpath = os.path.join(animation_dir, dirname)
+
+                                if os.path.exists(new_dirpath):
+                                    log.warning(
+                                        "New animation directory already exists, skipping rename and deleting old directory.",
+                                        old_dirpath=old_dirpath,
+                                        new_dirpath=new_dirpath,
+                                    )
+                                    shutil.rmtree(old_dirpath)
+                                else:
+                                    log.info(
+                                        "Renaming animation directory",
+                                        old_dirpath=old_dirpath,
+                                        new_dirpath=new_dirpath,
+                                    )
+                                    os.rename(old_dirpath, new_dirpath)
+
+                        elif len(split_under) == 2:
+                            video_index = 0
+                            image_index = int(split_under[-1])
                             new_dirname = f"image_{image_index:06d}_{video_index:02d}"
 
                             new_dirpath = os.path.join(animation_dir, new_dirname)
                             old_dirpath = os.path.join(animation_dir, dirname)
-
                             if os.path.exists(new_dirpath):
                                 log.warning(
-                                    "New animation directory already exists, skipping rename and deleting old directory.",
-                                    old_dirpath=old_dirpath,
+                                    "New animation directory already exists, skipping rename",
                                     new_dirpath=new_dirpath,
                                 )
-                                shutil.rmtree(old_dirpath)
                             else:
                                 log.info(
                                     "Renaming animation directory",
@@ -3329,26 +3360,6 @@ def xml_upgrade(chapter: Chapter, soup: Tag) -> Tag:
                                     new_dirpath=new_dirpath,
                                 )
                                 os.rename(old_dirpath, new_dirpath)
-
-                    elif len(split_under) == 2:
-                        video_index = 0
-                        image_index = int(split_under[-1])
-                        new_dirname = f"image_{image_index:06d}_{video_index:02d}"
-
-                        new_dirpath = os.path.join(animation_dir, new_dirname)
-                        old_dirpath = os.path.join(animation_dir, dirname)
-                        if os.path.exists(new_dirpath):
-                            log.warning(
-                                "New animation directory already exists, skipping rename",
-                                new_dirpath=new_dirpath,
-                            )
-                        else:
-                            log.info(
-                                "Renaming animation directory",
-                                old_dirpath=old_dirpath,
-                                new_dirpath=new_dirpath,
-                            )
-                            os.rename(old_dirpath, new_dirpath)
 
         chapter_xml.attrs["version"] = "1.1"
     else:

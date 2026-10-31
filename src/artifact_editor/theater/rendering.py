@@ -119,11 +119,11 @@ def prepare_chapter(project_id: str, data: dict[str, Any]):
     if not title:
         raise ValueError("The director must name the film before making a rough draft.")
     chapter = Chapter(author=Author("Theater"), title=folder.name, number=1, language="english")
-    # Rebuilding the rough draft regenerates chapter.xml from the current
+    # Rebuilding the rough draft regenerates the chapter timeline from the current
     # script. Keep already-rendered stills attached to the same shot indices;
     # users have an explicit "Reset images" action when they want fresh art.
     reusable_stills: dict[tuple[str, str], str] = {}
-    if Path(chapter.get_xml_fn()).is_file():
+    if chapter.get_xml() is not None:
         chapter.load_xml(force=True)
         for existing_image in chapter.images():
             image_index = str(existing_image.get("index", ""))

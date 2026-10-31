@@ -86,13 +86,16 @@ def save():
             'text_layer_plain.png',
             'text_layer_rainbow.png',
             os.path.join(g.chapter.language, "chapter.txt"),
-            os.path.join(g.chapter.language, "chapter.xml"),
         ]:
             if os.path.exists(os.path.join(const.LIBRARY_DIR, chapter.chapterdir, fn)):
                 shutil.copy(
                     os.path.join(const.LIBRARY_DIR, chapter.chapterdir, fn),
                     os.path.join(repo_chapter_dir, fn)
                 )
+
+        # XML is an explicit export format, not the application's live store.
+        with open(os.path.join(repo_chapter_dir, g.chapter.language, "chapter.xml"), "w", encoding="utf-8") as exported:
+            exported.write(g.chapter.get_xml().prettify())
 
         for paragraph in chapter.paragraphs():
             paragraph['index'] = int(paragraph['index'])

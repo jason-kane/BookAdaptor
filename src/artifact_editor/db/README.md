@@ -1,7 +1,8 @@
 # PostgreSQL ORM
 
 SQLAlchemy 2.0 models live in `artifact_editor.db.models`. The package has no
-Flask, Redis, GPU, or XML imports and opens connections only when requested.
+Flask, Redis, or GPU imports and opens connections only when requested. The
+chapter adapter imports BeautifulSoup for compatibility with existing consumers.
 Install `src/requirements-database.txt` for command-line development; the app
 Dockerfile installs these dependencies in a separate layer after model tooling.
 
@@ -45,7 +46,7 @@ including cleanup of its PostgreSQL enum types.
   relationship returns the corresponding concrete objects. Composite foreign
   keys keep timeline items in their declared chapter.
 * UUID primary keys are stable; `position` controls order, and `legacy_index`
-  and `legacy_id` retain XML/asset references for an eventual importer. Deferred
+  and `legacy_id` retain imported XML/asset references. Deferred
   position constraints allow swapping entries within one transaction.
 * `MediaAsset` records versioned file paths, dimensions, duration, and provenance.
   Files remain in the media filesystem. Images and tasks reference the selected
@@ -60,10 +61,62 @@ including cleanup of its PostgreSQL enum types.
 * JSONB attributes preserve uncommon legacy fields. Top-level dictionary/list
   changes are tracked; replace the containing value when changing nested JSON.
 
-This establishes the schema and ORM API. The existing `Chapter` persistence
-adapter still owns XML until its importer and database-backed implementation
-are connected. Existing Redis jobs are not copied into these tables by schema
-migration.
+## Chapter storage and legacy import
+
+Compose sets `CHAPTER_STORAGE=postgres` on the editor, WebSocket server, and
+all three worker services. A process without this variable retains the old XML
+backend for a coordinated rollout. PostgreSQL is a healthy startup dependency.
+Apply migrations and drain existing XML jobs **before recreating these services
+together**; do not mix XML writers with PostgreSQL writers for the same chapter.
+A restart alone does not update container environment variables.
+
+```sh
+docker compose exec -e PGHOST=postgres artifactserver python -m artifact_editor.db upgrade
+# After old chapter jobs have drained, recreate all chapter readers/writers:
+docker compose up -d --no-build artifactserver websocket video_worker render_worker cpu_worker
+```
+
+`Chapter.load_xml()` now means load the compatibility view from the selected
+backend. On its first PostgreSQL load, a chapter imports its language-specific
+`chapter.xml` (or the older shared `book.xml`) within the same transaction.
+The original files are left untouched. The importer runs the existing version
+upgrades without their old filesystem cleanup/rename side effects. Import
+provenance stores the source path, SHA-256 and timestamp. A saved empty timeline
+stays empty, even when old XML is still present. Database failures propagate;
+they never silently switch a PostgreSQL writer back to XML.
+
+An explicit import is also available, after old writers have drained:
+
+```sh
+docker compose exec -e PGHOST=postgres artifactserver python -m artifact_editor.db import-chapter \
+  --author "L. Frank Baum" --title "The Marvelous Land of Oz" --number 3 --language english
+# Optional: --xml /path/to/old/chapter.xml
+```
+
+Repeated imports leave database content unchanged. Invalid XML/data rolls back
+the transaction so it can be corrected and retried. Import creation is serialized
+with transaction-scoped advisory locks; concurrent first loads import once.
+
+Paragraphs, phrases, images, scenes, silence and sound are individual ORM rows.
+Their compatibility layouts contain text, markup and UUID references to child
+rows; they do not store a serialized chapter XML document. Existing tag-based
+callers keep their interface. Typed fields (duration, frames, prompts, seed,
+phrase text/delta/LaTeX, etc.) are populated, while the original attributes retain
+less common metadata and exact legacy spellings. Duplicate historical paragraph
+indexes remain in the attributes for existing media paths; additional duplicate
+rows have null `legacy_index` and distinct UUIDs/positions.
+
+Record saves merge changed fields against the caller's last loaded baseline.
+Timeline saves reconcile UUIDs across moves and reindexing. Removed rows are
+actually deleted; task item references become null through their foreign keys.
+No XML is written by PostgreSQL saves. Notifications and Theater previews read
+the selected backend, and GitHub publishing explicitly exports current XML.
+
+This step converts the chapter timeline store. Chapter config, editable source
+Delta/section JSON, character/prop definitions and generated media files retain
+their existing filesystem APIs. Their corresponding ORM tables/relationships
+are available for later conversions; this importer does not claim to migrate
+those stores or existing Redis jobs.
 
 ## Transactions
 

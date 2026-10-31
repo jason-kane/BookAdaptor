@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from bs4 import BeautifulSoup
 from redis import RedisError
 
 log = logging.getLogger(__name__)
@@ -51,13 +50,13 @@ def chapter_image_snapshot(identity, library_dir=None):
     if not chapter_dir.resolve().is_relative_to(root):
         raise ValueError("Chapter is outside the library")
     xml_path = chapter_dir / identity["language"] / "chapter.xml"
-    if not xml_path.is_file():
-        xml_path = chapter_dir / "book.xml"
     images = []
-    if xml_path.is_file():
-        if not xml_path.resolve().is_relative_to(root):
+    for source_path in (xml_path, chapter_dir / "book.xml"):
+        if source_path.is_file() and not source_path.resolve().is_relative_to(root):
             raise ValueError("Chapter source is outside the library")
-        soup = BeautifulSoup(xml_path.read_text(encoding="utf-8"), "xml")
+    from artifact_editor.chapter_source import read_chapter_source
+    soup = read_chapter_source(xml_path)
+    if soup is not None:
         for image in soup.find_all("image"):
             paragraph = image.find_parent("paragraph")
             if paragraph is None or not image.get("src") or not image.get("image_generation_id"):

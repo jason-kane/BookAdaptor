@@ -1635,12 +1635,11 @@ def _theater_render_snapshot(project_id, client):
         return f"{stat.st_mtime_ns}-{stat.st_size}"
 
     generated_images = []
+    from artifact_editor.chapter_source import read_chapter_source
     chapter_xml = folder / "chapter" / "0001" / "english" / "chapter.xml"
-    if project.get("render_stage") == "rough" and chapter_xml.is_file():
-        from bs4 import BeautifulSoup
-
+    soup = read_chapter_source(chapter_xml) if project.get("render_stage") == "rough" else None
+    if soup is not None:
         try:
-            soup = BeautifulSoup(chapter_xml.read_text(encoding="utf-8"), "xml")
             for image in soup.find_all("image"):
                 generation_id = image.get("image_generation_id")
                 paragraph = image.find_parent("paragraph")

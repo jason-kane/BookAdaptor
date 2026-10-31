@@ -148,7 +148,10 @@ services:
       context: ./src/
       dockerfile: Dockerfile
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "8082:8080"
     entrypoint: [ "gunicorn", "--reload", "--timeout", "600", "-w", "4", "--log-level", "info", "--capture-output", "--error-logfile", "-", "--access-logfile", "-" ]
@@ -183,6 +186,7 @@ services:
       - LLAMA_CONTAINER_NAME=llama-vision
       - LLAMA_API_URL=http://llama:8080
       - PGHOST=postgres
+      - CHAPTER_STORAGE=postgres
     networks:
       - home-network
 
@@ -273,7 +277,10 @@ services:
     profiles: ["on-demand"]
     image: bookadaptor-app:latest
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "5001:5001"
     volumes:
@@ -282,6 +289,7 @@ services:
     environment:
       - GPU_SERVICE_SWITCHING=1
       - PGHOST=postgres
+      - CHAPTER_STORAGE=postgres
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
     networks:
       - home-network
@@ -291,6 +299,8 @@ services:
     image: bookadaptor-app:latest
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     entrypoint: [ "python", "-m", "websocket.server", "worker" ]
@@ -317,6 +327,7 @@ services:
       - HOME_API_URL=http://home:8080
       - LLAMA_API_URL=http://llama:8080
       - PGHOST=postgres
+      - CHAPTER_STORAGE=postgres
     deploy:
       resources:
         reservations:
@@ -335,6 +346,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     entrypoint: ["python", "-m", "render_worker"]
     volumes: *worker-volumes
@@ -350,11 +363,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     entrypoint: ["python", "-m", "cpu_queue"]
     volumes: *worker-volumes
     environment:
       CONTAINER_MODE: "1"
+      PGHOST: postgres
+      CHAPTER_STORAGE: postgres
       OMP_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
     networks:

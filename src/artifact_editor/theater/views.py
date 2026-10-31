@@ -19,6 +19,7 @@ from redis.maint_notifications import MaintNotificationsConfig
 
 import const
 import logger
+from artifact_editor.chapter_source import read_chapter_source
 
 log = logger.log(__name__)
 bp = Blueprint("theater", __name__, template_folder="templates")
@@ -211,7 +212,7 @@ def project(project_id: str):
     selected_profile = profiles().get(data.get("director_profile", ""), {})
     project_dir = _project_dir(project_id)
     chapter_xml = project_dir / "chapter" / "0001" / "english" / "chapter.xml"
-    data["timeline_exists"] = chapter_xml.is_file()
+    data["timeline_exists"] = read_chapter_source(chapter_xml) is not None
     rough_path = project_dir / "rough-draft.mp4"
     final_path = project_dir / "final.mp4"
     data["rough_exists"] = rough_path.is_file()
@@ -286,7 +287,7 @@ def reset_images(project_id: str):
     chapter_xml = folder / "chapter" / "0001" / "english" / "chapter.xml"
     cleared_images = 0
     cleared_animations = 0
-    if chapter_xml.is_file():
+    if read_chapter_source(chapter_xml) is not None:
         import const as editor_const
         from artifact_editor.author.author import Author
         from artifact_editor.chapter.chapter import Chapter
@@ -402,14 +403,14 @@ def _queue_theater_render(project_id: str, stage: str):
         label = "Theater rough draft: prepare timed still-and-audio cut"
     elif stage == "rough_film":
         chapter_xml = folder / "chapter" / "0001" / "english" / "chapter.xml"
-        if not chapter_xml.is_file() or not (folder / "rough-draft.mp4").is_file():
+        if read_chapter_source(chapter_xml) is None or not (folder / "rough-draft.mp4").is_file():
             return jsonify(error="Create a rough draft before rendering the rough film."), 409
         data["render_status"] = "rough_film_queued"
         action = "textoviva_rerender"
         label = "Theater rough film: animate every shot with Turbo Low quality"
     else:
         chapter_xml = folder / "chapter" / "0001" / "english" / "chapter.xml"
-        if not chapter_xml.is_file() or not (folder / "rough-draft.mp4").is_file():
+        if read_chapter_source(chapter_xml) is None or not (folder / "rough-draft.mp4").is_file():
             return jsonify(error="Create a rough draft before rendering the final film."), 409
         data["render_status"] = "final_queued"
         action = "textoviva_missing_animation"
@@ -500,12 +501,10 @@ def render_status(project_id: str):
         data["render_error"] = ""
         _save_project(project_id, data)
     generated_images = []
-    if data.get("render_stage") == "rough" and (project_dir / "chapter" / "0001" / "english" / "chapter.xml").is_file():
-        from bs4 import BeautifulSoup
-
-        chapter_xml = project_dir / "chapter" / "0001" / "english" / "chapter.xml"
+    chapter_xml = project_dir / "chapter" / "0001" / "english" / "chapter.xml"
+    soup = read_chapter_source(chapter_xml) if data.get("render_stage") == "rough" else None
+    if soup is not None:
         try:
-            soup = BeautifulSoup(chapter_xml.read_text(encoding="utf-8"), "xml")
             for image in soup.find_all("image"):
                 generation_id = image.get("image_generation_id")
                 paragraph = image.find_parent("paragraph")

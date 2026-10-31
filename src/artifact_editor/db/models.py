@@ -87,6 +87,8 @@ class Chapter(Identity, Timestamps, Base):
     source_delta: Mapped[dict | list | None] = mapped_column(JSONB)
     settings: Mapped[dict] = json_object()
     attributes: Mapped[dict] = json_object()
+    content_layout: Mapped[dict | None] = mapped_column(JSONB)
+    legacy_import: Mapped[dict | None] = mapped_column(JSONB)
     book: Mapped[Book] = relationship(back_populates="chapters")
     paragraphs: Mapped[list[Paragraph]] = relationship(back_populates="chapter", order_by="Paragraph.position",
                                                        cascade="all, delete-orphan", passive_deletes=True)
@@ -120,6 +122,7 @@ class Paragraph(Identity, Timestamps, Base):
     legacy_index: Mapped[int | None] = mapped_column(Integer)
     typesetting_method: Mapped[str | None] = mapped_column(Text)
     attributes: Mapped[dict] = json_object()
+    content_layout: Mapped[dict | None] = mapped_column(JSONB)
     chapter: Mapped[Chapter] = relationship(back_populates="paragraphs")
     section: Mapped[Section | None] = relationship()
     items: Mapped[list[TimelineItem]] = relationship(back_populates="paragraph", order_by="TimelineItem.position",
@@ -146,6 +149,7 @@ class TimelineItem(Identity, Timestamps, Base):
     duration_seconds: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
     frame_count: Mapped[int | None] = mapped_column(Integer)
     attributes: Mapped[dict] = json_object()
+    content_layout: Mapped[dict | None] = mapped_column(JSONB)
     paragraph: Mapped[Paragraph] = relationship(back_populates="items")
     __mapper_args__ = {"polymorphic_on": kind, "polymorphic_abstract": True}
 
