@@ -51,6 +51,27 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
     # if 'index' in image_xml.attrs:
     image_index = as_int(image_xml.attrs["index"])
 
+    previous_image = image_xml.find_previous("image")
+    if previous_image is not None:
+        destination_frame = os.path.join(
+            const.LIBRARY_DIR,
+            paragraph_dir,
+            f"img_{image_index}_last_frame_of_previous.png",
+        )
+        frame_filename = chapter.get_last_frame(previous_image)
+        if frame_filename and os.path.isfile(frame_filename):
+            if (
+                not os.path.isfile(destination_frame)
+                or os.path.getmtime(frame_filename) > os.path.getmtime(destination_frame)
+            ):
+                os.makedirs(os.path.dirname(destination_frame), exist_ok=True)
+                shutil.copy2(frame_filename, destination_frame)
+                log.info(
+                    "Copied previous image's final visual to the current image options",
+                    source=frame_filename,
+                    destination=destination_frame,
+                )
+
     #     for image_path in images.all_images_by_image_index(
     #         paragraph_dir,
     #         image_index
@@ -291,38 +312,6 @@ def image_selector(
             chapter=chapter
         )
     )
-    # edge case that isn't really an edge case:
-    #  if the previous image is animated, we want the
-    #  _last_ frame of the animation to be one of the 
-    #  image options so we can pick up where we left off.
-    previous_image_xml = image_xml.find_previous("image")
-    if previous_image_xml is not None:
-        # is it animated?
-        if previous_image_xml.attrs.get("animation_method_00", "false").lower() != "false":
-            # yes, it is animated.
-            destination_frame = os.path.join(
-                const.LIBRARY_DIR,
-                chapter.get_paragraph_dir(image_xml.find_parent("paragraph").attrs["index"]),
-                f"img_{image_xml.attrs['index']}_last_frame_of_previous.png"
-            )
-            
-            if not os.path.exists(destination_frame):
-                frame_filename = chapter.get_last_frame(previous_image_xml)
-                
-                if frame_filename is None:
-                    log.warning(
-                        f"Previous image {previous_image_xml.attrs['index']} is animated, but no frames found."
-                    )
-                    chapter.video_to_frames(previous_image_xml)
-
-                # copy it to the current paragraph dir with a name suitable for
-                # the current image index.
-                if frame_filename:
-                    source_frame = frame_filename
-
-                    shutil.copy(source_frame, destination_frame)
-                    log.info(f"Copied last frame of animation from {source_frame} to {destination_frame}")
-                    all_images.add(os.path.basename(destination_frame))
 
     log.info(f"All images: {all_images}")
 

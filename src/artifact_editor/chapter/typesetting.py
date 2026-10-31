@@ -51,3 +51,31 @@ def execute_typesetting(task):
             sections = json.loads(sections_file.read_text(encoding='utf-8')) if sections_file.is_file() else None
             typeset_chapter_xml(chapter.soup, directory, const.GEOMETRY[chapter.get_aspect()]['TEXT_WIDTH'],
                                sections=sections)
+
+
+def ensure_text_layers(chapter):
+    """Rebuild the paired text PNGs when a video render needs missing layers."""
+    from filelock import FileLock
+    import const
+    from .section_latex import typeset_chapter_xml
+
+    directory = Path(const.LIBRARY_DIR) / chapter.get_chapterdir() / chapter.language
+    text_image = directory / "chapter-1.png"
+    rainbow_image = directory / "chapter.rainbow-1.png"
+    if text_image.is_file() and rainbow_image.is_file():
+        return False
+
+    directory.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(directory / ".typeset.lock")):
+        if text_image.is_file() and rainbow_image.is_file():
+            return False
+        chapter.load_xml(force=True)
+        sections_file = directory / "chapter.sections.json"
+        sections = json.loads(sections_file.read_text(encoding="utf-8")) if sections_file.is_file() else None
+        typeset_chapter_xml(
+            chapter.get_xml(),
+            directory,
+            const.GEOMETRY[chapter.get_aspect()]["TEXT_WIDTH"],
+            sections=sections,
+        )
+    return True

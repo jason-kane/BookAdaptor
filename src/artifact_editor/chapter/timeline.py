@@ -319,9 +319,93 @@ def add_import_images(soup):
 
 
 def detach_all_images(chapter):
-    """Detach generated stills without deleting slots, metadata, or asset files."""
+    """Remove generated still candidates and invalidate prompts for regeneration."""
+    import const
+
     for image in chapter.get_xml().find_all("image"):
+        paragraph = image.find_parent("paragraph")
+        if paragraph is not None:
+            image_index = int(image["index"])
+            paragraph_dir = Path(const.LIBRARY_DIR) / chapter.get_paragraphdir(
+                int(paragraph["index"])
+            )
+            for generated_image in paragraph_dir.glob(f"img_{image_index}_*.png"):
+                if generated_image.is_file():
+                    generated_image.unlink()
+
+            comfy_output = Path(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"])
+            for generated_image in comfy_output.glob(
+                f"{chapter.nice}_img_{image_index}_*.png"
+            ):
+                if generated_image.is_file():
+                    generated_image.unlink()
+
         image.attrs.pop("src", None)
+        image.attrs.pop("prompt", None)
+        image.attrs.pop("clip_prompt", None)
+        image.attrs.pop("styled_prompt", None)
+        for key in list(image.attrs):
+            if key != "description" and key.endswith("_description"):
+                image.attrs.pop(key, None)
+    chapter.save_xml()
+
+
+def remove_all_animations(chapter):
+    """Delete generated animation videos and extracted frames for this chapter."""
+    import const
+
+    for image in chapter.get_xml().find_all("image"):
+        paragraph = image.find_parent("paragraph")
+        if paragraph is None:
+            continue
+        paragraph_dir = Path(const.LIBRARY_DIR) / chapter.get_paragraphdir(
+            int(paragraph["index"])
+        )
+        image_index = int(image["index"])
+        animation_dir = paragraph_dir / "animation"
+        for frame_dir in animation_dir.glob(f"image_{image_index:06d}_*"):
+            if frame_dir.is_dir():
+                shutil.rmtree(frame_dir)
+
+        explicit_video = image.get("animated_src")
+        if explicit_video:
+            explicit_path = Path(explicit_video)
+            if not explicit_path.is_absolute():
+                explicit_path = Path(const.LIBRARY_DIR) / explicit_video.lstrip("/")
+            if explicit_path.is_file():
+                explicit_path.unlink()
+        image.attrs.pop("animated_src", None)
+
+        for generated_video in paragraph_dir.glob(f"img_{image_index}_*.mp4"):
+            if generated_video.is_file():
+                generated_video.unlink()
+        comfy_output = Path(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"])
+        for generated_video in comfy_output.glob(
+            f"{chapter.nice}_img_{image_index}_*.mp4"
+        ):
+            if generated_video.is_file():
+                generated_video.unlink()
+
+        source = image.get("src")
+        if not source:
+            continue
+        source_path = Path(source)
+        if source_path.suffix.lower() != ".png":
+            continue
+        video_stem = source_path.stem
+        try:
+            animation_count = max(1, int(image.get("animation_count", "1")))
+        except ValueError:
+            animation_count = 1
+        for video_index in range(animation_count):
+            video_name = (
+                f"{video_stem}.mp4"
+                if video_index == 0
+                else f"{video_stem}_{video_index:02d}.mp4"
+            )
+            video = paragraph_dir / video_name
+            if video.is_file():
+                video.unlink()
     chapter.save_xml()
 
 

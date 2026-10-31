@@ -776,6 +776,18 @@ def remove_all_images():
     )
 
 
+@bp.post("/timeline/remove-all-animations")
+def remove_all_animations():
+    from .timeline import remove_all_animations as remove_animations
+
+    remove_animations(g.chapter)
+    return render_template(
+        "chapter_phrase_list.html",
+        chapter=g.chapter,
+        speakers=g.chapter.speakers(),
+    )
+
+
 @bp.get("/timeline")
 def timeline_panel():
     return render_template(

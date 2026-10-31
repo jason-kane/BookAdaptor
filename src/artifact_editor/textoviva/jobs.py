@@ -35,6 +35,13 @@ def rerender_chapter(chapter, progress=None, image_index=None, animation_prompt=
     # Rebuild from stills and existing animations. Generate animations only
     # when an explicit animation action selected them.
     try:
+        from artifact_editor.chapter.typesetting import ensure_text_layers
+
+        if progress:
+            progress(1, "Checking chapter text layers")
+        if ensure_text_layers(chapter) and progress:
+            progress(3, "Rebuilt missing chapter text layers")
+
         if theater_stage == "rough":
             from artifact_editor.theater.rendering import (
                 prepare_audio_and_aspect,

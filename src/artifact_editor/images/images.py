@@ -1160,6 +1160,10 @@ def reuse_existing_image(chapter, image_xml):
 
     candidates = gather_candidate_images(image_xml, chapter)
     for candidate in candidates:
+        # The prior image's last frame is offered for deliberate selection in
+        # the panel; it should not silently become a newly generated still.
+        if os.path.basename(candidate).endswith("_last_frame_of_previous.png"):
+            continue
         if os.path.isfile(candidate):
             image_xml.attrs["src"] = os.path.basename(candidate)
             chapter.save_xml()
@@ -1300,7 +1304,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
     Fill in all the metadata fields based on the text surrounding this image.
     """
     progress = progress or (lambda percent, message: None)
-    progress(5, "Generating image style")
+    progress(5, "Checking inherited image style")
     if "style" not in image_xml.attrs or force_all:
         generate_metadata_style(image_xml)
 

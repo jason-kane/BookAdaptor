@@ -1001,6 +1001,43 @@ class Chapter:
             log.error("Image does not have a parent paragraph.")
             return None
 
+        # Source pan/zoom motion has no MP4 or extracted frame directory until
+        # the chapter is rendered. Materialize its actual endpoint so callers
+        # that chain images receive the zoomed final crop, not the original still.
+        if frame_index is None:
+            from artifact_editor.images.source_motion import (
+                active_motion,
+                output_size,
+                render_frame,
+            )
+
+            motion = active_motion(image_xml)
+            if motion:
+                source_filename = self.get_image_filename(image_xml)
+                if source_filename and os.path.isfile(source_filename):
+                    source_stat = os.stat(source_filename)
+                    target_size = output_size(self, image_xml)
+                    fingerprint = md5(
+                        json.dumps(
+                            [source_stat.st_mtime_ns, source_stat.st_size, motion, target_size],
+                            sort_keys=True,
+                        ).encode()
+                    ).hexdigest()[:16]
+                    output_dir = os.path.join(
+                        const.LIBRARY_DIR,
+                        self.get_paragraphdir(as_int(paragraph_xml.attrs["index"])),
+                        "animation",
+                    )
+                    last_frame = os.path.join(
+                        output_dir,
+                        f"image_{as_int(image_xml.attrs['index']):06d}_source_motion_{fingerprint}_last.png",
+                    )
+                    if not os.path.isfile(last_frame):
+                        os.makedirs(output_dir, exist_ok=True)
+                        with Image.open(source_filename) as source_image:
+                            render_frame(source_image, motion, 1.0, target_size).save(last_frame)
+                    return last_frame
+
         if video_index is None:
             # all animation dirs for this image, regardless of video_index, we're going to start looking
             # for last frame in the highest sorted dirname.
@@ -1448,12 +1485,63 @@ class Chapter:
         # we've got a _lot_ of variables to fill in.
         out_nodes = []
         for node in workflow.get("nodes", []):
+            # Some ComfyUI UI templates expose a primitive variable as a
+            # linked input on a custom node. The API conversion can retain
+            # the custom node's original widget value (for H3 Turbo, the
+            # five second default) even though the linked primitive was
+            # updated above. Keep the custom node's widget in sync as well.
+            widget_offset = 0
+            widget_values = node.get("widgets_values")
+            if isinstance(widget_values, list):
+                for workflow_input in node.get("inputs", []):
+                    widget = workflow_input.get("widget")
+                    if not widget:
+                        continue
+                    input_name = workflow_input.get("name")
+                    environment_key = {
+                        "width": "WIDTH",
+                        "height": "HEIGHT",
+                        "value_1": "DURATION",
+                        "noise_seed": "SEED",
+                    }.get(input_name)
+                    if environment_key == "DURATION":
+                        value = duration_in_seconds
+                    else:
+                        value = template_environment.get(environment_key) if environment_key else None
+                    if value is not None and widget_offset < len(widget_values):
+                        value = float(value) if environment_key == "DURATION" else value
+                        widget_values[widget_offset] = value
+                        node.setdefault("widgets_values_named", {})[input_name] = value
+                        if (
+                            environment_key == "DURATION"
+                            and workflow_name.startswith("h3turbo")
+                            and workflow_input.get("link") is not None
+                        ):
+                            duration_link = workflow_input["link"]
+                            workflow_input["link"] = None
+                            workflow["links"] = [
+                                link for link in workflow.get("links", [])
+                                if link[0] != duration_link
+                            ]
+                    widget_offset += 1
+
             if "SEED" in template_environment:
                 named = node.get("widgets_values_named", {})
                 for seed_key in ("seed", "noise_seed"):
                     if seed_key in named:
-                        seed_index = list(named).index(seed_key)
                         named[seed_key] = int(template_environment["SEED"])
+                        seed_index = None
+                        widget_offset = 0
+                        for workflow_input in node.get("inputs", []):
+                            widget = workflow_input.get("widget")
+                            if not widget:
+                                continue
+                            if seed_key in (workflow_input.get("name"), widget.get("name")):
+                                seed_index = widget_offset
+                                break
+                            widget_offset += 1
+                        if seed_index is None:
+                            seed_index = list(named).index(seed_key)
                         node["widgets_values"][seed_index] = named[seed_key]
             if node.get("type") == "LoadImage":
                 if node.get("title") in ["INPUT_IMAGE", "FIRST_FRAME"]:
@@ -2194,8 +2282,42 @@ class Chapter:
         from .scenes import setting_description, time_of_day, lighting
         ch = {}
         characters = as_str(image_xml.attrs.get("scene_characters", "")).split(",")
+        character_records = {}
+        if any(name.strip() for name in characters):
+            from artifact_editor.characters import characters as character_data
+
+            character_records = character_data.get_all_characters(self, is_global=True)
+            for tag, record in character_data.get_all_characters(self).items():
+                character_records.setdefault(tag, record)
+
+        phrase_at_scene = image_xml.find_next("phrase") or image_xml.find_previous("phrase")
+        try:
+            phrase_index = as_int(phrase_at_scene.get("index", "-1")) if phrase_at_scene else -1
+        except (TypeError, ValueError):
+            phrase_index = -1
+
         for character_name in characters:
             if character_name:
+                try:
+                    character_tag = character_data.resolve_character_tag(
+                        character_records, character_name
+                    ) if character_records else None
+                except ValueError:
+                    character_tag = character_data.name_to_tag(character_name)
+                description = as_str(
+                    image_xml.attrs.get(
+                        f"{character_tag or character_name}_description",
+                        image_xml.attrs.get(f"{character_name}_description", ""),
+                    )
+                )
+                record = character_records.get(character_tag) if character_tag else None
+                if not description and record:
+                    if record.get("is_global"):
+                        description = character_data.character_description_at(
+                            record, self.number, phrase_index
+                        )
+                    else:
+                        description = as_str(record.get("description", ""))
                 ch[character_name] = {
                     "pose": as_str(image_xml.attrs.get(f"{character_name}_pose", "")),
                     "action": as_str(
@@ -2204,9 +2326,7 @@ class Chapter:
                     "location": as_str(
                         image_xml.attrs.get(f"{character_name}_location", "")
                     ),
-                    "description": as_str(
-                        image_xml.attrs.get(f"{character_name}_description", "")
-                    ),
+                    "description": description,
                 }
 
         from artifact_editor.props.props import selected_props

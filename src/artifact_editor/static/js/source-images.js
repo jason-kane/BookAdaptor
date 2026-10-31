@@ -33,6 +33,13 @@ function initializeSourcePicker(picker) {
         state.playing = false;
         picker.querySelector('[data-source-play]').textContent = 'Preview motion';
     };
+    const chooserToggle = picker.querySelector('[data-source-chooser-toggle]');
+    const chooser = picker.querySelector('[data-source-chooser]');
+    chooserToggle.addEventListener('click', () => {
+        chooser.hidden = !chooser.hidden;
+        chooserToggle.setAttribute('aria-expanded', String(!chooser.hidden));
+        if (!chooser.hidden) state.paint();
+    });
     function drawCrop(target, box) {
         const w = 480, h = Math.max(1, Math.round(w / state.aspect));
         if (target.width !== w || target.height !== h) { target.width = w; target.height = h; }

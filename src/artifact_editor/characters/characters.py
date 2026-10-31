@@ -35,13 +35,20 @@ def _get_characters_fn(chapter, is_global:bool=False):
 
 def save_characters(chapter, characters, is_global:bool=False):
     characters_fn = _get_characters_fn(chapter, is_global=is_global)
-    # it's cool bro.
-    os.makedirs(
-        os.path.dirname(characters_fn),
-        exist_ok=True
+    directory = os.path.dirname(characters_fn)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary_fn = tempfile.mkstemp(
+        prefix=".characters-", suffix=".tmp", dir=directory
     )
-    with open(characters_fn, "w") as f:
-        json.dump(characters, f, indent=2)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(characters, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_fn, characters_fn)
+    finally:
+        if os.path.exists(temporary_fn):
+            os.unlink(temporary_fn)
 
 
 def save_character(chapter, character_tag, character_dict):
@@ -472,8 +479,22 @@ def get_all_characters(chapter, is_global: bool = False) -> dict:
     characters_fn = _get_characters_fn(chapter, is_global=is_global)
     log.info('Including', characters_fn=characters_fn)
     if os.path.exists(characters_fn):
-        with open(characters_fn, "r") as f:
-            characters = json.load(f)
+        try:
+            with open(characters_fn, "r") as f:
+                characters = json.load(f)
+            if not isinstance(characters, dict):
+                raise ValueError("Character catalog must contain a JSON object")
+        except (OSError, ValueError):
+            log.exception(
+                "Could not read character catalog; recovering available records",
+                filename=characters_fn,
+            )
+            characters = {}
+            if not is_global:
+                # Chapter files hold lightweight references to the canonical
+                # book records. Recover those records so metadata processing can
+                # continue and the normal save path can rebuild the chapter file.
+                characters = get_all_characters(chapter, is_global=True)
         if is_global:
             # Recover baseline descriptions omitted by an earlier book-catalog
             # migration. Never replace a non-empty book-owned description.

@@ -55,6 +55,12 @@
                         hx-target="#chapter-phrase-list" hx-swap="innerHTML"
                         hx-disabled-elt="this">Remove all Images</wa-button>
                 </div>
+                <div class="chapter-action-item">
+                    <wa-button variant="danger" appearance="accent"
+                        hx-post="{{ url_for('library.book.chapter.remove_all_animations', **chapter.kwargs) }}"
+                        hx-target="#chapter-phrase-list" hx-swap="innerHTML"
+                        hx-disabled-elt="this">Remove all Animations</wa-button>
+                </div>
             </div>
         </section>
     </div>
