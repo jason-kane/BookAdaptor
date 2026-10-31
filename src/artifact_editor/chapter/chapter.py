@@ -374,8 +374,8 @@ def get_prompt_workflow_by_filename(
                 node["widgets_values_named"] = {"value": prompt}
 
             elif node.get("title") in ["SCENE"]:
-                value = json.dumps(self.get_scene(image_xml), indent=2).replace(
-                    "\n", r"\n"
+                value = json.dumps(
+                    self.get_scene(image_xml), indent=2, ensure_ascii=False
                 )
                 node["widgets_values"] = [value]
                 node["widgets_values_named"] = {"value": value}
@@ -1708,9 +1708,7 @@ class Chapter:
                 elif node.get("title") in ["SCENE"]:
                     # Global style samples have no book scene or source passage.
                     scene = self.get_scene(image_xml) if image_xml.name == "image" else {}
-                    value = json.dumps(scene, indent=2).replace(
-                        "\n", r"\n"
-                    )
+                    value = json.dumps(scene, indent=2, ensure_ascii=False)
                     node["widgets_values"] = [value]
                     node["widgets_values_named"] = {"value": value}
 
@@ -2297,6 +2295,7 @@ class Chapter:
     def get_scene(self, image_xml: Tag) -> dict[str, Any]:
         from .scenes import setting_description, time_of_day, lighting
         ch = {}
+        character_tags = {}
         characters = as_str(image_xml.attrs.get("scene_characters", "")).split(",")
         character_records = {}
         if any(name.strip() for name in characters):
@@ -2344,14 +2343,29 @@ class Chapter:
                     ),
                     "description": description,
                 }
+                if character_tag:
+                    character_tags[character_name] = character_tag
 
         from artifact_editor.props.props import selected_props
-        out = {
-            "props": selected_props(self, image_xml),
-            "setting": as_str(setting_description(image_xml)),
-            "tod": as_str(time_of_day(image_xml)),
-            "camera": as_str(image_xml.attrs.get("camera", "")),
-            "lighting": lighting(image_xml),
+        out = {}
+        if ch:
+            out["characters"] = ch
+        focus_character = as_str(image_xml.attrs.get("focus_character", ""))
+        if focus_character:
+            try:
+                focus_tag = character_data.resolve_character_tag(
+                    character_records, focus_character
+                ) if character_records else None
+            except ValueError:
+                focus_tag = character_data.name_to_tag(focus_character)
+            focus_name = next(
+                (name for name, tag in character_tags.items() if tag == focus_tag),
+                None,
+            )
+            if focus_name:
+                out["character_focus"] = focus_name
+
+        out.update({
             # Carry source truth through the ComfyUI prompt-rewriting stage too.
             "source_passage": tools.get_text_to_next(image_xml, image_xml.find_next("image")),
             "visual_constraints": tools.get_image_narration_context(image_xml),
@@ -2362,14 +2376,12 @@ class Chapter:
                 "stated surfaces; do not turn them into physical objects."
             ),
             "description": as_str(image_xml.attrs.get("description", "")),
-        }
-
-        focus_character = as_str(image_xml.attrs.get("focus_character", ""))
-        if focus_character and focus_character in ch:
-            out["character_focus"] = focus_character
-
-        if ch:
-            out["characters"] = ch
+            "setting": as_str(setting_description(image_xml)),
+            "props": selected_props(self, image_xml),
+            "tod": as_str(time_of_day(image_xml)),
+            "camera": as_str(image_xml.attrs.get("camera", "")),
+            "lighting": lighting(image_xml),
+        })
 
         # deep-remove every key with an empty value,
         # we want to descent into dicts inside 'out' and remove empty values there too.
