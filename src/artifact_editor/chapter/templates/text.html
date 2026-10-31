@@ -315,29 +315,39 @@
         overflow-y: scroll;
     }
     #chapter-timeline-scroll {
+        --timeline-scrollbar-width: 20px;
         flex: 1 1 0;
         height: 0;
         min-height: 0;
         overflow-y: auto;
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable;
-        scrollbar-color: #9b9b9b #181818;
+        scrollbar-color: rgba(155, 155, 155, 0.65) transparent;
         scrollbar-width: auto;
     }
-    #chapter-timeline-scroll::-webkit-scrollbar {
-        width: 20px;
-    }
-    #chapter-timeline-scroll::-webkit-scrollbar-track {
-        background: #181818;
-    }
-    #chapter-timeline-scroll::-webkit-scrollbar-thumb {
-        min-height: 48px;
-        border: 4px solid #181818;
-        border-radius: 10px;
-        background: #9b9b9b;
-    }
-    #chapter-timeline-scroll::-webkit-scrollbar-thumb:hover {
-        background: #d0d0d0;
+    @supports selector(::-webkit-scrollbar) {
+        #chapter-timeline-scroll {
+            /* Non-auto standard values override the custom scrollbar below. */
+            scrollbar-color: auto;
+            scrollbar-width: auto;
+        }
+        #chapter-timeline-scroll::-webkit-scrollbar {
+            width: var(--timeline-scrollbar-width);
+        }
+        #chapter-timeline-scroll::-webkit-scrollbar-track,
+        #chapter-timeline-scroll::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+        #chapter-timeline-scroll::-webkit-scrollbar-thumb {
+            min-height: 48px;
+            border: 3px solid transparent;
+            border-radius: 20px;
+            background-color: rgba(155, 155, 155, 0.65);
+            background-clip: content-box;
+        }
+        #chapter-timeline-scroll::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(200, 200, 200, 0.95);
+        }
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
