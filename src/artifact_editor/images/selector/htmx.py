@@ -90,12 +90,13 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
     #         image_paths.add(image_path)
    
     # log.info(f"Candidate images: {sorted(list(image_paths))}")
-    return sorted(
-        images.all_images_by_image_index(
-            paragraph_dir,
-            image_index
-        )
+    image_paths.update(
+        images.all_images_by_image_index(paragraph_dir, image_index)
     )
+    current_image = chapter.get_image_filename(image_xml)
+    if current_image and os.path.isfile(current_image):
+        image_paths.add(current_image)
+    return sorted(image_paths)
     
 
 def gather_candidate_videos(image_xml: Tag, chapter: Chapter):

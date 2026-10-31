@@ -146,6 +146,10 @@ def test_crop_creates_selectable_source_option_at_target_aspect(source_editor):
     with Image.open(current_image_path) as current_image:
         assert current_image.size == (const.IMG_TARGET_WIDTH, const.IMG_TARGET_HEIGHT)
     assert editor.image["src"] == current_image_path.name
+    from artifact_editor.images.selector.htmx import gather_candidate_images
+
+    candidates = gather_candidate_images(editor.image, editor.chapter)
+    assert str(current_image_path) in candidates
     assert (editor.root / "images/art.jpg").is_file()
     assert editor.client.get(
         editor.base + "/images/4/source_image/" + editor.image["source_image"] + "?height=160"
