@@ -29,10 +29,10 @@
     </div>
     </div>
     {% with label_oob=true %}{% include "chapter_timeline_image_label.html" %}{% endwith %}
-    <img id="timeline-image-preview-{{ image['index'] }}"{% if image.get('src') %}
-        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"{% endif %} hx-swap-oob="outerHTML" loading="lazy" draggable="false"
-        src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=preview_version, **chapter.kwargs) if image.get('src') else url_for('static', filename='images/x.png') }}"
-        alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
+    <span hidden id="timeline-image-background-{{ image['index'] }}" data-timeline-background-marker
+        data-background-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else '' }}"
+        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else '' }}"
+        data-image-alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}" hx-swap-oob="outerHTML"></span>
     <div class="wa-stack wa-gap-s"
          hx-headers='{{ {"X-Chapter-Image-Panel": image["index"]|string}|tojson }}'>
         {{ prompt_controls|safe }}

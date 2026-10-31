@@ -1,5 +1,8 @@
 <details class="chapter-timeline-image" id="timeline-image-{{ image['index'] }}"
-   data-timeline-type="image" data-timeline-index="{{ image['index'] }}">
+   data-timeline-type="image" data-timeline-index="{{ image['index'] }}"
+   {% if image.get('src') %}data-timeline-background-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"
+   data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"
+   data-image-alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}"{% endif %}>
     <summary draggable="true" aria-label="Edit image {{ image['index'] }}"
         hx-get="{{ url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) }}"
         hx-target="#timeline-image-editor-{{ image['index'] }}" hx-swap="innerHTML"
@@ -8,12 +11,12 @@
     {% include "chapter_phrase_timing.html" %}
     {% endwith %}
     <span aria-hidden="true" title="Drag to move image">⠿</span>
-    <img id="timeline-image-preview-{{ image['index'] }}"{% if image.get('src') %}
-        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) }}"{% endif %} loading="lazy" draggable="false"
-         src="{{ url_for('library.book.chapter.images.show_image_by_index', height=360, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else url_for('static', filename='images/x.png') }}"
-         alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}">
     {% include "chapter_timeline_image_label.html" %}
     </summary>
+    <span hidden id="timeline-image-background-{{ image['index'] }}"
+        data-timeline-background-marker data-background-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else '' }}"
+        data-full-image-url="{{ url_for('library.book.chapter.images.show_image_by_index', height=0, image_index=image['index'], v=image.get('src'), **chapter.kwargs) if image.get('src') else '' }}"
+        data-image-alt="{{ image.get('alt') or image.get('prompt') or 'Chapter image' }}"></span>
     {% with item_type='image', item_index=image['index'] %}{% include "chapter_timeline_delete.html" %}{% endwith %}
     <wa-button size="small" hx-post="{{ url_for('library.book.chapter.add_timeline_scene', image_index=image['index'], **chapter.kwargs) }}"
         hx-target="closest [data-timeline-type]" hx-swap="afterend" hx-disabled-elt="this">Scene Change</wa-button>

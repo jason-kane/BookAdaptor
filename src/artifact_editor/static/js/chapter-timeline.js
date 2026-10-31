@@ -1,6 +1,8 @@
 function initializeChapterTimeline() {
     const list = document.getElementById('chapter-phrase-list');
-    if (!list || list.dataset.initialized) return;
+    if (!list) return;
+    initializeTimelineImageBackgrounds(list);
+    if (list.dataset.initialized) return;
     list.dataset.initialized = 'true';
     const status = document.getElementById('chapter-timeline-status');
     const selectPanel = event => {
@@ -121,6 +123,70 @@ function initializeChapterTimeline() {
 document.addEventListener('DOMContentLoaded', initializeChapterTimeline);
 document.addEventListener('htmx:afterSettle', initializeChapterTimeline);
 
+function initializeTimelineImageBackgrounds(list) {
+    const syncBackgroundMarkers = () => {
+        list.querySelectorAll(':scope > details[data-timeline-type="image"]').forEach(panel => {
+            const marker = panel.querySelector('[data-timeline-background-marker]');
+            if (!marker) return;
+            panel.dataset.timelineBackgroundUrl = marker.dataset.backgroundUrl || '';
+            panel.dataset.fullImageUrl = marker.dataset.fullImageUrl || '';
+            panel.dataset.imageAlt = marker.dataset.imageAlt || 'Chapter image';
+        });
+    };
+    const update = () => {
+        syncBackgroundMarkers();
+        const entries = Array.from(list.children).filter(entry => entry.matches('[data-timeline-type]'));
+        entries.forEach(entry => {
+            entry.style.removeProperty('background-image');
+            entry.style.removeProperty('background-size');
+            entry.style.removeProperty('background-position');
+            entry.style.removeProperty('background-repeat');
+            delete entry.dataset.imageBackground;
+        });
+        for (let start = 0; start < entries.length;) {
+            if (entries[start].dataset.timelineType !== 'image') { start++; continue; }
+            let end = start + 1;
+            while (end < entries.length && entries[end].dataset.timelineType !== 'image') end++;
+            const imageUrl = entries[start].dataset.timelineBackgroundUrl;
+            if (imageUrl) {
+                const firstTop = entries[start].getBoundingClientRect().top;
+                const lastBottom = entries[end - 1].getBoundingClientRect().bottom;
+                const spanHeight = Math.max(1, lastBottom - firstTop);
+                entries.slice(start, end).forEach(entry => {
+                    const offset = entry.getBoundingClientRect().top - firstTop;
+                    entry.style.backgroundImage = `url("${imageUrl}")`;
+                    entry.style.backgroundSize = `auto ${spanHeight}px`;
+                    entry.style.backgroundPosition = `0px -${offset}px`;
+                    entry.style.backgroundRepeat = 'no-repeat';
+                    entry.dataset.imageBackground = 'true';
+                });
+            }
+            start = end;
+        }
+    };
+    if (!list.dataset.backgroundObserverInitialized) {
+        list.dataset.backgroundObserverInitialized = 'true';
+        let frame = 0;
+        const schedule = () => {
+            if (frame) return;
+            frame = requestAnimationFrame(() => { frame = 0; update(); });
+        };
+        const resizeObserver = new ResizeObserver(schedule);
+        resizeObserver.observe(list);
+        list.querySelectorAll(':scope > [data-timeline-type]')
+            .forEach(entry => resizeObserver.observe(entry));
+        new MutationObserver(() => {
+            list.querySelectorAll(':scope > [data-timeline-type]')
+                .forEach(entry => resizeObserver.observe(entry));
+            schedule();
+        }).observe(list, { childList: true });
+        list.addEventListener('toggle', schedule, true);
+        window.addEventListener('resize', schedule);
+        list._timelineBackgroundUpdate = schedule;
+    }
+    list._timelineBackgroundUpdate?.();
+}
+
 function initializeChapterAnimationPlayers() {
     if (!window.videojs) return;
     document.querySelectorAll('video.chapter-animation-video').forEach(video => {
@@ -184,12 +250,10 @@ document.addEventListener('htmx:wsAfterMessage', () => {
             target: panel.dataset.imageEditorTarget, swap: 'innerHTML',
         }).then(async () => {
             if (imageIndex === undefined) return;
-            const preview = document.getElementById(`timeline-image-preview-${imageIndex}`);
-            if (!preview) return;
-            // Wait for the updated image dimensions before choosing the scroll position.
-            try { await preview.decode(); } catch (_) { /* Still center a failed preview. */ }
+            const panel = document.getElementById(`timeline-image-${imageIndex}`);
+            if (!panel) return;
             requestAnimationFrame(() => {
-                if (preview.isConnected) preview.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                if (panel.isConnected) panel.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
             });
         });
     });
@@ -199,7 +263,9 @@ document.addEventListener('htmx:wsAfterMessage', () => {
 let viewedChapterImage = null;
 let viewedChapterImageType = 'image';
 function navigateChapterImage(direction = 0) {
-    const images = Array.from(document.querySelectorAll('.chapter-timeline-image > summary > img[data-full-image-url]'));
+    const images = Array.from(document.querySelectorAll(
+        'details.chapter-timeline-image[data-full-image-url], .chapter-timeline-scene > summary > img[data-full-image-url]'
+    )).filter(image => image.dataset.fullImageUrl);
     const position = images.findIndex(image => image.closest('[data-timeline-index]').dataset.timelineIndex === viewedChapterImage && image.closest('[data-timeline-type]').dataset.timelineType === viewedChapterImageType);
     const image = images[position + direction];
     if (position < 0 || !image) return;
@@ -207,7 +273,7 @@ function navigateChapterImage(direction = 0) {
     viewedChapterImageType = image.closest('[data-timeline-type]').dataset.timelineType;
     const fullImage = document.getElementById('chapter-image-full');
     fullImage.src = image.dataset.fullImageUrl;
-    fullImage.alt = image.alt;
+    fullImage.alt = image.dataset.imageAlt || image.alt || 'Chapter image';
     document.getElementById('chapter-image-viewer').label = `${viewedChapterImageType === 'scene' ? 'Scene' : 'Image'} ${viewedChapterImage}`;
     document.getElementById('chapter-image-previous').disabled = position + direction === 0;
     document.getElementById('chapter-image-next').disabled = position + direction === images.length - 1;

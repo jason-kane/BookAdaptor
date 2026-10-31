@@ -461,6 +461,13 @@
     #chapter-phrase-list wa-select[name="speaker"]::part(display-input) {
         background-color: var(--timeline-entry-background);
     }
+    #chapter-phrase-list > [data-image-background="true"] .phrase-editor::part(base),
+    #chapter-phrase-list > [data-image-background="true"] .phrase-editor::part(textarea-wrapper),
+    #chapter-phrase-list > [data-image-background="true"] .phrase-editor::part(textarea),
+    #chapter-phrase-list > [data-image-background="true"] wa-select[name="speaker"]::part(combobox),
+    #chapter-phrase-list > [data-image-background="true"] wa-select[name="speaker"]::part(display-input) {
+        background-color: rgba(0, 0, 0, 0.48);
+    }
     #chapter-phrase-list > .chapter-timeline-image:has(.animation-duration-warning) {
         background-color: var(--wa-color-danger-fill-quiet, #641122);
         border-color: var(--wa-color-danger-border-normal, #de2d44);
@@ -687,7 +694,7 @@
 <script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-drag-2') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='continuous-image-background-1') }}" defer></script>
 <script src="/static/js/chapter-typesetting.js?v=1" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
 <script defer src="/static/js/styler-samples.js?v=chapter-image-events-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
