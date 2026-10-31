@@ -6,6 +6,7 @@
 
 {% block styles %}
 <link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/custom-scrollbar.css', v='1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261028-gpu-traceback-1">
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
 <style>
@@ -314,40 +315,14 @@
         min-height: 0;
         overflow-y: scroll;
     }
-    #chapter-timeline-scroll {
-        --timeline-scrollbar-width: 20px;
+    .chapter-timeline-scroll-area {
+        --scrollbar-width: 20px;
         flex: 1 1 0;
         height: 0;
         min-height: 0;
-        overflow-y: auto;
-        overscroll-behavior-y: contain;
-        scrollbar-gutter: stable;
-        scrollbar-color: rgba(155, 155, 155, 0.65) transparent;
-        scrollbar-width: auto;
     }
-    @supports selector(::-webkit-scrollbar) {
-        #chapter-timeline-scroll {
-            /* Non-auto standard values override the custom scrollbar below. */
-            scrollbar-color: auto;
-            scrollbar-width: auto;
-        }
-        #chapter-timeline-scroll::-webkit-scrollbar {
-            width: var(--timeline-scrollbar-width);
-        }
-        #chapter-timeline-scroll::-webkit-scrollbar-track,
-        #chapter-timeline-scroll::-webkit-scrollbar-corner {
-            background: transparent;
-        }
-        #chapter-timeline-scroll::-webkit-scrollbar-thumb {
-            min-height: 48px;
-            border: 3px solid transparent;
-            border-radius: 20px;
-            background-color: rgba(155, 155, 155, 0.65);
-            background-clip: content-box;
-        }
-        #chapter-timeline-scroll::-webkit-scrollbar-thumb:hover {
-            background-color: rgba(200, 200, 200, 0.95);
-        }
+    #chapter-timeline-scroll {
+        overscroll-behavior-y: contain;
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
@@ -358,14 +333,11 @@
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable;
     }
-    .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > #chapter-timeline-scroll {
+    .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > .chapter-timeline-scroll-area {
         position: absolute;
         inset: 0;
         height: auto;
         min-height: 0;
-        overflow-y: auto;
-        overscroll-behavior-y: contain;
-        scrollbar-gutter: stable;
     }
     .chapter-rendered-scroll > canvas,
     .chapter-rendered-scroll > img {
@@ -747,6 +719,7 @@
 <script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='1') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-timeline.js', v='continuous-image-background-contrast-1') }}" defer></script>
 <script src="/static/js/chapter-typesetting.js?v=1" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>

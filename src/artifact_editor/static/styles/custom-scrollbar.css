@@ -1,0 +1,62 @@
+/* Opt in with data-custom-scrollbar on a host and data-scroll-viewport on its scroller. */
+[data-custom-scrollbar] {
+    --scrollbar-width: 20px;
+    --scrollbar-gap: 4px;
+    --scrollbar-inset: 3px;
+    --scrollbar-radius: 20px;
+    --scrollbar-track: rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb: rgba(175, 175, 175, 0.72);
+    --scrollbar-thumb-hover: rgba(225, 225, 225, 0.95);
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+}
+[data-custom-scrollbar] > [data-scroll-viewport] {
+    height: 100%;
+    overflow-y: auto;
+}
+.custom-scrollbar-ready > [data-scroll-viewport] {
+    position: absolute;
+    inset: 0;
+    height: auto;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+}
+.custom-scrollbar-ready > [data-scroll-viewport]::-webkit-scrollbar {
+    display: none;
+}
+.custom-scrollbar-ready.has-scrollbar-overflow > [data-scroll-viewport] {
+    inset-inline-end: calc(var(--scrollbar-width) + var(--scrollbar-gap));
+}
+.custom-scrollbar-rail {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: var(--scrollbar-width);
+    border-radius: var(--scrollbar-radius);
+    background: var(--scrollbar-track);
+    touch-action: none;
+    user-select: none;
+}
+.custom-scrollbar-thumb {
+    position: absolute;
+    inset-inline: var(--scrollbar-inset);
+    top: 0;
+    box-sizing: border-box;
+    border-radius: var(--scrollbar-radius);
+    background: var(--scrollbar-thumb);
+    cursor: grab;
+    touch-action: none;
+}
+.custom-scrollbar-thumb:hover,
+.custom-scrollbar-thumb:focus-visible,
+.custom-scrollbar-thumb.is-dragging {
+    background: var(--scrollbar-thumb-hover);
+}
+.custom-scrollbar-thumb:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+}
+.custom-scrollbar-thumb.is-dragging {
+    cursor: grabbing;
+}

@@ -1,8 +1,10 @@
 <div class="wa-stack wa-gap-0">
     <div id="chapter-timeline-status" role="status" aria-live="polite" hidden></div>
-    <div id="chapter-timeline-scroll">
-        <div id="chapter-phrase-list" data-move-url="{{ url_for('library.book.chapter.move_timeline_image', **chapter.kwargs) }}">
-            {% include "chapter_phrase_list.html" %}
+    <div class="chapter-timeline-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll chapter timeline">
+        <div id="chapter-timeline-scroll" data-scroll-viewport tabindex="0" aria-label="Chapter timeline">
+            <div id="chapter-phrase-list" data-move-url="{{ url_for('library.book.chapter.move_timeline_image', **chapter.kwargs) }}">
+                {% include "chapter_phrase_list.html" %}
+            </div>
         </div>
     </div>
 </div>
