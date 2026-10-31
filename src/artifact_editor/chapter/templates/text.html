@@ -848,7 +848,9 @@
         }
     }
 
-    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}) {
+    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}, afterSection = null) {
+        const afterIndex = afterSection ? chapterSections.indexOf(afterSection) : -1;
+        const insertIndex = afterIndex >= 0 ? afterIndex + 1 : chapterSections.length;
         const editorId = `text_editor_${nextChapterSectionId++}`;
         const sectionElement = document.createElement('section');
         sectionElement.className = 'chapter-section wa-stack';
@@ -862,7 +864,11 @@
                 <wa-button class="add-section" type="button" variant="neutral" appearance="accent">Add Section</wa-button>
                 <wa-button class="delete-section" type="button" variant="danger" appearance="outlined" aria-label="Delete this section">Delete Section</wa-button>
             </div>`;
-        document.getElementById('chapter-sections').appendChild(sectionElement);
+        if (afterIndex >= 0) {
+            afterSection.element.after(sectionElement);
+        } else {
+            document.getElementById('chapter-sections').appendChild(sectionElement);
+        }
 
         const editor = new Quill(`#${editorId}`, {
             modules: {
@@ -877,8 +883,12 @@
             },
             theme: 'snow'
         });
-        const section = {editor, typesetting_method: sectionData.typesetting_method || 'verse'};
-        chapterSections.push(section);
+        const section = {
+            editor,
+            element: sectionElement,
+            typesetting_method: sectionData.typesetting_method || 'verse'
+        };
+        chapterSections.splice(insertIndex, 0, section);
         sectionElement.querySelector('.typesetting-method').value = section.typesetting_method;
         editor.setContents({ops: sectionData.ops || []});
         showUniformTypography(editor);
@@ -889,7 +899,7 @@
             saveChapterSections();
         });
         sectionElement.querySelector('.add-section').addEventListener('click', () => {
-            addChapterSection();
+            addChapterSection(undefined, section);
             saveChapterSections();
         });
         sectionElement.querySelector('.delete-section').addEventListener('click', () => {
