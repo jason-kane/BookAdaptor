@@ -253,10 +253,27 @@ def camera_direction(chapter, image_xml):
 
 
 def focus_character(chapter, image_xml):
-    characters = image_xml.attrs.get("scene_characters", "").split(",")
+    scene_character_names = [
+        name.strip()
+        for name in image_xml.attrs.get("scene_characters", "").split(",")
+        if name.strip()
+    ]
+    all_characters = characters.get_all_characters(chapter)
     character_options = ""
-    for character in characters:
-        character_options += f'<wa-option value="{character}">{character}</wa-option>'
+    for character_name in scene_character_names:
+        character_tag = characters.resolve_character_tag(all_characters, character_name)
+        character = all_characters.get(character_tag) if character_tag else None
+        character_tag = character_tag or character_name
+        character_label = character.get("name", character_name) if character else character_name
+        character_options += (
+            f'<wa-option value="{html.escape(character_tag, quote=True)}">'
+            f'{html.escape(character_label)}</wa-option>'
+        )
+
+    focus_character = image_xml.attrs.get("focus_character", "")
+    focus_tag = characters.resolve_character_tag(all_characters, focus_character)
+    if focus_tag:
+        focus_character = focus_tag
 
     set_focus_url = url_for(
         "library.book.chapter.images.scene.set_focus_character",
@@ -276,7 +293,7 @@ def focus_character(chapter, image_xml):
                 hx-target="#focus-character"
                 hx-swap="outerHTML transition:true"
                 hx-trigger="change"
-                value="{image_xml.attrs.get('focus_character', '')}" 
+                value="{html.escape(focus_character, quote=True)}"
                 name="focus_character"
                 label="Character focus"
                 hint="Select the character that is speaking or should be the focus of the image."
