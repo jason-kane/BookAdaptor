@@ -13,6 +13,7 @@ import logger
 log = logger.log(__name__)
 
 PROP_EXTRACTION_CHUNK_CHARS = 2500
+PROP_EXTRACTION_MIN_CHUNK_CHARS = 400
 
 
 def directory(chapter):
@@ -165,33 +166,40 @@ def extract_props(chapter):
     )
 
     def extract_with_fallback(perspective):
-        prompt = (
-            perspective + '\n\n' + instructions +
-            f'\n\nBEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'
-        )
-        try:
-            response = llm.json_prompt(prompt)
-        except json.JSONDecodeError:
-            chunks = _story_text_chunks(story_text)
-            if len(chunks) < 2:
-                raise
-            log.warning(
-                "Prop extraction response was truncated; retrying %s in %s story chunks",
-                perspective, len(chunks),
+        def extract_chunk(chunk):
+            prompt = (
+                perspective + '\n\n' + instructions +
+                f'\n\nBEGIN SOURCE TEXT\n{chunk}\nEND SOURCE TEXT'
             )
-            response = []
-            for chunk in chunks:
-                chunk_prompt = (
-                    perspective + '\n\n' + instructions +
-                    f'\n\nBEGIN SOURCE TEXT\n{chunk}\nEND SOURCE TEXT'
+            try:
+                response = llm.json_prompt(prompt)
+            except Exception as error:
+                # A capped or disconnected Llama response can leave JSON incomplete.
+                # Split only that failing chunk and retry with smaller requests.
+                retryable = isinstance(error, json.JSONDecodeError) or (
+                    isinstance(error, RuntimeError)
+                    and 'Server disconnected without sending a response' in str(error)
                 )
-                chunk_response = llm.json_prompt(chunk_prompt)
-                if not isinstance(chunk_response, list):
-                    raise ValueError('Prop extraction returned an invalid list. Please try again.')
-                response.extend(chunk_response)
-        if not isinstance(response, list):
-            raise ValueError('Prop extraction returned an invalid list. Please try again.')
-        return response
+                if not retryable or len(chunk) <= PROP_EXTRACTION_MIN_CHUNK_CHARS:
+                    raise
+                smaller_chunks = _story_text_chunks(chunk, max_chars=max(
+                    PROP_EXTRACTION_MIN_CHUNK_CHARS, len(chunk) // 2,
+                ))
+                if len(smaller_chunks) < 2:
+                    raise
+                log.warning(
+                    'Prop extraction request failed for %s chars; retrying as %s smaller chunks',
+                    len(chunk), len(smaller_chunks),
+                )
+                return [item for smaller in smaller_chunks for item in extract_chunk(smaller)]
+            if not isinstance(response, list):
+                raise ValueError('Prop extraction returned an invalid list. Please try again.')
+            return response
+
+        chunks = _story_text_chunks(story_text)
+        if len(chunks) > 1:
+            log.info('Extracting props with %s bounded story chunks', len(chunks))
+        return [item for chunk in chunks for item in extract_chunk(chunk)]
 
     extracted = []
     for perspective in (
