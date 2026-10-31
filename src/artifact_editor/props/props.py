@@ -9,6 +9,8 @@ import uuid
 
 import const
 
+PROP_EXTRACTION_CHUNK_CHARS = 2500
+
 
 def directory(chapter):
     return Path(const.LIBRARY_DIR) / chapter.chapterdir / 'props'
@@ -109,6 +111,25 @@ def object_name_key(name):
     return ''.join(char for char in name.casefold() if char.isalnum())
 
 
+def _story_text_chunks(story_text, max_chars=PROP_EXTRACTION_CHUNK_CHARS):
+    """Split long story input into bounded chunks without dropping words."""
+    chunks = []
+    current_words = []
+    current_length = 0
+    for word in story_text.split():
+        added_length = len(word) + bool(current_words)
+        if current_words and current_length + added_length > max_chars:
+            chunks.append(' '.join(current_words))
+            current_words = []
+            current_length = 0
+            added_length = len(word)
+        current_words.append(word)
+        current_length += added_length
+    if current_words:
+        chunks.append(' '.join(current_words))
+    return chunks
+
+
 def extract_props(chapter):
     """Extract and reconcile two independent, evidence-grounded prop lists."""
     from artifact_editor import llm
@@ -137,18 +158,44 @@ def extract_props(chapter):
         'supported physical details (at least its object type); evidence must be an exact quote '
         'from the supplied text explicitly referring to that object. Return [] if none.\n\n'
         f'Existing props: {json.dumps(list(existing.values()))}\n\n'
-        f'Excluded characters and aliases: {json.dumps(excluded_characters)}\n\n'
-        f'BEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'
+        f'Excluded characters and aliases: {json.dumps(excluded_characters)}'
     )
+
+    def extract_with_fallback(perspective):
+        prompt = (
+            perspective + '\n\n' + instructions +
+            f'\n\nBEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'
+        )
+        try:
+            response = llm.json_prompt(prompt)
+        except json.JSONDecodeError:
+            chunks = _story_text_chunks(story_text)
+            if len(chunks) < 2:
+                raise
+            log.warning(
+                "Prop extraction response was truncated; retrying %s in %s story chunks",
+                perspective, len(chunks),
+            )
+            response = []
+            for chunk in chunks:
+                chunk_prompt = (
+                    perspective + '\n\n' + instructions +
+                    f'\n\nBEGIN SOURCE TEXT\n{chunk}\nEND SOURCE TEXT'
+                )
+                chunk_response = llm.json_prompt(chunk_prompt)
+                if not isinstance(chunk_response, list):
+                    raise ValueError('Prop extraction returned an invalid list. Please try again.')
+                response.extend(chunk_response)
+        if not isinstance(response, list):
+            raise ValueError('Prop extraction returned an invalid list. Please try again.')
+        return response
+
     extracted = []
     for perspective in (
         'Make a complete first-pass inventory, reading every paragraph carefully.',
         'Independently audit the source for overlooked physical objects, including ordinary objects and objects mentioned only briefly.',
     ):
-        response = llm.json_prompt(perspective + '\n\n' + instructions)
-        if not isinstance(response, list):
-            raise ValueError('Prop extraction returned an invalid list. Please try again.')
-        extracted.extend(response)
+        extracted.extend(extract_with_fallback(perspective))
     # Re-read so extraction preserves props edited or added during the request.
     records = get_all_props(chapter)
     normalize = lambda value: ' '.join(value.casefold().split())
