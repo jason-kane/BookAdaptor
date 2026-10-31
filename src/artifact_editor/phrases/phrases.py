@@ -1311,12 +1311,13 @@ def generate_audio(chapter):
     return cache
 
 
-def generate_all_audio(chapter, force=True, progress=None):
+def generate_all_audio(chapter, force=True, progress=None, batch=False):
     log.info("[generate_all_audio] (%s, force=%s)", chapter, force)
 
     # we're essentially clicking 'regenerate' on everything
     # that doesn't have a wav file.
     phrase_list = chapter.get_xml().find_all("phrase")
+    pending = []
     for position, phrase_xml in enumerate(phrase_list):
         if progress:
             progress(position / max(1, len(phrase_list)) * 100,
@@ -1369,13 +1370,25 @@ def generate_all_audio(chapter, force=True, progress=None):
                     )
 
             if not os.path.exists(wavfile):
-                llm.text_2_audio(
-                    chapter,
-                    phrase_xml,
-                    phrase_xml.attrs.get("speaker", "Narrator"),
-                    wavfile,
-                    force=False,
-                )
+                if batch:
+                    request = llm.text_2_audio(
+                        chapter, phrase_xml,
+                        phrase_xml.attrs.get("speaker", "Narrator"),
+                        wavfile, force=False, queue_only=True,
+                    )
+                    if not request.get("ready"):
+                        pending.append((phrase_index, phrase_xml, wavfile, request))
+                else:
+                    llm.text_2_audio(
+                        chapter,
+                        phrase_xml,
+                        phrase_xml.attrs.get("speaker", "Narrator"),
+                        wavfile,
+                        force=False,
+                    )
+
+            if batch:
+                continue
 
             # do we already have a pronunciation file for this phrase?
             if os.path.exists(wavfile.replace(".wav", ".pronunciation.txt")):
@@ -1415,6 +1428,78 @@ def generate_all_audio(chapter, force=True, progress=None):
             if new_pronunciation:
                 phrase_xml.attrs["pronunciation"] = new_pronunciation
 
+            chapter.save_xml()
+
+    if batch and pending:
+        import comfy
+
+        if progress:
+            progress(75, f"Queued audio for {len(pending)} phrases")
+
+        completed = [0]
+
+        def collect_audio(position, result):
+            if isinstance(result, Exception):
+                return
+            _, _, _, request = pending[position]
+            llm.collect_text_2_audio(request)
+            completed[0] += 1
+            if progress:
+                progress(
+                    75 + completed[0] / len(pending) * 20,
+                    f"Generated audio for {completed[0]} of {len(pending)} phrases",
+                )
+
+        results = comfy.run_workflow_fn_batch(
+            [
+                {
+                    "workflow_fn": request["workflow_fn"],
+                    "label": request["label"],
+                    "prepare_vram": index == 0,
+                }
+                for index, (_, _, _, request) in enumerate(pending)
+            ],
+            on_complete=collect_audio,
+            return_exceptions=True,
+        )
+        errors = [
+            (pending[index][0], result)
+            for index, result in enumerate(results)
+            if isinstance(result, Exception)
+        ]
+        if errors:
+            phrase_index, error = errors[0]
+            raise RuntimeError(
+                f"Could not create audio for phrase {phrase_index}: {error}"
+            ) from error
+
+        # Apply the same pronunciation, padding, and timing updates as the
+        # sequential path after every Comfy workflow has completed.
+        for phrase_index, _, wavfile, _ in pending:
+            phrase_xml = chapter.get_phrase(phrase_index)
+            pronunciation_file = wavfile.replace(".wav", ".pronunciation.txt")
+            if os.path.exists(pronunciation_file):
+                with open(pronunciation_file, "r") as pronunciation_handle:
+                    new_pronunciation = pronunciation_handle.read().strip()
+            else:
+                pronunciation_filename = os.path.join(
+                    const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
+                    "audio",
+                    os.path.basename(wavfile).replace(".wav", ".pronunciation.txt"),
+                )
+                try:
+                    with open(pronunciation_filename, "r") as pronunciation_handle:
+                        new_pronunciation = pronunciation_handle.read().strip()
+                except FileNotFoundError:
+                    new_pronunciation = None
+
+            wav_pad_to_frame(wavfile)
+            duration = get_wav_duration(wavfile)
+            phrase_xml.attrs["src"] = os.path.basename(wavfile)
+            phrase_xml.attrs["duration"] = str(duration)
+            phrase_xml.attrs["frames"] = int(duration * const.FPS)
+            if new_pronunciation:
+                phrase_xml.attrs["pronunciation"] = new_pronunciation
             chapter.save_xml()
 
     generate_audio(chapter)

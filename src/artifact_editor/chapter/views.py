@@ -2405,6 +2405,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     phrase_audio.generate_all_audio(
         chapter,
         force=False,
+        batch=True,
         progress=lambda percent, message: progress(25 + percent * 0.7, message),
     )
     progress(96, "Placing image slots")
