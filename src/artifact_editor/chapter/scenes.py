@@ -14,7 +14,7 @@ TIME_OF_DAY_VALUES = ('predawn', 'dawn', 'morning', 'day', 'afternoon', 'dusk', 
 
 def time_of_day(image):
     scene = active_scene(image)
-    return scene.get('tod', 'unknown') if scene is not None else image.get('tod', 'unknown')
+    return (scene.get('tod') if scene is not None else image.get('tod')) or 'unknown'
 
 
 def save_time_of_day(scene, value):
@@ -74,9 +74,9 @@ def active_scene(image):
     return image.find_previous('scene')
 
 
-def setting_description(image):
+def setting_description(image) -> str:
     scene = active_scene(image)
-    return scene.get('description', '') if scene is not None else image.get('setting', '')
+    return (scene.get('description') if scene is not None else image.get('setting')) or ''
 
 
 def scene_image_path(chapter, scene, library_dir):

@@ -95,6 +95,33 @@ class SceneTests(unittest.TestCase):
             scenes.save_time_of_day(scene, 'invalid')
         self.assertEqual(scene['tod'], 'night')
 
+    def test_null_scene_metadata_renders_in_image_panel(self):
+        image = self.soup.image
+        image['setting'] = None
+        image['tod'] = None
+        self.assertEqual(scenes.setting_description(image), '')
+        self.assertEqual(scenes.time_of_day(image), 'unknown')
+
+        scene = scenes.add_scene(self.chapter, 0)
+        scene['description'] = None
+        scene['tod'] = None
+        image = self.soup.find('image', index='2')
+        image['setting'] = 'Ignore image override when there is a scene'
+        image['tod'] = 'day'
+        self.assertEqual(scenes.setting_description(image), '')
+        self.assertEqual(scenes.time_of_day(image), 'unknown')
+
+        tree = ast.parse((ROOT / 'src/artifact_editor/images/scene/htmx.py').read_text())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name in ('setting', 'tod')]
+        namespace = {'html': __import__('html')}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), 'htmx.py', 'exec'), namespace)
+        with patch.dict(sys.modules, {'artifact_editor.chapter.scenes': scenes}):
+            markup = namespace['setting'](self.chapter, image) + namespace['tod'](self.chapter, image)
+        self.assertIn('Scene 0', markup)
+        self.assertIn('unknown', markup)
+        self.assertNotIn('None', markup)
+
     def test_lighting_is_owned_by_scene_and_inherited_across_paragraphs(self):
         scene = scenes.add_scene(self.chapter, 0)
         image = self.soup.find('image', index='2')
