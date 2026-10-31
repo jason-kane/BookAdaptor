@@ -481,8 +481,9 @@ def snapshot(client, capacity=12):
     # Never send frame arguments or complete chapter/workflow data to the browser.
     fields = ("job_id", "batch_id", "parent_job_id", "label", "action", "worker_id",
               "state", "message", "started_at", "duration_seconds", "chapter",
+              "author", "title", "chapter_number", "language", "image_index",
               "debug_details",
-              "percent", "title", "chapter_number", "timing", "timing_key",
+              "percent", "timing", "timing_key",
               "timing_units", "timing_unit")
     def public(task):
         item = {k: task[k] for k in fields if k in task}

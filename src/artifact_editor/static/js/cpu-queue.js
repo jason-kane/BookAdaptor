@@ -9,6 +9,19 @@
         toggle.setAttribute('aria-label', label);
         toggle.title = label;
     });
+    function animationThumbnail(task, message = task.message || '') {
+        if (!['chapter_missing_animations', 'textoviva_regenerate_animation',
+              'textoviva_missing_animation'].includes(task.action)) return '';
+        const index = task.image_index ?? message.match(/(?:image|shot)\s+(\d+)/i)?.[1];
+        if (index === undefined || index === null || !/^\d+$/.test(String(index))) return '';
+        const chapter = task.chapter || {};
+        const author = task.author || chapter.author;
+        const title = task.title || chapter.title;
+        const number = task.chapter_number || chapter.chapter_number;
+        const language = task.language || chapter.language;
+        if (!author || !title || !number || !language) return '';
+        return `/library/${encodeURIComponent(author)}/${encodeURIComponent(title)}/${encodeURIComponent(number)}/${encodeURIComponent(language)}/images/128/${index}.png`;
+    }
     function row(task, state) {
         const item = document.createElement('div');
         item.className = 'cpu-queue-row';
@@ -16,6 +29,16 @@
         item.dataset.state = task.state || state;
         item.dataset.retryable = String(Boolean(task.retryable));
         item.dataset.cancellable = String(Boolean(task.cancellable));
+        const thumbnailUrl = animationThumbnail(task);
+        if (thumbnailUrl) {
+            item.classList.add('has-animation-thumbnail');
+            const thumbnail = document.createElement('img');
+            thumbnail.className = 'cpu-queue-thumbnail';
+            thumbnail.src = thumbnailUrl;
+            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? ''}`;
+            thumbnail.loading = 'lazy';
+            item.append(thumbnail);
+        }
         const label = document.createElement('p');
         label.className = 'cpu-queue-label';
         label.textContent = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`].filter(Boolean).join(' · ') || 'Chapter render';
@@ -148,6 +171,22 @@
             || (task.worker_id ? `Worker ${task.worker_id}` : state);
         const labelElement = existing.querySelector('.cpu-queue-label');
         const messageElement = existing.querySelector('.cpu-queue-message');
+        const thumbnailUrl = animationThumbnail(task);
+        let thumbnail = existing.querySelector('.cpu-queue-thumbnail');
+        if (thumbnailUrl && !thumbnail) {
+            thumbnail = document.createElement('img');
+            thumbnail.className = 'cpu-queue-thumbnail';
+            thumbnail.loading = 'lazy';
+            existing.prepend(thumbnail);
+        } else if (!thumbnailUrl && thumbnail) {
+            thumbnail.remove();
+            existing.classList.remove('has-animation-thumbnail');
+        }
+        if (thumbnailUrl && thumbnail) {
+            if (thumbnail.getAttribute('src') !== thumbnailUrl) thumbnail.src = thumbnailUrl;
+            thumbnail.alt = `Image ${task.image_index ?? task.message?.match(/(?:image|shot)\s+(\d+)/i)?.[1] ?? ''}`;
+            existing.classList.add('has-animation-thumbnail');
+        }
         if (labelElement) {
             labelElement.textContent = label;
             labelElement.title = label;

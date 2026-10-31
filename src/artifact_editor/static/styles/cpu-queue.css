@@ -4,7 +4,7 @@
     right: 21.5rem;
     bottom: max(1rem, env(safe-area-inset-bottom));
     box-sizing: border-box;
-    width: min(19rem, calc(100vw - 2rem));
+    width: min(27rem, calc(100vw - 2rem));
     max-height: min(70vh, 48rem);
     padding: 0.65rem;
     border: 1px solid var(--wa-color-surface-border);
@@ -20,6 +20,25 @@
 #cpu-queue-count, #cpu-queue-summary { color: var(--wa-color-text-quiet, #aaa); font-weight: 400; }
 #cpu-queue-summary { font-size: 0.78rem; margin-block: 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cpu-queue-row { padding: 0.35rem; border-bottom: 1px solid var(--wa-color-surface-border); font-size: 0.78rem; }
+.cpu-queue-row.has-animation-thumbnail {
+    display: grid;
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    column-gap: 0.45rem;
+    align-items: start;
+}
+.cpu-queue-thumbnail {
+    grid-column: 1;
+    grid-row: 1 / span 5;
+    width: 4.25rem;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: var(--wa-border-radius-s, 0.25rem);
+    background: var(--wa-color-surface-raised, #333);
+}
+.cpu-queue-row.has-animation-thumbnail > p,
+.cpu-queue-row.has-animation-thumbnail > wa-progress-bar,
+.cpu-queue-row.has-animation-thumbnail > .task-timing-label,
+.cpu-queue-row.has-animation-thumbnail > .task-timing-stats { grid-column: 2; min-width: 0; }
 .cpu-queue-row[data-state="running"] { background: color-mix(in srgb, #a9c8e8 20%, transparent); }
 .cpu-queue-row[data-state="failed"] { position: relative; padding-right: 2rem; color: var(--wa-color-danger-text, #f3a1a6); }
 .cpu-queue-row[data-state="failed"], .cpu-queue-row[data-state="complete"] { position: relative; padding-right: 6.5rem; }
