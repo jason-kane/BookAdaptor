@@ -1063,12 +1063,28 @@ class Chapter:
                 )
             )
 
+        # Frame extraction keeps an adjacent ``.extract.lock`` file next to
+        # each frame directory. The image-number glob also matches that lock,
+        # so discard non-directories before attempting to enumerate frames.
+        all_animation_dirs = [
+            animation_dir for animation_dir in all_animation_dirs
+            if os.path.isdir(animation_dir)
+        ]
+
+        def animation_frames(animation_dir):
+            # Ignore extraction markers and lock files; only extracted images
+            # are valid frame candidates. Glob also tolerates a directory
+            # being removed by a concurrent re-extraction.
+            return sorted(
+                frame for frame in glob.glob(os.path.join(animation_dir, "*.png"))
+                if os.path.isfile(frame)
+            )
+
         if frame_index:
             # Absolute frame_index across all video_index values.
             index_to_fn: list[str] = []
             for animation_dir in sorted(all_animation_dirs):
-                for frame in sorted(os.listdir(animation_dir)):
-                    index_to_fn.append(os.path.join(animation_dir, frame))
+                index_to_fn.extend(animation_frames(animation_dir))
 
             frame_index = min(frame_index, len(index_to_fn) - 1)
 
@@ -1082,11 +1098,9 @@ class Chapter:
 
         # the last frame, start with highest numbered animation dir
         for animation_dir in sorted(all_animation_dirs, reverse=True):
-            frame = sorted(os.listdir(animation_dir), reverse=True)
-            try:
-                return os.path.join(animation_dir, frame[0])
-            except IndexError:
-                continue
+            frames = animation_frames(animation_dir)
+            if frames:
+                return frames[-1]
 
         if not recursed:
             # re-generate the frames from the video file(s) (if it/they exist(s))
