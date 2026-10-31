@@ -182,6 +182,23 @@ function initializeTimelineImageHash() {
     });
     const requestedImage = timelineImageHashValue();
     if (requestedImage !== null && scrollToTimelineImage(requestedImage)) return;
+    // Migrate the scroll bookmark saved by the previous timeline script so
+    // its first reload lands at the same image before the URL hash takes over.
+    try {
+        const key = `chapter-timeline-scroll:${location.pathname}`;
+        const previous = JSON.parse(sessionStorage.getItem(key) || 'null');
+        sessionStorage.removeItem(key);
+        const match = previous?.anchorId?.match(/^timeline-image-(\d+)$/);
+        if (match && scrollToTimelineImage(Number(match[1]))) {
+            setTimelineImageHash(Number(match[1]));
+            return;
+        }
+        if (previous && Number.isFinite(Number(previous.scrollTop))) {
+            viewport.scrollTop = Number(previous.scrollTop);
+        }
+    } catch (_) {
+        // Ignore unavailable browser storage and fall back to the current view.
+    }
     requestAnimationFrame(updateHashFromScroll);
 }
 
