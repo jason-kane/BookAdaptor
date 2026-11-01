@@ -761,6 +761,12 @@ def assemble_mp4(
     if max_frames is not None:
         cmd += ["-frames:v", str(max_frames)]
 
+    try:
+        available_cores = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        available_cores = os.cpu_count() or 1
+    encoder_threads = max(1, available_cores // 2)
+
     # Publish only a fully encoded video. An interrupted/failed rebuild keeps
     # the last playable output, and stale cached frame tails cannot extend it.
     temporary_video = videofile + ".rendering.mp4"
@@ -772,7 +778,7 @@ def assemble_mp4(
         "libx264",
         "-pix_fmt",
         "yuv420p",
-        "-threads", "1",
+        "-threads", str(encoder_threads),
         temporary_video,
     ]
     # #"-c:v h264_amf",   # AMD hardware encoding
