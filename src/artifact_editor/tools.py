@@ -776,6 +776,7 @@ def assemble_mp4(
         "aac",
         "-c:v",
         "libx264",
+        "-preset", "veryfast",
         "-pix_fmt",
         "yuv420p",
         "-threads", str(encoder_threads),
