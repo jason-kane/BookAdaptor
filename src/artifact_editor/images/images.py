@@ -1441,7 +1441,7 @@ def generate_metadata_from_text(chapter, image_xml: Tag, force_all=False, progre
     # chapter.save_xml()
 
 
-def generate_animation_prompt(chapter, image_xml, force=False):
+def generate_animation_prompt(chapter, image_xml, force=False, prompt_generator=None):
     """
     Generate a prompt for the animation model based on the text surrounding this image.
     """
@@ -1517,7 +1517,10 @@ def generate_animation_prompt(chapter, image_xml, force=False):
             "explanation, labels, Markdown, blockquotes, or enclosing quotation marks."
         )
 
-    animation_prompt = llm.str_prompt(prompt, force=force)
+    if prompt_generator is None:
+        animation_prompt = llm.str_prompt(prompt, force=force)
+    else:
+        animation_prompt = prompt_generator(prompt)
     image_xml.attrs["animation_prompt"] = animation_prompt.strip()
     return animation_prompt.strip()
 

@@ -59,6 +59,7 @@ LLAMA_TASK_ACTIONS = {
     "styler_tag_sample",
     "styler_tag_group",
     "styler_scan_image_tags",
+    "timeline_animation_description",
 }
 
 

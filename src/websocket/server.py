@@ -180,6 +180,7 @@ def run_video_job(client, task):
         "scene_description": "Preparing scene description",
         "scene_image": "Preparing scene image",
         "timeline_metadata": "Preparing image metadata",
+        "timeline_animation_description": "Preparing animation description",
         "timeline_image": "Preparing timeline image",
         "character_image": "Preparing character image",
         "prop_image": "Preparing prop image",
@@ -250,6 +251,20 @@ def run_video_job(client, task):
                 ),
             )
             publish_progress(client, job_id, 100, "Image metadata complete", "complete")
+            return
+        if task.get("action") == "timeline_animation_description":
+            from artifact_editor.images.jobs import generate_timeline_animation_description
+
+            generate_timeline_animation_description(
+                chapter,
+                task["image_index"],
+                progress=lambda percent, message: publish_progress(
+                    client, job_id, percent, message
+                ),
+            )
+            publish_progress(
+                client, job_id, 100, "Animation description complete", "complete"
+            )
             return
         if task.get("action") == "timeline_image":
             from artifact_editor.images.jobs import generate_timeline_image
@@ -452,6 +467,7 @@ def run_video_job(client, task):
             "scene_description": "Scene description generation",
             "scene_image": "Scene image generation",
             "timeline_metadata": "Image metadata generation",
+            "timeline_animation_description": "Animation description generation",
             "timeline_image": "Image generation",
             "character_image": "Character image generation",
             "prop_image": "Prop image generation",
@@ -2372,6 +2388,7 @@ def styler_queue_entry(task, priority=False):
         "chapter_missing_props": "Prop extraction",
         "chapter_add_all": "Add all chapter assets",
         "timeline_metadata": "Image metadata",
+        "timeline_animation_description": "Animation description",
         "timeline_image": "Image generation",
         "character_image": "Character image",
         "prop_image": "Prop image",

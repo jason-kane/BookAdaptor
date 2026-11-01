@@ -344,6 +344,24 @@ async function refreshTimelineScene(panel) {
     }
 }
 document.addEventListener('htmx:wsAfterMessage', () => {
+    document.querySelectorAll('[data-animation-description-status] [data-video-job]').forEach(status => {
+        const container = status.closest('[data-animation-description-status]');
+        const button = container.closest('.chapter-mini-image-editor')
+            ?.querySelector('[data-animation-description-button]');
+        if (status.dataset.videoState === 'queued' || status.dataset.videoState === 'running') {
+            if (button) button.disabled = true;
+            return;
+        }
+        if (button) button.disabled = false;
+        if (status.dataset.videoState !== 'complete' || status.dataset.descriptionRefreshed) return;
+        status.dataset.descriptionRefreshed = 'true';
+        const target = document.getElementById(container.dataset.animationDescriptionTarget);
+        if (!target) return;
+        htmx.ajax('GET', container.dataset.animationDescriptionRefreshUrl, {
+            target,
+            swap: 'outerHTML',
+        });
+    });
     document.querySelectorAll('[data-image-editor-url] [data-video-job]').forEach(status => {
         if (status.dataset.videoState !== 'complete' || completedTimelineImages.has(status.dataset.videoJob)) return;
         completedTimelineImages.add(status.dataset.videoJob);

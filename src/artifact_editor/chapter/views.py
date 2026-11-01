@@ -279,6 +279,17 @@ def timeline_image_editor(image_index):
     image = g.chapter.get_image(image_index)
     if image is None:
         return "Image no longer exists; reload the chapter", 404
+    if request.method == "GET" and request.args.get("fragment") == "animation_description":
+        return render_template(
+            "chapter_timeline_animation_description.html",
+            chapter=g.chapter,
+            image=image,
+            editor_url=url_for(
+                "library.book.chapter.timeline_image_editor",
+                image_index=image_index,
+                **g.chapter.kwargs,
+            ),
+        )
     paragraph_dir = Path(const.LIBRARY_DIR) / g.chapter.get_paragraph_dir(
         image.find_parent("paragraph")["index"]
     )
@@ -300,19 +311,35 @@ def timeline_image_editor(image_index):
         ):
             return "Invalid image action", 400
         if action == "regenerate_animation_description":
-            from artifact_editor.images import images
+            from worker_startup import ensure_worker_services
 
-            images.generate_animation_prompt(g.chapter, image, force=True)
-            g.chapter.save_image(image)
-            return render_template(
-                "chapter_timeline_animation_description.html",
-                chapter=g.chapter,
-                image=image,
-                editor_url=url_for(
-                    "library.book.chapter.timeline_image_editor",
-                    image_index=image_index,
-                    **g.chapter.kwargs,
-                ),
+            try:
+                ensure_worker_services()
+            except RuntimeError as exc:
+                return str(exc), 503
+            import uuid
+            import redis
+
+            job_id = uuid.uuid4().hex
+            task = {
+                "action": "timeline_animation_description",
+                "job_id": job_id,
+                "provider": "llama",
+                "author": g.chapter.author.name,
+                "title": g.chapter.title,
+                "chapter_number": g.chapter.number,
+                "language": g.chapter.language,
+                "image_index": image_index,
+            }
+            client = redis.Redis(
+                host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+            )
+            enqueue_task(client, VIDEO_QUEUE, task)
+            return (
+                f'<div id="video-progress-{job_id}" data-video-job="{job_id}" '
+                f'data-video-state="queued" role="status" aria-live="polite">'
+                '<wa-progress-bar indeterminate></wa-progress-bar>'
+                'Animation description queued.</div>'
             )
         if action == "animation_workflow":
             from text_to_image.comfyui.workflow.ui import get_workflow_templates

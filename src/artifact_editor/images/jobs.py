@@ -83,3 +83,28 @@ def generate_timeline_metadata(chapter, image_index, progress):
     report_detail(90, 'Writing illustration description')
     images.generate_image_description(image, force=True)
     chapter.save_image(image)
+
+
+def generate_timeline_animation_description(chapter, image_index, progress):
+    from artifact_editor.images import images
+    from llama_inference import chat_completion
+
+    image = chapter.get_image(int(image_index))
+    if image is None:
+        raise ValueError(f"Image {image_index} no longer exists")
+    progress(10, f"Image {int(image_index) + 1} · Generating animation description")
+    images.generate_animation_prompt(
+        chapter,
+        image,
+        force=True,
+        prompt_generator=lambda prompt: chat_completion(
+            None,
+            prompt,
+            system_prompt="You are a helpful assistant.",
+            max_tokens=2048,
+            thinking_budget_tokens=0,
+            label=f"Animation description · Image {int(image_index) + 1}",
+        ),
+    )
+    chapter.save_image(image)
+    progress(100, f"Image {int(image_index) + 1} · Animation description ready")
