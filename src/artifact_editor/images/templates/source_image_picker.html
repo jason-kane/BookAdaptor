@@ -4,9 +4,9 @@
     {% if filenames %}
     <wa-button type="button" data-source-chooser-toggle aria-expanded="{{ 'true' if expanded else 'false' }}">Choose from Source</wa-button>
     <div data-source-chooser{% if not expanded %} hidden{% endif %}>
-        <input type="hidden" name="image_source" value="{{ selected }}">
-        <input type="hidden" name="source_motion" value='{{ motion|tojson }}'>
-        <input type="hidden" name="source_crop" value="">
+        <input id="source-image-input" type="hidden" name="image_source" value="{{ selected }}">
+        <input id="source-motion-input" type="hidden" name="source_motion" value='{{ motion|tojson }}'>
+        <input id="source-crop-input" type="hidden" name="source_crop" value="">
         <figure style="margin: 0; text-align: center;">
             <img src="{{ url_for('library.book.chapter.images.chapter_source_image', image_index=image['index'], filename=selected, height=800, **chapter.kwargs) }}"
                 data-source-preview alt="{{ selected }}" hidden style="display: none;">
@@ -20,7 +20,7 @@
             <wa-button type="button" data-source-crop-cancel hidden>Cancel crop</wa-button>
             <wa-button type="button" data-source-crop-save hidden
                 hx-post="{{ url_for('library.book.chapter.images.crop_source_picker_image', image_index=image['index'], **chapter.kwargs) }}"
-                hx-include="closest .source-image-picker"
+                hx-include="#source-image-input, #source-motion-input, #source-crop-input"
                 hx-target="closest .source-image-picker" hx-swap="outerHTML"
                 hx-disabled-elt="this" aria-label="Save cropped image" title="Save cropped image">
                 <wa-icon name="camera" label="Save crop"></wa-icon>

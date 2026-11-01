@@ -248,6 +248,13 @@ function initializeSourcePicker(picker) {
         cropHelp.textContent = 'Draw and position a crop rectangle, then use the camera button to add it as a source option.';
         state.paint();
     });
+    cropSave.addEventListener('htmx:configRequest', event => {
+        Object.assign(event.detail.parameters, {
+            image_source: state.selected.value,
+            source_motion: state.field.value,
+            source_crop: JSON.stringify(state.crop),
+        });
+    });
     cropSave.addEventListener('click', event => {
         if (!state.cropMode || !state.crop) {
             event.preventDefault();

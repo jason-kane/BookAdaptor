@@ -239,8 +239,16 @@ def crop_source_picker_image(image_index):
             g.chapter, image, cropped,
             motion=request.form.get("source_motion"),
         )
-    except (TypeError, ValueError, FileNotFoundError, OSError):
-        return "Choose an available source image to crop", 400
+    except (TypeError, ValueError, FileNotFoundError, OSError) as error:
+        log.warning(
+            "Could not save source image crop",
+            image_index=image_index,
+            source_image=filename,
+            source_crop=request.form.get("source_crop"),
+            reason=str(error),
+            exc_info=True,
+        )
+        return f"Could not save source crop: {error}", 400
     cache.clear()
     from .completions import publish_image_completion
 

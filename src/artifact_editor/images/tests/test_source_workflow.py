@@ -72,6 +72,12 @@ def test_switching_workflows_and_choosing_in_chapter_updates_gallery(source_edit
     assert choose["hx-post"] == editor.base + "/timeline/image/4"
     assert choose["hx-target"] == "#timeline-image-editor-4"
     assert len(picker.select(".source-image-thumbnail")) == 2
+    crop_button = picker.select_one("[data-source-crop-save]")
+    assert crop_button["hx-include"] == (
+        "#timeline-prompt-4-source-image-input, "
+        "#timeline-prompt-4-source-motion-input, "
+        "#timeline-prompt-4-source-crop-input"
+    )
     assert not editor.image.get("src")
 
     response = editor.client.post(editor.base + "/timeline/image/4", data={"action": "source", "image_source": "images/art.png"})

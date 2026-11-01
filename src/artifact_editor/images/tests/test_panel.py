@@ -53,6 +53,20 @@ class PanelTests(unittest.TestCase):
             self.assertEqual(button['hx-swap'], 'innerHTML')
             self.assertIn(action, button['hx-vals'])
 
+    def test_crop_button_includes_selected_source_motion_and_crop_fields(self):
+        markup = '''<div class="source-image-picker">
+            <input id="source-image-input" name="image_source">
+            <input id="source-motion-input" name="source_motion">
+            <input id="source-crop-input" name="source_crop">
+            <wa-button data-source-crop-save hx-include="#source-image-input, #source-motion-input, #source-crop-input"></wa-button>
+        </div>'''
+        panel = self.render(markup, 17)
+        button = panel.select_one('[data-source-crop-save]')
+        self.assertEqual(button['hx-include'], ', '.join(
+            f'#timeline-prompt-17-{name}'
+            for name in ('source-image-input', 'source-motion-input', 'source-crop-input')
+        ))
+
     def test_fragment_responses_keep_scoped_oob_and_labels(self):
         panel = self.render('<div id="camera" hx-swap-oob="true"><label for="camera-select">Camera</label><wa-select id="camera-select" hx-target="#camera"></wa-select></div>')
         self.assertEqual(panel.div['hx-swap-oob'], 'true')

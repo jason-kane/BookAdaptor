@@ -72,20 +72,24 @@ def crop_source_image(chapter, filename, image, crop, library_dir=None):
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("Invalid crop region") from exc
     if (not all(map(math.isfinite, (x, y, width, height)))
-            or x < 0 or y < 0 or width <= 0 or height <= 0
-            or x + width > 1 or y + height > 1):
+            or x < -1e-6 or y < -1e-6 or width <= 0 or height <= 0
+            or x + width > 1 + 1e-6 or y + height > 1 + 1e-6):
         raise ValueError("Crop region is outside the source image")
+    x, y = max(0, x), max(0, y)
+    width, height = min(width, 1 - x), min(height, 1 - y)
     with Image.open(source) as original:
         illustration = ImageOps.exif_transpose(original)
-        crop_aspect = width * illustration.width / (height * illustration.height)
-        if abs(crop_aspect - target_width / target_height) > 0.02:
-            raise ValueError("Crop region does not match the output aspect ratio")
         left = round(x * illustration.width)
         top = round(y * illustration.height)
         right = round((x + width) * illustration.width)
         bottom = round((y + height) * illustration.height)
-        cropped = illustration.crop((left, top, right, bottom)).resize(
-            (target_width, target_height), Image.Resampling.LANCZOS
+        if right <= left or bottom <= top:
+            raise ValueError("Crop region is too small")
+        cropped = ImageOps.fit(
+            illustration.crop((left, top, right, bottom)),
+            (target_width, target_height),
+            method=Image.Resampling.LANCZOS,
+            centering=(0.5, 0.5),
         )
         mode = "RGBA" if "A" in cropped.getbands() or "transparency" in cropped.info else "RGB"
         cropped = cropped.convert(mode)
