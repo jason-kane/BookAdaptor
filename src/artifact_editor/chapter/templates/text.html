@@ -116,6 +116,22 @@
         height: 3.5rem;
         min-height: 0;
     }
+    /* Keep image editor tab labels readable over the timeline's image background. */
+    wa-tab-group.chapter-image-editor-tabs::part(nav) {
+        background: rgba(12, 15, 20, 0.96);
+        border: 1px solid #9a762b;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+    wa-tab-group.chapter-image-editor-tabs > wa-tab::part(base) {
+        color: #f8f4e8;
+        text-shadow: 0 1px 2px #000;
+    }
+    wa-tab-group.chapter-image-editor-tabs > wa-tab[active]::part(base) {
+        color: #17120a;
+        background: linear-gradient(#f5d77b, #c99527);
+        text-shadow: none;
+        font-weight: 700;
+    }
     .chapter-column-toggle::part(base) {
         padding-inline: 0;
         width: 100%;

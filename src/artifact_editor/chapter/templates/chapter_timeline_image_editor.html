@@ -1,7 +1,7 @@
 {% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
 <div class="wa-stack wa-gap-s" hx-sync="this:queue all" hx-ext="ws" ws-connect="{{ websocket_url() }}">
     {% if image.get('src') %}
-    <wa-tab-group active="image" aria-label="Image and animation editor">
+    <wa-tab-group class="chapter-image-editor-tabs" active="image" aria-label="Image and animation editor">
         <wa-tab panel="image">Image</wa-tab>
         <wa-tab panel="animation">Animation</wa-tab>
         <wa-tab-panel name="image">
