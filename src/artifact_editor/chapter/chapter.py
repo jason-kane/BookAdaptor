@@ -815,7 +815,7 @@ class Chapter:
         if image_xml is None:
             raise ValueError(f"No image found with index {index}")
 
-        base_image = as_str(image_xml.attrs.get("src"))
+        base_image = image_xml.attrs.get("src")
         paragraph = image_xml.find_parent("paragraph")
         if paragraph is None:
             raise ValueError(f"No paragraph found for image with index {index}")
@@ -837,7 +837,7 @@ class Chapter:
         Prompt images live next door to the image described.
         No guarantee the file or directory exist.
         """
-        base_image = as_str(image_xml.attrs.get("src"))
+        base_image = image_xml.attrs.get("src")
         paragraph = image_xml.find_parent("paragraph")
         if paragraph is None:
             raise ValueError(

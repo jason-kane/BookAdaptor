@@ -777,9 +777,7 @@ def apply_zmi_here_to_end(image_index=0):
         if as_int(image_xml.attrs.get("index")) < image_index:
             continue
 
-        if (as_str(image_xml.attrs.get("t2i")) != "tsqn.zimageturbo") and (
-            as_str(image_xml.attrs.get("src")) in [None, ""]
-        ):
+        if (image_xml.attrs.get("t2i") != "tsqn.zimageturbo") and not image_xml.attrs.get("src"):
             _apply_zmi(g.chapter, image_xml)
             g.chapter.save_image(image_xml)
 
