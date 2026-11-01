@@ -373,7 +373,9 @@ def timeline_image_editor(image_index):
             from worker_startup import ensure_worker_services
 
             try:
-                ensure_worker_services(comfyui=action == "generate")
+                # Start the queue workers only. The provider-aware dispatcher
+                # switches Llama/Comfy after seeing this task's provider.
+                ensure_worker_services()
             except RuntimeError as exc:
                 return str(exc), 503
             import uuid
@@ -393,6 +395,7 @@ def timeline_image_editor(image_index):
                 "chapter_number": g.chapter.number,
                 "language": g.chapter.language,
                 "image_index": image_index,
+                "provider": "comfyui" if action == "generate" else "llama",
             }
             client = redis.Redis(
                 host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True

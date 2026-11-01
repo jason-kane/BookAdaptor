@@ -980,7 +980,7 @@ class Chapter:
         Get the prompt for a given image, if it exists.
         """
         from artifact_editor.props.props import include_in_prompt
-        return include_in_prompt(self, image_xml, as_str(image_xml.attrs.get("prompt", "")))
+        return include_in_prompt(self, image_xml, as_str(image_xml.attrs.get("prompt") or ""))
 
     def get_last_frame(
         self,
@@ -2305,7 +2305,7 @@ class Chapter:
         from .scenes import setting_description, time_of_day, lighting
         ch = {}
         character_tags = {}
-        characters = as_str(image_xml.attrs.get("scene_characters", "")).split(",")
+        characters = as_str(image_xml.attrs.get("scene_characters") or "").split(",")
         character_records = {}
         if any(name.strip() for name in characters):
             from artifact_editor.characters import characters as character_data
@@ -2332,7 +2332,7 @@ class Chapter:
                     image_xml.attrs.get(
                         f"{character_tag or character_name}_description",
                         image_xml.attrs.get(f"{character_name}_description", ""),
-                    )
+                    ) or ""
                 )
                 record = character_records.get(character_tag) if character_tag else None
                 if not description and record:
@@ -2341,14 +2341,14 @@ class Chapter:
                             record, self.number, phrase_index
                         )
                     else:
-                        description = as_str(record.get("description", ""))
+                        description = as_str(record.get("description") or "")
                 ch[character_name] = {
-                    "pose": as_str(image_xml.attrs.get(f"{character_name}_pose", "")),
+                    "pose": as_str(image_xml.attrs.get(f"{character_name}_pose") or ""),
                     "action": as_str(
-                        image_xml.attrs.get(f"{character_name}_action", "")
+                        image_xml.attrs.get(f"{character_name}_action") or ""
                     ),
                     "location": as_str(
-                        image_xml.attrs.get(f"{character_name}_location", "")
+                        image_xml.attrs.get(f"{character_name}_location") or ""
                     ),
                     "description": description,
                 }
@@ -2359,7 +2359,7 @@ class Chapter:
         out = {}
         if ch:
             out["characters"] = ch
-        focus_character = as_str(image_xml.attrs.get("focus_character", ""))
+        focus_character = as_str(image_xml.attrs.get("focus_character") or "")
         if focus_character:
             try:
                 focus_tag = character_data.resolve_character_tag(
@@ -2384,11 +2384,11 @@ class Chapter:
                 "a draft, not source truth. Preserve depicted objects as pictures on their "
                 "stated surfaces; do not turn them into physical objects."
             ),
-            "description": as_str(image_xml.attrs.get("description", "")),
+            "description": as_str(image_xml.attrs.get("description") or ""),
             "setting": as_str(setting_description(image_xml)),
             "props": selected_props(self, image_xml),
             "tod": as_str(time_of_day(image_xml)),
-            "camera": as_str(image_xml.attrs.get("camera", "")),
+            "camera": as_str(image_xml.attrs.get("camera") or ""),
             "lighting": lighting(image_xml),
         })
 
@@ -2405,7 +2405,7 @@ class Chapter:
         # in SCENE even when the source metadata is empty.
         out["setting"] = as_str(setting_description(image_xml))
         out["tod"] = as_str(time_of_day(image_xml))
-        out["camera"] = as_str(image_xml.attrs.get("camera", ""))
+        out["camera"] = as_str(image_xml.attrs.get("camera") or "")
         out["lighting"] = lighting(image_xml)
 
         return out
