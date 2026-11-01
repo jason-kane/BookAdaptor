@@ -1,7 +1,6 @@
 {% set editor_url = url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) %}
-{% set source_motion_active = image.get('source_motion') and image.get('source_motion_src') == image.get('src') %}
 <div class="wa-stack wa-gap-s" hx-sync="this:queue all" hx-ext="ws" ws-connect="{{ websocket_url() }}">
-    {% if image.get('src') and not source_motion_active %}
+    {% if image.get('src') %}
     <wa-tab-group active="image" aria-label="Image and animation editor">
         <wa-tab panel="image">Image</wa-tab>
         <wa-tab panel="animation">Animation</wa-tab>
@@ -27,7 +26,7 @@
         <div id="timeline-image-status-{{ image['index'] }}" data-image-editor-url="{{ editor_url }}"
              data-image-editor-target="#timeline-image-editor-{{ image['index'] }}" role="status" aria-live="polite"></div>
     </div>
-    {% if image.get('src') and not source_motion_active %}
+    {% if image.get('src') %}
         </wa-tab-panel>
         <wa-tab-panel name="animation">
             {% if timing %}

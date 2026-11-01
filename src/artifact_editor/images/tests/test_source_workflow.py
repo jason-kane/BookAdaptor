@@ -187,7 +187,7 @@ def test_saved_motion_reaches_video_frames_and_invalidates_cached_frames(source_
         response = editor.client.post(editor.base + "/timeline/image/4", data={
             "action": "source", "image_source": "images/art.png", "source_motion": json.dumps(settings)})
         assert response.status_code == 200
-        assert b'name="animation"' not in response.data
+        assert b'name="animation"' in response.data
         plan = generate_masterplan(editor.chapter, force=True)
         result = plan.images[0].as_dict()
         result["image_pfn"] = editor.chapter.get_image_filename(editor.image)
@@ -210,20 +210,12 @@ def test_saved_motion_reaches_video_frames_and_invalidates_cached_frames(source_
     assert (editor.root / "art.png").read_bytes() == original
 
 
-def test_source_pan_zoom_does_not_request_ai_animation(source_editor, monkeypatch):
-    from artifact_editor.images import images
-    from artifact_editor.textoviva.textoviva import Textoviva
-    import comfy
-
+def test_source_pan_zoom_still_allows_animation_tab(source_editor):
     editor = source_editor
-    editor.client.post(editor.base + "/images/4/source_choose", data={
-        "image_source": "images/art.jpg",
+    response = editor.client.post(editor.base + "/timeline/image/4", data={
+        "action": "source", "image_source": "images/art.jpg",
         "source_motion": json.dumps({frame: {"x": .5, "y": .5, "zoom": 1} for frame in ("first", "last")}),
     })
-    editor.chapter.images = lambda: [editor.image]
-    prompt, workflow = Mock(), Mock()
-    monkeypatch.setattr(images, "generate_animation_prompt", prompt)
-    monkeypatch.setattr(comfy, "run_workflow_fn", workflow)
-    Textoviva.generate_missing_animations(SimpleNamespace(chapter=editor.chapter))
-    prompt.assert_not_called()
-    workflow.assert_not_called()
+    assert response.status_code == 200
+    assert b'name="animation"' in response.data
+    assert b"Choose i2v Workflow" in response.data

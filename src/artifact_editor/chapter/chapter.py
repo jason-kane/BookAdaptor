@@ -1015,6 +1015,15 @@ class Chapter:
 
             motion = active_motion(image_xml)
             if motion:
+                from artifact_editor.images.animation_source import animation_filename
+
+                paragraph_dir = os.path.join(
+                    const.LIBRARY_DIR,
+                    self.get_paragraphdir(as_int(paragraph_xml.attrs["index"])),
+                )
+                if animation_filename(image_xml, paragraph_dir):
+                    motion = None
+            if motion:
                 source_filename = self.get_image_filename(image_xml)
                 if source_filename and os.path.isfile(source_filename):
                     source_stat = os.stat(source_filename)

@@ -353,10 +353,6 @@ def regenerate_animation(image_index):
     image_xml = g.chapter.get_image(index=image_index)
     if image_xml is None:
         return "Image not found", 404
-    from artifact_editor.images.source_motion import active_motion
-
-    if active_motion(image_xml):
-        return "Edit the first and last frame regions in Chapter Source, then rebuild the chapter video.", 400
     prompt = request.form.get("animation_prompt", "")
     if not prompt.strip():
         return "Enter an animation description."

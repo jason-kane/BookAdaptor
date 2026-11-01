@@ -373,12 +373,19 @@ def generate_masterplan(chapter: Chapter, force: bool=False) -> Plan:
                             from artifact_editor.images.source_motion import active_motion
                             source_motion = active_motion(fragment)
                             if source_motion:
-                                from artifact_editor.images.source import source_image_path
+                                from artifact_editor.images.animation_source import animation_filename
 
-                                image_config["source_motion"] = source_motion
-                                image_config["source_motion_image"] = str(source_image_path(
-                                    chapter, fragment["source_image"]
-                                ))
+                                paragraph_dir = os.path.join(
+                                    const.LIBRARY_DIR,
+                                    chapter.get_paragraph_dir(as_int(paragraph.attrs.get('index'))),
+                                )
+                                if not animation_filename(fragment, paragraph_dir):
+                                    from artifact_editor.images.source import source_image_path
+
+                                    image_config["source_motion"] = source_motion
+                                    image_config["source_motion_image"] = str(source_image_path(
+                                        chapter, fragment["source_image"]
+                                    ))
 
                             if 'recenter_x1' in fragment.attrs:
                                 image_config['recenter'] = {

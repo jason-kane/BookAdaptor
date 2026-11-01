@@ -87,13 +87,10 @@ def generate_missing_animation_button(chapter):
 def first_missing_animation_index(chapter):
     """Return the first image the missing-animation job is likely to process."""
     from artifact_editor.images.animation_source import animation_frame_count
-    from artifact_editor.images.source_motion import active_motion
     from artifact_editor.chapter.timeline import image_timings
 
     timings = image_timings(chapter.get_xml())
     for image in chapter.images():
-        if active_motion(image):
-            continue
         image_index = int(image["index"])
         paragraph = image.find_parent("paragraph")
         if paragraph is None:

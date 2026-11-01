@@ -7,8 +7,6 @@ import time
 def animation_filename(image, paragraph_dir):
     from artifact_editor.images.source_motion import active_motion
 
-    if active_motion(image):
-        return None
     paragraph_dir = Path(paragraph_dir)
     explicit = image.get('animated_src')
     if explicit and (paragraph_dir / Path(explicit).name).is_file():
@@ -23,6 +21,10 @@ def animation_filename(image, paragraph_dir):
                   if path.is_file() and path.name != companion]
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name)).name
+    # A source-selected image may have a camera.mp4 or companion file used
+    # for the source motion preview. Don't mistake those for generated I2V.
+    if active_motion(image):
+        return None
     for filename in (companion, 'camera.mp4'):
         if (paragraph_dir / filename).is_file():
             return filename
@@ -33,12 +35,7 @@ def animation_frame_count(image, paragraph_dir, fps=None):
     """Measure the selected video at output FPS; use PNGs only without a video."""
     from artifact_editor.images.source_motion import active_motion
 
-    if active_motion(image):
-        return max(0, int(image.get("frames", 0)))
     paragraph_dir = Path(paragraph_dir)
-    directories = list((paragraph_dir / "animation").glob(f"image_{int(image['index']):06d}_*"))
-    count = sum(1 for directory in directories if directory.is_dir()
-                for path in directory.glob("*.png") if path.is_file())
     filename = animation_filename(image, paragraph_dir)
     if filename:
         path = paragraph_dir / filename
@@ -47,6 +44,11 @@ def animation_frame_count(image, paragraph_dir, fps=None):
             import const
             fps = const.FPS
         return _video_frame_count(str(path), stat.st_mtime_ns, stat.st_size, fps)
+    if active_motion(image):
+        return 0
+    directories = list((paragraph_dir / "animation").glob(f"image_{int(image['index']):06d}_*"))
+    count = sum(1 for directory in directories if directory.is_dir()
+                for path in directory.glob("*.png") if path.is_file())
     return count
 
 

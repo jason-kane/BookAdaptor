@@ -611,9 +611,7 @@ class Textoviva:
                                     regenerate_insufficient=False, _allow_batch=True):
         """Generate animations from existing stills without building a video."""
         report = progress or (lambda percent, message: None)
-        from artifact_editor.images.source_motion import active_motion
-
-        animation_images = [image for image in self.chapter.images() if not active_motion(image)]
+        animation_images = list(self.chapter.images())
         selected = None
         if regenerate_image_index is not None or regenerate_image_indices is not None:
             selected = {int(index) for index in (regenerate_image_indices or ())}

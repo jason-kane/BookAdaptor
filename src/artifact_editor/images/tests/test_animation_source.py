@@ -26,3 +26,24 @@ class AnimationSourceTests(unittest.TestCase):
             self.assertEqual(module.animation_filename(image, directory), 'camera.mp4')
             (Path(directory) / 'img_4_still.mp4').touch()
             self.assertEqual(module.animation_filename(image, directory), 'img_4_still.mp4')
+
+    def test_source_motion_accepts_generated_video_but_not_camera_companion(self):
+        with TemporaryDirectory() as directory:
+            image = {
+                'index': '4', 'src': '/active/img_4_still.png',
+                'source_motion': {
+                    'first': {'x': .5, 'y': .5, 'zoom': 1},
+                    'last': {'x': .5, 'y': .5, 'zoom': 1},
+                },
+                'source_motion_src': '/active/img_4_still.png',
+            }
+            (Path(directory) / 'camera.mp4').touch()
+            (Path(directory) / 'img_4_still.mp4').touch()
+            self.assertIsNone(module.animation_filename(image, directory))
+            generated = Path(directory) / 'img_4_minimax_h3_00.mp4'
+            generated.touch()
+            self.assertEqual(module.animation_filename(image, directory), generated.name)
+            image['animated_src'] = '/active/selected.mp4'
+            selected = Path(directory) / 'selected.mp4'
+            selected.touch()
+            self.assertEqual(module.animation_filename(image, directory), selected.name)
