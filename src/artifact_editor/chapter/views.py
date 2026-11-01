@@ -306,6 +306,7 @@ def timeline_image_editor(image_index):
             "source",
             "animation_description",
             "regenerate_animation_description",
+            "delete_animation",
             "animation_workflow",
             "animation_quality",
         ):
@@ -341,6 +342,11 @@ def timeline_image_editor(image_index):
                 '<wa-progress-bar indeterminate></wa-progress-bar>'
                 'Animation description queued.</div>'
             )
+        if action == "delete_animation":
+            from .timeline import remove_image_animation
+
+            remove_image_animation(g.chapter, image)
+            g.chapter.save_images()
         if action == "animation_workflow":
             from text_to_image.comfyui.workflow.ui import get_workflow_templates
 
@@ -524,6 +530,9 @@ def timeline_image_editor(image_index):
         preview_version=time.time_ns(),
         default_image_template=const.DEFAULT_IMAGE_TEMPLATE,
         thumbnails=thumbnails,
+        active_editor_tab=(
+            request.form.get("editor_tab") or request.args.get("tab") or "image"
+        ),
     ) + chapter_timing_updates(g.chapter)
 
 

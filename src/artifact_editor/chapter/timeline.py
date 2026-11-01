@@ -350,62 +350,72 @@ def detach_all_images(chapter):
     chapter.save_images()
 
 
-def remove_all_animations(chapter):
-    """Delete generated animation videos and extracted frames for this chapter."""
+def remove_image_animation(chapter, image):
+    """Delete one image's generated videos and extracted animation frames."""
     import const
 
-    for image in chapter.get_xml().find_all("image"):
-        paragraph = image.find_parent("paragraph")
-        if paragraph is None:
-            continue
-        paragraph_dir = Path(const.LIBRARY_DIR) / chapter.get_paragraphdir(
-            int(paragraph["index"])
-        )
-        image_index = int(image["index"])
-        animation_dir = paragraph_dir / "animation"
-        for frame_dir in animation_dir.glob(f"image_{image_index:06d}_*"):
-            if frame_dir.is_dir():
-                shutil.rmtree(frame_dir)
+    paragraph = image.find_parent("paragraph")
+    if paragraph is None:
+        return
+    paragraph_dir = Path(const.LIBRARY_DIR) / chapter.get_paragraphdir(
+        int(paragraph["index"])
+    )
+    image_index = int(image["index"])
+    animation_dir = paragraph_dir / "animation"
+    for frame_path in animation_dir.glob(f"image_{image_index:06d}_*"):
+        if frame_path.is_dir():
+            shutil.rmtree(frame_path)
+        elif frame_path.is_file():
+            frame_path.unlink()
+    legacy_frames = animation_dir / f"animation_{image_index:06d}"
+    if legacy_frames.is_dir():
+        shutil.rmtree(legacy_frames)
 
-        explicit_video = image.get("animated_src")
-        if explicit_video:
-            explicit_path = Path(explicit_video)
-            if not explicit_path.is_absolute():
-                explicit_path = Path(const.LIBRARY_DIR) / explicit_video.lstrip("/")
-            if explicit_path.is_file():
-                explicit_path.unlink()
-        image.attrs.pop("animated_src", None)
-
-        for generated_video in paragraph_dir.glob(f"img_{image_index}_*.mp4"):
-            if generated_video.is_file():
-                generated_video.unlink()
-        comfy_output = Path(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"])
-        for generated_video in comfy_output.glob(
-            f"{chapter.nice}_img_{image_index}_*.mp4"
-        ):
-            if generated_video.is_file():
-                generated_video.unlink()
-
-        source = image.get("src")
-        if not source:
-            continue
-        source_path = Path(source)
-        if source_path.suffix.lower() != ".png":
-            continue
-        video_stem = source_path.stem
+    library_root = Path(const.LIBRARY_DIR).resolve()
+    explicit_video = image.get("animated_src")
+    if explicit_video:
+        explicit_path = Path(explicit_video)
+        if not explicit_path.is_absolute():
+            explicit_path = library_root / explicit_video.lstrip("/")
         try:
-            animation_count = max(1, int(image.get("animation_count", "1")))
-        except ValueError:
-            animation_count = 1
-        for video_index in range(animation_count):
-            video_name = (
-                f"{video_stem}.mp4"
-                if video_index == 0
-                else f"{video_stem}_{video_index:02d}.mp4"
+            explicit_path = explicit_path.resolve()
+            if explicit_path.is_relative_to(library_root) and explicit_path.is_file():
+                explicit_path.unlink()
+        except (OSError, ValueError):
+            pass
+    image.attrs.pop("animated_src", None)
+    for key in list(image.attrs):
+        if key.startswith("animation_oom_"):
+            image.attrs.pop(key, None)
+
+    generated_videos = set(paragraph_dir.glob(f"img_{image_index}_*.mp4"))
+    source = image.get("src")
+    if source:
+        source_path = Path(source)
+        if source_path.suffix.lower() == ".png":
+            generated_videos.add(paragraph_dir / f"{source_path.stem}.mp4")
+            try:
+                animation_count = max(1, int(image.get("animation_count", "1")))
+            except ValueError:
+                animation_count = 1
+            generated_videos.update(
+                paragraph_dir / f"{source_path.stem}_{video_index:02d}.mp4"
+                for video_index in range(1, animation_count)
             )
-            video = paragraph_dir / video_name
-            if video.is_file():
-                video.unlink()
+    for video in generated_videos:
+        if video.is_file():
+            video.unlink()
+
+    comfy_output = Path(const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"])
+    for video in comfy_output.glob(f"{chapter.nice}_img_{image_index}_*.mp4"):
+        if video.is_file():
+            video.unlink()
+
+
+def remove_all_animations(chapter):
+    """Delete generated animation videos and extracted frames for this chapter."""
+    for image in chapter.get_xml().find_all("image"):
+        remove_image_animation(chapter, image)
     chapter.save_images()
 
 
