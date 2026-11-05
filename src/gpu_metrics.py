@@ -4,11 +4,35 @@ import os
 import subprocess
 import time
 from threading import Lock
+import logging
+
+import httpx
 
 SAMPLE_INTERVAL_SECONDS = 2
 _lock = Lock()
 _sampled_at = float('-inf')
 _cached = {'gpu_percent': None, 'vram_used_mib': None, 'vram_total_mib': None, 'gpu_name': None}
+_recovery_requested_at = float('-inf')
+_log = logging.getLogger(__name__)
+
+
+def _request_nvml_recovery():
+    """Ask Home to restart this websocket container after a stale NVML error."""
+    global _recovery_requested_at
+    now = time.monotonic()
+    if now - _recovery_requested_at < 120:
+        return
+    _recovery_requested_at = now
+    home_url = os.environ.get('HOME_API_URL', 'http://home:8080').rstrip('/')
+    try:
+        response = httpx.post(
+            f'{home_url}/api/gpu/nvml/recover',
+            json={'service': 'websocket'},
+            timeout=httpx.Timeout(2, connect=1),
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        _log.exception('Unable to request websocket restart after stale NVML access')
 
 
 def _number(value):
@@ -40,6 +64,12 @@ def read_gpu_metrics():
         if total is None or total <= 0 or used is None or used > total:
             used = total = None
         return dict(gpu_percent=utilization, vram_used_mib=used, vram_total_mib=total, gpu_name=name)
+    except subprocess.CalledProcessError as exc:
+        error = '\n'.join(value for value in (exc.stdout, exc.stderr) if value)
+        if 'Failed to initialize NVML' in error or 'Unknown Error' in error:
+            _log.warning('GPU telemetry detected stale NVML access; scheduling websocket restart')
+            _request_nvml_recovery()
+        return unavailable
     except (OSError, subprocess.SubprocessError):
         return unavailable
 

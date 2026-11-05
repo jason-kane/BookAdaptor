@@ -126,6 +126,19 @@ def _home_api_url() -> str:
     return os.environ.get("HOME_API_URL", "http://home:8080").rstrip("/")
 
 
+def _request_nvml_recovery(service_name: str) -> None:
+    """Ask Home to restart a worker whose NVML access has gone stale."""
+    try:
+        response = httpx.post(
+            f"{_home_api_url()}/api/gpu/nvml/recover",
+            json={"service": service_name},
+            timeout=httpx.Timeout(2, connect=1),
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        log.exception("Unable to request %s restart after stale NVML access", service_name)
+
+
 def _home_provider_status() -> dict:
     response = httpx.get(
         f"{_home_api_url()}/api/gpu/provider",
@@ -325,10 +338,18 @@ def _switch(
         import subprocess
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, check=True, timeout=15,
-            )
+            try:
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, check=True, timeout=15,
+                )
+            except subprocess.CalledProcessError as exc:
+                output = "\n".join(value for value in (exc.stdout, exc.stderr) if value)
+                if "Failed to initialize NVML" in output or "Unknown Error" in output:
+                    log.error("GPU worker detected stale NVML access; asking Home to restart video_worker")
+                    _request_nvml_recovery("video_worker")
+                    raise RuntimeError("GPU access went stale; video_worker restart scheduled") from exc
+                raise
             if not result.stdout.strip():
                 break
             if progress:

@@ -4,6 +4,8 @@ import json
 import logging
 import subprocess
 import socket
+import threading
+import time
 from urllib.parse import urlencode, quote
 
 log = logging.getLogger(__name__)
@@ -49,6 +51,10 @@ PROGRAMS = {
                 "timeout": 180, "image": "postgres.svg", "ready_path": "/misc/ping"},
 }
 GPU_PROVIDER_SERVICES = {"comfyui": "ComfyUI", "llama": "Llama"}
+NVML_RECOVERY_SERVICES = {"websocket", "video_worker"}
+_nvml_recovery_lock = threading.Lock()
+_nvml_recovery_requested = {}
+_NVML_RECOVERY_COOLDOWN_SECONDS = 120
 
 
 def start_glances():
@@ -167,6 +173,33 @@ def switch_gpu_provider(provider):
                 f"{output or f'exit status {result.returncode}'}"
             )
     log.info("GPU provider handoff complete: %s is running", provider)
+
+
+def request_nvml_recovery(service_name):
+    """Restart a GPU-aware container when it reports stale NVML access."""
+    if service_name not in NVML_RECOVERY_SERVICES:
+        raise ValueError("NVML recovery is not enabled for this service")
+
+    now = time.monotonic()
+    with _nvml_recovery_lock:
+        if now - _nvml_recovery_requested.get(service_name, float("-inf")) < _NVML_RECOVERY_COOLDOWN_SECONDS:
+            return False
+        _nvml_recovery_requested[service_name] = now
+
+    def restart_after_response():
+        time.sleep(2)
+        command = compose_command() + ["restart", "--timeout", "10", service_name]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
+            log.warning("Restarted %s after it reported stale NVML access", service_name)
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+            log.exception("Unable to restart %s after stale NVML access: %s", service_name, exc)
+            with _nvml_recovery_lock:
+                _nvml_recovery_requested.pop(service_name, None)
+
+    threading.Thread(target=restart_after_response, name=f"nvml-recovery-{service_name}", daemon=True).start()
+    log.warning("Scheduled restart of %s after stale NVML access", service_name)
+    return True
 
 
 def compose_command():

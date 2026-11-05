@@ -110,6 +110,18 @@ def switch_gpu_provider():
     return jsonify(switched=True, provider=provider)
 
 
+@bp.post("/api/gpu/nvml/recover")
+def recover_stale_nvml():
+    from .programs import request_nvml_recovery
+
+    service = (request.get_json(silent=True) or {}).get("service")
+    try:
+        scheduled = request_nvml_recovery(service)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(restart_scheduled=scheduled)
+
+
 @bp.post("/programs/panels/<panel_id>/members/<service_name>/stop")
 def stop_member(panel_id, service_name):
     from flask import current_app
