@@ -464,6 +464,36 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     one_shot = ""
     if embedded:
         one_shot_id = uuid.uuid4().hex
+        one_shot_state = None
+        client = redis.Redis(
+            host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
+        )
+        try:
+            from task_queue import RENDER_QUEUE
+
+            candidates = [client.get("chapter_render:running")]
+            candidates.extend(client.lrange(RENDER_QUEUE, 0, 99))
+            for raw_task in candidates:
+                if not raw_task:
+                    continue
+                try:
+                    candidate = json.loads(raw_task)
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    candidate.get("action") == "textoviva_one_shot"
+                    and candidate.get("author") == chapter.author.name
+                    and candidate.get("title") == chapter.title
+                    and int(candidate.get("chapter_number", -1)) == int(chapter.number)
+                    and candidate.get("language") == chapter.language
+                ):
+                    one_shot_id = candidate["job_id"]
+                    one_shot_state = client.hgetall(f"video_job:{one_shot_id}")
+                    break
+        except redis.RedisError:
+            log.exception("Could not load the active One Shot job for the Textoviva player")
+        finally:
+            client.close()
         one_shot_task = escape(json.dumps({
             "action": "textoviva_one_shot",
             "job_id": one_shot_id,
@@ -472,13 +502,23 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
             "chapter_number": chapter.number,
             "language": chapter.language,
         }), quote=True)
+        one_shot_busy = one_shot_state.get("state") in {"queued", "running"} if one_shot_state else False
+        one_shot_status = ""
+        if one_shot_state:
+            state = escape(one_shot_state.get("state", "queued"), quote=True)
+            message = escape(one_shot_state.get("message", "One Shot is queued"))
+            one_shot_status = (
+                f'<div id="video-progress-{one_shot_id}" data-video-job="{one_shot_id}" '
+                f'data-video-action="textoviva_one_shot" data-video-state="{state}" '
+                f'role="status" aria-live="polite">{message}</div>'
+            )
         one_shot = f"""<div id="textoviva-one-shot" class="wa-stack"
             hx-ext="ws" ws-connect="{websocket_url()}">
             <wa-button ws-send hx-trigger="click" hx-vals='{one_shot_task}'
-                variant="brand" appearance="accent" data-workflow-action="textoviva_one_shot">
+                variant="brand" appearance="accent" data-workflow-action="textoviva_one_shot"{' disabled' if one_shot_busy else ''}>
                 One Shot
             </wa-button>
-            <div id="video-progress-{one_shot_id}" role="status" aria-live="polite"></div>
+            {one_shot_status or f'<div id="video-progress-{one_shot_id}" role="status" aria-live="polite"></div>'}
         </div>"""
 
     pause_url = (

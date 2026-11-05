@@ -198,21 +198,42 @@
         let refresh = false;
         document.querySelectorAll('[data-video-job][data-video-state]').forEach(status => {
             const job = status.dataset.videoJob;
-            const oneShot = status.closest('#textoviva-one-shot')
-                ?.querySelector('[data-workflow-action="textoviva_one_shot"]');
-            if (oneShot && ['complete', 'failed', 'cancelled'].includes(status.dataset.videoState)) {
+            const action = status.dataset.videoAction;
+            const state = status.dataset.videoState;
+            const oneShot = document.querySelector(
+                '#textoviva-one-shot [data-workflow-action="textoviva_one_shot"]'
+            );
+            if (oneShot && ['complete', 'failed', 'cancelled'].includes(state)) {
                 oneShot.disabled = false;
                 oneShot.dataset.workflowBusy = 'false';
+                if (action === 'textoviva_one_shot') {
+                    if (sessionStorage.getItem('textoviva-one-shot-job') === job) {
+                        sessionStorage.removeItem('textoviva-one-shot-job');
+                    }
+                    try {
+                        const task = JSON.parse(oneShot.getAttribute('hx-vals'));
+                        const nextJobId = crypto.randomUUID();
+                        task.job_id = nextJobId;
+                        oneShot.setAttribute('hx-vals', JSON.stringify(task));
+                        status.id = `video-progress-${nextJobId}`;
+                        status.removeAttribute('data-video-job');
+                        status.removeAttribute('data-video-action');
+                        status.removeAttribute('data-video-state');
+                        status.replaceChildren();
+                    } catch (error) {
+                        console.error('Could not prepare the next One Shot job', error);
+                    }
+                }
             }
             if (status.closest('#video-generation-notice') &&
                 ['complete', 'failed'].includes(status.dataset.videoState)) {
                 const button = status.closest('#video-generation-notice').querySelector('wa-button');
                 if (button && !button.hasAttribute('data-workflow-action')) button.disabled = false;
             }
-            if (status.dataset.videoState !== 'complete') {
+            if (state !== 'complete') {
                 completedJobs.delete(job);
             } else if (!completedJobs.has(job) &&
-                       ['textoviva_rerender', 'textoviva_one_shot'].includes(status.dataset.videoAction)) {
+                       ['textoviva_rerender', 'textoviva_one_shot'].includes(action)) {
                 completedJobs.add(job);
                 refresh = true;
             }

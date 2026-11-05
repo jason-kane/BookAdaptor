@@ -248,18 +248,37 @@ def extract_description_timeline(chapter, character_tag, batch_size=15, progress
     """Build the appearance timeline in book order through the active chapter."""
     progress = progress or (lambda percent, message: None)
     chapter_root = os.path.join(const.LIBRARY_DIR, chapter.bookdir, "chapter")
-    numbers = sorted(
-        int(entry) for entry in os.listdir(chapter_root)
+    chapter_dirs = {
+        int(entry): entry for entry in os.listdir(chapter_root)
         if entry.isdigit() and int(entry) <= chapter.number
-    ) if os.path.isdir(chapter_root) else []
+    } if os.path.isdir(chapter_root) else {}
+    numbers = sorted(chapter_dirs)
     if chapter.number not in numbers:
         numbers.append(chapter.number)
     catalog = get_all_characters(chapter, is_global=True)
     canonical = catalog.get(character_tag)
     if not canonical:
         raise KeyError(f"Unknown book character {character_tag}")
+
+    # Each chapter's local catalog is the membership index populated by
+    # Add Missing Characters. Use it to avoid reviewing chapters where this
+    # character does not appear. Missing or unreadable legacy catalogs remain
+    # eligible so older chapters are still checked conservatively.
+    relevant_numbers = []
+    for number in numbers:
+        chapter_dir = chapter_dirs.get(number)
+        if chapter_dir is None and number == chapter.number:
+            chapter_dir = os.path.basename(chapter.chapterdir)
+        filename = os.path.join(chapter_root, chapter_dir or str(number), "characters.json")
+        try:
+            with open(filename, "r", encoding="utf-8") as character_file:
+                chapter_catalog = json.load(character_file)
+            if not isinstance(chapter_catalog, dict) or character_tag in chapter_catalog:
+                relevant_numbers.append(number)
+        except (OSError, ValueError, json.JSONDecodeError):
+            relevant_numbers.append(number)
     pending = [
-        number for number in numbers
+        number for number in relevant_numbers
         if number == chapter.number or (
             number not in canonical.get("description_timeline_scanned", [])
             and not any(int(event.get("chapter", -1)) == number
@@ -284,9 +303,9 @@ def extract_description_timeline(chapter, character_tag, batch_size=15, progress
 
 
 def extract_all_description_timelines(chapter, progress=None):
-    """Process every book character and retain successes if another character fails."""
+    """Process only this chapter's characters and retain successes on failure."""
     progress = progress or (lambda percent, message: None)
-    catalog = get_all_characters(chapter, is_global=True)
+    catalog = get_all_characters(chapter)
     targets = [(tag, record.get("name", tag)) for tag, record in catalog.items()
                if tag != "Narrator" and record.get("name") != "Narrator"]
     result = {"characters": 0, "changes": 0, "failures": []}

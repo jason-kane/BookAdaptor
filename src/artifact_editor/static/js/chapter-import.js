@@ -1,4 +1,33 @@
 (() => {
+    const oneShotJobKey = 'textoviva-one-shot-job';
+
+    function restoreOneShotProgressTarget() {
+        const host = document.getElementById('chapter-job-progress');
+        if (!host) return;
+        const activeStatus = document.querySelector(
+            '#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="running"], ' +
+            '#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="queued"]'
+        );
+        if (activeStatus) {
+            sessionStorage.setItem(oneShotJobKey, activeStatus.dataset.videoJob);
+            const staleTarget = document.getElementById(activeStatus.id);
+            if (staleTarget && staleTarget !== activeStatus) staleTarget.remove();
+            host.append(activeStatus);
+            return;
+        }
+        const jobId = sessionStorage.getItem(oneShotJobKey);
+        if (!jobId || document.getElementById(`video-progress-${jobId}`)) return;
+        const target = document.createElement('div');
+        target.id = `video-progress-${jobId}`;
+        target.setAttribute('role', 'status');
+        target.setAttribute('aria-live', 'polite');
+        host.append(target);
+    }
+
+    restoreOneShotProgressTarget();
+    document.addEventListener('DOMContentLoaded', restoreOneShotProgressTarget);
+    document.addEventListener('htmx:afterSwap', restoreOneShotProgressTarget);
+
     document.addEventListener('htmx:confirm', event => {
         const button = event.detail.elt?.closest('[data-regenerate-phrase]');
         const pending = button && window.chapterPhraseSaves?.[button.dataset.regeneratePhrase];
@@ -73,6 +102,13 @@
             event.detail.parameters.sections = JSON.stringify(window.getChapterSectionsPayload());
             event.detail.messageBody = JSON.stringify(event.detail.parameters);
         }
+        if (event.detail.parameters.action === 'textoviva_one_shot') {
+            const jobId = event.detail.parameters.job_id;
+            const progress = document.getElementById(`video-progress-${jobId}`);
+            const host = document.getElementById('chapter-job-progress');
+            if (jobId) sessionStorage.setItem(oneShotJobKey, jobId);
+            if (progress && host) host.append(progress);
+        }
     });
 
     document.addEventListener('htmx:wsAfterSend', event => {
@@ -99,6 +135,13 @@
     });
 
     document.addEventListener('htmx:wsAfterMessage', () => {
+        document.querySelectorAll('#chapter-job-progress [data-video-job][data-video-action="textoviva_one_shot"]')
+            .forEach(status => {
+                if (['complete', 'failed', 'cancelled'].includes(status.dataset.videoState) &&
+                    sessionStorage.getItem(oneShotJobKey) === status.dataset.videoJob) {
+                    sessionStorage.removeItem(oneShotJobKey);
+                }
+            });
         document.querySelectorAll('#video-generation-notice [data-video-state]').forEach(status => {
             if (!['complete', 'failed', 'cancelled'].includes(status.dataset.videoState)) return;
             const button = status.closest('#video-generation-notice')
