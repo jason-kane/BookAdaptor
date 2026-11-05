@@ -68,8 +68,11 @@
             event.detail.messageBody = JSON.stringify(task);
             return;
         }
-        if (event.detail.parameters.action !== 'chapter_import') return;
-        event.detail.parameters.sections = JSON.stringify(window.getChapterSectionsPayload());
+        if (!['chapter_import', 'textoviva_one_shot'].includes(event.detail.parameters.action)) return;
+        if (typeof window.getChapterSectionsPayload === 'function') {
+            event.detail.parameters.sections = JSON.stringify(window.getChapterSectionsPayload());
+            event.detail.messageBody = JSON.stringify(event.detail.parameters);
+        }
     });
 
     document.addEventListener('htmx:wsAfterSend', event => {
@@ -98,8 +101,12 @@
     document.addEventListener('htmx:wsAfterMessage', () => {
         document.querySelectorAll('#video-generation-notice [data-video-state]').forEach(status => {
             if (!['complete', 'failed', 'cancelled'].includes(status.dataset.videoState)) return;
-            const button = status.closest('#video-generation-notice').querySelector('[data-workflow-action]');
-            if (button) button.dataset.workflowBusy = 'false';
+            const button = status.closest('#video-generation-notice')
+                .querySelector(`[data-workflow-action="${CSS.escape(status.dataset.videoAction || '')}"]`);
+            if (button) {
+                button.dataset.workflowBusy = 'false';
+                if (status.dataset.videoAction === 'textoviva_one_shot') button.disabled = false;
+            }
         });
         refreshPrerequisites();
         document.querySelectorAll('[data-chapter-import], [data-chapter-metadata], [data-chapter-assets]').forEach(container => {

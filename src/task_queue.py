@@ -45,6 +45,7 @@ RENDER_ACTIONS = frozenset({
     "chapter_missing_images", "chapter_missing_animations",
     "chapter_missing_characters", "chapter_missing_props", "chapter_add_all",
     "chapter_character_appearances", "chapter_assign_characters",
+    "textoviva_one_shot",
 })
 TAG_QUEUE = "styler_image_tag_jobs"
 PRIORITY_QUEUE = "styler_image_tag_priority_jobs"

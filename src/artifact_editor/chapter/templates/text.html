@@ -848,13 +848,12 @@
 <script defer src="/static/js/library-image-leaves.js?v=2"></script>
 <script defer src="/static/js/frame-image-leaves.js?v=1"></script>
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='workflow-gating-8') }}" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='workflow-gating-9') }}" defer></script>
 {% if chapter.get_aspect() != 'portrait' %}
 <script src="{{ url_for('static', filename='js/chapter-thumbnail.js', v='2') }}" defer></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='8') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-import.js', v='stable-video-gating-6') }}"
+<script src="{{ url_for('static', filename='js/chapter-import.js', v='stable-video-gating-7') }}"
     data-workflow-status-url="{{ url_for('library.book.chapter.chapter_workflow_status', **chapter.kwargs) }}" defer></script>
 <script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-image-delete.js', v='1') }}" defer></script>

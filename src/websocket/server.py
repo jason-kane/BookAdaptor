@@ -182,6 +182,57 @@ def pending_video_progress(pubsub, client):
             for job_id, payload in latest.items()]
 
 
+def run_chapter_add_all(chapter, progress):
+    """Generate every missing chapter asset and report aggregate progress."""
+    from artifact_editor.characters.characters import (
+        extract_characters, assign_phrase_speakers, extract_all_description_timelines,
+    )
+    from artifact_editor.props.props import extract_props
+    from artifact_editor.images.images import generate_missing_metadata
+    from artifact_editor.phrases.phrases import generate_all_audio
+    from artifact_editor.chapter.timeline import place_image_slots
+    from gpu_tasks import task_label
+    from artifact_editor.chapter.workflow import ACTIONS, complete_step
+
+    def process_appearances(report):
+        result = extract_all_description_timelines(chapter, progress=report)
+        if result["failures"]:
+            raise RuntimeError(
+                "Character appearance processing failed: " + "; ".join(result["failures"])
+            )
+
+    stages = [
+        ("Adding missing characters", lambda report: extract_characters(chapter)),
+        ("Assigning characters", lambda report: assign_phrase_speakers(chapter, reassign_all=True, progress=report)),
+        ("Processing appearance changes for all characters", process_appearances),
+        ("Generating missing audio", lambda report: generate_all_audio(chapter, force=False, batch=True, progress=report)),
+        ("Placing image slots", lambda report: place_image_slots(chapter)),
+        ("Finding missing props", lambda report: extract_props(chapter)),
+        ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
+        ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
+        ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
+    ]
+    stage_width = 100 / len(stages)
+    for position, (label, operation) in enumerate(stages):
+        progress(position * stage_width, label)
+        stage_lock = Lock()
+        stage_percent = position * stage_width
+
+        def stage_progress(percent, detail):
+            nonlocal stage_percent
+            scaled = (position + max(0, min(100, int(percent))) / 100) * stage_width
+            with stage_lock:
+                if scaled <= stage_percent:
+                    return
+                stage_percent = scaled
+                progress(scaled, detail)
+
+        with task_label(label):
+            operation(stage_progress)
+        complete_step(chapter, ACTIONS[position + 1])
+        progress((position + 1) * stage_width, f"{label} complete")
+
+
 def run_video_job(client, task):
     # Provider handoffs can move priority caption jobs into the normal GPU queue.
     if task.get("action") == "lora_captions":
@@ -229,6 +280,7 @@ def run_video_job(client, task):
         "chapter_missing_audio": "Generating missing audio",
         "chapter_missing_props": "Finding missing props",
         "chapter_add_all": "Adding all missing chapter assets",
+        "textoviva_one_shot": "Starting One Shot chapter workflow",
     }.get(task.get("action"), task.get("job_type") or "Preparing chapter video render")
     report_progress(client, job_id, 0, message, action=task.get("action"))
     from comfy import workflow_progress
@@ -425,51 +477,49 @@ def run_video_job(client, task):
             report_progress(client, job_id, 100, "Image slot placement complete", "complete")
             return
         if task.get("action") == "chapter_add_all":
-            from artifact_editor.characters.characters import (
-                extract_characters, assign_phrase_speakers, extract_all_description_timelines,
+            run_chapter_add_all(
+                chapter,
+                lambda percent, detail: report_progress(client, job_id, percent, detail),
             )
-            from artifact_editor.props.props import extract_props
-            from artifact_editor.images.images import generate_missing_metadata
-            from artifact_editor.phrases.phrases import generate_all_audio
-            from artifact_editor.chapter.timeline import place_image_slots
-            from gpu_tasks import task_label
-            from artifact_editor.chapter.workflow import ACTIONS, complete_step
-
-            def process_appearances(report):
-                result = extract_all_description_timelines(chapter, progress=report)
-                if result["failures"]:
-                    raise RuntimeError("Character appearance processing failed: " + "; ".join(result["failures"]))
-
-            stages = [
-                ("Adding missing characters", lambda report: extract_characters(chapter)),
-                ("Assigning characters", lambda report: assign_phrase_speakers(chapter, reassign_all=True, progress=report)),
-                ("Processing appearance changes for all characters", process_appearances),
-                ("Generating missing audio", lambda report: generate_all_audio(chapter, force=False, batch=True, progress=report)),
-                ("Placing image slots", lambda report: place_image_slots(chapter)),
-                ("Finding missing props", lambda report: extract_props(chapter)),
-                ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
-                ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
-                ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
-            ]
-            stage_width = 100 / len(stages)
-            for position, (label, operation) in enumerate(stages):
-                report_progress(client, job_id, position * stage_width, label)
-                stage_lock = Lock()
-                stage_percent = position * stage_width
-
-                def stage_progress(percent, detail):
-                    nonlocal stage_percent
-                    scaled = (position + max(0, min(100, int(percent))) / 100) * stage_width
-                    with stage_lock:
-                        if scaled <= stage_percent:
-                            return
-                        stage_percent = scaled
-                        report_progress(client, job_id, scaled, detail)
-                with task_label(label):
-                    operation(stage_progress)
-                complete_step(chapter, ACTIONS[position + 1])
-                report_progress(client, job_id, (position + 1) * stage_width, f"{label} complete")
             report_progress(client, job_id, 100, "All chapter assets ready; assemble frames and generate video separately", "complete")
+            return
+        if task.get("action") == "textoviva_one_shot":
+            from artifact_editor.chapter.workflow import begin_step, complete_step
+            from artifact_editor.chapter.views import import_chapter_content
+            from artifact_editor.textoviva.jobs import rerender_chapter
+
+            def report_phase(start, width):
+                return lambda percent, detail: report_progress(
+                    client, job_id,
+                    start + width * max(0, min(100, int(percent))) / 100,
+                    detail, action="textoviva_one_shot",
+                )
+
+            begin_step(chapter, "chapter_import")
+            report_progress(client, job_id, 0, "Importing chapter text", action="textoviva_one_shot")
+            import_chapter_content(
+                chapter,
+                sections_json=task.get("sections"),
+                progress=report_phase(0, 8),
+            )
+            complete_step(chapter, "chapter_import")
+
+            begin_step(chapter, "chapter_add_all")
+            report_progress(client, job_id, 8, "Adding all missing assets", action="textoviva_one_shot")
+            run_chapter_add_all(chapter, report_phase(8, 72))
+
+            begin_step(chapter, "textoviva_rerender")
+            report_progress(client, job_id, 80, "Generating chapter video", action="textoviva_one_shot")
+            rerender_chapter(
+                chapter,
+                progress=lambda percent, detail: report_progress(
+                    client, job_id,
+                    80 + 0.2 * max(0, min(100, int(percent))),
+                    detail, action="textoviva_one_shot",
+                ),
+            )
+            complete_step(chapter, "textoviva_rerender")
+            report_progress(client, job_id, 100, "One Shot complete; chapter video generated", "complete", "textoviva_one_shot")
             return
         if task.get("action") == "chapter_import":
             from artifact_editor.chapter.views import import_chapter_content
@@ -571,9 +621,10 @@ def run_video_job(client, task):
             "chapter_missing_audio": "Audio generation",
             "chapter_missing_props": "Prop extraction",
             "chapter_add_all": "Add all chapter assets",
+            "textoviva_one_shot": "One Shot chapter workflow",
         }.get(task.get("action"), "Video render")
         report_progress(
-            client, job_id, 100, f"{label} failed: {exc}", "failed",
+            client, job_id, 100, f"{label} failed: {exc}", "failed", task.get("action"),
             debug_details=traceback.format_exc(),
         )
     finally:
@@ -2529,6 +2580,7 @@ def styler_queue_entry(task, priority=False):
         "chapter_missing_audio": "Audio generation",
         "chapter_missing_props": "Prop extraction",
         "chapter_add_all": "Add all chapter assets",
+        "textoviva_one_shot": "One Shot chapter workflow",
         "timeline_metadata": "Image metadata",
         "timeline_animation_description": "Animation description",
         "timeline_image": "Image generation",
@@ -2857,6 +2909,7 @@ def handle_websocket(ws):
                         "chapter_add_all",
                         "chapter_missing_metadata",
                         "chapter_import",
+                        "textoviva_one_shot",
                         "textoviva_rerender",
                         "textoviva_time_align",
                         "textoviva_missing_animation",
@@ -2897,11 +2950,12 @@ def handle_websocket(ws):
                                 "description": description,
                             }
                         sections = task.get("sections")
-                        if task["action"] == "chapter_import":
-                            if not isinstance(sections, str) or not isinstance(
-                                json.loads(sections), list
-                            ):
-                                raise ValueError("Invalid chapter sections")
+                        if task["action"] in ("chapter_import", "textoviva_one_shot"):
+                            if task["action"] == "chapter_import" or sections is not None:
+                                if not isinstance(sections, str) or not isinstance(
+                                    json.loads(sections), list
+                                ):
+                                    raise ValueError("Invalid chapter sections")
                         thumbnail_fields = {}
                         thumbnail_index = task.get("thumbnail_image_index")
                         if (
@@ -2927,6 +2981,8 @@ def handle_websocket(ws):
                         task["job_id"] = uuid.UUID(task["job_id"]).hex
                         task["chapter_number"] = int(task["chapter_number"])
                         if task["action"] == "chapter_import":
+                            task["sections"] = sections
+                        elif task["action"] == "textoviva_one_shot" and sections is not None:
                             task["sections"] = sections
                         label = (
                             "Queued for chapter import"

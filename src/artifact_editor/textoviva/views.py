@@ -461,53 +461,25 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 
-    director = ""
+    one_shot = ""
     if embedded:
-        from text_to_image.comfyui.workflow.ui import get_workflow_templates
-
-        profiles = director_profiles()
-        profile_options = "".join(
-            f'<wa-option value="{escape(profile_id, quote=True)}">'
-            f'{escape(profile_id.replace("-", " ").title())}</wa-option>'
-            for profile_id in profiles
-        )
-        if not profile_options:
-            profile_options = '<wa-option value="" disabled>No director profiles added yet</wa-option>'
-
-        workflow_options = "".join(
-            f'<wa-option value="{escape(template.id, quote=True)}">{escape(template.name)}</wa-option>'
-            for template in get_workflow_templates(mode="i2v")
-        )
-        if const.DEFAULT_I2V_TEMPLATE not in workflow_options:
-            workflow_options += (
-                f'<wa-option value="{escape(const.DEFAULT_I2V_TEMPLATE, quote=True)}">'
-                f'{escape(const.DEFAULT_I2V_TEMPLATE)}</wa-option>'
-            )
-        director = f"""<wa-details class="textoviva-director"
-            data-chat-url-template="{url_for('library.book.chapter.textoviva.director_chat', image_index=0, **chapter.kwargs)}"
-            data-apply-url-template="{url_for('library.book.chapter.textoviva.regenerate_animation', image_index=0, **chapter.kwargs)}">
-            <span slot="summary">Director chat</span>
-            <div class="wa-stack wa-gap-s">
-                <wa-textarea class="director-brief" label="What should this video be like?" rows="2"></wa-textarea>
-                <wa-select class="director-profile" label="Director profile" required>
-                    <wa-option value="" disabled>Choose a director profile</wa-option>
-                    {profile_options}
-                </wa-select>
-                <wa-textarea class="director-criteria" label="Decision criteria" rows="2"></wa-textarea>
-                <div class="director-dialogue" aria-live="polite"></div>
-                <form class="director-chat-form">
-                    <wa-input name="message" label="Describe the change" required></wa-input>
-                    <wa-button type="submit" variant="brand">Send</wa-button>
-                </form>
-                <div class="director-status" role="status" aria-live="polite"></div>
-                <wa-textarea class="director-proposal" label="Proposed animation prompt" rows="4" hidden></wa-textarea>
-                <wa-select class="director-workflow" label="Proposed animation workflow" hidden>
-                    <wa-option value="">Keep existing workflow</wa-option>
-                    {workflow_options}
-                </wa-select>
-                <wa-button class="director-apply" type="button" variant="brand" hidden>Apply and re-render this shot</wa-button>
-            </div>
-        </wa-details>"""
+        one_shot_id = uuid.uuid4().hex
+        one_shot_task = escape(json.dumps({
+            "action": "textoviva_one_shot",
+            "job_id": one_shot_id,
+            "author": chapter.author.name,
+            "title": chapter.title,
+            "chapter_number": chapter.number,
+            "language": chapter.language,
+        }), quote=True)
+        one_shot = f"""<div id="textoviva-one-shot" class="wa-stack"
+            hx-ext="ws" ws-connect="{websocket_url()}">
+            <wa-button ws-send hx-trigger="click" hx-vals='{one_shot_task}'
+                variant="brand" appearance="accent" data-workflow-action="textoviva_one_shot">
+                One Shot
+            </wa-button>
+            <div id="video-progress-{one_shot_id}" role="status" aria-live="polite"></div>
+        </div>"""
 
     pause_url = (
         ""
@@ -528,7 +500,7 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
         <p class="vjs-no-js">Enable JavaScript to use the video player.</p>
     </video>
     {notice}
-    {director}
+    {one_shot}
 </div>"""
 
 

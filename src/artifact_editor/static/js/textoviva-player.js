@@ -184,6 +184,12 @@
 
     const completedJobs = new Set();
     document.addEventListener('htmx:wsAfterSend', event => {
+        const oneShot = event.detail.elt?.closest('#textoviva-one-shot')
+            ?.querySelector('[data-workflow-action="textoviva_one_shot"]');
+        if (oneShot) {
+            oneShot.disabled = true;
+            oneShot.dataset.workflowBusy = 'true';
+        }
         const button = event.detail.elt?.closest('#video-generation-notice')
             ?.querySelector('wa-button');
         if (button && !button.hasAttribute('data-workflow-action')) button.disabled = true;
@@ -192,6 +198,12 @@
         let refresh = false;
         document.querySelectorAll('[data-video-job][data-video-state]').forEach(status => {
             const job = status.dataset.videoJob;
+            const oneShot = status.closest('#textoviva-one-shot')
+                ?.querySelector('[data-workflow-action="textoviva_one_shot"]');
+            if (oneShot && ['complete', 'failed', 'cancelled'].includes(status.dataset.videoState)) {
+                oneShot.disabled = false;
+                oneShot.dataset.workflowBusy = 'false';
+            }
             if (status.closest('#video-generation-notice') &&
                 ['complete', 'failed'].includes(status.dataset.videoState)) {
                 const button = status.closest('#video-generation-notice').querySelector('wa-button');
@@ -200,7 +212,7 @@
             if (status.dataset.videoState !== 'complete') {
                 completedJobs.delete(job);
             } else if (!completedJobs.has(job) &&
-                       status.dataset.videoAction === 'textoviva_rerender') {
+                       ['textoviva_rerender', 'textoviva_one_shot'].includes(status.dataset.videoAction)) {
                 completedJobs.add(job);
                 refresh = true;
             }
