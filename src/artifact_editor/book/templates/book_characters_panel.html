@@ -1,5 +1,6 @@
 <section class="wa-stack" id="book-characters-panel">
     <h3>Book Characters</h3>
+    {% if message %}<p role="status">{{ message }}</p>{% endif %}
     <p>Character identity, voice, and baseline appearance are shared across chapters.</p>
     <wa-tab-group active="{% if characters %}character-0{% else %}extra{% endif %}">
         {% for tag, character in characters.items() %}

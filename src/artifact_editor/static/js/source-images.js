@@ -87,7 +87,8 @@ function initializeSourcePicker(picker) {
             context.fillText(frame === 'first' ? 'First' : 'Last', box.x + 5 * scale, box.y + (frame === 'first' ? 16 : 32) * scale);
             drawCrop(picker.querySelector(`[data-source-frame="${frame}"]`), box);
             picker.querySelector(`[data-source-zoom="${frame}"]`).value = state.motion[frame].zoom;
-            picker.querySelector(`[data-source-zoom-label="${frame}"]`).textContent = `${state.motion[frame].zoom.toFixed(2)}×`;
+            const percent = picker.querySelector(`[data-source-zoom-percent="${frame}"]`);
+            if (document.activeElement !== percent) percent.value = Math.round(state.motion[frame].zoom * 100);
             const edit = picker.querySelector(`[data-source-edit="${frame}"]`);
             edit.setAttribute('aria-pressed', String(frame === state.active));
             edit.setAttribute('appearance', frame === state.active ? 'accent' : 'outlined');
@@ -268,6 +269,22 @@ function initializeSourcePicker(picker) {
         state.stop();
         state.paint();
     }));
+    picker.querySelectorAll('[data-source-zoom-percent]').forEach(input => {
+        function updateZoom(commit) {
+            const percent = Number(input.value);
+            if (!commit && (!input.value || !Number.isFinite(percent) || percent < 100 || percent > 800)) return;
+            const value = Number.isFinite(percent) && input.value
+                ? Math.max(100, Math.min(800, Math.round(percent)))
+                : Math.round(state.motion[input.dataset.sourceZoomPercent].zoom * 100);
+            if (commit) input.value = value;
+            state.active = input.dataset.sourceZoomPercent;
+            state.motion[state.active].zoom = value / 100;
+            state.stop();
+            state.paint();
+        }
+        input.addEventListener('input', () => updateZoom(false));
+        input.addEventListener('change', () => updateZoom(true));
+    });
     picker.querySelector('[data-source-scrub]').addEventListener('input', event => {
         state.stop();
         state.progress = Number(event.target.value) / 1000;

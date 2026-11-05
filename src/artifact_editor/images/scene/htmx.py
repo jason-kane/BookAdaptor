@@ -21,6 +21,8 @@ log = logger.log(__name__)
 def image_scene_workshop(
     chapter,
     image_xml,
+    *,
+    include_characters=True,
 ):
     # use the image style if there is one.
     style = chapter.get_image_style(image_xml)
@@ -40,15 +42,16 @@ def image_scene_workshop(
     mood_ui = mood(chapter, image_xml)
     camera_ui = camera_direction(chapter, image_xml)
     focus_character_ui = focus_character(chapter, image_xml)
-    characters_section_ui = characters_section(
-        chapter, image_xml
+    characters_section_ui = (
+        characters_section(chapter, image_xml) if include_characters else ""
     )
 
     # @bp.route("/<author>/<path:title>/<chapter>/images/<int:image_index>/actions/generate_meta", methods=["POST"]) 
     generate_meta_button = generic_button(
-        os.path.join(chapter.url, "images", str(image_index)),
-        # ", "actions", "generate_meta"),
-        category=None,
+        url=url_for(
+            "library.book.chapter.images.generate_meta",
+            image_index=image_index, **chapter.kwargs,
+        ),
         tag="generate_meta",
         cosmetic="Generate Meta from Text",
         target="#strip-centerpiece",
@@ -286,7 +289,7 @@ def focus_character(chapter, image_xml):
         image_index=image_xml.attrs["index"],
     )
 
-    if character:
+    if character_options:
         return f"""<div id="focus-character" class="wa-cluster">
             <wa-select
                 hx-post="{set_focus_url}"
@@ -844,4 +847,4 @@ def scene_props(chapter, image_xml):
     from flask import render_template
     return render_template('scene_props.html', chapter=chapter, image=image_xml,
                            props=props.get_all_props(chapter),
-                           selected=image_xml.get('scene_props', '').split(','))
+                           selected=list(props.selected_props(chapter, image_xml)))

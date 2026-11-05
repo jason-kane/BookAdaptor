@@ -26,3 +26,148 @@
   .image-leaf, .image-leaf.from-right { animation: image-leaf-dissolve 1.8s ease-out both; }
   @keyframes image-leaf-dissolve { 0%, 65% { opacity: 1; } 100% { opacity: 0; filter: blur(8px); } }
 }
+
+/* Keep the Scene and Characters controls readable in the image-generation panel. */
+wa-tab-group.image-generation-tabs::part(nav) {
+    background: rgba(12, 15, 20, 0.96);
+    border: 1px solid #9a762b;
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+wa-tab-group.image-generation-tabs > wa-tab::part(base) {
+    color: #f8f4e8;
+    text-shadow: 0 1px 2px #000;
+}
+
+wa-tab-group.image-generation-tabs > wa-tab[active]::part(base) {
+    color: #17120a;
+    background: linear-gradient(#f5d77b, #c99527);
+    text-shadow: none;
+    font-weight: 700;
+}
+
+/* A fixed-size chrome ball riding on two separate polished steel wires. */
+[data-custom-scrollbar][data-scrollbar-shape="pinball"],
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="pinball"] {
+    --scrollbar-width: 44px;
+    --scrollbar-gap: 7px;
+    --scrollbar-inset: 4px;
+    --scrollbar-radius: 50%;
+    --scrollbar-track: transparent;
+}
+[data-custom-scrollbar][data-scrollbar-shape="pinball"] > .custom-scrollbar-rail,
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="pinball"] > .custom-scrollbar-rail {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+[data-scrollbar-shape="pinball"] > .custom-scrollbar-rail::before,
+[data-scrollbar-shape="pinball"] > .custom-scrollbar-rail::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #30383e, #b6c0c6 28%, #ffffff 47%, #8d989f 68%, #333d44);
+    box-shadow: 1px 2px 3px #000b;
+    pointer-events: none;
+}
+[data-scrollbar-shape="pinball"] > .custom-scrollbar-rail::before { left: 10px; }
+[data-scrollbar-shape="pinball"] > .custom-scrollbar-rail::after { right: 10px; }
+[data-custom-scrollbar][data-scrollbar-shape="pinball"] > .custom-scrollbar-rail > .custom-scrollbar-thumb,
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="pinball"] > .custom-scrollbar-rail > .custom-scrollbar-thumb {
+    z-index: 1;
+    border: 1px solid #707b84;
+    border-radius: 50%;
+    background:
+        radial-gradient(ellipse at 28% 20%, #fff 0 4%, #ffffffe0 6%, transparent 17%),
+        radial-gradient(ellipse at 66% 73%, #d9e4eb 0%, transparent 33%),
+        radial-gradient(circle at 39% 30%, #f2f6fa 0%, #afbfc9 27%, #3e4d59 44%, #111b23 48%, #e4edf3 55%, #a3b4c0 68%, #34434e 87%, #10171c 100%);
+    box-shadow: inset 0 0 2px #ffffffb0, inset -3px -4px 5px #0008, 2px 5px 5px #000a;
+}
+[data-scrollbar-shape="pinball"] > .custom-scrollbar-rail > .custom-scrollbar-thumb:hover {
+    filter: brightness(1.12);
+}
+
+/* Use the wooden sphere only while its chapter column is selected. */
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="sphere"] {
+    --scrollbar-width: 55px;
+    --scrollbar-gap: 4px;
+    --scrollbar-inset: 4px;
+    --scrollbar-radius: 50%;
+    --scrollbar-track: linear-gradient(90deg, #171107, #46300e 50%, #171107);
+    --scrollbar-thumb:
+        radial-gradient(ellipse at 30% 23%, #f1d8a84d, transparent 48%),
+        repeating-radial-gradient(ellipse at -45% 42%, transparent 0 3px, #60381740 3.5px 4px, transparent 4.5px 8px, #f3d5a333 8.5px 9px, transparent 9.5px 13px),
+        repeating-linear-gradient(82deg, transparent 0 6px, #51331819 6.5px 7px, transparent 7.5px 11px),
+        radial-gradient(circle at 35% 29%, #d6b181 0%, #bd915c 40%, #956532 71%, #603a1e 94%, #442716 100%);
+    --scrollbar-thumb-hover:
+        radial-gradient(ellipse at 30% 23%, #f1d8a85e, transparent 48%),
+        repeating-radial-gradient(ellipse at -45% 42%, transparent 0 3px, #60381740 3.5px 4px, transparent 4.5px 8px, #f3d5a333 8.5px 9px, transparent 9.5px 13px),
+        repeating-linear-gradient(82deg, transparent 0 6px, #51331819 6.5px 7px, transparent 7.5px 11px),
+        radial-gradient(circle at 35% 29%, #dfbd90 0%, #c79c66 40%, #a06f3a 71%, #6b4325 94%, #4b2c19 100%);
+}
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="sphere"] > .custom-scrollbar-rail {
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgba(222, 172, 65, 0.4), inset 2px 0 7px rgba(0, 0, 0, 0.65);
+}
+.chapter-column.is-active-panel [data-custom-scrollbar][data-scrollbar-shape="sphere"] > .custom-scrollbar-rail > .custom-scrollbar-thumb {
+    border: 1px solid #654127;
+    border-radius: 50%;
+    box-shadow: inset 1px 2px 4px #e4c69c66, inset -4px -5px 9px #3d230c80, 0 4px 7px #0009;
+}
+
+/* Reserve footer space first; both tab viewports fill only the remaining area. */
+.image-generation-panel {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: min(76vh, 760px);
+    min-height: 420px;
+    min-width: 0;
+    overflow: hidden;
+}
+wa-tab-group.image-generation-tabs {
+    display: block;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+wa-tab-group.image-generation-tabs::part(base) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+wa-tab-group.image-generation-tabs::part(body) {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+}
+wa-tab-group.image-generation-tabs > wa-tab-panel,
+wa-tab-group.image-generation-tabs > wa-tab-panel::part(base) {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+}
+.image-generation-scroll {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+}
+.image-generation-scroll > [data-scroll-viewport] > div {
+    box-sizing: border-box;
+    padding: var(--wa-space-s);
+}
+.image-generation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--wa-space-s);
+    padding: var(--wa-space-s);
+    background: var(--wa-color-surface-default);
+    border-top: 1px solid var(--wa-color-surface-border);
+}

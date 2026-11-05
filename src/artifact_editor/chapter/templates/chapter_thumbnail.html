@@ -1,0 +1,64 @@
+<div class="wa-stack wa-gap-m" id="chapter-thumbnail-workshop" data-filename="{{ chapter.nice }}-thumbnail.png">
+    <div>
+        <h3>Thumbnail workshop</h3>
+        <p>Create a 1280 × 720 still for YouTube, or keep the chapter video’s resolution. Pause Textoviva on a frame, then capture it here, or choose an image to fill the frame.</p>
+    </div>
+    <div class="wa-cluster">
+        <wa-button type="button" data-thumbnail-capture>Capture current frame</wa-button>
+        <label>Choose image <input type="file" accept="image/*" data-thumbnail-image></label>
+    </div>
+    <wa-select data-thumbnail-resolution label="Output size" value="youtube">
+        <wa-option value="youtube">YouTube · 1280 × 720 (16:9)</wa-option>
+        <wa-option value="video">Same as chapter video</wa-option>
+    </wa-select>
+    <p data-thumbnail-status role="status" aria-live="polite">1280 × 720 pixels · Choose an image or capture a video frame.</p>
+    <label><input type="checkbox" data-thumbnail-guides checked> Show composition guides (preview only)</label>
+    <div data-thumbnail-stage hidden style="position:relative;line-height:0">
+    <canvas data-thumbnail-canvas aria-label="Thumbnail preview: drag to reposition image" hidden style="touch-action:none;cursor:grab;user-select:none;width:100%;height:auto;border-radius:var(--wa-border-radius-m);background:#111"></canvas>
+        <div data-thumbnail-overlay aria-hidden="true" style="position:absolute;inset:0;pointer-events:none">
+            <div style="position:absolute;inset:8%;border:1px dashed #fff;box-shadow:0 0 0 1px #333"></div>
+            <span style="position:absolute;bottom:2%;right:2%;padding:2%;background:#111c;color:white;font:12px sans-serif;line-height:1">Duration</span>
+        </div>
+    </div>
+    <div class="wa-stack wa-gap-s">
+        <label>Image zoom <output data-thumbnail-zoom-label>100%</output>
+            <input type="range" data-thumbnail-zoom min="100" max="400" step="1" value="100" style="width:100%">
+        </label>
+        <label>Horizontal position <input type="range" data-thumbnail-pan-x min="-100" max="100" value="0" style="width:100%"></label>
+        <label>Vertical position <input type="range" data-thumbnail-pan-y min="-100" max="100" value="0" style="width:100%"></label>
+        <wa-button type="button" data-thumbnail-reset>Reset framing</wa-button>
+        <small>Drag the preview to reposition, or use the position sliders. Zoom in before repositioning when the image already fills the frame.</small>
+    </div>
+    <small>Guides approximate edge margins and the duration badge; interface overlays vary.</small>
+    <p data-thumbnail-copy-status role="status" aria-live="polite"></p>
+    <wa-input data-thumbnail-title label="Thumbnail text" placeholder="2–5 words that complement the video title" value=""></wa-input>
+    <div class="wa-cluster">
+        <label>Text color <input type="color" data-thumbnail-color value="#ffffff"></label>
+        <label>Text size <input type="range" data-thumbnail-size min="3" max="14" value="7" aria-label="Text size"></label>
+    </div>
+    <wa-select data-thumbnail-position label="Title position" value="bottom">
+        <wa-option value="top">Top</wa-option>
+        <wa-option value="middle">Middle</wa-option>
+        <wa-option value="bottom">Bottom</wa-option>
+    </wa-select>
+    <div data-thumbnail-mobile hidden>
+        <h4>Mobile preview · 240 pixels</h4>
+        <canvas data-thumbnail-small width="240" height="135" aria-label="Mobile thumbnail preview" style="width:240px;max-width:100%;height:auto"></canvas>
+    </div>
+    <wa-select data-thumbnail-format label="Export format" value="png">
+        <wa-option value="png">PNG · lossless</wa-option>
+        <wa-option value="jpeg">JPEG · smaller file</wa-option>
+    </wa-select>
+    <wa-button type="button" variant="brand" data-thumbnail-download disabled>Download thumbnail</wa-button>
+    <small>Exports must be under 2 MB. If a PNG is too large, choose JPEG.</small>
+    <wa-details summary="Design and testing checklist">
+        <ul>
+            <li>Use one clear focal point or a simple two-element composition.</li>
+            <li>Choose a natural expression when using a face. Keep skin and features authentic.</li>
+            <li>Use short, bold, high-contrast text that adds to the video title.</li>
+            <li>Check the mobile preview: can you identify the subject in two seconds?</li>
+            <li>Download 2–3 different designs and compare them with YouTube Studio’s thumbnail testing tools.</li>
+        </ul>
+    </wa-details>
+    <small>The image is cropped to fill the output frame. Download your finished still before leaving this page.</small>
+</div>

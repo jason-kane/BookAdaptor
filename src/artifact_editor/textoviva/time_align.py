@@ -19,6 +19,7 @@ def time_corrections(image_tags):
 
 
 def align_chapter_time(chapter, progress=None):
+    from artifact_editor.textoviva.workflow import default_image_workflow
     import os
     import shutil
     import uuid
@@ -50,7 +51,7 @@ def align_chapter_time(chapter, progress=None):
             + f'\nRequired time of day: {corrected_time}. '
             'Use lighting consistent with this time; replace conflicting time-of-day details.'
         ).strip()
-        workflow = (image.get('workflow_image_template') or const.DEFAULT_IMAGE_TEMPLATE).split('.')[-1]
+        workflow = (image.get('workflow_image_template') or default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE)).split('.')[-1]
         try:
             workflow_file = chapter.get_workflow(
                 image, workflow_name=workflow, video_index=None, template_environment={

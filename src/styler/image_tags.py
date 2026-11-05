@@ -62,6 +62,7 @@ import logging
 import re
 import shutil
 import time
+import traceback
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -218,6 +219,9 @@ def pop_tag_job(
             if ARGV[3] == '1' then return true end
             local ok, task = pcall(cjson.decode, payload)
             if not ok or type(task) ~= 'table' then return false end
+            -- Promotion is an explicit request to run this job, even while
+            -- automatic background maintenance is turned off.
+            if task.promoted then return true end
             return not task.idle_maintenance and task.background_category == nil
         end
         local function provider_matches(payload)
@@ -1093,7 +1097,9 @@ def analyze_image_tag_batch(
             ),
             "system_prompt": "Describe the visual style in the supplied image and return the requested JSON only.",
             "image_path": slot["path"],
-            "max_tokens": 1024,
+            "max_tokens": 2048,
+            "thinking_budget_tokens": 0,
+            "response_format": {"type": "json_object"},
         }
         for slot in ready
     ]
@@ -1164,6 +1170,32 @@ def _image_tag_prompt(
 
 
 # -- Worker validation, dependencies, and persistence --------------------------
+
+
+def _analyze_with_retry(client, path, style_name, description, categories, context):
+    """Retry malformed vision output once with explicit completion instructions."""
+    from llama_inference import chat_completion
+
+    prompt = _image_tag_prompt(style_name, description, categories)
+    for attempt in range(2):
+        response = chat_completion(
+            client, prompt,
+            system_prompt="Describe the visual style in the supplied image and return the requested JSON only.",
+            image_path=path, max_tokens=2048, thinking_budget_tokens=0,
+            response_format={"type": "json_object"},
+        )
+        try:
+            return parse_analysis(response, categories, context=context)
+        except ValueError as error:
+            if attempt:
+                raise
+            log.warning("Retrying invalid vision output for %s: %s", context, error)
+            prompt += (
+                "\nYour previous response was invalid or incomplete. Start a fresh JSON object. "
+                "Include each distinct observation only once; do not cycle through repeated "
+                "tags or synonymous phrases. Finish the tags array, include character_placement "
+                "and primary_category, close the object, and stop."
+            )
 
 
 def _validated_base_prompt(task: _Task) -> str:
@@ -1418,6 +1450,7 @@ def run_job(
     *,
     analysis_result: dict[str, Any] | None = None,
     primary_category_choices: list[str] | None = None,
+    failure_details: dict[str, str] | None = None,
 ) -> bool | None:
     """Run one image-tag task, accepting a precomputed result from a batch."""
     import const
@@ -1492,22 +1525,10 @@ def run_job(
         ]
         analysis = analysis_result
         if analysis is None:
-            from llama_inference import chat_completion
-
             _publish_status(client, task, base_style_prompt, "running", "Analyzing image")
-            response = chat_completion(
-                client,
-                _image_tag_prompt(style.name, style_description, primary_categories),
-                system_prompt=(
-                    "Describe the visual style in the supplied image and return "
-                    "the requested JSON only."
-                ),
-                image_path=path,
-                max_tokens=1024,
-            )
-            analysis = parse_analysis(
-                response, primary_categories,
-                context=(
+            analysis = _analyze_with_retry(
+                client, path, style.name, style_description, primary_categories,
+                (
                     f"{task['style_tag']}/{task['engine']} "
                     f"({base_style_prompt}; job={task['job_id']})"
                 ),
@@ -1618,6 +1639,9 @@ def run_job(
         publish_queue_event(client, EVENTS, event)
         return True
     except Exception as exc:
+        details = traceback.format_exc()
+        if failure_details is not None:
+            failure_details[task['engine']] = details
         log.exception(
             "Sample image tagging failed for %s/%s",
             task["style_tag"],
@@ -1628,6 +1652,7 @@ def run_job(
             base_style_prompt,
             "tag_failed",
             str(exc) or "Image tagging failed",
+            traceback=details,
         )
         publish_queue_event(client, EVENTS, event)
         return False
@@ -1783,6 +1808,7 @@ def _run_tag_group(
 
     successful_tasks = []
     failed_tasks = []
+    failure_details = {}
     for task in tasks:
         clear_failed_job(client, task["job_id"])
         client.delete(f"styler:retry-pending:{task['job_id']}")
@@ -1804,6 +1830,7 @@ def _run_tag_group(
             member_task,
             analysis_result=results.get(task["job_id"]),
             primary_category_choices=categories_by_style.get(task["style_tag"], []),
+            failure_details=failure_details,
         )
         (successful_tasks if outcome is True else failed_tasks).append(task)
 
@@ -1827,6 +1854,10 @@ def _run_tag_group(
                 f"{len(successful_tasks)} of {len(tasks)} images completed"
             ),
         )
+        if failure_details:
+            terminal_event['traceback'] = '\n\n'.join(
+                f'{engine}:\n{details}' for engine, details in failure_details.items()
+            )
     client.set(
         "styler:worker-running",
         json.dumps(

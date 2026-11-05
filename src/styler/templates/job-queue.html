@@ -1,7 +1,10 @@
 <aside id="styler-job-queue" data-queue-panel aria-label="GPU queue" aria-live="polite">
     <header class="styler-queue-header">
     <h2 data-queue-drag-handle tabindex="0" aria-label="Move GPU queue" title="Drag to move. Arrow keys move; Shift moves faster.">
-        <span>GPU Queue</span>
+        <span data-gpu-name style="display:inline-flex; flex-direction:column; line-height:1.2;">
+            <span data-gpu-model style="white-space:nowrap;">GPU</span>
+            <span data-gpu-capacity style="font-weight:400; white-space:nowrap;" hidden></span>
+        </span>
         <wa-spinner id="styler-queue-loading" aria-label="Refreshing GPU queue"></wa-spinner>
         <span id="styler-queue-count" hidden></span>
         <wa-button id="styler-worker-reset" size="small" appearance="plain"
@@ -16,13 +19,27 @@
             </button>
             <button class="styler-gpu-provider-option" type="button" data-provider-option="llama"
                 aria-label="Switch GPU to Llama" title="Switch GPU to Llama">🦙</button>
+            <button class="styler-gpu-provider-option" type="button" data-provider-option="python"
+                aria-label="Enter Python mode" title="Exclusive GPU for Python ML tasks">🐍</button>
+            <button class="styler-gpu-provider-option" type="button" data-provider-option="training"
+                aria-label="Enter Training mode" title="Stop ComfyUI and Llama, then clear GPU memory for training">🏋️</button>
         </div>
         <span id="styler-worker-reset-status" role="status" aria-live="polite"></span>
         <wa-button id="styler-queue-toggle" size="small" appearance="plain"
             aria-label="Minimize GPU queue" aria-expanded="true" title="Minimize GPU queue">
-            <wa-icon src="/static/fontawesome7/svgs/solid/chevron-down.svg"></wa-icon>
+            <span class="styler-queue-toggle-chevron" aria-hidden="true">⌄</span>
         </wa-button>
     </h2>
+    <div class="styler-queue-metrics" data-task-timing-ignore aria-label="GPU resource usage" aria-live="off">
+        <div class="styler-queue-metric" data-metric="gpu" data-available="false">
+            <div class="styler-queue-metric-label"><span>GPU</span><span class="styler-queue-metric-value">Unavailable</span></div>
+            <wa-progress-bar value="0" label="GPU usage unavailable"></wa-progress-bar>
+        </div>
+        <div class="styler-queue-metric" data-metric="vram" data-available="false">
+            <div class="styler-queue-metric-label"><span>VRAM</span><span class="styler-queue-metric-value">Unavailable</span></div>
+            <wa-progress-bar value="0" label="VRAM usage unavailable"></wa-progress-bar>
+        </div>
+    </div>
     <div class="styler-queue-rate" data-mode="walk">
         <wa-slider id="styler-maintenance-rate" aria-label="Background task rate"
             min="0" max="2" step="1" value="1" size="small" with-markers with-tooltip disabled>

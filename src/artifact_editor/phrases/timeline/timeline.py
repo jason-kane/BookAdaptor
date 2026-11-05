@@ -3,6 +3,7 @@ from artifact_editor.masterplan import masterplan
 
 def inject_image_slots(chapter):
 
+    from artifact_editor.textoviva.workflow import default_image_workflow
     phrases = list(chapter.phrases())
 
     if not phrases:
@@ -18,7 +19,7 @@ def inject_image_slots(chapter):
     # start with an image.
     new_image = chapter.soup.new_tag("image")
     new_image.attrs['index'] = "1"
-    new_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+    new_image.attrs["workflow_image_template"] = default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE)
     
     phrases[1].phrase_xml.insert_before(new_image)
 
@@ -34,7 +35,7 @@ def inject_image_slots(chapter):
             # drop an image here.
             new_image = chapter.soup.new_tag("image")
             new_image.attrs['index'] = str(image_index)
-            new_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+            new_image.attrs["workflow_image_template"] = default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE)
 
             if phrase_index + 1 < len(phrases):
                 phrases[phrase_index + 1].phrase_xml.insert_before(new_image)

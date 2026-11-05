@@ -23,7 +23,7 @@ class AudioEffect:
         """
         return []
 
-    def get_configuration_widgets(self, chapterurl, character_name, effect_config_dict=None):
+    def get_configuration_widgets(self, chapter, character_name, effect_config_dict=None):
         """
         Return an inject block of html of configuration widgets for this effect.
 

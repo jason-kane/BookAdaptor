@@ -8,8 +8,12 @@ from types import SimpleNamespace
 
 def call_worker(operation, **arguments):
     if os.environ.get("VIDEO_WORKER_PROCESS") == "1":
-        from worker_operations import execute
-        return execute(operation, arguments)
+        from worker_operations import execute_isolated
+        from gpu_service import use_gpu_service
+        if operation == "t5_tokens":
+            return execute_isolated(operation, arguments)
+        with use_gpu_service(None, "python"):
+            return execute_isolated(operation, arguments)
 
     from simple_websocket import Client
     request_id = uuid.uuid4().hex

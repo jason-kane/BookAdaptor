@@ -1,6 +1,25 @@
-"""Resolve animation workflow selections to names accepted by the loader."""
+"""Discover image engines and resolve workflow selections for generation."""
 
 from pathlib import Path
+
+
+def default_image_workflow(chapter, fallback):
+    """Use the inherited book setting when an image has no explicit workflow."""
+    return (getattr(chapter, 'config', {}) or {}).get('default_image_template') or fallback
+
+
+def image_engine_choices():
+    """List installed still-image workflows using the workflow selector's IDs."""
+    import const
+    root = Path(const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR'])
+    choices = []
+    for path in sorted(root.glob('ui.t2i.*.json')):
+        identity, _, label = path.stem.removeprefix('ui.').partition('_')
+        if identity == 't2i.style':
+            continue
+        label = label.replace('_', ' ').removeprefix('sampler-')
+        choices.append((identity, label or identity.removeprefix('t2i.')))
+    return choices
 
 
 def animation_workflow_name(template):

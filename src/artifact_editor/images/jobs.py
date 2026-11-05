@@ -7,12 +7,13 @@ import const
 
 
 def generate_timeline_image(chapter, image_index, force=True):
+    from artifact_editor.textoviva.workflow import default_image_workflow
     from artifact_editor.images.selector.htmx import gather_candidate_images
 
     image = chapter.get_image(int(image_index))
     if image is None:
         raise ValueError(f"Image {image_index} no longer exists")
-    template = image.get('workflow_image_template') or const.DEFAULT_IMAGE_TEMPLATE
+    template = image.get('workflow_image_template') or default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE)
     from artifact_editor.images.source import SOURCE_WORKFLOW
 
     if template == SOURCE_WORKFLOW:

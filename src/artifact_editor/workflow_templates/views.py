@@ -45,8 +45,6 @@ from artifact_editor.tools import (
 from artifact_editor.video import video
 from text_to_image.registry import registry as t2i_registry
 
-from . import htmx
-
 
 md = markdown_it.MarkdownIt('commonmark', {'breaks': True, 'html': True})
 
@@ -80,7 +78,7 @@ def workflow_templates_base():
             const.COMFY_DIRS['artifactserver']['WORKFLOW_TEMPLATES_DIR']
         )
     ):  
-        template_name = template_name.rstrip(".json")
+        template_name = template_name.removesuffix(".json")
         
         try:
             interface, mode, template = template_name.split(".", maxsplit=2)
@@ -164,13 +162,6 @@ def new_workflow_template():
 
 
 # open_workflow
-@bp.route("/open/<workflow>", methods=["GET"])
-def open_workflow(workflow: str):
-    # redirect to comfyui with this workflow loaded.
-    return redirect(
-        const.COMFYUI_UI_URL + "?workflow=" + os.path.basename(workflow),
-        code=302,
-    )
 
 @bp.route("/edit/<mode>/<template_name>", methods=["GET"])
 def workflow_edit(mode: str, template_name: str):

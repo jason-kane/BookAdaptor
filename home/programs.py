@@ -37,6 +37,7 @@ def _docker(method, path, body=None, allowed=(200,)):
 PROGRAMS = {
     "comfyui": {"name": "Comfy UI", "port": 8188, "timeout": 300, "image": "comfyui.png"},
     "artifactserver": {"name": "Library", "port": 8082, "internal_port": 8080,
+                       "services": ("artifactserver", "websocket"),
                        "path": "/library/", "timeout": 300, "image": "library.png"},
     "styler": {"name": "Styler", "port": 8082, "internal_port": 8080,
                "path": "/styles/", "timeout": 300, "image": "styler.png",
@@ -55,7 +56,7 @@ def start_glances():
 
 
 def start_program(service_name):
-    if service_name == "styler":
+    if service_name in ("artifactserver", "styler"):
         start_services(PROGRAMS[service_name]["services"], ("artifactserver", "websocket"))
         return
     start_service(service_name, PROGRAMS)
@@ -105,12 +106,21 @@ def gpu_provider_status():
 
 
 def switch_gpu_provider(provider):
-    """Stop the current GPU service and bring up the requested Compose service."""
-    if not isinstance(provider, str) or provider not in GPU_PROVIDER_SERVICES:
-        raise ValueError("GPU provider must be 'comfyui' or 'llama'")
+    """Switch GPU providers, or stop both model services for Training or Python."""
+    if not isinstance(provider, str) or provider not in (*GPU_PROVIDER_SERVICES, "training", "python"):
+        raise ValueError("GPU provider must be 'comfyui', 'llama', 'training', or 'python'")
+
+    base_command = compose_command() + ["--profile", "llama"]
+    if provider in ("training", "python"):
+        for service in ("comfyui", "llama"):
+            command = base_command + ["stop", "--timeout", "20", service]
+            result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=60)
+            output = "\n".join(value.strip() for value in (result.stdout, result.stderr) if value and value.strip())
+            if result.returncode:
+                raise RuntimeError(f"Docker Compose failed to stop {service}: {output or f'exit status {result.returncode}'}")
+        return
 
     inactive_service = "llama" if provider == "comfyui" else "comfyui"
-    base_command = compose_command() + ["--profile", "llama"]
     commands = [
         (
             base_command

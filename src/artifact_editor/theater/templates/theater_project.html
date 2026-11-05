@@ -3,12 +3,12 @@
 {% block styles %}
 <link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
 <link rel="stylesheet" href="/static/styles/theater.css?v=shared-image-leaves-1">
-<link rel="stylesheet" href="/static/styles/gpu-queue.css?v=20261028-gpu-traceback-1">
+<link rel="stylesheet" href="/static/styles/gpu-queue.css?v=python-provider-1">
 {% endblock %}
 {% block scripts %}
 <script defer src="/static/js/image-leaves.js?v=1"></script>
 <script defer src="/static/js/theater.js?v=shared-image-leaves-1"></script>
-<script defer src="/static/js/styler-samples.js?v=cpu-cancel-1" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script defer src="/static/js/styler-samples.js?v=no-provider-cooldown-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 {% endblock %}
 {% block body %}
 <main class="theater-shell" id="theater-project" data-project-id="{{ project.project_id }}"

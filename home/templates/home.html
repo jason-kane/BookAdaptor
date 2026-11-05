@@ -71,13 +71,6 @@
       }
     </style>
 
-    <!-- Highlight.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-    <!-- Quill -->
-    <script src="/home-static/js/quill.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
-
     <style>
       .chapter-card {
           border: 3px solid #410f80;
@@ -155,66 +148,105 @@
         const drawer = document.getElementById("todo-drawer");
         const openButton = document.getElementById("todo");
         let quill_editor = null;
-        
-        openButton.addEventListener('click', () => {
-          // Initialize Quill editor when the drawer is opened
-          // but only the first time.
-          if (!quill_editor) {
-            quill_editor = new Quill('#editor', {
-              modules: {
-                  syntax: true,
-                  toolbar: [
-                      [{'font': []}, {'size': []}],
-                      ['bold', 'italic', 'underline', 'strike'], // toggled buttons
-                      ['color', 'background'], // defaults from theme
-                      ['blockquote', 'code-block'], // blockquote, code block
-                      [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
-                      ['link'], // links
-                      ['blockquote', 'code-block'],
-                  ]
-              },
-              theme: 'snow'
-            });
-
-            // Listen for text changes in the Quill editor and auto-save
-            // https://quilljs.com/docs/api#text-change
-            quill_editor.on('text-change', (delta, oldDelta, source) => {
-              // Right now _every_ change is being sent to the server.  
-              // This is a little ridiculous.  If we can soak and bundle
-              // changes for a few seconds, that would be less noisy.
-              htmx.ajax('POST', '/home-todo/', {
-                  headers: {
-                      'Content-Type': 'application/x-www-form-urlencoded'
-                  },
-                  values: {
-                      delta: JSON.stringify(quill_editor.getContents()),
-                      key: 'home'
-                  },
-                  swap: 'none',
-                  onError: function (err) {
-                      console.error('Error updating:', err);
-                  }
-              });
-            });
-          }
-
-          // Retrieve any existing todo content, we do this every time
-          // because a change may have come from another tab.
-          htmx.ajax('GET', '/home-todo/', {
-            swap: 'none',
-            values: {
-              key: 'home'
-            },
-            handler: function(target, info) {
-              if (info.xhr.status === 200) {
-                quill_editor.setContents(JSON.parse(info.xhr.responseText));
+        const todoAssets = new Map();
+        function loadTodoAsset(url, stylesheet = false) {
+          if (!todoAssets.has(url)) {
+            todoAssets.set(url, new Promise((resolve, reject) => {
+              const asset = document.createElement(stylesheet ? 'link' : 'script');
+              if (stylesheet) {
+                asset.rel = 'stylesheet';
+                asset.href = url;
               } else {
-                console.error('Error fetching todo:', info.xhr.statusText);
+                asset.src = url;
               }
-            }
-          });
-
+              asset.onload = resolve;
+              asset.onerror = () => {
+                asset.remove();
+                todoAssets.delete(url);
+                reject(new Error('Could not load the todo editor. Please try again.'));
+              };
+              document.head.appendChild(asset);
+            }));
+          }
+          return todoAssets.get(url);
+        }
+        
+        openButton.addEventListener('click', async () => {
+          if (openButton.hasAttribute('loading')) return;
           drawer.open = true;
+          openButton.setAttribute('loading', '');
+          const status = document.getElementById('todo-status');
+          status.textContent = 'Loading todo editor…';
+          try {
+            await Promise.all([
+              loadTodoAsset('https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css', true),
+              loadTodoAsset('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'),
+              loadTodoAsset('https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js')
+            ]);
+            status.textContent = '';
+            // Initialize Quill editor when the drawer is opened
+            // but only the first time.
+            if (!quill_editor) {
+              quill_editor = new Quill('#editor', {
+                modules: {
+                    syntax: true,
+                    toolbar: [
+                        [{'font': []}, {'size': []}],
+                        ['bold', 'italic', 'underline', 'strike'], // toggled buttons
+                        ['color', 'background'], // defaults from theme
+                        ['blockquote', 'code-block'], // blockquote, code block
+                        [{'list': 'ordered'}, {'list': 'bullet'}], // lists and indentation
+                        ['link'], // links
+                        ['blockquote', 'code-block'],
+                    ]
+                },
+                theme: 'snow'
+              });
+
+              // Listen for text changes in the Quill editor and auto-save
+              // https://quilljs.com/docs/api#text-change
+              quill_editor.on('text-change', (delta, oldDelta, source) => {
+                // Right now _every_ change is being sent to the server.
+                // This is a little ridiculous.  If we can soak and bundle
+                // changes for a few seconds, that would be less noisy.
+                htmx.ajax('POST', '/home-todo/', {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    values: {
+                        delta: JSON.stringify(quill_editor.getContents()),
+                        key: 'home'
+                    },
+                    swap: 'none',
+                    onError: function (err) {
+                        console.error('Error updating:', err);
+                    }
+                });
+              });
+            }
+
+            // Retrieve any existing todo content, we do this every time
+            // because a change may have come from another tab.
+            htmx.ajax('GET', '/home-todo/', {
+              swap: 'none',
+              values: {
+                key: 'home'
+              },
+              handler: function(target, info) {
+                if (info.xhr.status === 200) {
+                  quill_editor.setContents(JSON.parse(info.xhr.responseText), 'silent');
+                } else {
+                  console.error('Error fetching todo:', info.xhr.statusText);
+                }
+              }
+            });
+
+          } catch (error) {
+            status.textContent = error.message;
+            console.error('Error loading todo:', error);
+          } finally {
+            openButton.removeAttribute('loading');
+          }
         });
       });
     </script>
@@ -577,6 +609,7 @@
 
   <body>
     <wa-drawer label="Developer TODO" placement="top" id="todo-drawer">
+      <p id="todo-status" role="status"></p>
       <div id="editor" class="editor" style="height: 300px;"></div>
     </wa-drawer>
 

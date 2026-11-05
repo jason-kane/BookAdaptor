@@ -37,21 +37,8 @@ def import_button(chapter: Chapter):
 
 
 def generate_missing_metadata_button(chapter: Chapter):
-    import json
-    import uuid
+    return missing_asset_button(chapter, "chapter_missing_metadata", "Add Missing Metadata")
 
-    job_id = uuid.uuid4().hex
-    task = escape(json.dumps({
-        "action": "chapter_missing_metadata", "job_id": job_id,
-        "author": chapter.author.name, "title": chapter.title,
-        "chapter_number": chapter.number, "language": chapter.language,
-    }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
-        data-chapter-metadata="{job_id}">
-        <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
-            variant="neutral" appearance="accent" size="medium">Add Missing Metadata</wa-button>
-        <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
-    </div>"""
 
 
 def time_align_button(chapter: Chapter):
@@ -59,14 +46,18 @@ def time_align_button(chapter: Chapter):
     import uuid
 
     job_id = uuid.uuid4().hex
+    from .workflow import prerequisite_message
+    reason = prerequisite_message(chapter, "textoviva_time_align")
+    disabled = ' disabled' if reason else ''
+    tooltip = f' title="{escape(reason)}"' if reason else ''
     task = escape(json.dumps({
         "action": "textoviva_time_align", "job_id": job_id,
         "author": chapter.author.name, "title": chapter.title,
         "chapter_number": chapter.number, "language": chapter.language,
     }))
-    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}">
+    return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}" data-workflow-control{tooltip}>
         <wa-button ws-send hx-trigger="click" hx-vals='{task}'
-            variant="neutral" appearance="accent" size="medium">Time Align</wa-button>
+            variant="neutral" appearance="accent" size="medium" data-workflow-action="textoviva_time_align"{disabled}{tooltip}>Time Align</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 
@@ -91,6 +82,8 @@ def first_missing_animation_index(chapter):
 
     timings = image_timings(chapter.get_xml())
     for image in chapter.images():
+        if image.get("do_not_animate") == "1":
+            continue
         image_index = int(image["index"])
         paragraph = image.find_parent("paragraph")
         if paragraph is None:
@@ -120,6 +113,18 @@ def add_all_button(chapter):
     return missing_asset_button(chapter, "chapter_add_all", "Add All", jumbo=True)
 
 
+def place_image_slots_button(chapter):
+    return missing_asset_button(chapter, "chapter_place_image_slots", "Place Image Slots")
+
+
+def generate_missing_audio_button(chapter):
+    return missing_asset_button(chapter, "chapter_missing_audio", "Add Missing Audio")
+
+
+def assign_characters_button(chapter):
+    return missing_asset_button(chapter, "chapter_assign_characters", "Assign Characters")
+
+
 def process_character_appearances_button(chapter):
     return missing_asset_button(
         chapter, "chapter_character_appearances", "Process Appearance Changes for All Characters"
@@ -131,6 +136,10 @@ def missing_asset_button(chapter, action, label, jumbo=False, thumbnail_image_in
     import uuid
 
     job_id = uuid.uuid4().hex
+    from .workflow import prerequisite_message
+    reason = prerequisite_message(chapter, action)
+    disabled = ' disabled' if reason else ''
+    tooltip = f' title="{escape(reason)}"' if reason else ''
     task = escape(json.dumps({
         "action": action, "job_id": job_id,
         "author": chapter.author.name, "title": chapter.title,
@@ -141,9 +150,9 @@ def missing_asset_button(chapter, action, label, jumbo=False, thumbnail_image_in
     size = "large" if jumbo else "medium"
     variant = "brand" if jumbo else "neutral"
     return f"""<div class="wa-stack" hx-ext="ws" ws-connect="{websocket_url()}"
-        data-chapter-assets="{job_id}" data-chapter-action="{action}">
+        data-chapter-assets="{job_id}" data-chapter-action="{action}" data-workflow-control{tooltip}>
         <wa-button ws-send hx-trigger="click" hx-vals='{task}' data-metadata-button
-            variant="{variant}" appearance="accent" size="{size}">{label}</wa-button>
+            variant="{variant}" appearance="accent" size="{size}" data-workflow-action="{action}"{disabled}{tooltip}>{label}</wa-button>
         <div id="video-progress-{job_id}" role="status" aria-live="polite"></div>
     </div>"""
 

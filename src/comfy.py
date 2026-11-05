@@ -99,6 +99,7 @@ def _requires_gpu_service(service: str):
                 bound = inspect.signature(function).bind(*args, **kwargs)
                 arguments = dict(bound.arguments)
                 workflow = arguments["workflow"]
+                requested_priority = bool(arguments.pop("priority", False))
                 prepare_vram = bool(arguments.pop("prepare_vram", False))
                 if isinstance(workflow, Workflow):
                     arguments["workflow"] = workflow.serialize()
@@ -108,7 +109,25 @@ def _requires_gpu_service(service: str):
                     "gpu_workflow",
                     arguments,
                     timeout=max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600),
-                    priority=gpu_task_priority.get(),
+                    priority=requested_priority or gpu_task_priority.get(),
+                    prepare_vram=prepare_vram,
+                )
+            if (kwargs.get("priority")
+                    and os.environ.get("VIDEO_WORKER_PROCESS") != "1"):
+                from gpu_tasks import submit
+
+                bound = inspect.signature(function).bind(*args, **kwargs)
+                arguments = dict(bound.arguments)
+                workflow = arguments["workflow"]
+                arguments.pop("priority", None)
+                prepare_vram = bool(arguments.pop("prepare_vram", False))
+                if isinstance(workflow, Workflow):
+                    arguments["workflow"] = workflow.serialize()
+                return submit(
+                    "gpu_workflow",
+                    arguments,
+                    timeout=max(3600, const.COMFYUI_JOB_TIMEOUT_SECONDS + 600),
+                    priority=True,
                     prepare_vram=prepare_vram,
                 )
             from gpu_service import use_gpu_service
@@ -439,6 +458,7 @@ def run_workflow(
     template_environment: dict[str, Any] | None = None,
     duration_seconds: float | None = None,
     prepare_vram: bool = False,
+    priority: bool = False,
 ) -> list[str]:
     """Run a UI/API workflow and return its exact output files.
 
@@ -519,7 +539,7 @@ def run_workflow(
 
 
 def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None,
-                    prepare_vram: bool = False) -> list[str]:
+                    prepare_vram: bool = False, priority: bool = False) -> list[str]:
     """Read a named workflow JSON file and submit it through ``run_workflow``."""
     log.info("Running %s with direct API call", workflow_fn)
     workflow_path = os.path.join(
@@ -529,7 +549,8 @@ def run_workflow_fn(workflow_fn: str, duration_seconds: float | None = None,
     with open(workflow_path, "r") as workflow_file:
         workflow = json.load(workflow_file)
     return run_workflow(
-        workflow, duration_seconds=duration_seconds, prepare_vram=prepare_vram
+        workflow, duration_seconds=duration_seconds, prepare_vram=prepare_vram,
+        priority=priority,
     )
 
 

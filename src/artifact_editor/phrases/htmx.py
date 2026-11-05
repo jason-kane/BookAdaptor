@@ -285,7 +285,8 @@ def audio_player(chapter, phrase_xml):
         chapter_number=chapter.number,
         language=chapter.language,
         paragraph=f"{int(phrase_xml.find_parent('paragraph')['index']):06}",
-        filename=phrase_xml['src']
+        filename=phrase_xml['src'],
+        v=phrase_xml.get('audio_generation_id', ''),
     )
 
     return f"""<audio controls>
@@ -306,6 +307,7 @@ def generate_audio_button(chapter, phrase_xml, target=None):
 
     return f"""<wa-button
         hx-post="{generate_audio_url}"
+        data-regenerate-phrase="{phrase_xml['index']}"
         hx-vals='{{"page": "{request.args.get("page", 1)}" }}'
         hx-target="{target}"
         hx-swap="outerHTML"
@@ -323,6 +325,7 @@ def chapter_timing_updates(chapter):
                         timing_id=f"chapter-{entry['type']}-timing-" + str(
                             entry['phrase'].index if entry['type'] == 'phrase' else entry[entry['type']]['index']),
                         timing=entry["timing"], missing_audio=entry.get("missing_audio", False),
+                        animation_disabled=(entry['type'] == 'image' and entry['image'].get('do_not_animate') == '1'),
                         missing_image=entry.get("missing_image", False), timing_oob=True)
         for entry in chapter.timeline()
         if entry["type"] in ("phrase", "image", "silence")
@@ -355,7 +358,7 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
         **chapter.kwargs,
     )
     return f"""<div id="chapter-audio-controls-{phrase_xml['index']}" class="wa-stack wa-gap-xs"{oob_attribute}>
-        {pronunciation_textarea(chapter, phrase_xml)}
+        {pronunciation_textarea(chapter, phrase_xml, target=target)}
         {soundslike(phrase_xml, soundslike_url, key=phrase_xml['index'])}
         {audio_player(chapter, phrase_xml)}
         <div class="wa-cluster">
@@ -374,6 +377,7 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
             >Add Silence Below</wa-button>
             <wa-button
                 hx-post="{add_phrase_url}"
+                data-preserve-timeline-position
                 hx-target="#chapter-phrase-list"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
@@ -402,7 +406,8 @@ def chapter_merge_with_previous_button(chapter, phrase_xml):
         variant="neutral">Merge with Previous</wa-button>"""
 
 
-def pronunciation_textarea(chapter, phrase_xml):
+def pronunciation_textarea(chapter, phrase_xml, target=None):
+    target = target or f"#phrase-{phrase_xml['index']}"
     return f"""
     <wa-textarea
         id="pronounce_{phrase_xml['index']}"
@@ -411,10 +416,13 @@ def pronunciation_textarea(chapter, phrase_xml):
         name="pronunciation"
         hx-put="{url_for('library.book.chapter.phrases.pronunciation.save', author=chapter.author.name, title=chapter.title, chapter_number=chapter.number, language=chapter.language, phrase_index=phrase_xml['index'])}"
         hx-trigger="change delay:500ms"
+        hx-target="{target}"
+        hx-swap="outerHTML"
+        hx-disabled-elt="this"
         placeholder="IPA Pronunciation" 
         resize="auto"
         rows="1"
-        value="{phrase_xml.get('pronunciation', '')}"
+        value="{html.escape(phrase_xml.get('pronunciation', ''), quote=True)}"
     ></wa-textarea>
     """
 
@@ -933,7 +941,7 @@ def split_phrase_text(chapter, phrase_xml: Tag, split, page) -> str:
 
 
 def speaker_selector(chapter, phrase_xml):
-    all_characters = characters.get_all_characters(chapter)
+    all_characters = characters.get_all_characters(chapter, is_global=True)
     speakers = all_characters.keys()
 
     speaker_options = ""
@@ -1068,8 +1076,7 @@ def regenerate_all_audio_button(chapter):
 
 def repronounce_where_missing_button(chapter):
     return generic_button(
-        chapter.url,
-        category="phrases",
+        url=url_for("library.book.chapter.phrases.repronounce_missing_words", **chapter.kwargs),
         tag="repronounce_missing_words",
         cosmetic="Repronounce Missing Words",
     )
@@ -1077,8 +1084,7 @@ def repronounce_where_missing_button(chapter):
 
 def reset_audio_cache_json_button(chapter):
     return generic_button(
-        chapter.url,
-        category="phrases",
+        url=url_for("library.book.chapter.phrases.reset_audio_cache_json", **chapter.kwargs),
         tag="reset_audio_cache_json",
         cosmetic="Reset Audio Cache",
     )

@@ -65,7 +65,6 @@ def base():
         title=g.title,
         pretty_title=g.chapter.config.get("title", g.title),
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         find_unpronouncable_words_button=htmx.find_unpronouncable_words_button(g.chapter),
         try_cmu_dict_button=htmx.try_cmu_dict_button(g.chapter),
         global_pronunciation_list=pronunciation.global_pronunciation_list(g.chapter),
@@ -100,18 +99,22 @@ def find_unpronouncable_words():
 @bp.route("<phrase_index>", methods=["PUT"])
 def save(phrase_index):
     log.info("request.form: %s", request.form)
-    pronunciation = request.form.get("pronunciation", None)
-
+    if "pronunciation" not in request.form:
+        return "Pronunciation is required", 400
+    pronunciation = request.form["pronunciation"].strip()
     phrase_xml = g.chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        return "Phrase not found", 404
     phrase_xml.attrs["pronunciation"] = pronunciation
+    if pronunciation:
+        phrase_xml.attrs["pronunciation_override"] = pronunciation
+    else:
+        # Clearing the correction restores automatic pronunciation generation.
+        phrase_xml.attrs.pop("pronunciation_override", None)
     g.chapter.save_phrase(phrase_xml)
 
-    return phrases_htmx.phrase_editor(
-        g.chapter,
-        phrase_xml,
-        page=0,
-        split=(phrase_xml.get_text().strip(), ""),
-    ), 200
+    from artifact_editor.phrases.views import regenerate_phrase
+    return regenerate_phrase(int(phrase_index), force=True)
 
 
 # PUT /Malory/LeMorteDArthur_V01_B01/0001/audio/0_1/pronunciation_filter

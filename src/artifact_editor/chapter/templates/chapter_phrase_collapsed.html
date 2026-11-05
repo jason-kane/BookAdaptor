@@ -1,9 +1,9 @@
 <wa-textarea
-    id="phrase_{{ phrase.index }}_ta" class="phrase-editor"
+    id="phrase_{{ phrase.index }}_ta" class="phrase-editor" rows="1" resize="auto"
     hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}"
     hx-vals='js:{"previous_phrase_index": window.previous_phrase_index}'
     hx-trigger="click" hx-swap="none" hx-swap-oob="true"
-    value="{{ phrase.simple_text() }}"
+    value="{{ phrase.simple_text().strip() }}"
 ></wa-textarea>
 <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs" hx-swap-oob="true"></div>
 <div id="js-executor" hx-swap-oob="true">

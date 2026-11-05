@@ -305,7 +305,6 @@ def timeline():
         title=g.title,
         pretty_title=g.chapter.config.get("title", g.title),
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         paragraphs=paragraphs,
         avg_image_frames=avg_image_frames,
         avg_image_duration=avg_image_frames / const.FPS

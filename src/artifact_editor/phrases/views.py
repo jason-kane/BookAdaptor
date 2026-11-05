@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import uuid
 
 import speech_recognition as sr
 from bs4 import BeautifulSoup
@@ -285,7 +286,6 @@ def base():
         title=g.title,
         pretty_title=pretty_title,
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         phrase_sequence=phrases.phrase_sequence(g.chapter, page=page),
         regenerate_all_audio_button=htmx.regenerate_all_audio_button(g.chapter),
         generate_all_missing_audio_button=htmx.generate_all_missing_audio_button(
@@ -568,7 +568,7 @@ def regenerate_phrase(phrase_index: int, force=True):
         request.headers.get("HX-Target")
         == f"chapter-audio-controls-{phrase_index}"
     )
-    g.chapter.load_xml()
+    g.chapter.load_xml(force=True)
 
     phrase_xml = g.chapter.get_phrase(phrase_index)
     log.warning("Alpha", phrase_xml=phrase_xml, has_soup=g.chapter.soup is not None)
@@ -587,6 +587,14 @@ def regenerate_phrase(phrase_index: int, force=True):
     if wavfile is None:
         log.error(f"Phrase with index {phrase_index} not found in book {g.chapter}")
         return "Phrase not found", 404
+
+    if force:
+        for sidecar in (wavfile.replace(".wav", ".pronunciation.txt"),
+                        wavfile.replace(".wav", ".pronunciation")):
+            if os.path.isfile(sidecar):
+                os.remove(sidecar)
+        if not phrase_xml.get("pronunciation_override"):
+            phrase_xml.attrs.pop("pronunciation", None)
 
     if os.path.exists(wavfile):
         if force:
@@ -608,7 +616,7 @@ def regenerate_phrase(phrase_index: int, force=True):
         phrase_xml,
         phrase_xml.attrs.get("speaker", "Narrator"),
         wavfile,
-        force=False,
+        force=force,
     )
 
     # do we already have a pronunciation file for this phrase?
@@ -646,6 +654,10 @@ def regenerate_phrase(phrase_index: int, force=True):
     phrase_xml.attrs["duration"] = str(duration)
     phrase_xml.attrs["frames"] = int(duration * const.FPS)
 
+    # Generated sidecars are informative only when no manual correction exists.
+    new_pronunciation = phrase_xml.get("pronunciation_override") or new_pronunciation
+    phrase_xml.attrs["audio_generation_id"] = uuid.uuid4().hex
+
     if new_pronunciation:
         log.info(
             f"Updating pronunciation for phrase {phrase_index} to {new_pronunciation}"
@@ -675,13 +687,9 @@ def regenerate_phrase(phrase_index: int, force=True):
 
 # POST /Bible/Old%20Testament/0001/audio/actions/repronounce_missing_words
 @bp.route("/actions/repronounce_missing_words", methods=["POST"])
-def repronounce_missing_words(author: str, title: str, chapter_number: int):
-    chapterdir = tools.get_chapterdir(author, title, chapter_number)
-    chapterurl = tools.get_chapterurl(author, title, chapter_number)
-
-    phrases.repronounce_where_missing(chapterdir)
-
-    return htmx.repronounce_where_missing_button(chapterurl)
+def repronounce_missing_words():
+    phrases.repronounce_where_missing(g.chapter)
+    return htmx.repronounce_where_missing_button(g.chapter)
 
 
 def recognize_neurolang_ipa_whisper_medium(

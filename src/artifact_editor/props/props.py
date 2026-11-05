@@ -35,6 +35,92 @@ def save_props(chapter, records):
     temporary.replace(filename)
 
 
+def prop_names(tag, prop):
+    """Return the canonical tag, display name, and aliases for a prop."""
+    aliases = prop.get('alias', [])
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    aliases = [value for value in aliases if isinstance(value, str) and value.strip()]
+    return [tag, prop.get('name', tag), *aliases]
+
+
+def resolve_prop_tag(records, name):
+    """Find a prop by tag, name, or alias, ignoring case and punctuation."""
+    key = object_name_key(name)
+    if not key:
+        return None
+    matches = {tag for tag, prop in records.items()
+               if any(object_name_key(value) == key for value in prop_names(tag, prop))}
+    if len(matches) > 1:
+        raise ValueError(f'Ambiguous prop name: {name}')
+    return next(iter(matches), None)
+
+
+def set_aliases(chapter, tag, aliases):
+    """Save unique aliases, rejecting names already owned by another prop."""
+    records = get_all_props(chapter)
+    if tag not in records:
+        raise ValueError('Unknown prop')
+    cleaned = []
+    for alias in aliases:
+        if not isinstance(alias, str):
+            continue
+        alias = alias.strip()
+        if not alias:
+            continue
+        owner = resolve_prop_tag(records, alias)
+        if owner and owner != tag:
+            raise ValueError(f'{alias} belongs to another prop.')
+        key = object_name_key(alias)
+        if key and key not in {object_name_key(value) for value in cleaned}:
+            cleaned.append(alias)
+    records[tag]['alias'] = cleaned
+    save_props(chapter, records)
+
+
+def merge_props(chapter, source_tag, target_tag):
+    """Merge one prop into another, keeping the source's names as aliases."""
+    records = get_all_props(chapter)
+    if source_tag == target_tag or source_tag not in records or target_tag not in records:
+        raise ValueError('Choose two different existing props.')
+    source, target = records[source_tag], records[target_tag]
+    source_names = prop_names(source_tag, source)[1:]
+    target_names = prop_names(target_tag, target)[1:]
+    merged_aliases = []
+    seen = {object_name_key(target.get('name', target_tag))}
+    for name in [*target_names[1:], *source_names]:
+        key = object_name_key(name)
+        if not key or key in seen:
+            continue
+        owner = resolve_prop_tag(
+            {tag: record for tag, record in records.items()
+             if tag not in (source_tag, target_tag)}, name,
+        )
+        if owner:
+            raise ValueError(f'{name} already belongs to another prop.')
+        seen.add(key)
+        merged_aliases.append(name)
+    target['alias'] = merged_aliases
+    if not target.get('description') and source.get('description'):
+        target['description'] = source['description']
+    del records[source_tag]
+    source_keys = {object_name_key(source_tag),
+                   *(object_name_key(name) for name in source_names)}
+    for image in chapter.get_xml().find_all('image'):
+        if 'scene_props' not in image.attrs:
+            continue
+        values = []
+        for value in image['scene_props'].split(','):
+            value = value.strip()
+            if object_name_key(value) in source_keys:
+                value = target_tag
+            if value and value not in values:
+                values.append(value)
+        image['scene_props'] = ','.join(values)
+    chapter.save_images()
+    save_props(chapter, records)
+
+
 def draw_prop(chapter, tag, description=None):
     import comfy
 
@@ -55,12 +141,22 @@ def draw_prop(chapter, tag, description=None):
 
 def selected_props(chapter, image_xml):
     records = get_all_props(chapter)
-    return {tag: records[tag] for tag in image_xml.get('scene_props', '').split(',') if tag in records}
+    selected = {}
+    for value in image_xml.get('scene_props', '').split(','):
+        tag = resolve_prop_tag(records, value.strip())
+        if tag:
+            selected[tag] = records[tag]
+    return selected
 
 
 def include_in_prompt(chapter, image_xml, prompt):
-    descriptions = [f"{prop['name']}: {prop.get('description', '')}"
-                    for prop in selected_props(chapter, image_xml).values()]
+    descriptions = []
+    for tag, prop in selected_props(chapter, image_xml).items():
+        aliases = prop_names(tag, prop)[2:]
+        known_as = f" (also known as {', '.join(aliases)})" if aliases else ''
+        descriptions.append(
+            f"{prop['name']}{known_as}: {prop.get('description', '')}"
+        )
     missing = [description for description in descriptions if description not in prompt]
     return prompt + (' Props in the scene: ' + '; '.join(missing) if missing else '')
 
@@ -82,7 +178,9 @@ def generate_description(chapter, tag, name=None):
         description = 'No description found.'
     else:
         description = llm.str_prompt(
-            prompt=f'Target object: {name}\n\nBEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT',
+            prompt=(f'Target object: {name}\n'
+                    f'Known aliases: {json.dumps(prop_names(tag, prop)[2:])}\n\n'
+                    f'BEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'),
             system_prompt=(
                 'Describe the physical appearance of the named object using only the supplied '
                 'story text. Read the entire passage and resolve references to that specific '
@@ -209,8 +307,8 @@ def extract_props(chapter):
         extracted.extend(extract_with_fallback(perspective))
     # Re-read so extraction preserves props edited or added during the request.
     records = get_all_props(chapter)
-    normalize = lambda value: ' '.join(value.casefold().split())
-    names = {normalize(prop['name']) for prop in records.values()}
+    names = {object_name_key(name) for tag, prop in records.items()
+             for name in prop_names(tag, prop) if object_name_key(name)}
     excluded_keys = {object_name_key(name) for name in character_exclusions(chapter)}
     source = ' '.join(story_text.split())
     count = 0
@@ -221,11 +319,11 @@ def extract_props(chapter):
                for key in ('name', 'description', 'evidence')):
             continue
         name = candidate['name'].strip()
-        if (object_name_key(name) in excluded_keys or normalize(name) in names
+        if (object_name_key(name) in excluded_keys or object_name_key(name) in names
                 or ' '.join(candidate['evidence'].split()) not in source):
             continue
-        records[uuid.uuid4().hex] = {'name': name, 'description': candidate['description'].strip()}
-        names.add(normalize(name))
+        records[uuid.uuid4().hex] = {'name': name, 'description': candidate['description'].strip(), 'alias': []}
+        names.add(object_name_key(name))
         count += 1
     if count:
         save_props(chapter, records)
@@ -236,10 +334,12 @@ def delete_prop(chapter, tag):
     records = get_all_props(chapter)
     if tag not in records:
         raise KeyError(tag)
+    aliases = {object_name_key(name) for name in prop_names(tag, records[tag])}
     del records[tag]
     for image in chapter.get_xml().find_all('image'):
         if 'scene_props' in image.attrs:
             image['scene_props'] = ','.join(value.strip() for value in image['scene_props'].split(',')
-                                          if value.strip() and value.strip() != tag)
+                                          if value.strip() and value.strip() != tag
+                                          and object_name_key(value) not in aliases)
     chapter.save_images()
     save_props(chapter, records)

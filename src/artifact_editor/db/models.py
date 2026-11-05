@@ -242,6 +242,7 @@ class Image(TimelineItem):
     image_asset: Mapped[MediaAsset | None] = relationship(foreign_keys=[image_asset_id])
     video_asset: Mapped[MediaAsset | None] = relationship(foreign_keys=[video_asset_id])
     characters: Mapped[list[ImageCharacter]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
+    loras: Mapped[list[ImageLora]] = relationship(cascade="all, delete-orphan", passive_deletes=True, order_by="ImageLora.position")
     props: Mapped[list[ImageProp]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
     __mapper_args__ = {"polymorphic_identity": TimelineKind.IMAGE, "polymorphic_load": "selectin"}
 
@@ -326,3 +327,21 @@ class TaskDependency(Base):
     task_id: Mapped[UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
     depends_on_task_id: Mapped[UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True, index=True)
     depends_on: Mapped[Task] = relationship(foreign_keys=[depends_on_task_id])
+
+
+class Lora(Identity, Timestamps, Base):
+    __tablename__ = "loras"
+    filename: Mapped[str] = mapped_column(Text, unique=True)
+    name: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text, default="z-image-turbo", server_default="z-image-turbo")
+    weight: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=1, server_default="1")
+    details: Mapped[dict] = json_object()
+
+
+class ImageLora(Base):
+    __tablename__ = "image_loras"
+    image_id: Mapped[UUID] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), primary_key=True)
+    lora_id: Mapped[UUID] = mapped_column(ForeignKey("loras.id", ondelete="RESTRICT"), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer)
+    weight: Mapped[Decimal] = mapped_column(Numeric(8, 4))
+    lora: Mapped[Lora] = relationship()

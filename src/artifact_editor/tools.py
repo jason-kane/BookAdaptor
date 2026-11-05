@@ -478,7 +478,7 @@ def script(script_body: str) -> str:
 
 
 def generic_button(
-    chapterurl: str,
+    chapterurl: str | None = None,
     category: str = "audio",
     method: str = "POST",
     tag: str = "actions_url",
@@ -491,7 +491,7 @@ def generic_button(
     id: str | None = None,
     tooltip: str | None = None,
 ) -> str:
-    #
+    """Render an action button; new callers supply a URL built with url_for."""
     if id is None:
         id = f"{category}_{tag}_btn_{os.urandom(4).hex()[:6]}"
 
@@ -501,6 +501,8 @@ def generic_button(
     out = f'<wa-button id="{id}" '
 
     if url is None:
+        if chapterurl is None:
+            raise ValueError("A button URL is required")
         if category:
             url = f"/{chapterurl}/{category}/actions/{tag}"
         else:

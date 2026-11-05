@@ -1,6 +1,37 @@
+// Replacing the phrase list temporarily collapses its scrollable height.
+// Keep the insertion phrase at the same viewport offset through that swap.
+const timelineInsertionPositions = new WeakMap();
+document.addEventListener('htmx:beforeSwap', event => {
+    const {target, xhr, requestConfig} = event.detail;
+    const button = requestConfig?.elt?.closest('[data-preserve-timeline-position]');
+    const viewport = document.getElementById('chapter-timeline-scroll');
+    if (target?.id !== 'chapter-phrase-list' || !button || !viewport || !xhr) return;
+    const anchor = button.closest('[data-timeline-type="phrase"]');
+    timelineInsertionPositions.set(xhr, {
+        top: viewport.scrollTop,
+        anchorId: anchor?.id,
+        offset: anchor ? anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top : 0,
+    });
+});
+function restoreTimelineInsertionPosition(event) {
+    const position = timelineInsertionPositions.get(event.detail.xhr);
+    if (!position) return;
+    const viewport = document.getElementById('chapter-timeline-scroll');
+    const anchor = document.getElementById(position.anchorId);
+    if (viewport) {
+        viewport.scrollTop = anchor
+            ? viewport.scrollTop + anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top - position.offset
+            : position.top;
+    }
+    if (event.type === 'htmx:afterSettle') timelineInsertionPositions.delete(event.detail.xhr);
+}
+document.addEventListener('htmx:afterSwap', restoreTimelineInsertionPosition);
+document.addEventListener('htmx:afterSettle', restoreTimelineInsertionPosition);
+
 function initializeChapterTimeline() {
     const list = document.getElementById('chapter-phrase-list');
     if (!list) return;
+    initializeTimelineImageNavigation(list);
     initializeTimelineImageBackgrounds(list);
     if (list.dataset.initialized) return;
     list.dataset.initialized = 'true';
@@ -254,7 +285,8 @@ function initializeTimelineImageBackgrounds(list) {
         for (let start = 0; start < entries.length;) {
             if (entries[start].dataset.timelineType !== 'image') { start++; continue; }
             let end = start + 1;
-            while (end < entries.length && entries[end].dataset.timelineType !== 'image') end++;
+            // Scene panels own their imagery and end the preceding image band.
+            while (end < entries.length && !['image', 'scene'].includes(entries[end].dataset.timelineType)) end++;
             const imageUrl = entries[start].dataset.timelineBackgroundUrl;
             if (imageUrl) {
                 const firstTop = entries[start].getBoundingClientRect().top;
@@ -343,7 +375,7 @@ async function refreshTimelineScene(panel) {
             updated.querySelector('[data-view-image]').hasAttribute('disabled'));
     }
 }
-document.addEventListener('htmx:wsAfterMessage', () => {
+function refreshCompletedTimelineImages() {
     document.querySelectorAll('[data-animation-description-status] [data-video-job]').forEach(status => {
         const container = status.closest('[data-animation-description-status]');
         const button = container.closest('.chapter-mini-image-editor')
@@ -363,7 +395,12 @@ document.addEventListener('htmx:wsAfterMessage', () => {
         });
     });
     document.querySelectorAll('[data-image-editor-url] [data-video-job]').forEach(status => {
-        if (status.dataset.videoState !== 'complete' || completedTimelineImages.has(status.dataset.videoJob)) return;
+        if (status.closest('[data-animation-description-status]')) return;
+        if (status.dataset.videoState !== 'complete') {
+            completedTimelineImages.delete(status.dataset.videoJob);
+            return;
+        }
+        if (completedTimelineImages.has(status.dataset.videoJob)) return;
         completedTimelineImages.add(status.dataset.videoJob);
         const panel = status.closest('[data-image-editor-url]');
         if (panel.closest('[data-timeline-type="scene"]')) {
@@ -383,9 +420,16 @@ document.addEventListener('htmx:wsAfterMessage', () => {
             requestAnimationFrame(() => {
                 if (panel.isConnected) panel.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
             });
+        }).catch(error => {
+            completedTimelineImages.delete(status.dataset.videoJob);
+            console.error(error);
         });
     });
-});
+}
+document.addEventListener('htmx:wsAfterMessage', refreshCompletedTimelineImages);
+// HTMX may fire wsAfterMessage before the OOB progress swap is settled. Check
+// again after settling so a final completion message cannot be missed.
+document.addEventListener('htmx:afterSettle', refreshCompletedTimelineImages);
 
 // Read the current timeline each time so newly generated and reordered images participate.
 let viewedChapterImage = null;
@@ -424,3 +468,133 @@ document.addEventListener('keydown', event => {
         navigateChapterImage(event.key === 'ArrowLeft' ? -1 : 1);
     }
 });
+
+
+function initializeTimelineImageNavigation(list) {
+    if (list.dataset.imageNavigationInitialized) return;
+    const viewport = list.closest('[data-scroll-viewport]');
+    const nav = viewport?.parentElement.querySelector('.chapter-timeline-image-nav');
+    if (!nav) return;
+    list.dataset.imageNavigationInitialized = 'true';
+    const listeners = new AbortController();
+    const options = {signal: listeners.signal};
+    let signature = '';
+    let images = [];
+    let frame = 0;
+    let pausedUntil = 0;
+    let resumeTimer;
+    const synchronize = () => {
+        frame = 0;
+        if (!images.length || !viewport.clientHeight || !nav.clientHeight) return;
+        const bounds = viewport.getBoundingClientRect();
+        const middle = Math.max(bounds.top, Math.min(bounds.bottom, window.innerHeight / 2));
+        let current = images[0];
+        for (const image of images) {
+            if (image.getBoundingClientRect().top > middle) break;
+            current = image;
+        }
+        const index = current.dataset.timelineIndex;
+        let selected;
+        nav.querySelectorAll('[data-jump-image]').forEach(button => {
+            if (button.dataset.jumpImage === index) {
+                button.setAttribute('aria-current', 'true');
+                selected = button;
+            } else {
+                button.removeAttribute('aria-current');
+            }
+        });
+        // Highlight follows the timeline even while the user browses the strip.
+        if (!selected || performance.now() < pausedUntil) return;
+        const first = nav.firstElementChild;
+        const padding = Math.max(4, (nav.clientHeight - first.getBoundingClientRect().height) / 2);
+        nav.style.paddingBlock = `${padding}px`;
+        const thumbnail = selected.getBoundingClientRect();
+        const strip = nav.getBoundingClientRect();
+        const top = nav.scrollTop + thumbnail.top + thumbnail.height / 2 - strip.top - nav.clientHeight / 2;
+        if (Math.abs(nav.scrollTop - top) > 1) nav.scrollTo({top: Math.max(0, top), behavior: 'instant'});
+    };
+    const schedule = () => {
+        if (!frame) frame = requestAnimationFrame(synchronize);
+    };
+    const pauseCentering = () => {
+        pausedUntil = performance.now() + 60_000;
+        clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(schedule, 60_000);
+    };
+    nav.addEventListener('pointerdown', pauseCentering, options);
+    nav.addEventListener('pointermove', event => {
+        if (event.buttons) pauseCentering();
+    }, options);
+    nav.addEventListener('touchstart', pauseCentering, {...options, passive: true});
+    nav.addEventListener('touchmove', pauseCentering, {...options, passive: true});
+    nav.addEventListener('wheel', pauseCentering, {...options, passive: true});
+    nav.addEventListener('keydown', event => {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) pauseCentering();
+    }, options);
+    viewport.addEventListener('scroll', schedule, {...options, passive: true});
+    window.addEventListener('resize', schedule, options);
+    const rebuild = () => {
+        images = Array.from(list.querySelectorAll(':scope > [data-timeline-type="image"]'));
+        const items = images.map(panel => {
+            const url = new URL(panel.dataset.timelineThumbnailUrl, location.href);
+            const marker = panel.querySelector('[data-timeline-background-marker]');
+            if (marker?.dataset.backgroundUrl) {
+                const version = new URL(marker.dataset.backgroundUrl, location.href).searchParams.get('v');
+                if (version) url.searchParams.set('v', version);
+            }
+            return {index: panel.dataset.timelineIndex, url: url.href};
+        });
+        const nextSignature = JSON.stringify(items);
+        if (nextSignature !== signature) {
+            signature = nextSignature;
+            const position = nav.scrollTop;
+            const buttons = items.map(({index, url}) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.jumpImage = index;
+                button.title = `Jump to image ${index}`;
+                button.setAttribute('aria-label', button.title);
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = '';
+                image.loading = 'lazy';
+                image.decoding = 'async';
+                const label = document.createElement('span');
+                label.textContent = index;
+                button.append(image, label);
+                return button;
+            });
+            nav.replaceChildren(...buttons);
+            nav.scrollTop = position;
+        }
+        schedule();
+    };
+    nav.addEventListener('click', event => {
+        const button = event.target.closest('[data-jump-image]');
+        if (!button) return;
+        const panel = document.getElementById(`timeline-image-${button.dataset.jumpImage}`);
+        if (!panel || !list.contains(panel)) return;
+        const bounds = viewport.getBoundingClientRect();
+        const middle = Math.max(bounds.top, Math.min(bounds.bottom, window.innerHeight / 2));
+        const top = viewport.scrollTop + panel.getBoundingClientRect().top - middle;
+        viewport.scrollTo({top: Math.max(0, top + 1), behavior: 'instant'});
+        schedule();
+    }, options);
+    const observer = new MutationObserver(rebuild);
+    observer.observe(list, {childList: true, subtree: true, attributes: true,
+        attributeFilter: ['data-timeline-thumbnail-url', 'data-background-url']});
+    const sizes = new ResizeObserver(schedule);
+    sizes.observe(viewport);
+    sizes.observe(nav);
+    sizes.observe(list);
+    document.addEventListener('htmx:beforeCleanupElement', function cleanup(event) {
+        if (event.detail.elt !== list && !event.detail.elt.contains?.(list)) return;
+        observer.disconnect();
+        sizes.disconnect();
+        listeners.abort();
+        cancelAnimationFrame(frame);
+        clearTimeout(resumeTimer);
+        document.removeEventListener('htmx:beforeCleanupElement', cleanup);
+    });
+    rebuild();
+}

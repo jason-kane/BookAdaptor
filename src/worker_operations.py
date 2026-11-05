@@ -49,3 +49,24 @@ def execute(operation, arguments):
             predicted = model.generate(input_features=features)
         return processor.batch_decode(predicted, skip_special_tokens=True)
     raise ValueError(f"Unknown worker operation: {operation}")
+
+
+def execute_isolated(operation, arguments):
+    """Release all framework CUDA allocations when the operation exits."""
+    import json
+    import subprocess
+    import sys
+    result = subprocess.run(
+        [sys.executable, "-m", "worker_operations"],
+        input=json.dumps({"operation": operation, "arguments": arguments}),
+        capture_output=True, text=True, timeout=590, check=True,
+    )
+    return json.loads(result.stdout.rsplit("\nWORKER_RESULT:", 1)[1])
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    request = json.load(sys.stdin)
+    result = execute(request["operation"], request["arguments"])
+    print("\nWORKER_RESULT:" + json.dumps(result))

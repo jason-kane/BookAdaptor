@@ -106,6 +106,24 @@ def _assign(row, tag):
         if column in ("description", "name") and value is None:
             value = ""
         setattr(row, column, value)
+    if isinstance(row, m.Image) and "loras" in tag.attrs:
+        from sqlalchemy.orm import object_session
+        from artifact_editor.loras import normalize
+        session = object_session(row)
+        filenames = normalize(tag["loras"])
+        existing = {entry.lora.filename: entry for entry in row.loras}
+        selected = []
+        for position, filename in enumerate(filenames):
+            entry = existing.get(filename)
+            if entry is None:
+                lora = session.scalar(select(m.Lora).where(m.Lora.filename == filename))
+                if lora is None:
+                    lora = m.Lora(filename=filename, name=filename, weight=1, details={})
+                    session.add(lora)
+                entry = m.ImageLora(lora=lora, weight=lora.weight)
+            entry.position = position
+            selected.append(entry)
+        row.loras = selected
     if isinstance(row, m.Phrase):
         row.text = tag.get_text()
 

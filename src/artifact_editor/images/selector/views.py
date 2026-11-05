@@ -69,6 +69,8 @@ def use_image(image_index: int=0):
 
     image_xml = g.chapter.get_image(image_index)
     selected_image = os.path.basename(selected_image_src)
+    if selected_image.endswith("_last_frame_of_previous.png"):
+        return "Continuation frames are reserved for extended animations", 400
 
     log.info(f"Selected image: {selected_image}")
 

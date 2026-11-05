@@ -7,6 +7,8 @@
         const host = document.createElement('div');
         host.setAttribute('data-custom-scrollbar', '');
         host.dataset.scrollbarLabel = panel.dataset.scrollbarLabel || 'Scroll panel';
+        if (panel.dataset.scrollbarShape) host.dataset.scrollbarShape = panel.dataset.scrollbarShape;
+        if (panel.dataset.scrollbarMinThumb) host.dataset.scrollbarMinThumb = panel.dataset.scrollbarMinThumb;
         const viewport = document.createElement('div');
         viewport.setAttribute('data-scroll-viewport', '');
         viewport.id = panel.id ? `${panel.id}-scroll` : `custom-panel-scroll-${++panelId}`;
@@ -22,7 +24,8 @@
     function initialize(host) {
         if (instances.has(host)) return;
         const viewport = host.querySelector(':scope > [data-scroll-viewport]');
-        if (!viewport?.id) return;
+        if (!viewport) return;
+        if (!viewport.id) viewport.id = `custom-panel-scroll-${++panelId}`;
 
         const rail = document.createElement('div');
         rail.className = 'custom-scrollbar-rail';
@@ -43,8 +46,13 @@
             const maximum = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
             const track = rail.clientHeight;
             const minimumThumb = Number(host.dataset.scrollbarMinThumb) || 48;
-            const height = Math.min(track, Math.max(minimumThumb,
-                track * viewport.clientHeight / Math.max(1, viewport.scrollHeight)));
+            const fixedSphere = host.dataset.scrollbarShape === 'pinball'
+                || (host.dataset.scrollbarShape === 'sphere'
+                    && host.closest('.chapter-column.is-active-panel'));
+            const height = fixedSphere
+                ? Math.min(track, Math.max(0, rail.clientWidth - 8))
+                : Math.min(track, Math.max(minimumThumb,
+                    track * viewport.clientHeight / Math.max(1, viewport.scrollHeight)));
             return { maximum, height, travel: Math.max(0, track - height) };
         };
         const update = () => {
@@ -71,6 +79,7 @@
         const listeners = new AbortController();
         const options = { signal: listeners.signal };
         viewport.addEventListener('scroll', schedule, { ...options, passive: true });
+        host.addEventListener('scrollbar-refresh', schedule, options);
         viewport.addEventListener('load', schedule, { ...options, capture: true });
         viewport.addEventListener('toggle', schedule, { ...options, capture: true });
         thumb.addEventListener('pointerdown', event => {
@@ -153,6 +162,9 @@
     document.addEventListener('DOMContentLoaded', initializeAll);
     document.addEventListener('htmx:load', initializeAll);
     document.addEventListener('htmx:afterSettle', initializeAll);
+    document.addEventListener('chapter-column-activation-changed', () => {
+        document.querySelectorAll('[data-custom-scrollbar]').forEach(host => instances.has(host) && host.dispatchEvent(new Event('scrollbar-refresh')));
+    });
     document.addEventListener('htmx:beforeCleanupElement', event => {
         const element = event.detail.elt;
         if (element.matches?.('[data-custom-scrollbar]')) instances.get(element)?.();

@@ -622,9 +622,9 @@ class Chapter:
 
     def speakers(self) -> list[Speaker]:
         """
-        Get the list of speaker uniques for this chapter.
+        Offer every book character, including those not yet extracted here.
         """
-        all_characters = characters.get_all_characters(self)
+        all_characters = characters.get_all_characters(self, is_global=True)
 
         speakers = []
         for character in all_characters:
@@ -1256,13 +1256,15 @@ class Chapter:
                     ),
                 )
                 widget_values = list(node.get("widgets_values", []))
-                while len(widget_values) < 3:
+                pronunciation_value = template_environment.get("PRONUNCIATION", "")
+                while len(widget_values) < 4:
                     widget_values.append(None)
                 widget_values[0] = text_value
                 widget_values[2] = language_value
+                widget_values[3] = pronunciation_value
                 node["widgets_values"] = widget_values
                 node.setdefault("widgets_values_named", {}).update(
-                    {"text": text_value, "lang": language_value}
+                    {"text": text_value, "lang": language_value, "pronunciation": pronunciation_value}
                 )
 
             elif node["type"] == "KokoroWeightedSpeaker":
@@ -1463,32 +1465,34 @@ class Chapter:
 
         # our last frame generally the _next_ image.
         last_frame = None
-        try:
-            next_image_xml = self.get_image(as_int(image_xml.attrs["index"]) + 1)
-            if next_image_xml:
-                next_image_filename = self.get_image_filename(next_image_xml)
-                if next_image_filename:
-                    last_frame = os.path.basename(next_image_filename)
-        except TypeError:
-            last_frame = None
-        except KeyError:
-            last_frame = None
+        if image_xml.attrs.get("styler_sample") != "true":
+            try:
+                next_image_xml = self.get_image(as_int(image_xml.attrs["index"]) + 1)
+                if next_image_xml:
+                    next_image_filename = self.get_image_filename(next_image_xml)
+                    if next_image_filename:
+                        last_frame = os.path.basename(next_image_filename)
+            except TypeError:
+                last_frame = None
+            except KeyError:
+                last_frame = None
 
         if not last_frame:
             last_frame = source_image
 
         # reasonable default
         prior_frame = None
-        try:
-            prior_image_xml = self.get_image(as_int(image_xml.attrs["index"]) - 1)
-            if prior_image_xml:
-                prior_image_filename = self.get_image_filename(prior_image_xml)
-                if prior_image_filename:
-                    prior_frame = os.path.basename(prior_image_filename)
-        except TypeError:
-            prior_frame = None
-        except KeyError:
-            prior_frame = None
+        if image_xml.attrs.get("styler_sample") != "true":
+            try:
+                prior_image_xml = self.get_image(as_int(image_xml.attrs["index"]) - 1)
+                if prior_image_xml:
+                    prior_image_filename = self.get_image_filename(prior_image_xml)
+                    if prior_image_filename:
+                        prior_frame = os.path.basename(prior_image_filename)
+            except TypeError:
+                prior_frame = None
+            except KeyError:
+                prior_frame = None
 
         if os.path.basename(workflow_filename).startswith("ui.ref2i."):
             from artifact_editor.ref2i import reference_inputs, prepare_workflow
@@ -1674,7 +1678,9 @@ class Chapter:
 
             elif node.get("type") == "PrimitiveStringMultiline":
                 if node.get("title") in ["META"]:
-                    metadata = self.get_meta_dict() if image_xml.name == "image" else {}
+                    metadata = (self.get_meta_dict()
+                                if image_xml.name == "image" and image_xml.attrs.get("styler_sample") != "true"
+                                else {})
                     value = json.dumps(metadata, indent=2).replace(
                         "\n", r"\n"
                     )
@@ -1716,7 +1722,9 @@ class Chapter:
 
                 elif node.get("title") in ["SCENE"]:
                     # Global style samples have no book scene or source passage.
-                    scene = self.get_scene(image_xml) if image_xml.name == "image" else {}
+                    scene = (self.get_scene(image_xml)
+                             if image_xml.name == "image" and image_xml.attrs.get("styler_sample") != "true"
+                             else {})
                     value = json.dumps(scene, indent=2, ensure_ascii=False)
                     node["widgets_values"] = [value]
                     node["widgets_values_named"] = {"value": value}
@@ -1846,6 +1854,13 @@ class Chapter:
             })
             workflow["last_node_id"] = node_id
             workflow["last_link_id"] = scaled_link_id
+
+        if image_xml.name == "image" and video_index in (None, ""):
+            from artifact_editor.loras import image_selection, apply_to_workflow
+            if "zit" in workflow_name.lower():
+                apply_to_workflow(workflow, image_selection(self, image_xml))
+                if image_xml.attrs.get("styler_sample") != "true":
+                    self.save_image(image_xml)
 
         if force_name:
             workflow_fn = os.path.join(

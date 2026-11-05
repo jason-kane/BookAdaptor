@@ -672,8 +672,7 @@ def add_voice_to_blend(character_tag):
 # /Aesop/Fables/0018/characters/The_Woman/add_effect
 @bp.route("<character_tag>/add_effect", methods=["POST"])
 def htmx_add_effect_to_character(character_tag):
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     log.info("Looking for character %s in chapter %s", character_tag, chapter)
     character_dict = characters.get_character(chapter, character_tag)
@@ -712,7 +711,7 @@ def htmx_add_effect_to_character(character_tag):
     log.info(f"Saving as {character_dict=}")
     characters.save_character(chapter, character_tag, character_dict)
 
-    return htmx.get_character_effects(chapter.url, character_tag, character_dict)
+    return htmx.get_character_effects(chapter, character_tag, character_dict)
 
 
 # /Aesop/Fables/0018/characters/The_Woman/effect/pitch_shift
@@ -721,8 +720,7 @@ def htmx_update_effect_config(character_name, effect_key):
     """
     Generic handler for updating effect configurations.
     """
-    author = Author(author)
-    chapter = Chapter(author, title, chapter_number, language)
+    chapter = g.chapter
 
     log.info("Looking for character %s in chapter %s", character_name, chapter)
     char = characters.get_character(chapter, character_name)
@@ -740,7 +738,7 @@ def htmx_update_effect_config(character_name, effect_key):
 
     characters.save_character(chapter, character_name, char)
 
-    return htmx.get_character_effects(chapter.url, character_name, char)
+    return htmx.get_character_effects(chapter, character_name, char)
 
 
 @bp.route("<character_tag>/audio", methods=["POST"])

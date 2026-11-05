@@ -1,4 +1,4 @@
-"""Switch the single shared GPU between ComfyUI and the Llama inference server."""
+"""Switch the single shared GPU between ComfyUI, Llama, Training, and Python workloads."""
 
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 
-GPUService = Literal["comfy", "llama"]
+GPUService = Literal["comfy", "llama", "training", "python"]
 _active_service: ContextVar[GPUService | None] = ContextVar(
     "active_gpu_service", default=None
 )
@@ -24,11 +24,45 @@ STOPPED_OWNER_GRACE_SECONDS = 30
 MANUAL_SWITCH_LOCK_WAIT_SECONDS = 5
 SERVICE_START_TIMEOUT_SECONDS = 300
 SERVICE_POLL_SECONDS = 1
-MIN_SWITCH_INTERVAL_SECONDS = 300
 LAST_SWITCH_KEY = "gpu:last-switch-at"
 TRANSITION_KEY = "gpu:service-transition"
 STYLER_EVENTS = "styler_sample_events"
+GPU_SWITCH_REQUEST_KEY = "gpu:manual-switch-request"
 log = logging.getLogger(__name__)
+
+
+def queue_manual_switch(client, target_provider: str) -> dict:
+    """Queue an explicit user mode selection through the serial GPU worker."""
+    from task_queue import PRIORITY_QUEUE, enqueue_task
+
+    services = {"comfyui": "ComfyUI", "llama": "Llama", "training": "Training · Clear VRAM", "python": "Python"}
+    if target_provider not in services:
+        raise ValueError("Choose ComfyUI, Llama, Training, or Python")
+    existing = client.get(GPU_SWITCH_REQUEST_KEY)
+    if existing:
+        return {"job_id": existing.decode() if isinstance(existing, bytes) else str(existing),
+                "already_queued": True, "provider": target_provider}
+    task = {
+        "job_id": uuid.uuid4().hex,
+        "action": "gpu_service_switch",
+        "job_type": "GPU service switch",
+        "service_to": services[target_provider],
+        "target_provider": target_provider,
+        "provider": target_provider,
+        "priority": True,
+        "manual_override": True,
+    }
+    if not client.set(GPU_SWITCH_REQUEST_KEY, task["job_id"], nx=True, ex=7200):
+        existing = client.get(GPU_SWITCH_REQUEST_KEY)
+        return {"job_id": existing.decode() if isinstance(existing, bytes) else str(existing),
+                "already_queued": True, "provider": target_provider}
+    try:
+        enqueue_task(client, PRIORITY_QUEUE, task, front=True, ensure_ascii=False)
+        client.publish(STYLER_EVENTS, json.dumps({"state": "job_queued", **task}, ensure_ascii=False))
+    except Exception:
+        client.delete(GPU_SWITCH_REQUEST_KEY)
+        raise
+    return {"job_id": task["job_id"], "provider": target_provider, "already_queued": False}
 
 
 def initialize_active_service(client) -> GPUService | None:
@@ -58,6 +92,11 @@ def initialize_active_service(client) -> GPUService | None:
             client.publish(STYLER_EVENTS, json.dumps({"state": "queue_changed"}))
         return service
 
+    previous = client.get("gpu:active-service")
+    if isinstance(previous, bytes):
+        previous = previous.decode()
+    if not providers and previous in ("training", "python"):
+        return previous
     client.delete("gpu:active-service")
     if len(providers) > 1:
         logging.getLogger(__name__).error(
@@ -80,21 +119,6 @@ def _enabled() -> bool:
 def service_switching_enabled() -> bool:
     """Report whether tasks must wait for an active provider in this runtime."""
     return _enabled()
-
-
-def switch_cooldown_remaining(client) -> float:
-    """Return seconds until another managed GPU-provider change is allowed."""
-    raw_last_switch = client.get(LAST_SWITCH_KEY)
-    try:
-        last_switch_at = float(raw_last_switch) if raw_last_switch else None
-    except (TypeError, ValueError):
-        last_switch_at = None
-    if last_switch_at is None:
-        return 0.0
-    return max(
-        0.0,
-        last_switch_at + MIN_SWITCH_INTERVAL_SECONDS - time.time(),
-    )
 
 
 def _home_api_url() -> str:
@@ -268,8 +292,8 @@ def _switch(
     service: GPUService,
     progress: Callable[[str], None] | None = None,
 ) -> None:
-    provider = "comfyui" if service == "comfy" else "llama"
-    name = "ComfyUI" if service == "comfy" else "Llama"
+    provider = {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}[service]
+    name = {"comfy": "ComfyUI", "llama": "Llama", "training": "Training", "python": "Python"}[service]
     if progress:
         progress(f"Asking Home to stop the other service and start {name} with Compose")
     log.info(
@@ -295,7 +319,23 @@ def _switch(
         )
 
     log.info("Home started the Compose service for %s", name)
-    _wait_until_ready(service, progress)
+    if service not in ("training", "python"):
+        _wait_until_ready(service, progress)
+    else:
+        import subprocess
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, check=True, timeout=15,
+            )
+            if not result.stdout.strip():
+                break
+            if progress:
+                progress("Waiting for GPU memory to be released")
+            time.sleep(2)
+        else:
+            raise RuntimeError("GPU memory is still held by another compute process after stopping ComfyUI and Llama")
     client.set("gpu:active-service", service)
 
 
@@ -304,13 +344,13 @@ def _switch_with_task(
     previous: str | None,
     service: GPUService,
     *,
-    override_cooldown: bool = False,
     transition_task: dict | None = None,
 ) -> None:
     """Run a service handoff as a visible, timed Styler queue task."""
     from styler.queue_history import publish_queue_event
 
-    names = {"comfy": "ComfyUI", "llama": "Llama"}
+    names = {"comfy": "ComfyUI", "llama": "Llama", "training": "Training", "python": "Python"}
+    providers = {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}
     task = {
         **(transition_task or {}),
         "job_id": (transition_task or {}).get("job_id")
@@ -319,25 +359,15 @@ def _switch_with_task(
         "job_type": "GPU service switch",
         "service_from": names.get(previous, "Stopped"),
         "service_to": names[service],
-        "provider": "llama" if service == "llama" else "comfyui",
-        "target_provider": "llama" if service == "llama" else "comfyui",
+        "provider": providers[service],
+        "target_provider": providers[service],
         "queue_started_at": (transition_task or {}).get("queue_started_at")
         or time.time(),
         "state": "running",
-        "message": f"Switching GPU to {names[service]}",
+        "message": "Clearing GPU memory for Training" if service == "training" else f"Switching GPU to {names[service]}",
     }
     _publish_switch_progress(client, task, task["message"])
     try:
-        remaining = 0 if override_cooldown else switch_cooldown_remaining(client)
-        while remaining > 0:
-            message = (
-                f"Waiting {int(remaining + 0.999)}s before switching to "
-                f"{names[service]}"
-            )
-            _publish_switch_progress(client, task, message)
-            time.sleep(min(remaining, 10))
-            remaining = switch_cooldown_remaining(client)
-
         _publish_switch_progress(client, task, f"Switching GPU to {names[service]}")
         _switch(
             client,
@@ -381,7 +411,6 @@ def use_gpu_service(
     client,
     service: GPUService,
     *,
-    override_cooldown: bool = False,
     transition_task: dict | None = None,
 ) -> Iterator[None]:
     """Reuse the active provider, taking exclusive ownership only for handoffs."""
@@ -406,6 +435,11 @@ def use_gpu_service(
         redis_client = client or redis.Redis(
             host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
         )
+        active_mode = redis_client.get("gpu:active-service")
+        if isinstance(active_mode, bytes):
+            active_mode = active_mode.decode()
+        if active_mode == "training" and service != "training" and transition_task is None:
+            raise RuntimeError("Training mode is active; leave Training manually before starting this GPU task")
         lock = redis_client.lock(
             LOCK_NAME,
             timeout=LOCK_TIMEOUT_SECONDS,
@@ -425,10 +459,10 @@ def use_gpu_service(
         stopped_owner_since = None
         forced_switch_attempted = False
         while True:
-            # Concurrent requests to one provider are safe and may come from
-            # threads that do not inherit our ContextVar. Another Llama request
-            # holding the lease must not serialize or deadlock those requests.
-            # Recheck on each pass in case a handoff completed while we waited.
+            # Same-provider work reuses the active provider. GPU tasks execute
+            # through the serial video worker, so they cannot overlap while
+            # another provider transition is in progress. Recheck after waits
+            # in case a handoff completed while we waited.
             if transition_task is None and _provider_is_active(redis_client, service):
                 log.debug("Reusing active GPU provider %s without taking its lock", service)
                 yield
@@ -544,7 +578,6 @@ def use_gpu_service(
                         redis_client,
                         owner_service,
                         service,
-                        override_cooldown=override_cooldown,
                         transition_task=transition_task,
                     )
                     if not _release_stopped_owner_lock(
@@ -587,23 +620,23 @@ def use_gpu_service(
                     redis_client,
                     previous,
                     service,
-                    override_cooldown=override_cooldown,
                     transition_task=transition_task,
                 )
             else:
-                target_provider = "comfyui" if service == "comfy" else "llama"
+                target_provider = {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}[service]
                 running_providers = _home_provider_status().get(
                     "running_providers", []
                 )
-                if running_providers != [target_provider]:
+                if service == "python" and not running_providers:
+                    log.debug("Python already owns the exclusive GPU; skipping provider switch")
+                elif service in ("training", "python") or running_providers != [target_provider]:
                     _switch_with_task(
                         redis_client,
                         previous,
                         service,
-                        override_cooldown=override_cooldown,
                         transition_task=transition_task,
                     )
-                else:
+                elif service not in ("training", "python"):
                     _wait_until_ready(service)
                 if transition_task and running_providers == [target_provider]:
                     from styler.queue_history import publish_queue_event
@@ -613,7 +646,7 @@ def use_gpu_service(
                         STYLER_EVENTS,
                         {
                             **transition_task,
-                            "provider": "llama" if service == "llama" else "comfyui",
+                            "provider": {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}[service],
                             "state": "complete",
                             "queue_started_at": transition_task.get(
                                 "queue_started_at", time.time()

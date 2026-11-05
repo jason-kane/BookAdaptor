@@ -15,6 +15,7 @@ from task_queue import PRIORITY_QUEUE, VIDEO_QUEUE, STYLER_EVENTS, enqueue_task
 render_context = ContextVar("render_context", default={})
 gpu_label = ContextVar("gpu_label", default="Video generation")
 gpu_task_priority = ContextVar("gpu_task_priority", default=False)
+GPU_REDIS_SOCKET_TIMEOUT_SECONDS = 10
 
 
 @contextmanager
@@ -42,6 +43,7 @@ def enqueue(action, arguments, *, provider="comfyui", label=None, timeout=3600,
     if os.environ.get("VIDEO_WORKER_PROCESS") == "1":
         raise RuntimeError("A GPU worker cannot wait on its own queue")
     client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True,
+                         socket_timeout=GPU_REDIS_SOCKET_TIMEOUT_SECONDS,
                          maint_notifications_config=MaintNotificationsConfig(enabled=False))
     job_id = uuid.uuid4().hex
     from cpu_queue import cancellation_requested, TaskCancelled
@@ -62,6 +64,43 @@ def enqueue(action, arguments, *, provider="comfyui", label=None, timeout=3600,
         task["priority"] = True
     queue = PRIORITY_QUEUE if priority else VIDEO_QUEUE
     try:
+        if priority and provider in ("comfyui", "comfy"):
+            from gpu_service import service_switching_enabled
+
+            if service_switching_enabled():
+                active = client.get("gpu:active-service")
+                if isinstance(active, bytes):
+                    active = active.decode()
+                target = "comfyui"
+                raw_transition = client.get("gpu:service-transition")
+                try:
+                    transition = json.loads(raw_transition) if raw_transition else {}
+                except (TypeError, ValueError):
+                    transition = {}
+                needs_comfy_switch = (
+                    active != "comfy"
+                    or bool(transition and transition.get("target_provider") != target)
+                )
+                # Training mode is deliberately left only by a manual mode
+                # selection. A queued image task must never start ComfyUI.
+                if needs_comfy_switch and active != "training":
+                    switch_task = {
+                        "job_id": uuid.uuid4().hex,
+                        "action": "gpu_service_switch",
+                        "job_type": "GPU service switch",
+                        "service_to": "ComfyUI",
+                        "target_provider": target,
+                        "provider": target,
+                        "priority": True,
+                        "trigger_job_id": job_id,
+                    }
+                    enqueue_task(
+                        client, PRIORITY_QUEUE, switch_task,
+                        event_channel=STYLER_EVENTS,
+                        event={**switch_task, "state": "job_queued"},
+                        front=True,
+                        ensure_ascii=False,
+                    )
         enqueue_task(client, queue, task, event_channel=STYLER_EVENTS,
                      event={**{k: v for k, v in task.items() if k != "arguments"},
                             "state": "job_queued"})
@@ -74,6 +113,7 @@ def enqueue(action, arguments, *, provider="comfyui", label=None, timeout=3600,
 def wait(request):
     """Wait for one previously enqueued GPU request and return its result."""
     client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True,
+                         socket_timeout=GPU_REDIS_SOCKET_TIMEOUT_SECONDS,
                          maint_notifications_config=MaintNotificationsConfig(enabled=False))
     deadline = time.monotonic() + request["timeout"]
     try:
@@ -122,6 +162,7 @@ def submit_many(requests, *, on_complete=None, return_exceptions=False):
     results = [None] * len(handles)
     pending = {handle["result_key"]: index for index, handle in enumerate(handles)}
     client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True,
+                         socket_timeout=GPU_REDIS_SOCKET_TIMEOUT_SECONDS,
                          maint_notifications_config=MaintNotificationsConfig(enabled=False))
     deadline = time.monotonic() + max(handle["timeout"] for handle in handles)
     callback_failures = []

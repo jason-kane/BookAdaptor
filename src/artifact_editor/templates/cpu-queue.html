@@ -1,12 +1,15 @@
-<link rel="stylesheet" href="/static/styles/cpu-queue.css?v=12">
-<script defer src="/static/js/cpu-queue.js?v=animation-thumbnail-4"></script>
+<link rel="stylesheet" href="/static/styles/cpu-queue.css?v=14">
+<script defer src="/static/js/cpu-queue.js?v=actual-submission-2"></script>
 <script defer src="/static/js/queue-dependencies.js?v=2"></script>
 <link rel="stylesheet" href="/static/styles/queue-panels.css?v=1">
 <script defer src="/static/js/queue-panels.js?v=1"></script>
 <svg id="queue-dependency-lines" aria-hidden="true" focusable="false"></svg>
 <aside id="cpu-job-queue" data-queue-panel aria-label="CPU queue">
     <header data-queue-drag-handle tabindex="0" aria-label="Move CPU queue" title="Drag to move. Arrow keys move; Shift moves faster.">
-        <h2>CPU Queue</h2>
+        <h2 style="display:flex; flex-direction:column; line-height:1.2;">
+            <span data-cpu-model>CPU</span>
+            <span data-cpu-capacity style="font-weight:400;" hidden></span>
+        </h2>
         <span id="cpu-queue-count"></span>
         <wa-button id="cpu-queue-toggle" size="small" appearance="plain"
             aria-label="Minimize CPU queue" aria-expanded="true" title="Minimize CPU queue">
@@ -14,6 +17,13 @@
         </wa-button>
     </header>
     <div class="cpu-queue-body">
+        <section class="cpu-resource-meters" aria-label="Host resource usage">
+            <div class="cpu-resource-row" data-resource="cpu"><span>CPU</span><meter min="0" max="100" value="0" aria-label="Host CPU utilization"></meter><output>—</output></div>
+            <div id="cpu-core-map" aria-label="Utilization per logical CPU"></div>
+            <p id="cpu-pressure-status" role="status">Sampling host CPU…</p>
+            <div class="cpu-resource-row" data-resource="memory"><span>RAM</span><meter min="0" max="100" value="0" aria-label="Host RAM usage"></meter><output>—</output></div>
+            <div class="cpu-resource-row" data-resource="swap"><span>Swap</span><meter min="0" max="100" value="0" aria-label="Host swap usage"></meter><output>—</output></div>
+        </section>
         <p id="cpu-queue-summary" role="status">Connecting…</p>
         <div id="cpu-queue-renders"></div>
         <div id="cpu-queue-running"></div>

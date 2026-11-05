@@ -52,3 +52,40 @@ class AliasTests(unittest.TestCase):
         self.records['Rob']['alias'] = ['Stone']
         with self.assertRaises(ValueError):
             self.ns['resolve_character_tag'](self.records, 'Stone')
+
+    def test_book_merge_updates_all_chapters_and_canonical_catalog(self):
+        import os
+        import sys
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            for number in ('1', '2'):
+                os.makedirs(os.path.join(root, 'book', 'chapter', number))
+            self.chapter.bookdir = 'book'
+            self.chapter.author = 'author'
+            self.chapter.title = 'title'
+            self.chapter.language = 'english'
+            book_records = deepcopy(self.records)
+            local_records = {1: deepcopy(self.records), 2: deepcopy(self.records)}
+            chapters = {number: SimpleNamespace(number=number, get_xml=lambda: self.xml,
+                        save_phrases=lambda: None, save_images=lambda: None) for number in (1, 2)}
+            def load(chapter, is_global=False):
+                return deepcopy(book_records if is_global else local_records[chapter.number])
+            def save(chapter, records, is_global=False):
+                if is_global:
+                    book_records.clear()
+                    book_records.update(deepcopy(records))
+                else:
+                    local_records[chapter.number] = deepcopy(records)
+            self.ns.update(os=os, const=SimpleNamespace(LIBRARY_DIR=root),
+                           get_all_characters=load, save_characters=save)
+            module = SimpleNamespace(Chapter=lambda author, title, number, language: chapters[number])
+            with patch.dict(sys.modules, {'artifact_editor.chapter.chapter': module}):
+                self.ns['merge_characters'](self.chapter, 'Rob', 'Mr_Stone', book_scope=True)
+            self.assertNotIn('Rob', book_records)
+            self.assertEqual(book_records['Mr_Stone']['description'], 'Gray coat')
+            for records in local_records.values():
+                self.assertNotIn('Rob', records)
+                self.assertIn('Rob', records['Mr_Stone']['alias'])
+                self.assertTrue(records['Mr_Stone']['is_global'])
+            self.assertEqual(self.xml.phrase['speaker'], 'Mr_Stone')

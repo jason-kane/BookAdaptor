@@ -29,6 +29,10 @@
     {% if image.get('src') %}
         </wa-tab-panel>
         <wa-tab-panel name="animation">
+            <wa-checkbox {% if image.get('do_not_animate') == '1' %}checked{% endif %}
+                hx-put="{{ url_for('library.book.chapter.textoviva.save_animation_preference', image_index=image['index'], **chapter.kwargs) }}"
+                hx-trigger="change" hx-vals='js:{do_not_animate: this.checked ? "1" : "0"}'
+                hx-swap="none" hx-sync="this:queue all">Do not animate</wa-checkbox>
             {% if timing %}
             <div class="wa-stack wa-gap-xs">
                 <span>Animation frames: {{ timing.animation_frames if timing.animation_frames is not none else 'Unknown' }}</span>
@@ -78,7 +82,7 @@
                 <div class="wa-cluster">
                     <wa-button
                         hx-post="{{ editor_url }}" hx-vals='{"action":"regenerate_animation_description"}'
-                        hx-target="#timeline-animation-status-{{ image['index'] }}" hx-swap="innerHTML"
+                        hx-target="#timeline-animation-description-status-{{ image['index'] }}" hx-swap="innerHTML"
                         data-animation-description-button
                         hx-disabled-elt="this">Regenerate Description</wa-button>
                     <wa-button
@@ -101,10 +105,13 @@
                         <wa-icon src="/static/images/comfyui.svg"></wa-icon>
                     </wa-button>
                 </div>
-                <div id="timeline-animation-status-{{ image['index'] }}" role="status" aria-live="polite"
+                <div id="timeline-animation-description-status-{{ image['index'] }}" role="status" aria-live="polite"
                     data-animation-description-status
                     data-animation-description-refresh-url="{{ editor_url }}?fragment=animation_description"
                     data-animation-description-target="timeline-animation-description-{{ image['index'] }}"></div>
+                <div id="timeline-animation-status-{{ image['index'] }}" role="status" aria-live="polite"
+                    data-image-editor-url="{{ editor_url }}?tab=animation"
+                    data-image-editor-target="#timeline-image-editor-{{ image['index'] }}"></div>
             </div>
         </wa-tab-panel>
     </wa-tab-group>

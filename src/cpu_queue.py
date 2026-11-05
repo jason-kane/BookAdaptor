@@ -5,6 +5,9 @@ or multiprocessing lock. Workers reconstruct the chapter once per render batch.
 Pending and claimed work remain in Redis across a worker-service restart.
 """
 import json
+import logging
+from functools import lru_cache
+from pathlib import Path
 import multiprocessing as mp
 import os
 import signal
@@ -15,6 +18,8 @@ from werkzeug.routing import BuildError
 
 import redis
 from redis.maint_notifications import MaintNotificationsConfig
+
+log = logging.getLogger(__name__)
 
 CPU_QUEUE = "cpu_jobs"
 PROCESSING = "cpu_jobs:processing"
@@ -165,7 +170,28 @@ def cancel_task(client, job_id, *, allow_running=False):
 
 def connection():
     return redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True,
+                       # Blocking queue reads wait five seconds on the server.
+                       # Leave time for Redis to return its empty-queue response.
+                       socket_timeout=10, socket_connect_timeout=5,
                        maint_notifications_config=MaintNotificationsConfig(enabled=False))
+
+
+def wait_for_worker_redis(client):
+    """Wait for Redis dataset restoration before recovering claims or spawning workers."""
+    waiting = False
+    while True:
+        try:
+            client.ping()
+            if waiting:
+                log.warning("Redis is ready; CPU worker resuming")
+            return
+        except redis.exceptions.AuthenticationError:
+            raise
+        except (redis.exceptions.BusyLoadingError, redis.ConnectionError, redis.TimeoutError):
+            if not waiting:
+                log.warning("CPU worker waiting for Redis to finish loading and accept connections")
+                waiting = True
+            time.sleep(2)
 
 
 def core_count():
@@ -310,6 +336,7 @@ def stop_cancelled_worker(client, worker_id, process):
 def run_pool():
     """A single Compose service supervises all CPU workers and restarts dead ones."""
     client = connection()
+    wait_for_worker_redis(client)
     # The container has stopped its previous processes before this entrypoint
     # starts. Recover claims before creating any replacement workers.
     for processing_key in client.scan_iter(PROCESSING + "*"):
@@ -458,9 +485,29 @@ def retry_task(client, job_id):
             "retry_job_id": task["job_id"], "job": {**public, "state": "queued"}}
 
 
+@lru_cache(maxsize=1)
+def cpu_hardware():
+    """Read static CPU identity and physical memory once per server process."""
+    name = None
+    try:
+        for line in Path('/proc/cpuinfo').read_text().splitlines():
+            key, separator, value = line.partition(':')
+            if separator and key.strip() in ('model name', 'Hardware'):
+                name = value.strip() or None
+                break
+    except OSError:
+        pass
+    try:
+        memory = os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE') / 1024**2
+    except (OSError, ValueError):
+        memory = None
+    return {'cpu_name': name, 'memory_total_mib': memory}
+
+
 def snapshot(client, capacity=12):
     """Bound the view independently of the potentially very large frame queue."""
     from task_queue import RENDER_QUEUE
+    from cpu_metrics import get_cpu_metrics
 
     pool = json.loads(client.get(POOL) or "{}")
     active = [json.loads(raw) for raw in client.hvals(RUNNING)]
@@ -527,7 +574,7 @@ def snapshot(client, capacity=12):
             and client.exists(f"{PAYLOAD_PREFIX}{task.get('job_id', '')}")
         )
         return item
-    return {"state": "cpu_queue_plan", "workers": pool.get("workers", 0),
+    return {"state": "cpu_queue_plan", "hardware": cpu_hardware(), "metrics": get_cpu_metrics(), "workers": pool.get("workers", 0),
             "render_count": render_count,
             "running": [public(task) for task in active[:capacity]],
             "running_count": len(active), "queued_count": pending_count,

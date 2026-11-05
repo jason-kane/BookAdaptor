@@ -1,0 +1,23 @@
+<div id="book-lora-training" class="wa-stack" style="gap: .5rem"
+     hx-get="{{ book.set_book_metadata_url }}loras/status"
+     hx-trigger="every 5s" hx-swap="outerHTML">
+    {% if training_active %}
+    <wa-button disabled aria-describedby="book-lora-training-feedback">+ Add LoRA</wa-button>
+    {% else %}
+    <wa-button href="{{ book.set_book_metadata_url }}loras/new">+ Add LoRA</wa-button>
+    {% endif %}
+    <div id="book-lora-training-feedback" role="status" aria-live="polite">
+        {% for entry in entries %}
+        <div>
+            <strong>{{ entry.filename }}</strong>: {{ entry.message }}
+            {% if entry.state == 'running' %}
+            <progress max="100" {% if entry.percent %}value="{{ entry.percent }}"{% endif %}
+                      aria-label="Training progress for {{ entry.filename }}"></progress>
+            {% if entry.percent %}<span>{{ entry.percent }}%</span>{% endif %}
+            {% endif %}
+            <a href="{{ book.set_book_metadata_url }}loras/new?draft={{ entry.draft_id }}&amp;step=4">Training details</a>
+            <a href="{{ book.set_book_metadata_url }}loras/drafts/{{ entry.draft_id }}/log">Training log</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>

@@ -1,0 +1,102 @@
+{
+  "definitions": [
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "get_groupings_count"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "draw_all_styles"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "draw_all_lora"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "add_style"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "tier_to_letter"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "card_detail"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "Grouper"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "get_categories_and_counts"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "page_button"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "build_pagination"
+    },
+    {
+      "original_path": "src/styler/views.py",
+      "archive_path": "src_archive/styler/views.py",
+      "symbol": "export_styles"
+    },
+    {
+      "original_path": "src/artifact_editor/workflow_templates/views.py",
+      "archive_path": "src_archive/artifact_editor/workflow_templates/views.py",
+      "symbol": "open_workflow"
+    },
+    {
+      "original_path": "src/artifact_editor/workflow_templates/htmx.py",
+      "archive_path": "src_archive/artifact_editor/workflow_templates/htmx.py",
+      "symbol": "user_comment"
+    },
+    {
+      "original_path": "src/artifact_editor/workflow_templates/htmx.py",
+      "archive_path": "src_archive/artifact_editor/workflow_templates/htmx.py",
+      "symbol": "ai_comment"
+    },
+    {
+      "original_path": "src/styler/htmx.py",
+      "archive_path": "src_archive/styler/htmx.py",
+      "symbol": "add_style_widget"
+    },
+    {
+      "original_path": "src/artifact_editor/textoviva/htmx.py",
+      "archive_path": "src_archive/artifact_editor/textoviva/htmx.py",
+      "symbol": "add_style_widget"
+    }
+  ],
+  "assets": [
+    "src/styler/templates/styles.html",
+    "src/styler/templates/styles_page.html"
+  ],
+  "retained": [
+    {
+      "id": "LB0001",
+      "path": "src/artifact_editor/book/views.py",
+      "symbol": "breakdown_chapters",
+      "evidence": "book.table_of_contents -> chapter.htmx.chapter_list -> breakdown_chapters.html when no chapters exist."
+    },
+    {
+      "id": "ST0004",
+      "path": "src/styler/views.py",
+      "symbol": "Card",
+      "evidence": "style_details -> get_favorite_control_button -> POST choice -> choose_this_style -> Card.from_style_name."
+    }
+  ]
+}

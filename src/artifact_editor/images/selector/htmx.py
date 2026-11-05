@@ -51,38 +51,6 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
     # if 'index' in image_xml.attrs:
     image_index = as_int(image_xml.attrs["index"])
 
-    previous_image = image_xml.find_previous("image")
-    if previous_image is not None:
-        destination_frame = os.path.join(
-            const.LIBRARY_DIR,
-            paragraph_dir,
-            f"img_{image_index}_last_frame_of_previous.png",
-        )
-        try:
-            frame_filename = chapter.get_last_frame(previous_image)
-            if frame_filename and os.path.isfile(frame_filename):
-                if (
-                    not os.path.isfile(destination_frame)
-                    or os.path.getmtime(frame_filename) > os.path.getmtime(destination_frame)
-                ):
-                    os.makedirs(os.path.dirname(destination_frame), exist_ok=True)
-                    shutil.copy2(frame_filename, destination_frame)
-                    log.info(
-                        "Copied previous image's final visual to the current image options",
-                        source=frame_filename,
-                        destination=destination_frame,
-                    )
-        except OSError:
-            # Frame extraction uses adjacent lock files and may replace a
-            # directory while the chooser is being opened. This optional
-            # candidate should not prevent the rest of the image editor loading.
-            log.warning(
-                "Could not load the previous image's final visual; omitting that source option",
-                image_index=image_xml.attrs.get("index"),
-                previous_image_index=previous_image.attrs.get("index"),
-                exc_info=True,
-            )
-
     #     for image_path in images.all_images_by_image_index(
     #         paragraph_dir,
     #         image_index
@@ -96,7 +64,9 @@ def gather_candidate_images(image_xml: Tag, chapter: Chapter):
     current_image = chapter.get_image_filename(image_xml)
     if current_image and os.path.isfile(current_image):
         image_paths.add(current_image)
-    return sorted(image_paths)
+    # Continuation frames belong exclusively to extended animation workflows.
+    return sorted(path for path in image_paths
+                  if not os.path.basename(path).endswith("_last_frame_of_previous.png"))
     
 
 def gather_candidate_videos(image_xml: Tag, chapter: Chapter):

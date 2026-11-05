@@ -1,3 +1,4 @@
+@import url("gpu-metrics.css?v=1");
     #styler-job-queue {
         position: fixed;
         z-index: 10000;
@@ -95,3 +96,8 @@
     @keyframes styler-destination-pulse { 0% { outline: 2px solid #ffb454; box-shadow: 0 0 0 0 rgb(255 180 84 / 65%); } 100% { outline-color: transparent; box-shadow: 0 0 0 0.8rem transparent; } }
     @media (prefers-reduced-motion: reduce) { .styler-queue-destination-focus { animation: none; outline: 2px solid #ffb454; } }
     @media (prefers-reduced-motion: reduce) { #styler-job-queue, #styler-job-queue *, #styler-queue-toggle wa-icon { transition-duration: 1ms !important; } }
+
+.styler-gpu-provider[data-provider="python"] [data-provider-option="python"] { opacity: 1; border-color: var(--wa-color-brand-fill-loud); background: var(--wa-color-surface-raised); }
+.styler-gpu-provider[data-transition-to="python"] [data-provider-option="python"] { outline: 1px dashed currentColor; }
+.styler-gpu-provider[data-provider="training"] [data-provider-option="training"] { opacity: 1; border-color: var(--wa-color-brand-fill-loud); background: var(--wa-color-surface-raised); }
+.styler-gpu-provider[data-transition-to="training"] [data-provider-option="training"] { outline: 1px dashed currentColor; }

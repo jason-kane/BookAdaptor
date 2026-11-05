@@ -19,7 +19,7 @@ def view_functions(reader):
     for node in nodes:
         node.decorator_list = []
     scope = dict(styles=SimpleNamespace(r=Mock(), lost_styles_page=reader), request=request,
-                 flask=flask, escape=escape, json=json, url_for=lambda _: '/styles/style_page')
+                 flask=flask, escape=escape, json=json, url_for=lambda *args, **kwargs: '/styles/style_page')
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), scope)
     return scope
 

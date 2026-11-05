@@ -3,7 +3,7 @@
     {% if missing_image or (timing and timing.animation_shortfall) %}
     <span class="chapter-image-warning-badges">
         {% if missing_image %}<wa-badge variant="danger">Image</wa-badge>{% endif %}
-        {% if timing and timing.animation_shortfall %}<wa-badge class="chapter-animation-warning-badge" variant="danger">Animation</wa-badge>{% endif %}
+        {% if timing and timing.animation_shortfall %}<wa-badge class="chapter-animation-warning-badge" variant="{{ 'neutral' if animation_disabled else 'danger' }}"{% if animation_disabled %} title="Do not animate"{% endif %}>Animation</wa-badge>{% endif %}
     </span>
     {% endif %}
     {% if timing %}

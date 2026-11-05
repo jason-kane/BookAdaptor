@@ -49,7 +49,7 @@
         item.append(label);
         const message = document.createElement('p');
         message.className = 'cpu-queue-message';
-        message.textContent = window.TaskTiming?.cleanMessage(task.message) || (task.worker_id ? `Worker ${task.worker_id}` : state);
+        message.textContent = window.TaskTiming?.cleanMessage(task.message) || task.message || (task.worker_id ? `Worker ${task.worker_id}` : state);
         message.title = message.textContent;
         item.append(message);
         if (task.cancellable) {
@@ -171,7 +171,7 @@
         const label = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`]
             .filter(Boolean).join(' · ') || 'Chapter render';
         const message = window.TaskTiming?.cleanMessage(task.message)
-            || (task.worker_id ? `Worker ${task.worker_id}` : state);
+            || task.message || (task.worker_id ? `Worker ${task.worker_id}` : state);
         const labelElement = existing.querySelector('.cpu-queue-label');
         const messageElement = existing.querySelector('.cpu-queue-message');
         const thumbnailUrl = animationThumbnail(task);
@@ -206,7 +206,89 @@
         }
         return existing;
     }
-    document.addEventListener('cpu:queue-plan', ({detail: plan}) => {
+    function updateResources(metrics = {}) {
+        const valid = value => Number.isFinite(value) && value >= 0;
+        const percent = value => `${Math.round(value)}%`;
+        const gib = value => (value / 1024).toFixed(1);
+        function meter(name, value, label, description) {
+            const row = panel.querySelector(`[data-resource="${name}"]`);
+            if (!row) return;
+            const available = valid(value);
+            const bar = row.querySelector('meter');
+            bar.value = available ? Math.min(100, value) : 0;
+            row.dataset.available = String(available);
+            row.dataset.level = available && value >= 90 ? 'high' : available && value >= 70 ? 'medium' : 'normal';
+            row.querySelector('output').textContent = label;
+            row.title = description;
+            bar.setAttribute('aria-valuetext', available ? label : 'Unavailable');
+        }
+        const cpu = metrics.cpu_percent;
+        meter('cpu', cpu, valid(cpu) ? percent(cpu) : '—',
+            'Host CPU busy time across all logical CPUs. I/O wait is shown separately.');
+        for (const [name, prefix] of [['memory', 'RAM'], ['swap', 'Swap']]) {
+            const used = metrics[`${name}_used_mib`], total = metrics[`${name}_total_mib`];
+            const available = valid(used) && valid(total) && total > 0;
+            const disabled = name === 'swap' && total === 0;
+            meter(name, available ? used / total * 100 : disabled ? 0 : null,
+                available ? `${gib(used)} / ${gib(total)} GiB` : disabled ? 'Off' : '—',
+                name === 'memory' ? 'Host RAM used, excluding available and reclaimable memory.'
+                    : 'Host swap allocation. Allocated swap alone does not indicate active swapping.');
+        }
+        const cores = Array.isArray(metrics.core_percent) ? metrics.core_percent.filter(valid) : [];
+        const map = document.getElementById('cpu-core-map');
+        if (map) {
+            map.replaceChildren(...cores.map((value, index) => {
+                const cell = document.createElement('span');
+                cell.className = 'cpu-core-cell';
+                cell.dataset.level = value >= 90 ? 'high' : value >= 70 ? 'medium' : value >= 30 ? 'busy' : 'idle';
+                cell.title = `Logical CPU ${index}: ${percent(value)}`;
+                return cell;
+            }));
+            map.title = 'One cell per logical CPU: green = headroom, amber = busy, red = near capacity.';
+        }
+        const status = document.getElementById('cpu-pressure-status');
+        if (status) {
+            const pressure = metrics.cpu_pressure_percent;
+            const waiting = metrics.io_wait_percent;
+            const hot = cores.filter(value => value >= 90).length;
+            const state = !valid(cpu) ? 'Sampling host CPU…'
+                : cpu >= 90 ? 'CPU near capacity'
+                : valid(pressure) && pressure >= 10 ? 'CPU contention'
+                : valid(waiting) && waiting >= 15 ? 'I/O wait'
+                : hot ? `${hot} logical CPU${hot === 1 ? '' : 's'} near capacity`
+                : 'CPU headroom';
+            const details = [];
+            if (valid(pressure)) details.push(`${Math.round(pressure)}% waiting`);
+            if (valid(waiting) && waiting >= 5) details.push(`${Math.round(waiting)}% I/O wait`);
+            status.textContent = [state, ...details].join(' · ');
+            status.dataset.level = cpu >= 90 || (valid(pressure) && pressure >= 10) ? 'high' : 'normal';
+            status.title = 'Host metrics, including other applications. Waiting is the share of the last 10 seconds when runnable work was delayed for CPU (Linux pressure). I/O wait is idle CPU time waiting for I/O. Per-core activity can reveal a single-thread bottleneck even with overall headroom.';
+        }
+    }
+    const submitted = new Map();
+    let lastPlan = {running_count: 0, queued_count: 0, render_count: 0, renders: []};
+    function renderPlan(plan) {
+        lastPlan = plan;
+        const observed = new Set(['renders', 'running', 'jobs', 'failed', 'completed']
+            .flatMap(key => (plan[key] || []).map(task => task.job_id)));
+        for (const id of observed) submitted.delete(id);
+        plan = {...plan, renders: [...submitted.values(), ...(plan.renders || [])],
+            render_count: (Number(plan.render_count) || 0) + submitted.size};
+        updateResources(plan.metrics);
+        const hardware = plan.hardware;
+        if (hardware?.cpu_name) {
+            const model = hardware.cpu_name.replace(/^AMD\s+/, '').replace(/\s+\d+-Core Processor$/, '').trim();
+            const title = panel.querySelector('[data-cpu-model]');
+            if (title) title.textContent = model;
+            const total = hardware.memory_total_mib;
+            const capacity = Number.isFinite(total) && total > 0 ? `${Math.round(total / 1024)} GB RAM` : '';
+            const memory = panel.querySelector('[data-cpu-capacity]');
+            if (memory) {
+                memory.textContent = capacity;
+                memory.hidden = !capacity;
+            }
+            panel.setAttribute('aria-label', `${model} ${capacity} queue`.replace(/\s+/g, ' '));
+        }
         const renders = Number(plan.render_count) || 0;
         const count = document.getElementById('cpu-queue-count');
         count.textContent = plan.running_count + plan.queued_count + renders || '';
@@ -243,6 +325,33 @@
             }
             container.replaceChildren(...rows);
         }
+    }
+    document.addEventListener('cpu:queue-plan', ({detail: plan}) => renderPlan(plan));
+    document.addEventListener('htmx:wsAfterSend', event => {
+        const button = event.detail.elt;
+        const group = button?.closest('[data-chapter-assets]');
+        if (!group) return;
+        let task;
+        try { task = JSON.parse(event.detail.message); } catch (_) { return; }
+        if (!task?.job_id || !task.action?.startsWith('chapter_')) return;
+        submitted.set(task.job_id, {...task, state: 'submitting', message: 'Submitting…'});
+        renderPlan(lastPlan);
+        panel.classList.remove('is-minimized');
+        toggle.setAttribute('aria-expanded', 'true');
+        toggle.setAttribute('aria-label', 'Minimize CPU queue');
+        toggle.title = 'Minimize CPU queue';
+    });
+    document.addEventListener('htmx:wsAfterMessage', () => {
+        let changed = false;
+        for (const [id, task] of submitted) {
+            const status = document.getElementById(`video-progress-${id}`);
+            const state = status?.dataset.videoState;
+            if (!state || state === task.state) continue;
+            submitted.set(id, {...task, state, message: status.textContent.trim(),
+                cancellable: ['queued', 'running'].includes(state)});
+            changed = true;
+        }
+        if (changed) renderPlan(lastPlan);
     });
     document.addEventListener('cpu:retry-result', ({detail: result}) => {
         const row = [...panel.querySelectorAll('.cpu-queue-row[data-job-id]')]

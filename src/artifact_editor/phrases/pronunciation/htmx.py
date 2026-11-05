@@ -21,16 +21,14 @@ log = logger.log(__name__)
 
 def find_unpronouncable_words_button(chapter):
     return generic_button(
-        chapter.url,
-        category="audio",
+        url=url_for("library.book.chapter.phrases.pronunciation.find_unpronouncable_words", **chapter.kwargs),
         tag="find_unpronouncable_words",
         cosmetic="Find Unpronouncable Words"
     )
 
 def try_cmu_dict_button(chapter):
     return generic_button(
-        chapter.url,
-        category="audio",
+        url=url_for("library.book.chapter.phrases.audio_try_cmu_dict", **chapter.kwargs),
         tag="try_cmu_dict",
         cosmetic="Try CMU Dictionary"
     )

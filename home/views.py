@@ -100,8 +100,8 @@ def switch_gpu_provider():
     from .programs import GPU_PROVIDER_SERVICES, switch_gpu_provider
 
     provider = (request.get_json(silent=True) or {}).get("provider")
-    if not isinstance(provider, str) or provider not in GPU_PROVIDER_SERVICES:
-        return jsonify(error="Choose ComfyUI or Llama."), 400
+    if not isinstance(provider, str) or provider not in (*GPU_PROVIDER_SERVICES, "training", "python"):
+        return jsonify(error="Choose ComfyUI, Llama, Training, or Python."), 400
     try:
         switch_gpu_provider(provider)
     except (OSError, RuntimeError, ValueError) as exc:

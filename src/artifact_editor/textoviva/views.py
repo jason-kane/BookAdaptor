@@ -153,7 +153,14 @@ def animation_panel(image_xml, oob=False):
     workflow_action = url_for(
         "library.book.chapter.textoviva.open_animation_workflow", image_index=index
     )
+    preference_action = url_for(
+        "library.book.chapter.textoviva.save_animation_preference", image_index=index
+    )
+    skip_checked = 'checked' if image_xml.get('do_not_animate') == '1' else ''
     return f"""<section id="video-base" class="wa-stack" data-phrase-indices="{phrase_indices_attr}"{swap}>
+        <wa-checkbox {skip_checked} hx-put="{preference_action}" hx-trigger="change"
+            hx-vals='js:{{do_not_animate: this.checked ? "1" : "0"}}'
+            hx-swap="none" hx-sync="this:queue all">Do not animate</wa-checkbox>
         <strong>Animation · Image {index}</strong>
         <div>Visualization duration: {duration:.2f} seconds</div>
         <wa-textarea id="animation-description" label="Animation description"
@@ -347,6 +354,32 @@ def save_animation_description(image_index):
     return "Description saved."
 
 
+@bp.put("/animation/<int:image_index>/preference")
+def save_animation_preference(image_index):
+    g.chapter.load_xml(force=True)
+    image = g.chapter.get_image(index=image_index)
+    if image is None:
+        return "Image not found", 404
+    value = request.form.get("do_not_animate")
+    if value not in ("0", "1"):
+        return "Invalid animation preference", 400
+    if value == "1":
+        image["do_not_animate"] = "1"
+    else:
+        image.attrs.pop("do_not_animate", None)
+    g.chapter.save_image(image)
+    entry = next((entry for entry in g.chapter.timeline()
+                  if entry["type"] == "image" and int(entry["image"]["index"]) == image_index), None)
+    return render_template(
+        "chapter_phrase_timing.html",
+        timing_id=f"chapter-image-timing-{image_index}",
+        timing=entry["timing"] if entry else None,
+        missing_image=not image.get("src"),
+        animation_disabled=value == "1",
+        timing_oob=True,
+    )
+
+
 @bp.route("/animation/<int:image_index>/regenerate", methods=["POST"])
 def regenerate_animation(image_index):
     g.chapter.load_xml(force=True)
@@ -377,6 +410,7 @@ def regenerate_animation(image_index):
     job_id = uuid.uuid4().hex
     task = {
         "action": "textoviva_regenerate_animation",
+        "job_type": f"Image {image_index} animation",
         "job_id": job_id,
         "author": g.chapter.author.name,
         "title": g.chapter.title,
@@ -393,10 +427,15 @@ def regenerate_animation(image_index):
     from worker_startup import ensure_worker_services
     enqueue_task(client, VIDEO_QUEUE, task)
     ensure_worker_services()
-    return f'<div id="video-progress-{job_id}">Animation queued. The chapter video will be rebuilt.</div>'
+    return f'<div id="video-progress-{job_id}">Image animation queued.</div>'
 
 
 def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
+    from artifact_editor.chapter.workflow import prerequisite_message
+    from artifact_editor.chapter.readiness import video_prerequisite
+    reason = video_prerequisite(chapter, prerequisite_message(chapter, 'textoviva_rerender'))
+    disabled = ' disabled' if reason else ''
+    tooltip = f' title="{escape(reason)}"' if reason else ''
     job_id = uuid.uuid4().hex
     task = escape(
         json.dumps(
@@ -413,9 +452,9 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     )
     notice = f"""<div id="video-generation-notice" class="wa-stack"
         hx-ext="ws" ws-connect="{websocket_url()}">
-        <div class="wa-cluster" style="align-items: center;">
+        <div class="wa-cluster" style="align-items: center;" data-workflow-control{tooltip}>
             <wa-button ws-send hx-trigger="click" hx-vals='{task}'
-                variant="brand" appearance="accent">Generate Video</wa-button>
+                variant="brand" appearance="accent" data-workflow-action="textoviva_rerender"{disabled}{tooltip}>Generate Video</wa-button>
             <wa-button href="{url_for('library.book.chapter.video.download_video', **chapter.kwargs)}"
                 appearance="outlined" download>Download MP4 for VLC</wa-button>
         </div>
@@ -495,18 +534,28 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
 
 @bp.get("/playback-timeline")
 def playback_timeline():
-    plan = g.chapter.get_masterplan()
-
-    def entries(items):
-        return [
-            {"index": str(item.index), "start": item.start_frame, "end": item.end_frame}
-            for item in items
-        ]
-
+    # Playback positions depend on timing, not on whether assets are generated.
+    # Building a render masterplan here rejects unfinished slots and writes XML.
+    phrases, images = [], []
+    frame = 0
+    for tag in g.chapter.get_xml().find_all(["phrase", "image", "silence"]):
+        if tag.name == "image":
+            if images:
+                images[-1]["end"] = frame - 1
+            images.append({"index": str(tag["index"]), "start": frame, "end": frame - 1})
+            continue
+        frames = int(tag.get("frames", 0))
+        if tag.name == "phrase" and frames > 0:
+            phrases.append({"index": str(tag["index"]), "start": frame, "end": frame + frames - 1})
+        elif tag.name == "silence" and phrases:
+            phrases[-1]["end"] = frame + frames - 1
+        frame += frames
+    if images:
+        images[-1]["end"] = frame - 1
     return {
         "fps": const.FPS,
-        "phrases": entries(plan.words),
-        "images": entries(plan.images),
+        "phrases": phrases,
+        "images": [image for image in images if image["end"] >= image["start"]],
     }
 
 
@@ -605,6 +654,7 @@ def expand_image_workshop():
 
 @bp.route("/")
 def base():
+    from artifact_editor.chapter.workflow import prerequisite_message
     # Keep page loads responsive. Video generation is started explicitly by
     # the Re-render action so the controls remain available while no video exists.
     g.chapter.load_xml(force=True)
@@ -619,6 +669,7 @@ def base():
         player_stack=player_stack,
         small_image_workshop=small_image_workshop(image_xml),
         animation_panel=animation_panel(image_xml),
+        video_prerequisite=prerequisite_message(g.chapter, 'textoviva_rerender'),
         rerender_task={
             "action": "textoviva_rerender",
             "job_id": uuid.uuid4().hex,

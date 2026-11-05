@@ -22,6 +22,13 @@
             hx-post="{{ url_for('library.book.chapter.props.update', tag=tag, autosave=1, **chapter.kwargs) }}"
             hx-trigger="change delay:500ms" hx-include="closest form"
             hx-sync="closest form:queue last" hx-swap="none"></wa-input>
+        <wa-textarea name="aliases" label="Aliases (one per line)" value="{{ prop.get('alias', [])|join('\n') }}"
+            hint="Other names used for this object in the story."
+            hx-post="{{ url_for('library.book.chapter.props.aliases', tag=tag, **chapter.kwargs) }}"
+            hx-target="next" hx-swap="innerHTML"
+            hx-trigger="change delay:500ms" hx-include="closest form"
+            hx-sync="closest form:queue last"></wa-textarea>
+        <span role="status" aria-live="polite" data-alias-status></span>
         <wa-textarea name="description" label="Description" value="{{ prop.description }}" resize="auto"
             hx-post="{{ url_for('library.book.chapter.props.update', tag=tag, autosave=1, **chapter.kwargs) }}"
             hx-trigger="change delay:500ms" hx-include="closest form"
@@ -50,6 +57,18 @@
         </div>
         <span data-save-status role="status" aria-live="polite"></span>
     </form>
+    {% if props|length > 1 %}
+    <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.props.merge', tag=tag, **chapter.kwargs) }}"
+          hx-target="#chapter-props" hx-swap="outerHTML">
+        <wa-select name="target_tag" label="This prop is an alias of" required>
+            {% for other_tag, other in props.items() if other_tag != tag %}
+            <wa-option value="{{ other_tag }}">{{ other.name }}</wa-option>
+            {% endfor %}
+        </wa-select>
+        <p>Merge into the selected prop, keep both props’ names as aliases, and update scene references.</p>
+        <wa-button type="submit" variant="brand">Merge Props</wa-button>
+    </form>
+    {% endif %}
     </div>
     </wa-tab-panel>
     {% endfor %}

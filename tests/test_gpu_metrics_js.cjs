@@ -1,0 +1,75 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const {JSDOM} = require('jsdom');
+const template = fs.readFileSync('src/styler/templates/job-queue.html', 'utf8').replace(/{%[\s\S]*?%}/g, '');
+const dom = new JSDOM(`<script data-styler-websocket="ws://test/styler-ws"></script>${template}`, {runScripts: 'outside-only', url: 'http://test/styles/'});
+const {window} = dom;
+const timingTicks = [];
+window.setInterval = callback => { timingTicks.push(callback); return timingTicks.length; };
+Object.defineProperty(window.document, 'readyState', {value: 'complete'});
+const jobProgress = window.document.createElement('wa-progress-bar');
+jobProgress.dataset.taskTiming = JSON.stringify({job_id: 'actual-job', state: 'running', timing: {elapsed_seconds: 5, avg_seconds: 20, samples_seconds: [10, 20, 30]}});
+window.document.body.append(jobProgress);
+new vm.Script(fs.readFileSync('src/artifact_editor/static/js/task-timing.js', 'utf8')).runInContext(dom.getInternalVMContext());
+assert.ok(jobProgress.hasAttribute('data-timed-progress'), 'Real job progress still receives duration estimates');
+assert.match(jobProgress.nextElementSibling.textContent, /left/);
+Object.defineProperty(window.document, 'currentScript', {value: window.document.querySelector('script')});
+window.matchMedia = () => ({matches: true});
+window.ResizeObserver = class {observe() {}};
+window.requestAnimationFrame = callback => callback();
+let timerId = 0;
+const timers = new Map();
+window.setTimeout = (callback, delay) => { const id = ++timerId; timers.set(id, {callback, delay}); return id; };
+window.clearTimeout = id => timers.delete(id);
+class Socket extends window.EventTarget {
+    static OPEN = 1;
+    constructor() { super(); this.readyState = 1; Socket.instance = this; }
+    send() {}
+    close() {}
+}
+window.WebSocket = Socket;
+new vm.Script(fs.readFileSync('src/artifact_editor/static/js/styler-samples.js', 'utf8')).runInContext(dom.getInternalVMContext());
+const send = metrics => Socket.instance.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({state: 'gpu_metrics', ...metrics})}));
+const metric = name => window.document.querySelector(`[data-metric="${name}"]`);
+const value = name => metric(name).querySelector('.styler-queue-metric-value').textContent;
+const bar = name => metric(name).querySelector('wa-progress-bar');
+assert.equal(value('gpu'), 'Unavailable');
+send({gpu_name: 'NVIDIA GeForce RTX 3060', gpu_percent: 0, vram_used_mib: 0, vram_total_mib: 12288});
+assert.equal(window.document.querySelector('[data-gpu-model]').textContent, 'RTX 3060');
+assert.equal(window.document.querySelector('[data-gpu-capacity]').textContent, '12 GB');
+assert.equal(window.document.querySelector('[data-gpu-capacity]').style.fontWeight, '400');
+assert.equal(window.document.querySelector('[data-gpu-capacity]').hidden, false);
+
+assert.equal(window.document.querySelectorAll('.styler-queue-metrics .task-timing-label').length, 0);
+assert.equal(metric('gpu').closest('header'), window.document.querySelector('.styler-queue-rate').closest('header'));
+assert.ok(metric('gpu').compareDocumentPosition(window.document.querySelector('.styler-queue-rate')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+send({gpu_percent: 72, vram_used_mib: 8192, vram_total_mib: 24576});
+assert.equal(value('gpu'), '72%');
+assert.equal(value('vram'), '33%');
+for (const tick of timingTicks) tick();
+assert.equal(bar('gpu').getAttribute('value'), '72', 'Task timing must not replace GPU utilization');
+assert.equal(Number(bar('vram').getAttribute('value')), 8192 / 24576 * 100);
+assert.equal(bar('gpu').hasAttribute('indeterminate'), false);
+assert.equal(bar('vram').hasAttribute('indeterminate'), false);
+window.TaskTiming.bind(bar('gpu'), {job_id: 'accidental-task'});
+for (const tick of timingTicks) tick();
+assert.equal(bar('gpu').getAttribute('value'), '72', 'Explicit task binding must also respect hardware meters');
+assert.equal(window.document.querySelectorAll('.styler-queue-metrics .task-timing-label').length, 0);
+assert.match(bar('vram').getAttribute('label'), /8\.0 \/ 24\.0 GiB/);
+send({gpu_percent: 0, vram_used_mib: 0, vram_total_mib: 24576});
+assert.equal(value('gpu'), '0%');
+assert.equal(value('vram'), '0%');
+send({gpu_percent: null, vram_used_mib: -1, vram_total_mib: 0});
+assert.equal(value('gpu'), 'Unavailable');
+assert.equal(value('vram'), 'Unavailable');
+send({gpu_percent: 50, vram_used_mib: 1024, vram_total_mib: 2048});
+const staleTimer = [...timers.values()].find(timer => timer.delay === 10000);
+assert.ok(staleTimer);
+staleTimer.callback();
+assert.equal(value('gpu'), 'Unavailable');
+send({gpu_percent: 50, vram_used_mib: 1024, vram_total_mib: 2048});
+Socket.instance.dispatchEvent(new window.Event('close'));
+assert.equal(value('gpu'), 'Unavailable');
+assert.equal(value('vram'), 'Unavailable');
+dom.window.close();

@@ -12,22 +12,23 @@
 {% include "chapter_timeline_silence.html" %}
 {% else %}
 {% set phrase = entry.phrase %}
-<div id="phrase_{{ phrase.index }}" class="phrase-container" data-timeline-type="phrase" data-timeline-index="{{ phrase.index }}"
+<fieldset id="phrase_{{ phrase.index }}" class="phrase-container" data-timeline-type="phrase" data-timeline-index="{{ phrase.index }}"
      data-editor-url="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}">
+    <legend class="chapter-phrase-legend">Phrase {{ phrase.index }}</legend>
     {% with item_type='phrase', item_index=phrase.index %}{% include "chapter_timeline_delete.html" %}{% endwith %}
     {% set timing = entry.timing %}
     {% include "chapter_phrase_timing.html" %}
     <wa-textarea
         id="phrase_{{ phrase.index }}_ta"
-        class="phrase-editor"
+        class="phrase-editor" rows="1" resize="auto"
         hx-get="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}"
         hx-vals='js:{"previous_phrase_index": window.previous_phrase_index }'
         hx-trigger="click"
         hx-swap="none"
-        value="{{ phrase.simple_text() }}"
+        value="{{ phrase.simple_text().strip() }}"
     ></wa-textarea>
     {% with phrase_xml=phrase.phrase_xml %}{% include "chapter_phrase_speaker.html" %}{% endwith %}
     <div id="chapter-audio-controls-{{ phrase.index }}" class="wa-stack wa-gap-xs"></div>
-</div>
+</fieldset>
 {% endif %}
 {% endfor %}

@@ -1,8 +1,10 @@
 <wa-drawer class="chapter-actions-drawer" id="chapter-timeline-actions" label="Timeline actions" placement="bottom">
     <div class="chapter-action-groups">
         <section class="chapter-action-group" aria-labelledby="timeline-character-appearances-heading">
-            <h3 id="timeline-character-appearances-heading">Character changes</h3>
+            <h3 id="timeline-character-appearances-heading">Characters</h3>
             <div class="chapter-action-grid">
+                <div class="chapter-action-item">{{ generate_missing_characters_button|safe }}</div>
+                <div class="chapter-action-item">{{ assign_characters_button|safe }}</div>
                 <div class="chapter-action-item">{{ process_character_appearances_button|safe }}</div>
             </div>
         </section>
@@ -10,13 +12,13 @@
             <h3 id="timeline-audio-heading">Audio and timing</h3>
             <div class="chapter-action-grid">
                 <div class="chapter-action-item">{{ generate_missing_audio_button|safe }}</div>
+                <div class="chapter-action-item">{{ place_image_slots_button|safe }}</div>
                 {{ time_align_button|safe }}
             </div>
         </section>
         <section class="chapter-action-group" aria-labelledby="timeline-assets-heading">
             <h3 id="timeline-assets-heading">Generate missing assets</h3>
             <div class="chapter-action-grid">
-                <div class="chapter-action-item">{{ generate_missing_characters_button|safe }}</div>
                 <div class="chapter-action-item">{{ generate_missing_props_button|safe }}</div>
                 <div class="chapter-action-item">{{ generate_missing_metadata_button|safe }}</div>
                 <div class="chapter-action-item">{{ generate_missing_images_button|safe }}</div>

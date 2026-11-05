@@ -273,7 +273,7 @@ def gender_selector(chapter, character, character_tag):
     </wa-select>"""
 
 
-def get_character_effects(chapterurl, character_name, character: dict | None = None):
+def get_character_effects(chapter, character_name, character: dict | None = None):
     # we don't want to allow adding the same effect twice.
     effects_selector = audio_effects.registry.selector(
         skip=character.get("effects", {}).keys(), ns=f"{character_name}"
@@ -289,7 +289,7 @@ def get_character_effects(chapterurl, character_name, character: dict | None = N
 
         log.info("Rendering configuration for effect %s", effect_key)
         widget = effect().get_configuration_widgets(
-            chapterurl=chapterurl,
+            chapter=chapter,
             character_name=character_name,
             effect_config_dict=effect_config,
         )
@@ -301,7 +301,7 @@ def get_character_effects(chapterurl, character_name, character: dict | None = N
             {effects_selector}
 
             <wa-button 
-                hx-post="/{chapterurl}/characters/{character_name}/add_effect"
+                hx-post="{url_for('library.book.chapter.characters.htmx_add_effect_to_character', character_tag=character_name, **chapter.kwargs)}"
                 hx-target="#{character_name}_effects"
                 hx-include="#{character_name}_effect_selector"
                 hx-swap="outerHTML">
@@ -502,7 +502,7 @@ def all_character_cards(chapter, characters: dict[str, dict[str, Any]]):
     return out
 
 
-def character_pronunciation_widget(chapterurl, tag, pronunciation):
+def character_pronunciation_widget(chapter, tag, pronunciation):
     return f"""
     <wa-slider
         label="Pronunciation Filter"
@@ -512,7 +512,7 @@ def character_pronunciation_widget(chapterurl, tag, pronunciation):
         min="700"
         max="2000"
         step="50"
-        hx-put="/{chapterurl}/characters/{tag}/pronunciation_filter"
+        hx-put="{url_for('library.book.chapter.characters.htmx_pronunciation_filter', character_name=tag, **chapter.kwargs)}"
         hx-trigger="change delay:500ms"
         hx-target="#phrase-{tag}-pronunciation-filter"
         id="phrase-{tag}-pronunciation-filter"
@@ -530,7 +530,7 @@ def character_pronunciation_widget(chapterurl, tag, pronunciation):
     """
 
 
-def character_data(chapter, character_dict: dict[str, Any]):
+def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
     """
     Full edit block for a single character.
     None for an invalid character
@@ -600,7 +600,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
     pronunciation_filter = character_dict.get("pronunciation_filter", 2000)
 
     character_pronunciation_widget_html = character_pronunciation_widget(
-        chapter.url, tag, pronunciation_filter
+        chapter, tag, pronunciation_filter
     ) if has_voice else ""
 
     description_editor = "" if is_narrator else f"""
@@ -696,7 +696,7 @@ def character_data(chapter, character_dict: dict[str, Any]):
                     hx-target="#{tag}_scope">
                 </wa-input>
 
-                {render_template('character_aliases.html', chapter=chapter, character=character_dict, tag=tag, catalog=get_all_characters(chapter))}
+                {render_template('character_aliases.html', chapter=chapter, character=character_dict, tag=tag, catalog=get_all_characters(chapter, is_global=book_scope), book_scope=book_scope)}
                 {description_editor}
 
             <div class="wa-split wa-gap-0">

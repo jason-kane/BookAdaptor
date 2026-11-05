@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}<title>Create LoRA · {{ title }}</title>{% endblock %}
+{% block scripts %}
+<script defer src="/static/js/styler-samples.js?v=no-provider-cooldown-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script src="/static/js/lora-wizard.js?v=source-selection-autosave-1" defer></script>
+{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="/static/styles/gpu-queue.css?v=python-provider-1">
+<style>
+.lora-wizard { max-width: 960px; margin: 2rem auto; padding: 1rem; }
+.lora-steps { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
+.lora-steps li { padding: .5rem .8rem; border-radius: .5rem; background: var(--wa-color-surface-raised); }
+.lora-steps [aria-current] { font-weight: bold; outline: 2px solid var(--wa-color-brand-fill-loud); }
+.lora-references { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.lora-reference img { width: 100%; height: 180px; object-fit: contain; border-radius: .5rem; }
+.lora-reference { border: 1px solid var(--wa-color-surface-border); border-radius: .75rem; padding: 1rem; }
+.lora-reference > .lora-image-open { display: block; box-sizing: border-box; width: 100%; height: 180px; min-height: 0; max-height: none; padding: 0; border: 0; border-radius: .5rem; background: transparent; overflow: hidden; cursor: zoom-in; line-height: 0; }
+.lora-reference > .lora-image-open > img { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
+#lora-image-viewer { width: min(1100px, 92vw); max-height: 90vh; box-sizing: border-box; overflow: auto; border: 1px solid var(--wa-color-surface-border); border-radius: 1rem; padding: 1.5rem; background: var(--wa-color-surface-default, #202024); color: inherit; }
+#lora-image-viewer::backdrop { background: rgb(0 0 0 / 70%); }
+.lora-viewer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+#lora-image-viewer .lora-reference { border: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); align-items: start; }
+#lora-image-viewer .lora-reference > img { grid-column: 1; grid-row: 1 / span 3; }
+#lora-image-viewer .lora-reference > wa-select,
+#lora-image-viewer .lora-reference > wa-textarea,
+#lora-image-viewer .lora-reference > .lora-caption,
+#lora-image-viewer .lora-reference > [data-image-save-status] { grid-column: 2; }
+@media (max-width: 700px) {
+    #lora-image-viewer .lora-reference { grid-template-columns: 1fr; }
+    #lora-image-viewer .lora-reference > img { grid-row: auto; height: 45vh; }
+    #lora-image-viewer .lora-reference > wa-select,
+    #lora-image-viewer .lora-reference > wa-textarea,
+#lora-image-viewer .lora-reference > .lora-caption,
+    #lora-image-viewer .lora-reference > [data-image-save-status] { grid-column: 1; }
+}
+#lora-image-viewer img { width: 100%; height: min(65vh, 800px); object-fit: contain; }
+#lora-image-viewer wa-select { max-width: 34rem; }
+.lora-caption { position: relative; }
+.lora-caption wa-textarea::part(label) { padding-inline-end: 2rem; }
+.lora-caption .caption-wand { position: absolute; top: 0; right: 0; z-index: 1; display: grid; place-items: center; width: 1.8rem; height: 1.8rem; min-height: 0; padding: .25rem; border: 0; border-radius: .3rem; cursor: pointer; }
+.caption-wand svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 1.8; }
+</style>
+{% endblock %}
+{% block body %}
+<main id="lora-wizard" class="lora-wizard wa-stack"
+    data-last-modified-image="{{ draft.get('last_modified_image_id', '') if draft else '' }}"
+    {% if draft and (draft.status in ('queued', 'waiting_for_gpu', 'training') or (step == 3 and draft.get('caption_state') in ('queued', 'running'))) %}
+    hx-get="{{ book.set_book_metadata_url }}loras/new?draft={{ draft.id }}&amp;step={{ step }}"
+    hx-trigger="every 5s" hx-select="#lora-wizard" hx-swap="outerHTML"
+    hx-on:htmx:before-request="if (document.activeElement?.closest('#lora-add-character-form')) event.preventDefault()"
+    {% endif %}>
+    <div><wa-button href="{{ book.bookurl }}">Back to book</wa-button></div>
+    <h2>Create a Z-Image Turbo LoRA</h2>
+    <p>Teach a consistent style, character, or concept for {{ title }}.</p>
+    <ol class="lora-steps" aria-label="Creation steps">
+        {% for label in steps %}<li {% if loop.index == step %}aria-current="step"{% endif %}>{{ loop.index }}. {{ label }}</li>{% endfor %}
+    </ol>
+    {% if error %}<wa-callout variant="danger" role="alert">{{ error }}</wa-callout>{% endif %}
+    {% if step in (2, 3) %}
+    <form id="lora-add-character-form" action="{{ book.set_book_metadata_url }}loras/characters" method="post" class="wa-stack">
+        <div class="wa-cluster">
+            <wa-input name="name" label="New character" placeholder="Character name" maxlength="160" required></wa-input>
+            <wa-button type="submit">+ Add character</wa-button>
+        </div>
+        <span data-character-message role="status" aria-live="polite"></span>
+    </form>
+    {% endif %}
+    {% if step == 3 %}
+    <form method="post" action="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/captions" class="wa-stack">
+        <input type="hidden" name="replace_all" value="true">
+        <wa-button type="submit" variant="brand" {% if not draft.images or draft.get('caption_state') in ('queued', 'running') %}disabled{% endif %}>🪄 Replace captions</wa-button>
+        <span>Replaces every caption. Character selections are preserved and included.</span>
+    </form>
+    {% endif %}
+    <form method="post" class="wa-stack" {% if step == 2 and draft %}data-source-selection-autosave action="{{ book.set_book_metadata_url }}loras/new?draft={{ draft.id }}&amp;step=2"{% endif %}>
+    {% if step == 1 %}
+        <h3>1. Define your concept</h3>
+        <wa-input name="name" label="LoRA name" value="{{ values.get('name', '') }}" maxlength="160" required></wa-input>
+        <wa-textarea name="concept" label="What should this LoRA learn?" maxlength="4000"
+            hint="Describe the style, character, or visual concept you want to reproduce."
+            value="{{ values.get('concept', '') }}" required></wa-textarea>
+        <wa-input name="trigger" label="Trigger word" maxlength="100" value="{{ values.get('trigger', '') }}"
+            hint="A distinctive word or phrase to include in captions and future image prompts." required></wa-input>
+    {% elif step == 2 %}
+        <h3>2. Choose book source images</h3>
+        <p>{{ source_images|length }} images found in this book’s source directory, including its subdirectories. Choose 30–50 images. The first 50 are selected initially; uncheck extras or select replacements.</p>
+        <p id="lora-source-selection-count" role="status" aria-live="polite"></p>
+        {% if not source_images %}
+            <wa-callout variant="neutral">No images found in this book’s source directory. Add illustrations there, then reload this page.</wa-callout>
+        {% elif source_images|length < 30 %}
+            <wa-callout variant="warning">At least 30 source images are required; this book currently has {{ source_images|length }}.</wa-callout>
+        {% endif %}
+        <div class="lora-references">
+            {% for filename in source_images %}<div class="lora-reference wa-stack">
+                <img src="{{ book.set_book_metadata_url }}loras/source?file={{ filename|urlencode }}" alt="{{ filename }}" loading="lazy">
+                <label><input type="checkbox" name="source_images" value="{{ filename }}"
+                    {% if (request.method == 'POST' and filename in request.form.getlist('source_images')) or (request.method != 'POST' and (filename in (draft.get('selected_source_images', []) if draft.get('selected_source_images') else selected_sources) or (not draft.get('selected_source_images') and not draft.images and loop.index <= 50))) %}checked{% endif %}> {{ filename }}</label>
+                {% set selected = request.form.getlist('characters_' ~ filename) if request.method == 'POST' else source_characters.get(filename, []) %}
+                <wa-select name="characters_{{ filename }}" label="Characters" multiple clearable placement="bottom"
+                    placeholder="Choose characters" data-saved-characters='{{ selected|tojson }}' >
+                    {% for tag, character in character_catalog.items() %}<wa-option value="{{ tag }}" {% if tag in selected %}selected{% endif %}>{{ character.get('name', tag) }}</wa-option>{% endfor %}
+                </wa-select>
+            </div>{% endfor %}
+        </div>
+    {% elif step == 3 %}
+        <h3>3. Review automatic captions</h3>
+        <p>Qwen3.5 captions the selected images locally and includes “{{ draft.trigger }}”. You can edit the results after captioning finishes. Selected characters are included as [NAME] tags in training captions.</p>
+        {% if draft.get('caption_state') in ('queued', 'running') %}
+            <wa-callout variant="neutral">{{ 'Queued for local Qwen captioning.' if draft.caption_state == 'queued' else 'Generating captions with local Qwen.' }}
+                {{ draft.images|selectattr('caption_generated')|list|length }} of {{ draft.images|length }} captions saved. This page updates automatically.</wa-callout>
+        {% elif draft.get('caption_state') == 'failed' %}
+            <wa-callout variant="danger">{{ draft.caption_error }} Completed captions are saved.</wa-callout>
+        {% endif %}
+        <div class="lora-references">
+            {% for image in draft.images %}<div class="lora-reference wa-stack" id="lora-image-{{ image.id }}"
+                data-lora-image="{{ image.id }}"
+                data-save-url="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/images/{{ image.id }}">
+                <button type="button" class="lora-image-open" aria-label="Enlarge {{ image.original_name }}">
+                    <img src="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/images/{{ image.id }}" alt="{{ image.original_name }}">
+                </button>
+                {% set selected = request.form.getlist('characters_' ~ image.id) if request.method == 'POST' else image.get('character_tags', []) %}
+                <wa-select name="characters_{{ image.id }}" label="Characters" multiple clearable placement="bottom"
+                    placeholder="Choose characters" data-saved-characters='{{ selected|tojson }}'
+                    {% if draft.get('caption_state') in ('queued', 'running') %}disabled{% endif %}>
+                    {% for tag, character in character_catalog.items() %}<wa-option value="{{ tag }}" {% if tag in selected %}selected{% endif %}>{{ character.get('name', tag) }}</wa-option>{% endfor %}
+                </wa-select>
+                <button type="submit" name="remove_image" value="{{ image.id }}" formnovalidate
+                    {% if draft.images|length <= 1 %}disabled{% endif %}
+                    aria-label="Remove {{ image.original_name }} from training">Remove image</button>
+                <div class="lora-caption">
+                    <button type="button" class="caption-wand" aria-label="Generate caption for {{ image.original_name }}"
+                        title="Generate automatic caption" {% if draft.get('caption_state') in ('queued', 'running') %}disabled{% endif %}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 12-12 4 4L8 24M13 11l4 4M6 2v6M3 5h6M19 1v4M17 3h4M20 17v5M17.5 19.5h5" transform="translate(0 -2)"></path></svg>
+                    </button>
+                <wa-textarea label="Caption for {{ image.original_name }}" name="caption_{{ image.id }}"
+                    value="{{ request.form.get('caption_' ~ image.id, image.caption) }}" maxlength="4000" {% if draft.get('caption_state') in ('queued', 'running') %}disabled{% endif %} required></wa-textarea>
+                </div>
+                <span data-image-save-status role="status" aria-live="polite"></span>
+            </div>{% endfor %}
+        </div>
+    {% elif step == 4 %}
+        <h3>4. Review and train</h3>
+        <dl>
+            <dt>Name</dt><dd>{{ draft.name }}</dd>
+            <dt>Concept</dt><dd>{{ draft.concept }}</dd>
+            <dt>Trigger word</dt><dd>{{ draft.trigger }}</dd>
+            <dt>Reference images</dt><dd>{{ draft.images|length }} captioned images</dd>
+        </dl>
+        <div class="lora-references">
+            {% for image in draft.images %}<div class="lora-reference">
+                <img src="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/images/{{ image.id }}" alt="{{ image.original_name }}">
+                <p>{{ caption_text(image) }}</p>
+            </div>{% endfor %}
+        </div>
+        <p>Trainer: Ostris AI Toolkit · Local GPU · Z-Image Turbo</p>
+        <p>{{ training_steps }} steps · LoRA rank 32 · 768×768 square crops · cached latents and text embeddings · Adafactor at 0.0003 · transformer layers offloaded to CPU</p>
+        {% if draft.status == 'complete' %}
+            <wa-callout variant="success">Training complete. {{ draft.name }} is available in the catalog and selected for this book.</wa-callout>
+        {% elif draft.status == 'failed' %}
+            <wa-callout variant="danger">Training failed: {{ draft.error }} Your dataset is saved; you can retry.</wa-callout>
+        {% elif draft.status == 'training' %}
+            <wa-callout variant="brand">{{ training_progress.message }}. This page updates automatically.</wa-callout>
+            <wa-progress-bar value="{{ training_progress.percent }}" label="LoRA training progress"></wa-progress-bar>
+            <wa-callout variant="neutral">{{ training_progress.percent }}% complete</wa-callout>
+        {% elif draft.status == 'waiting_for_gpu' %}
+            <wa-callout variant="neutral">Waiting for other GPU workloads to finish. Stop idle inference services in Home to release the GPU.</wa-callout>
+        {% elif draft.status == 'queued' %}
+            <wa-callout variant="neutral">Queued for the local AI Toolkit worker. This page updates automatically when the worker starts training.</wa-callout>
+        {% else %}
+            <p>Your dataset and captions are ready. Training runs locally and may download the base model and training adapter on first use.</p>
+        {% endif %}
+        <wa-button href="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/log" target="_blank">View training log</wa-button>
+    {% endif %}
+        <div class="wa-cluster">
+            {% if step > 1 and draft.status not in ('queued', 'waiting_for_gpu', 'training', 'complete') and draft.get('caption_state') not in ('queued', 'running') %}<wa-button href="{{ book.set_book_metadata_url }}loras/new?draft={{ draft.id }}&amp;step={{ step - 1 }}">Back</wa-button>{% endif %}
+            {% if step < 4 %}<wa-button {% if step == 2 %}id="lora-select-source-submit"{% endif %} type="submit" variant="brand" {% if (step == 2 and source_images|length < 30) or (draft and draft.get('caption_state') in ('queued', 'running')) %}disabled{% endif %}>{{ 'Review dataset' if step == 3 else 'Use selected images' if step == 2 else 'Continue' }}</wa-button>
+            {% else %}<wa-button type="submit" variant="brand" {% if draft.status in ('queued', 'waiting_for_gpu', 'training', 'complete') %}disabled{% endif %}>{{ 'Retry training' if draft.status == 'failed' else 'Train LoRA' }}</wa-button>{% endif %}
+        </div>
+    </form>
+    {% if step == 3 and draft.get('caption_state') in ('failed', 'draft') %}
+        <form method="post" action="{{ book.set_book_metadata_url }}loras/drafts/{{ draft.id }}/captions">
+            <wa-button type="submit" variant="brand">{{ 'Retry remaining captions' if draft.caption_state == 'failed' else 'Generate captions with Qwen' }}</wa-button>
+        </form>
+    {% endif %}
+    {% if step == 3 %}
+        <dialog id="lora-image-viewer" aria-labelledby="lora-viewer-title">
+            <div class="lora-viewer-header">
+                <h3 id="lora-viewer-title">Image details</h3>
+                <button type="button" data-close-image-viewer aria-label="Close image viewer">Close</button>
+            </div>
+            <div data-viewer-content></div>
+        </dialog>
+    {% endif %}
+    {% if draft %}<p>Your progress is saved. Bookmark this page to return to this draft.</p>{% endif %}
+</main>
+{% include "job-queue.html" %}
+{% endblock %}

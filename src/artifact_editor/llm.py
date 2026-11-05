@@ -189,9 +189,12 @@ def text_2_audio(
         const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
         os.path.basename(wavfile)
     )
+    if force:
+        stem, extension = os.path.splitext(outputfile)
+        outputfile = f"{stem}_{uuid.uuid4().hex}{extension}"
     
     if os.path.exists(outputfile):
-        if force:
+        if force or phrase_xml.get("pronunciation_override"):
             os.remove(outputfile)
         else:
             log.info(f"Audio file already exists at {outputfile}, skipping generation")
@@ -240,6 +243,7 @@ def text_2_audio(
         template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = "af_heart"
         template_environment[f"SPEAKER_{voice_index:02d}_WEIGHT"] = 0.0
 
+    template_environment["PRONUNCIATION"] = phrase_xml.get("pronunciation_override", "")
     template_environment["TEXT"] = spoken_text.strip().replace("\n", " ")
     template_environment["FILENAME_PREFIX"] = os.path.join("audio", os.path.basename(outputfile))
 
@@ -277,7 +281,10 @@ def text_2_audio(
     label = f"Create dialogue audio · {chapter.title} · line {line_index} · {character_name}"
     request = {"ready": False, "wavfile": wavfile, "outputfile": outputfile,
                "workflow_fn": workflow_filename, "label": label,
-               "prepare_vram": True}
+               "prepare_vram": True,
+               "pronunciation_file": os.path.join(
+                   const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "audio",
+                   template_environment["PRONUNCIATION_FILENAME"] + ".txt")}
     if queue_only:
         return request
     from gpu_tasks import task_label
@@ -301,9 +308,7 @@ def collect_text_2_audio(request: dict) -> str:
     )
     
     log.info('Expected output to match glob: %s', glob_filename)
-    newest_flac = max(glob.glob(
-        glob_filename
-    ))
+    newest_flac = max(glob.glob(glob_filename), key=os.path.getmtime)
 
     # artifactserver-1  |   "TEXT": "THE MOUSE, THE CAT, AND THE COCK",
     # artifactserver-1  |   "FILENAME_PREFIX": "audio/ph_0_THE_MOUSE__THE_CAT__AND_T_af306568_d3a9.wav",
@@ -329,13 +334,9 @@ def collect_text_2_audio(request: dict) -> str:
     )
     # /root/ComfyUI/output/audio/ph_0_Fables_6020c8ae_0a40.pronunciation.txt
     #               output/audio/ph_0_Fables_6020c8ae_0a40.wav_00001_.flac
-    pronunciation_filename = os.path.basename(newest_flac).split('.')[0] + "pronunciation.txt"
-    
-    pronunciation_pfn = os.path.join(
-        const.COMFY_DIRS["comfyui"]["OUTPUT_DIR"],
-        "audio",
-        pronunciation_filename
-    )
+    pronunciation_pfn = request.get("pronunciation_file") or os.path.join(
+        const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"], "audio",
+        os.path.splitext(os.path.basename(outputfile))[0] + ".pronunciation.txt")
 
     if os.path.exists(pronunciation_pfn):
         shutil.copy(
@@ -464,28 +465,42 @@ def str_fast_prompt(prompt, system_prompt="You are a helpful assistant.", force=
     return content
 
 
-def json_prompt(prompt, force=False):
+def json_prompt(prompt, force=False, label=None, max_output_tokens=2048):
     content = get_cached_prompt(prompt, format="json", force=force)
     if content is None:
         from gpu_tasks import gpu_label
         from llama_inference import chat_completion
 
         log.info("Running JSON prompt through Llama", prompt=prompt)
-        content = json.loads(chat_completion(
-            None,
-            prompt,
-            system_prompt=(
-                "Return only the JSON object or JSON array requested by the user. "
-                "Do not include explanations or markdown."
-            ),
-            max_tokens=2048,
-            response_format={
-                "type": "json_object",
-                "schema": {"anyOf": [{"type": "object"}, {"type": "array"}]},
-            },
-            thinking_budget_tokens=0,
-            label="JSON prompt · " + gpu_label.get(),
-        ))
+        budget = max(1, int(max_output_tokens))
+        for attempt in range(2):
+            request_prompt = prompt if attempt == 0 else (
+                prompt + "\n\nThe previous response was incomplete or invalid JSON. "
+                "Return the complete requested JSON from the beginning, with concise values. "
+                "Do not repeat entries or include commentary."
+            )
+            raw = chat_completion(
+                None,
+                request_prompt,
+                system_prompt=(
+                    "Return only the JSON object or JSON array requested by the user. "
+                    "Do not include explanations or markdown."
+                ),
+                max_tokens=budget * (2 ** attempt),
+                response_format={
+                    "type": "json_object",
+                    "schema": {"anyOf": [{"type": "object"}, {"type": "array"}]},
+                },
+                thinking_budget_tokens=0,
+                label=label or "JSON prompt · " + gpu_label.get(),
+            )
+            try:
+                content = json.loads(raw)
+                break
+            except json.JSONDecodeError:
+                if attempt:
+                    raise
+                log.warning("Invalid or incomplete JSON response; retrying with a larger output budget")
         set_cached_prompt(prompt, content, format="json")
 
     log.info("LLM responce is: %s", content)

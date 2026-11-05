@@ -1,0 +1,7 @@
+.styler-queue-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; padding: 0 0.2rem 0.65rem; }
+.styler-queue-metric-label { display: flex; justify-content: space-between; align-items: baseline; gap: 0.3rem; margin-bottom: 0.25rem; font-size: 0.68rem; color: var(--wa-color-text-quiet, #aaa); }
+.styler-queue-metric-value { color: var(--wa-color-text-normal, #eee); font-variant-numeric: tabular-nums; }
+.styler-queue-metric wa-progress-bar { display: block; --track-height: 0.3rem; --indicator-color: var(--wa-color-brand-fill-loud, #f89b7f); }
+.styler-queue-metric[data-metric="vram"] wa-progress-bar { --indicator-color: var(--wa-color-success-fill-loud, #43b663); }
+.styler-queue-metric[data-available="false"] wa-progress-bar { opacity: 0.35; }
+#styler-job-queue.is-minimized .styler-queue-metrics { display: none; }

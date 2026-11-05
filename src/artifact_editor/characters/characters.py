@@ -1252,7 +1252,9 @@ def extract_characters(chapter):
         'Return only a JSON list of objects with string fields name, description, and evidence. '
         'Use a short identifying name or role. Description must contain only supported physical '
         'details, preserving species or creature type; use an empty string if none are supplied. '
-        'Evidence must be an exact quote explicitly referring to that character. Return [] if none.\n\n'
+        'Keep each description to at most 40 words and each evidence quote to at most 25 words. '
+        'Return each character only once. Evidence must be an exact quote explicitly referring '
+        'to that character. Return [] if none.\n\n'
         f'Existing characters: {json.dumps([{ "name": c.get("name", tag), "aliases": c.get("alias", [])} for tag, c in existing.items()])}\n\n'
         f'BEGIN SOURCE TEXT\n{story_text}\nEND SOURCE TEXT'
     )
@@ -1263,7 +1265,8 @@ def extract_characters(chapter):
         'Make a complete first-pass inventory, reading every paragraph carefully.',
         'Independently audit the source for overlooked characters, especially silent, unnamed, and animal characters.',
     ):
-        response = llm.json_prompt(perspective + '\n\n' + instructions)
+        response = llm.json_prompt(perspective + '\n\n' + instructions,
+                                   max_output_tokens=4096, label='Character extraction')
         if not isinstance(response, list):
             raise ValueError('Character extraction returned an invalid list. Please try again.')
         extracted.extend(response)
@@ -1295,8 +1298,8 @@ def extract_characters(chapter):
     return count
 
 
-def assign_phrase_speakers(chapter, progress=None, batch_size=16):
-    """Assign only missing/automatic speakers when two grounded reviews agree."""
+def assign_phrase_speakers(chapter, progress=None, batch_size=16, reassign_all=False):
+    """Assign speakers after two grounded reviews; optionally review every phrase."""
     progress = progress or (lambda percent, message: None)
     soup = chapter.get_xml()
     phrases = list(soup.find_all('phrase'))
@@ -1304,7 +1307,7 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
         progress(100, 'No phrases need speaker attribution')
         return 0
 
-    records = get_all_characters(chapter)
+    records = get_all_characters(chapter, is_global=True)
     allowed = {'Narrator': 'Narrator'}
     names = []
     for tag, character in records.items():
@@ -1319,9 +1322,9 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
     eligible = []
     for phrase in phrases:
         current = phrase.get('speaker', '')
-        if phrase.get('speaker_source') == 'manual':
+        if not reassign_all and phrase.get('speaker_source') == 'manual':
             continue
-        if current and current != 'Narrator' and phrase.get('speaker_source') != 'llm':
+        if not reassign_all and current and current != 'Narrator' and phrase.get('speaker_source') != 'llm':
             continue
         eligible.append(phrase)
     if not eligible:
@@ -1330,6 +1333,30 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
 
     paragraphs = list(soup.find_all('paragraph'))
     paragraph_index = {id(paragraph): position for position, paragraph in enumerate(paragraphs)}
+    # Enforce clear quotation boundaries even if both reviews confuse a
+    # speech attribution with the words spoken aloud.
+    narration_ids = set()
+    for paragraph in paragraphs:
+        paragraph_phrases = list(paragraph.find_all('phrase'))
+        text = ' '.join(phrase.get_text(' ', strip=True) for phrase in paragraph_phrases)
+        quotes = list(re.finditer(r'["“”]', text))
+        # Leave unbalanced/multi-paragraph quotations to contextual review.
+        if not quotes or len(quotes) % 2:
+            continue
+        pairs = list(zip(quotes[::2], quotes[1::2]))
+        if any(left.group() not in ('"', '“') or right.group() not in ('"', '”')
+               or (left.group() == '"') != (right.group() == '"')
+               for left, right in pairs):
+            continue
+        offset = 0
+        for phrase in paragraph_phrases:
+            phrase_text = phrase.get_text(' ', strip=True)
+            end = offset + len(phrase_text)
+            if phrase_text and not any(offset < right.end() and end > left.start()
+                                       for left, right in pairs):
+                narration_ids.add(id(phrase))
+            offset = end + 1
+
     changed = 0
     batches = [eligible[start:start + max(1, int(batch_size))]
                for start in range(0, len(eligible), max(1, int(batch_size)))]
@@ -1357,6 +1384,11 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
             'dialogue attribution and pronouns. Ordinary narration, unattributed quotations, '
             'and uncertain cases belong to Narrator. Select only a listed character tag or '
             'Narrator. Do not infer a speaker merely because the phrase mentions them. '
+            'Attribute only words spoken aloud to the character. Speech tags and action or emotion '
+            'descriptions outside quotation marks are Narrator, including between two parts of '
+            'the same speech. In the example “Alpha,” John said, voice full of emotion, “Beta too.” '
+            'Alpha and Beta too belong to John; John said, voice full of emotion belongs to Narrator. '
+            'Decide each target separately; never copy a speaker across an entire paragraph. '
             'Return a JSON list with one object per target, fields index, speaker, evidence. '
             'Evidence must be an exact quote from the supplied context that supports the '
             'speaker decision; for Narrator, use the exact target phrase. Do not omit targets.\n\n'
@@ -1365,8 +1397,12 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
             f'BEGIN SOURCE CONTEXT\n{source_context}\nEND SOURCE CONTEXT'
         )
 
-        def request_review(review_prompt):
-            response = llm.json_prompt(review_prompt)
+        def request_review(review_prompt, stage):
+            progress(int((batch_number - 1) * 100 / len(batches)),
+                     f"{stage} · batch {batch_number}/{len(batches)}")
+            response = llm.json_prompt(
+                review_prompt, label=f"Assign Characters · {stage} · batch {batch_number}/{len(batches)}"
+            )
             if not isinstance(response, list):
                 raise ValueError('Phrase speaker attribution returned an invalid list.')
             result = {}
@@ -1387,7 +1423,7 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
                     result[index] = (tag, evidence)
             return result
 
-        first_review = request_review(prompt)
+        first_review = request_review(prompt, "Identify speakers")
         second_review = request_review(
             'Independently audit the proposed phrase speakers against the source. Correct '
             'unsupported attributions; use Narrator when evidence is ambiguous. Return the '
@@ -1395,12 +1431,14 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
             'character tags or Narrator. Evidence must be an exact quote from the source.\n\n'
             f'Proposed assignments: {json.dumps([{"index": index, "speaker": speaker, "evidence": evidence}
                 for index, (speaker, evidence) in first_review.items()], ensure_ascii=False)}\n'
-            + prompt
+            + prompt, "Verify speakers"
         )
         for phrase in batch:
             index = str(phrase.get('index', ''))
             first_assignment = first_review.get(index)
-            if not first_assignment or second_review.get(index, (None,))[0] != first_assignment[0]:
+            if id(phrase) in narration_ids:
+                first_assignment = ('Narrator', phrase.get_text(' ', strip=True))
+            elif not first_assignment or second_review.get(index, (None,))[0] != first_assignment[0]:
                 phrase['speaker_source'] = 'llm_unresolved'
                 unresolved += 1
                 continue
@@ -1416,7 +1454,7 @@ def assign_phrase_speakers(chapter, progress=None, batch_size=16):
             phrase['speaker_source'] = 'llm'
         chapter.save_phrases()
         progress(int(batch_number * 100 / len(batches)),
-                 f'Checked phrase speakers {batch_number}/{len(batches)} · '
+                 f'Assign Characters · batch {batch_number}/{len(batches)} · '
                  f'{changed} updated, {unresolved} unresolved')
     return changed
 
@@ -1485,8 +1523,8 @@ def set_aliases(chapter, tag, aliases):
     rewrite_character_references(chapter, records, tag)
 
 
-def merge_characters(chapter, source_tag, target_tag):
-    records = get_all_characters(chapter)
+def merge_characters(chapter, source_tag, target_tag, book_scope=False):
+    records = get_all_characters(chapter, is_global=True) if book_scope else get_all_characters(chapter)
     if source_tag == target_tag or source_tag not in records or target_tag not in records:
         raise ValueError('Choose two different existing characters.')
     if 'Narrator' in (source_tag, target_tag):
@@ -1504,5 +1542,23 @@ def merge_characters(chapter, source_tag, target_tag):
             target[key] = value
     target['alias'] = [value for value in aliases if value not in (target_tag, target['name'])]
     del records[source_tag]
-    save_characters(chapter, records)
-    rewrite_character_references(chapter, records, target_tag)
+    if book_scope:
+        from artifact_editor.chapter.chapter import Chapter
+        chapter_root = os.path.join(const.LIBRARY_DIR, chapter.bookdir, "chapter")
+        for entry in sorted(os.listdir(chapter_root)) if os.path.isdir(chapter_root) else []:
+            if not entry.isdigit():
+                continue
+            local_chapter = Chapter(chapter.author, chapter.title, int(entry), language=chapter.language)
+            local = get_all_characters(local_chapter)
+            if source_tag in local or target_tag in local:
+                local.pop(source_tag, None)
+                local[target_tag] = {
+                    "name": target["name"], "tag": target_tag,
+                    "is_global": True, "alias": target["alias"],
+                }
+                save_characters(local_chapter, local)
+            rewrite_character_references(local_chapter, records, target_tag)
+        save_characters(chapter, records, is_global=True)
+    else:
+        save_characters(chapter, records)
+        rewrite_character_references(chapter, records, target_tag)

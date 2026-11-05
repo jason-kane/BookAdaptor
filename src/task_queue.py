@@ -12,7 +12,7 @@ their owning modules.
 ## Queue contract
 
 Jobs are JSON mappings with a stable ``job_id`` and a ``provider`` identifying
-``llama``, ``comfyui``, or ``none`` for control work that needs no model API.
+``llama``, ``comfyui``, ``training``, ``python``, or ``none`` for control work that needs no model API.
 Queue helpers infer this attribute for older call sites that omit it.
 ``enqueue_task`` writes an optional status hash and then pushes the serialized
 job onto a Redis list; left-push is the default because the worker pops from
@@ -41,10 +41,10 @@ RENDER_QUEUE = "chapter_render_jobs"
 RENDER_ACTIONS = frozenset({
     "video_render", "textoviva_rerender", "textoviva_regenerate_animation",
     "textoviva_missing_animation", "timeline_metadata", "chapter_import",
-    "chapter_missing_metadata",
+    "chapter_missing_metadata", "chapter_place_image_slots", "chapter_missing_audio",
     "chapter_missing_images", "chapter_missing_animations",
     "chapter_missing_characters", "chapter_missing_props", "chapter_add_all",
-    "chapter_character_appearances",
+    "chapter_character_appearances", "chapter_assign_characters",
 })
 TAG_QUEUE = "styler_image_tag_jobs"
 PRIORITY_QUEUE = "styler_image_tag_priority_jobs"
@@ -70,12 +70,14 @@ def task_provider(task: Mapping[str, Any]) -> str:
     ):
         return "none"
     provider = task.get("provider")
-    if provider in ("llama", "comfyui", "none"):
+    if provider in ("llama", "comfyui", "training", "python", "none"):
         return provider
     if provider == "comfy":
         return "comfyui"
     if task.get("action") == "gpu_service_switch":
-        return "llama" if task.get("service_to") == "Llama" else "comfyui"
+        return task.get("target_provider") or ("llama" if task.get("service_to") == "Llama" else "comfyui")
+    if task.get("action") == "worker_rpc":
+        return "none" if task.get("operation") == "t5_tokens" else "python"
     if task.get("action") == "worker_reset":
         return "none"
     return "llama" if task.get("action") in LLAMA_TASK_ACTIONS else "comfyui"
@@ -143,14 +145,15 @@ def enqueue_task(
         )
 
 
-def pop_gpu_service_switch(client: "Redis", queue: str) -> dict[str, Any] | None:
+def pop_gpu_service_switch(client: "Redis", queue: str, *, manual_only: bool = False) -> dict[str, Any] | None:
     """Atomically pop a GPU switch control task regardless of target provider."""
     payload = client.eval(
         """
         for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
             local ok, task = pcall(cjson.decode, payload)
             if ok and type(task) == 'table'
-                and task.action == 'gpu_service_switch' then
+                and task.action == 'gpu_service_switch'
+                and (ARGV[1] ~= '1' or task.manual_override == true) then
                 redis.call('LREM', KEYS[1], 1, payload)
                 return payload
             end
@@ -159,6 +162,7 @@ def pop_gpu_service_switch(client: "Redis", queue: str) -> dict[str, Any] | None
         """,
         1,
         queue,
+        '1' if manual_only else '0',
     )
     if not payload:
         return None

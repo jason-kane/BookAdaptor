@@ -19,7 +19,7 @@ from flask import (
     url_for,
     g,
 )
-from task_queue import VIDEO_QUEUE, enqueue_task
+from task_queue import VIDEO_QUEUE, PRIORITY_QUEUE, enqueue_task
 
 import const
 import logger
@@ -32,7 +32,6 @@ from artifact_editor.author.author import Author
 from artifact_editor.tools import (
     get_bookdir,
     get_chapterdir,
-    get_chapterurl,
 )
 
 from . import htmx
@@ -272,6 +271,7 @@ def update_phrase():
 
 @bp.route("/timeline/image/<int:image_index>", methods=["GET", "POST"])
 def timeline_image_editor(image_index):
+    from artifact_editor.textoviva.workflow import default_image_workflow
     from pathlib import Path
     from .timeline import recent_image_candidates
     from artifact_editor.images.selector.htmx import gather_candidate_images
@@ -335,7 +335,7 @@ def timeline_image_editor(image_index):
             client = redis.Redis(
                 host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
             )
-            enqueue_task(client, VIDEO_QUEUE, task)
+            enqueue_task(client, PRIORITY_QUEUE, {**task, "priority": True})
             return (
                 f'<div id="video-progress-{job_id}" data-video-job="{job_id}" '
                 f'data-video-state="queued" role="status" aria-live="polite">'
@@ -415,7 +415,7 @@ def timeline_image_editor(image_index):
             import redis
 
             if not image.get("workflow_image_template"):
-                image["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+                image["workflow_image_template"] = default_image_workflow(g.chapter, const.DEFAULT_IMAGE_TEMPLATE)
             g.chapter.save_image(image)
             job_id = uuid.uuid4().hex
             task = {
@@ -433,7 +433,7 @@ def timeline_image_editor(image_index):
             client = redis.Redis(
                 host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True
             )
-            enqueue_task(client, VIDEO_QUEUE, task)
+            enqueue_task(client, PRIORITY_QUEUE, {**task, "priority": True})
             center_attribute = (
                 f' data-center-generated-image="{image_index}"'
                 if action == "generate"
@@ -528,7 +528,7 @@ def timeline_image_editor(image_index):
         animation_quality=animation_quality,
         animation_quality_options=animation_quality_options,
         preview_version=time.time_ns(),
-        default_image_template=const.DEFAULT_IMAGE_TEMPLATE,
+        default_image_template=default_image_workflow(g.chapter, const.DEFAULT_IMAGE_TEMPLATE),
         thumbnails=thumbnails,
         active_editor_tab=(
             request.form.get("editor_tab") or request.args.get("tab") or "image"
@@ -836,6 +836,20 @@ def timeline_panel():
     )
 
 
+@bp.get("/workflow-status")
+def chapter_workflow_status():
+    from .workflow import ACTIONS, completed_steps, prerequisite_message
+
+    completed = completed_steps(g.chapter)
+    prerequisites = {
+        action: prerequisite_message(g.chapter, action, completed=completed)
+        for action in [*ACTIONS, "chapter_add_all", "textoviva_time_align"]
+    }
+    from .readiness import video_prerequisite
+    prerequisites['textoviva_rerender'] = video_prerequisite(g.chapter, prerequisites['textoviva_rerender'])
+    return {"prerequisites": prerequisites}, 200, {"Cache-Control": "no-store"}
+
+
 @bp.route("")
 @bp.route("/")
 def chapter_base():
@@ -867,11 +881,10 @@ def chapter_base():
         generate_missing_characters_button=htmx.generate_missing_characters_button(g.chapter),
         generate_missing_props_button=htmx.generate_missing_props_button(g.chapter),
         add_all_button=htmx.add_all_button(g.chapter),
+        place_image_slots_button=htmx.place_image_slots_button(g.chapter),
+        assign_characters_button=htmx.assign_characters_button(g.chapter),
         process_character_appearances_button=htmx.process_character_appearances_button(g.chapter),
-        generate_missing_audio_button=phrases_htmx.generate_all_missing_audio_button(
-            g.chapter, label="Add Missing Audio"
-        ),
-        chapterurl=g.chapter.url,
+        generate_missing_audio_button=htmx.generate_missing_audio_button(g.chapter),
         author=g.author,
         pretty_author=g.chapter.config.get("author", g.author),
         title=g.title,
@@ -1251,13 +1264,13 @@ def phrase_editor(phrase_index: int):
         out += f"""
 <wa-textarea 
     id="phrase_{ previous_phrase_index }_ta" 
-    class="phrase-editor"
+    class="phrase-editor" rows="1" resize="auto"
     hx-get="{ url_for('library.book.chapter.phrase_editor', phrase_index=previous_phrase.index) }"
     hx-vals='js:{{"previous_phrase_index": window.previous_phrase_index}}'
     hx-trigger="click"
     hx-swap="none"
     hx-swap-oob="true"
-    value='{ previous_phrase.simple_text() }'
+    value='{ html.escape(previous_phrase.simple_text().strip(), quote=True) }'
 ></wa-textarea>
 """
 
@@ -1329,16 +1342,19 @@ def phrase_editor(phrase_index: int):
         showUniformTypography(phraseEditor);
         phraseEditor.on('text-change', function(delta, oldDelta, source)
         {{
-            htmx.ajax('POST', {json.dumps(phrase_delta_url)},
+            window.chapterPhraseSaves = window.chapterPhraseSaves || {{}};
+            const contents = JSON.stringify(phraseEditor.getContents());
+            const previous = window.chapterPhraseSaves[{phrase_index}] || Promise.resolve();
+            window.chapterPhraseSaves[{phrase_index}] = previous.catch(() => {{}}).then(() => htmx.ajax('POST', {json.dumps(phrase_delta_url)},
             {{
                 headers: {{
                     'Content-Type': 'application/x-www-form-urlencoded'
                 }}, values: {{
-                    delta: JSON.stringify(phraseEditor.getContents()),
+                    delta: contents,
                 }}, swap: 'none', onError: function (err) {{
                     console.error('Error updating:', err);
                 }}
-            }});
+            }}));
         }});
     </script>
 </div>
@@ -1365,6 +1381,7 @@ def import_chapter_small_phrase():
     New algorithm based on scoring every word based on how good of a phrase
     break it is and how suitable it is as a new image.
     """
+    from artifact_editor.textoviva.workflow import default_image_workflow
     # clean slate.
     chapter_soup = BeautifulSoup("<chapter></chapter>", "xml")
 
@@ -1698,7 +1715,7 @@ def import_chapter_small_phrase():
         title_image.attrs["prompt"] = (
             f"Elegant book cover for {g.chapter.title} by {g.chapter.author.name} in an environment that represents the themes of the book."
         )
-        title_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+        title_image.attrs["workflow_image_template"] = default_image_workflow(g.chapter, const.DEFAULT_IMAGE_TEMPLATE)
 
         title_phrase = chapter_soup.new_tag("phrase")
         title_phrase.string = f"{g.chapter.title}\n\nby {g.chapter.author.name}"
@@ -1916,6 +1933,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     New algorithm based on scoring every word based on how good of a phrase
     break it is and how suitable it is as a new image.
     """
+    from artifact_editor.textoviva.workflow import default_image_workflow
     progress = progress or (lambda percent, message: None)
     progress(2, "Reading chapter sections")
     # clean slate.
@@ -1954,16 +1972,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             legacy_delta = {"ops": [{"insert": text}]} if text else {"ops": []}
         sections = [{"typesetting_method": "verse", "ops": legacy_delta.get("ops", [])}]
 
-    combined_ops = []
-    for section_index, section in enumerate(sections):
-        if section_index:
-            combined_ops.append({"insert": "\n"})
-        for operation in section["ops"]:
-            operation = dict(operation)
-            attributes = dict(operation.get("attributes") or {})
-            attributes["_typesetting_method"] = section["typesetting_method"]
-            operation["attributes"] = attributes
-            combined_ops.append(operation)
+    from .illustrations import extract_illustrations
+    sections, combined_ops = extract_illustrations(sections, chapter)
     delta = {"ops": combined_ops}
 
     # The title and author at the beginning of the chapter are a pain in the
@@ -1981,47 +1991,18 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     delta["ops"] = apply_paragraph_alignment(compress_ops(delta["ops"]))
 
-    for ops in delta["ops"]:
+    from .speech import speech_runs
+
+    for ops in speech_runs(delta["ops"]):
+        if "illustration" in ops:
+            out_ops.append(dict(ops, type="illustration"))
+            continue
         log.info("Processing ops: %s", repr(ops))
 
         for major_break in re.split(r"(\n\n+)", ops.get("insert", "")):
-            # ie: paragraph.
-            # # Regex pattern to match anything between double quotes or smart quotes
-            # quote_pattern = re.compile(r'(["“][^"”]*["”])')
-
-            # # Find matches and convert them to spaCy Spans
-            # for match in quote_pattern.finditer(doc.text):
-            #     start, end = match.span()
-            #     # Align the character indices with spaCy token boundaries
-            #     span = doc.char_span(start, end)
-            #     if span is not None:
-            #         print(f"Found quote: {span.text}")
-            # Pattern to capture text between standard quotes, smart quotes, or single quotes
-            # (moron.. not nearly good enough. "that's showing them".  doofus.)
-
-            double_quote_pattern = re.compile(r'["“]([^"”]+)["”]')
-            # single_quote_pattern = re.compile(r'[\'‘]([^\'’]+)[\'’]')
-
-            # Find all matches and extract their start and end character positions
-            broken = []
-            float_index = 0
-            for match in double_quote_pattern.finditer(major_break):
-                start_idx = match.start()
-                end_idx = match.end()
-                if start_idx > float_index:
-                    broken.append((float_index, start_idx))
-
-                broken.append((start_idx, end_idx))
-                float_index = end_idx
-
-            if float_index < len(major_break):
-                broken.append((float_index, len(major_break)))
-
-            log.info("major_break: %s", repr(major_break))
-            log.info("broken: %s", repr(broken))
-
-            if not broken:
-                broken = [(0, len(major_break))]
+            # Quotation boundaries were split across the entire operation
+            # stream, including dialogue spanning formatting changes.
+            broken = [(0, len(major_break))]
 
             for start_idx, end_idx in broken:
                 log.info("Broken span: start=%s, end=%s", start_idx, end_idx)
@@ -2056,13 +2037,13 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
                         # if the previous operation ended with a space, remove it
                         # we . dont want , this .
-                        if out_ops[-1]["insert"][-1] == " ":
+                        if out_ops and out_ops[-1]["insert"].endswith(" "):
                             out_ops[-1]["insert"] = out_ops[-1]["insert"][:-1]
 
                     log.info("sentence: %s", repr(sentence))
                     for word in re.split(r"([ \n])", sentence):
                         # tape the whitespace dribble to the previous
-                        if out_ops and word in [" ", "\n"]:
+                        if out_ops and out_ops[-1].get("type") != "illustration" and word in [" ", "\n"]:
                             out_ops[-1]["insert"] += word
                             continue
 
@@ -2075,6 +2056,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                                     "insert": word,
                                     "attributes": ops.get("attributes", {}),
                                     "type": "word",
+                                    "speech_run": ops["speech_run"],
                                     # punctuation that isn't at the end of a
                                     # sentence is a weak phrase break, way
                                     # better than nothing.  we're establishing
@@ -2092,6 +2074,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                                     "insert": word,
                                     "attributes": ops.get("attributes", {}),
                                     "type": "whitespace",
+                                    "speech_run": ops["speech_run"],
                                     "phrase_score": 0,
                                 }
                             )
@@ -2116,8 +2099,13 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     index = index_start
     phrases = []
+    illustration_positions = []
     log.info("Iterating index from %s to %s", index, len(out_ops))
     while index < len(out_ops):
+        if out_ops[index].get("type") == "illustration":
+            illustration_positions.append((len(phrases), out_ops[index]["illustration"]))
+            index += 1
+            continue
         # for NEW phrases -- we want the segment of the text that the TTS engine
         # will be able to effectively read.  We are entirely disconnected from
         # highlighting, pure vocal quality.
@@ -2135,6 +2123,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         section_end = index + 1
         while (
             section_end < len(out_ops)
+            and out_ops[section_end].get("type") != "illustration"
+            and out_ops[section_end].get("speech_run") == out_ops[index].get("speech_run")
             and out_ops[section_end]
             .get("attributes", {})
             .get("_typesetting_method", "verse")
@@ -2191,6 +2181,12 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         # we typeset each phrase independently.  this is messy.
         log.info("Processing out_ops[%d:%d] for typesetting...", index, break_index + 1)
         our_ops = out_ops[index : break_index + 1]
+
+        # Blank lines between illustration cues carry layout, not narration.
+        # Keep every cue at this phrase boundary without making empty audio.
+        if not any(operation.get("insert", "").strip() for operation in our_ops):
+            index = break_index + 1
+            continue
 
         render_ops = []
         for operation in our_ops:
@@ -2251,7 +2247,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         index = break_index + 1
 
     # clear any leading newlines from the first phrase.
-    out_ops[0]["insert"] = out_ops[0]["insert"].lstrip("\n")
+    if out_ops:
+        out_ops[0]["insert"] = out_ops[0]["insert"].lstrip("\n")
     # out_ops = [
     #     {
     #         "attributes": {
@@ -2269,7 +2266,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     # ] + out_ops
     for operation in out_ops:
         operation.get("attributes", {}).pop("_typesetting_method", None)
-    chapter.save_delta({"ops": out_ops})
+    chapter.save_delta({"ops": [op for op in out_ops if op.get("type") != "illustration"]})
 
     chapter_xml = chapter_soup.find("chapter")
     chapter_latex = render_sections(sections)
@@ -2341,7 +2338,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         title_image.attrs["prompt"] = (
             f"Elegant book cover for {chapter.title} by {chapter.author.name} in an environment that represents the themes of the book."
         )
-        title_image.attrs["workflow_image_template"] = const.DEFAULT_IMAGE_TEMPLATE
+        title_image.attrs["workflow_image_template"] = default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE)
 
         # title_phrase = chapter_soup.new_tag("phrase")
         # title_phrase.string = f"{chapter.title}\n\nby {chapter.author.name}"
@@ -2413,6 +2410,14 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     from .timeline import add_import_silences
 
+    imported_phrases = chapter_soup.find_all("phrase")
+    for image_index, (position, filename) in enumerate(illustration_positions):
+        cue = chapter_soup.new_tag("image", attrs={"index": str(image_index), "source_image": filename})
+        if position < len(imported_phrases):
+            imported_phrases[position].insert_before(cue)
+        else:
+            chapter_xml.find_all("paragraph")[-1].append(cue)
+
     add_import_silences(chapter_soup, const.FPS)
 
     # Audio files are stored under each paragraph's stable index.
@@ -2425,6 +2430,14 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     # delta["ops"] = out_ops
     chapter.replace_content(chapter_soup)
+    # Persist source slots before selecting assets: save_image only updates
+    # existing records in database storage. Source illustrations need no audio.
+    chapter.save_timeline()
+    from artifact_editor.images.source import choose_source_image
+    for image in chapter.get_xml().find_all("image"):
+        if image.get("source_image"):
+            choose_source_image(chapter, image, image["source_image"])
+
 
     cwd = os.path.join(
         const.LIBRARY_DIR,
@@ -2434,20 +2447,6 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
     progress(15, "Typesetting chapter text in CPU Queue")
     enqueue_typesetting(chapter, wait=True, source='latex')
-
-    from artifact_editor.phrases import phrases as phrase_audio
-    from .timeline import add_import_images
-
-    progress(25, "Generating baseline audio")
-    phrase_audio.generate_all_audio(
-        chapter,
-        force=False,
-        batch=True,
-        progress=lambda percent, message: progress(25 + percent * 0.7, message),
-    )
-    progress(96, "Placing image slots")
-    add_import_images(chapter.get_xml())
-    chapter.save_timeline()
 
     progress(97, "Generating chapter mood")
     generate_chapter_mood(chapter)
@@ -2633,6 +2632,13 @@ def save_phrase_delta(phrase_index: int):
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         return f"Invalid phrase delta: {error}", 400
 
+    if phrase_xml.get_text().strip() != plain_text.strip():
+        # IPA overrides and generated audio belong to the previous spoken text.
+        # Keep them for formatting-only edits, but never speak stale IPA after
+        # a wording change. A fresh src will be derived from the new text.
+        for attribute in ("pronunciation", "pronunciation_override", "filtered_pronunciation",
+                          "src", "audio_generation_id"):
+            phrase_xml.attrs.pop(attribute, None)
     phrase_xml.string = plain_text
     phrase_xml.attrs["delta"] = json.dumps(compress_ops(operations))
     phrase_xml.attrs["latex"] = html.escape(latex.replace("\n", r"\n"))

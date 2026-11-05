@@ -25,6 +25,16 @@ Chapter Page
 - Revisit character description extraction for long novel chapters: sending the entire chapter can exceed the LLM context window. Add token budgeting and context-aware chunking that preserves character attribution, then combine only supported evidence.
 - Add a "Sketch" mode for props with a simple, low-resolution painting UI for drawing a prop. Include an "Enhance" button that uses image-to-image generation to turn the sketch into a usable white-background prop reference image.
 
+
+Image authoring / Generate Image
+-------------------------------
+
+- Change "Generate Image" to open a text-plus-image-to-image (t+i2i) authoring environment.
+- Provide a scrapbook-style workspace with easy crop, zoom, and composition of source images.
+- Let the user request an image-to-image pass on demand to blend and smooth the composition into a finished image.
+- Save the result as an authored image, with its authorship credential and source provenance recorded in Sources.
+
+
 Multi-language support is .. well, it is shit.
 
 Include the chapter text here?  If only to make it easy to copy-paste the chapter title if there is one.
@@ -32,3 +42,5 @@ Include the chapter text here?  If only to make it easy to copy-paste the chapte
 Comfy
 =====
 Each chapter should have its own directory in comfy for input/output.
+
+- Write Kokoro support to use Ollama instead of ComfyUI.

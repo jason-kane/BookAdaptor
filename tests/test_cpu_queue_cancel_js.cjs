@@ -11,7 +11,8 @@ class Element {
         this.className = '';
         this.attributes = {};
         this.classList = {contains: name => this.className.split(' ').includes(name),
-            add: name => {this.className += ` ${name}`;}, toggle: () => false};
+            add: name => {this.className += ` ${name}`;},
+            remove: name => {this.className = this.className.split(' ').filter(value => value !== name).join(' ');}, toggle: () => false};
     }
     append(...children) {this.children.push(...children);}
     replaceChildren(...children) {this.children = children;}
@@ -97,3 +98,35 @@ context.socket.readyState = 3;
 emit('cpu:cancel-send', {job_id: 'running', allow_running: true});
 assert.equal(socketMessages.length, 1, 'Disconnected sockets cannot silently discard cancellation');
 console.log('CPU cancellation controls and transport passed');
+
+// Newly sent chapter work is visible before the independent queue socket polls.
+const button = new Element('wa-button');
+button.closest = () => ({dataset: {chapterAssets: 'instant'}});
+button.setAttribute('hx-vals', JSON.stringify({job_id: 'instant', action: 'chapter_missing_characters',
+    title: 'Oz', chapter_number: 4}));
+const beforeSubmit = {workers: 2, running_count: 0, queued_count: 0, render_count: 0, renders: []};
+emit('cpu:queue-plan', beforeSubmit);
+const sentMessage = button.getAttribute('hx-vals');
+button.setAttribute('hx-vals', JSON.stringify({job_id: 'stale-dom-id', action: 'chapter_missing_characters'}));
+emit('htmx:wsAfterSend', {elt: button, message: sentMessage});
+let instant = elements['cpu-queue-renders'].children[0];
+assert.equal(instant.dataset.jobId, 'instant');
+assert.equal(instant.dataset.state, 'submitting');
+assert.equal(instant.querySelector('.cpu-queue-message').textContent, 'Submitting…');
+assert.equal(elements['cpu-queue-toggle'].getAttribute('aria-expanded'), 'true');
+emit('cpu:queue-plan', beforeSubmit);
+assert.equal(elements['cpu-queue-renders'].children[0].dataset.jobId, 'instant', 'Stale poll cannot hide the submitted task');
+elements['video-progress-instant'] = new Element();
+elements['video-progress-instant'].dataset.videoState = 'queued';
+elements['video-progress-instant'].textContent = 'Queued for character extraction';
+emit('htmx:wsAfterMessage', {});
+instant = elements['cpu-queue-renders'].children[0];
+assert.equal(instant.dataset.state, 'queued');
+assert.match(instant.querySelector('.cpu-queue-message').textContent, /Queued/);
+emit('cpu:queue-plan', {...beforeSubmit, render_count: 1,
+    renders: [{job_id: 'instant', state: 'running', message: 'Finding missing characters'}]});
+assert.equal(elements['cpu-queue-renders'].children.length, 1, 'Server snapshot replaces the provisional entry');
+assert.equal(elements['cpu-queue-renders'].children[0].dataset.state, 'running');
+emit('cpu:queue-plan', {...beforeSubmit, renders: [{job_id: 'instant', state: 'complete'}]});
+assert.equal(elements['cpu-queue-renders'].children[0].dataset.state, 'complete');
+console.log('Immediate chapter task visibility and acknowledgement passed');

@@ -34,7 +34,13 @@
                     aria-pressed="{{ 'true' if frame == 'first' else 'false' }}"
                     appearance="{{ 'accent' if frame == 'first' else 'outlined' }}">{{ label }} frame</wa-button>
                 <canvas class="source-frame-preview" data-source-frame="{{ frame }}" aria-label="{{ label }} frame preview"></canvas>
-                <label for="source-{{ frame }}-zoom">{{ label }} frame zoom <output data-source-zoom-label="{{ frame }}">{{ '%.2f'|format(motion[frame]['zoom']) }}×</output></label>
+                <label for="source-{{ frame }}-zoom-percent">{{ label }} frame zoom</label>
+                <div class="wa-cluster wa-gap-xs">
+                    <input id="source-{{ frame }}-zoom-percent" type="number" min="100" max="800" step="1"
+                        data-source-zoom-percent="{{ frame }}" value="{{ (motion[frame]['zoom'] * 100)|round|int }}"
+                        aria-label="{{ label }} frame zoom percent" style="width: 6em;">
+                    <span aria-hidden="true">%</span>
+                </div>
                 <input id="source-{{ frame }}-zoom" type="range" min="1" max="8" step="0.01"
                     data-source-zoom="{{ frame }}" value="{{ motion[frame]['zoom'] }}" aria-label="{{ label }} frame zoom">
             </div>

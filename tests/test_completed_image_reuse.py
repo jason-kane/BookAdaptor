@@ -11,16 +11,26 @@ from unittest.mock import Mock
 import uuid
 
 from bs4 import BeautifulSoup
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch):
+@pytest.mark.parametrize('book_default, image_workflow, expected', [
+    (None, None, 'default'),
+    ('t2i.qwen', None, 'qwen'),
+    ('t2i.qwen', 't2i.zit-paragraph', 'zit-paragraph'),
+])
+def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch, book_default, image_workflow, expected):
     import sys
+    from artifact_editor.textoviva.workflow import image_workflow_name
     image = BeautifulSoup('<image index="3" prompt="Prepared prompt"/>', 'xml').image
+    if image_workflow:
+        image['workflow_image_template'] = image_workflow
     notifications = []
     chapter = SimpleNamespace(title='Book', images=lambda: [image], get_workflow=Mock(return_value='workflow'))
+    chapter.config = {'default_image_template': book_default}
     chapter.save_image = Mock(side_effect=lambda image: notifications.append('saved'))
     chapter.save_images = Mock(side_effect=lambda: notifications.append('saved'))
     def notify(*args):
@@ -36,10 +46,12 @@ def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch):
                         SimpleNamespace(publish_image_completion=notify))
     function = load_function('src/artifact_editor/textoviva/textoviva.py', 'generate_missing_images', dict(
         const=SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default'), os=os, log=Mock(), uuid=uuid,
+        image_workflow_name=image_workflow_name,
         comfy=SimpleNamespace(run_workflow_fn_batch=batch),
         selector_htmx=SimpleNamespace(gather_candidate_images=lambda *_: ['finished.png'])))
     function(SimpleNamespace(chapter=chapter))
     assert notifications == ['saved', 'notified', 'saved']
+    assert chapter.get_workflow.call_args.kwargs['workflow_name'] == expected
 
 
 def load_function(relative, name, namespace):
@@ -117,3 +129,55 @@ def test_missing_stills_recovers_candidate_without_queueing_generation(monkeypat
     assert image['src'] == completed.name
     chapter.get_workflow.assert_not_called()
     comfy.run_workflow_fn_batch.assert_not_called()
+
+
+def test_reserved_selected_frame_is_replaced_by_real_output(monkeypatch, tmp_path):
+    reserved = tmp_path / 'img_10_last_frame_of_previous.png'
+    completed = tmp_path / 'img_10_generated.png'
+    reserved.touch()
+    completed.touch()
+    reuse = image_reuser(monkeypatch, Mock(return_value=[str(reserved), str(completed)]))
+    chapter = SimpleNamespace(get_image_filename=lambda _: str(reserved), save_image=Mock())
+    image = BeautifulSoup('<image index="10"/>', 'xml').image
+    assert reuse(chapter, image) == str(completed)
+    assert image['src'] == completed.name
+
+
+def test_candidate_discovery_excludes_reserved_current_and_globbed_frames(tmp_path):
+    import glob
+    import shutil
+    reserved = tmp_path / 'img_10_last_frame_of_previous.png'
+    completed = tmp_path / 'img_10_generated.png'
+    reserved.touch()
+    completed.touch()
+    image = BeautifulSoup('<paragraph index="5"><image index="10"/></paragraph>', 'xml').image
+    chapter = SimpleNamespace(nice='book', get_paragraph_dir=lambda _: '.',
+                              get_image_filename=lambda _: str(reserved),
+                              get_last_frame=Mock(side_effect=AssertionError('Do not create continuation frames')))
+    gather = load_function('src/artifact_editor/images/selector/htmx.py', 'gather_candidate_images', dict(
+        Tag=object, Chapter=object, os=os, glob=glob, shutil=shutil, as_int=int, log=Mock(),
+        const=SimpleNamespace(LIBRARY_DIR=str(tmp_path), COMFY_DIRS={'artifactserver': {'OUTPUT_DIR': str(tmp_path)}}),
+        images=SimpleNamespace(all_images_by_image_index=lambda *_: [str(reserved), str(completed)])))
+    assert gather(image, chapter) == [str(completed)]
+    chapter.get_last_frame.assert_not_called()
+
+
+def test_reserved_frames_are_not_image_outputs(tmp_path):
+    import glob
+    (tmp_path / 'img_10_last_frame_of_previous.png').touch()
+    completed = tmp_path / 'img_10_generated.png'
+    completed.touch()
+    discover = load_function('src/artifact_editor/images/images.py', 'all_images_by_image_index', dict(
+        os=os, glob=glob, const=SimpleNamespace(LIBRARY_DIR=str(tmp_path)), log=Mock()))
+    assert [Path(path) for path in discover('.', 10)] == [completed]
+
+
+def test_image_selection_rejects_reserved_frame():
+    from urllib.parse import unquote_plus
+    chapter = SimpleNamespace(get_image=Mock(return_value=BeautifulSoup('<image/>', 'xml').image), save_image=Mock())
+    choose = load_function('src/artifact_editor/images/selector/views.py', 'use_image', dict(
+        os=os, unquote_plus=unquote_plus, log=Mock(), g=SimpleNamespace(chapter=chapter),
+        bp=SimpleNamespace(route=lambda *a, **kw: lambda fn: fn),
+        request=SimpleNamespace(form={'selectedImage': 'img_10_last_frame_of_previous.png', 'image_index': '10'})))
+    assert choose()[1] == 400
+    chapter.save_image.assert_not_called()

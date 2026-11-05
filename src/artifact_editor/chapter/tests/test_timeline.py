@@ -86,6 +86,18 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(str(self.soup), before)
         self.assertFalse(self.saved)
 
+    def test_new_silence_uses_structural_save_before_timing_updates(self):
+        from unittest.mock import Mock
+
+        self.chapter.save_timeline = Mock()
+        self.chapter.save_timing = Mock(side_effect=ValueError("silence is not persisted"))
+        silence = module.add_silence(self.chapter, 'image', 4, 24)
+        self.assertIs(self.soup.find('image', index='4').find_next_sibling(), silence)
+        self.assertEqual(silence['duration'], '0.500')
+        self.assertEqual(silence['frames'], '12')
+        self.chapter.save_timeline.assert_called_once()
+        self.chapter.save_timing.assert_not_called()
+
     def test_silence_persists_and_offsets_following_timings(self):
         for phrase in self.soup.find_all('phrase'):
             phrase['duration'] = '1'
@@ -99,7 +111,7 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual((str(timing['start']), str(timing['end'])), ('1', '2.125'))
         self.assertEqual((timing['frame_start'], timing['frame_end'], timing['frames']), (10, 18, 9))
         before = str(self.soup)
-        for invalid in ['nan', 'Infinity', '-0.001', '3.001', 'garbage', '']:
+        for invalid in ['nan', 'Infinity', '-0.001', '5.001', 'garbage', '']:
             with self.assertRaises(ValueError):
                 module.save_silence(self.chapter, silence, invalid, 8)
         self.assertEqual(str(self.soup), before)
@@ -118,8 +130,8 @@ class TimelineTests(unittest.TestCase):
             chapter=self.chapter, silence=silence)
         self.assertIn('value="0.500"', rendered)
         self.assertIn('step="0.001"', rendered)
-        self.assertEqual(rendered.count('slot="reference"'), 7)
-        for tick in range(7):
+        self.assertEqual(rendered.count('slot="reference"'), 11)
+        for tick in range(11):
             self.assertIn('<span slot="reference">' + str(tick / 2) + '</span>', rendered)
 
     def test_add_phrase_below_inherits_speaker_and_preserves_existing_content(self):
@@ -189,7 +201,7 @@ class TimelineTests(unittest.TestCase):
             module.save_silence(self.chapter, silence, '0.750', 8)
             zero = module.add_silence(self.chapter, 'phrase', 2, 8)
             module.save_silence(self.chapter, zero, '0', 8)
-            for duration in ['0.750', '0.750', '1.125']:
+            for duration in ['0.750', '0.750', '1.125', '5.000']:
                 silence['duration'] = duration
                 tracks = module.chapter_audio_tracks(self.chapter, temp, scope['wav_append_delay'])
                 self.assertEqual([Path(track).name for track in tracks],

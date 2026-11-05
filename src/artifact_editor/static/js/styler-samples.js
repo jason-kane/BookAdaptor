@@ -152,6 +152,49 @@
     const maintenanceLabels = settings.maintenanceLabels;
     let maintenanceMode = settings.initialMaintenanceMode;
     let pendingMaintenanceMode = null;
+    let gpuMetricsTimer = null;
+
+    // Hardware samples are independent of queue activity, including when idle.
+    function updateGPUMetrics(metrics) {
+        clearTimeout(gpuMetricsTimer);
+        gpuMetricsTimer = null;
+        const used = metrics?.vram_used_mib;
+        const total = metrics?.vram_total_mib;
+        const memoryAvailable = Number.isFinite(used) && used >= 0
+            && Number.isFinite(total) && total > 0 && used <= total;
+        const memoryPercent = memoryAvailable ? used / total * 100 : null;
+        if (typeof metrics?.gpu_name === 'string' && metrics.gpu_name.trim()) {
+            const model = metrics.gpu_name.trim().replace(/^NVIDIA\s+(?:GeForce\s+)?/i, '');
+            const capacity = Number.isFinite(total) && total > 0 ? `${Math.round(total / 1024)} GB` : '';
+            const title = document.querySelector('[data-gpu-model]');
+            if (title) title.textContent = model;
+            const memory = document.querySelector('[data-gpu-capacity]');
+            if (memory) {
+                memory.textContent = capacity;
+                memory.hidden = !capacity;
+            }
+            document.getElementById('styler-job-queue')?.setAttribute('aria-label', `${model} ${capacity} queue`.replace(/\s+/g, ' '));
+        }
+        for (const [name, value] of [['gpu', metrics?.gpu_percent], ['vram', memoryPercent]]) {
+            const container = document.querySelector(`.styler-queue-metric[data-metric="${name}"]`);
+            if (!container) continue;
+            const available = Number.isFinite(value) && value >= 0 && value <= 100;
+            const label = name === 'gpu' ? 'GPU' : 'VRAM';
+            const description = available
+                ? `${label} usage: ${Math.round(value)}%` + (name === 'vram'
+                    ? ` (${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(1)} GiB)` : '')
+                : `${label} usage unavailable`;
+            container.dataset.available = String(available);
+            container.title = description;
+            container.querySelector('.styler-queue-metric-value').textContent = available ? `${Math.round(value)}%` : 'Unavailable';
+            const bar = container.querySelector('wa-progress-bar');
+            bar.value = available ? value : 0;
+            bar.setAttribute('value', String(available ? value : 0));
+            bar.setAttribute('label', description);
+        }
+        if (metrics) gpuMetricsTimer = window.setTimeout(() => updateGPUMetrics(null), 10000);
+    }
+
     // Render the maintenance-mode slider and its connection state.
     function showMaintenanceMode(connected = socket?.readyState === WebSocket.OPEN) {
         const slider = document.getElementById('styler-maintenance-rate');
@@ -330,7 +373,7 @@
 
     // Return the provider label used in queue-row tooltips and accessible text.
     function queueProvider(job) {
-        if (['comfyui', 'llama', 'none'].includes(job.provider)) return job.provider;
+        if (['comfyui', 'llama', 'training', 'python', 'none'].includes(job.provider)) return job.provider;
         if (job.provider === 'comfy') return 'comfyui';
         return ['styler_tag_sample', 'styler_tag_group', 'styler_scan_image_tags'].includes(job.action)
             ? 'llama' : 'comfyui';
@@ -339,7 +382,7 @@
     // Add or refresh the provider badge centered on the task row's left edge.
     function updateQueueProviderBadge(type, job) {
         const provider = queueProvider(job);
-        const names = {comfyui: 'ComfyUI', llama: 'Llama', none: 'No API provider'};
+        const names = {comfyui: 'ComfyUI', llama: 'Llama', python: 'Python', training: 'Training', none: 'No API provider'};
         let badge = type.querySelector('.styler-queue-provider-badge');
         if (!badge) {
             badge = document.createElement('span');
@@ -356,6 +399,8 @@
             badge.append(image);
         } else if (provider === 'llama') {
             badge.textContent = '🦙';
+        } else if (provider === 'python' || provider === 'training') {
+            badge.textContent = provider === 'python' ? '🐍' : '🏋️';
         } else {
             const icon = document.createElement('wa-icon');
             icon.setAttribute('src', '/static/fontawesome7/svgs/solid/circle-minus.svg');
@@ -673,7 +718,7 @@
 
     // Create, update, or remove a row’s retry button.
     function updateQueueRetryButton(row, job) {
-        const supported = ['failed', 'complete'].includes(job.state) && Boolean(job.job_id);
+        const supported = !job.externally_managed && ['failed', 'complete'].includes(job.state) && Boolean(job.job_id);
         row.dataset.canRetry = String(supported);
         let button = row.querySelector('[data-queue-retry]');
         if (!supported) {
@@ -755,7 +800,7 @@
 
     // Create, update, or remove a queued job’s delete button.
     function updateQueueDeleteButton(row, job) {
-        const supported = job.state === 'queued' && Boolean(job.job_id);
+        const supported = !job.externally_managed && job.state === 'queued' && Boolean(job.job_id);
         row.dataset.canDelete = String(supported);
         let button = row.querySelector('[data-queue-delete]');
         if (!supported) {
@@ -1148,13 +1193,13 @@
     ) {
         const control = document.getElementById('styler-gpu-provider');
         if (!control) return;
-        const supportedProviders = ['comfyui', 'llama'];
+        const supportedProviders = ['comfyui', 'llama', 'training', 'python'];
         const active = supportedProviders.includes(provider) ? provider : 'unknown';
         const transitioningTo = supportedProviders.includes(switchingTo) ? switchingTo : null;
         const pendingTarget = supportedProviders.includes(queuedTarget) ? queuedTarget : null;
         const target = transitioningTo || pendingTarget;
         const pending = requestPending || Boolean(target);
-        const label = value => value === 'comfyui' ? 'ComfyUI' : 'Llama';
+        const label = value => ({comfyui: 'ComfyUI', llama: 'Llama', python: 'Python', training: 'Training'})[value] || value;
         control.dataset.provider = active;
         control.dataset.pending = String(pending);
         if (target) control.dataset.transitionTo = target;
@@ -1177,8 +1222,8 @@
             button.title = pending
                 ? description
                 : selected
-                    ? `Active ${label(active)}; click to switch to ${label(active === 'llama' ? 'comfyui' : 'llama')}`
-                    : `Switch GPU to ${label(button.dataset.providerOption)} (overrides the five-minute cooldown)`;
+                    ? `Active GPU mode: ${label(active)}`
+                    : `Switch GPU to ${label(button.dataset.providerOption)}`;
         }
     }
 
@@ -1188,9 +1233,8 @@
         const control = document.getElementById('styler-gpu-provider');
         if (!button || button.disabled || !control) return;
         const selectedProvider = button.dataset.providerOption;
-        const provider = selectedProvider === control.dataset.provider
-            ? (selectedProvider === 'llama' ? 'comfyui' : 'llama')
-            : selectedProvider;
+        const provider = selectedProvider;
+        if (provider === control.dataset.provider) return;
         updateGPUProviderControl(control.dataset.provider, null, true, provider);
         if (socket?.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({action: 'gpu_service_switch', provider}));
@@ -2041,6 +2085,10 @@
             return;
         }
         if (!event || typeof event !== 'object' || Array.isArray(event)) return;
+        if (event.state === 'gpu_metrics') {
+            updateGPUMetrics(event);
+            return;
+        }
         if (['chapter_image_snapshot', 'chapter_image_complete'].includes(event.state)) {
             document.dispatchEvent(new CustomEvent('chapter:image-event', {detail: event}));
             return;
@@ -2127,6 +2175,7 @@
 
     // Reset transient controls and schedule a reconnect after the socket closes.
     function handleSocketClose() {
+        updateGPUMetrics(null);
         pendingMaintenanceMode = null;
         showMaintenanceMode(false);
         showQueueLoading();
@@ -2185,6 +2234,6 @@
         }
         for (const card of cards) highlightImageTags(card);
     }).observe(document.body, {childList: true, subtree: true});
-    window.addEventListener('pagehide', () => { stopped = true; socket.close(); });
+    window.addEventListener('pagehide', () => { stopped = true; updateGPUMetrics(null); socket.close(); });
     connect();
 })();

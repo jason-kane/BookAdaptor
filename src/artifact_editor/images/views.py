@@ -340,7 +340,7 @@ def comfyui_workflow_run(image_index: int = 0):
             return str(exc), 400
         log.info('Workflow file for image %s: %s', image_index, workflow_fn)
 
-        comfy.run_workflow_fn(workflow_fn)
+        comfy.run_workflow_fn(workflow_fn, priority=True)
         candidates = selector_htmx.gather_candidate_images(image_xml, g.chapter)
         if candidates:
             generated_image_fn = max(candidates, key=os.path.getmtime)
@@ -1134,7 +1134,7 @@ def htmx_rightsize_t5_prompt(image_index):
     """
     image_index = int(image_index)
 
-    log.info(f"Rightsizing T5 prompt for {g.chapter.chapterurl}/images/{image_index}")
+    log.info("Rightsizing T5 prompt", chapter=g.chapter.kwargs, image_index=image_index)
     image_xml = g.chapter.get_image(image_index)
 
     t5_prompt = image_xml.attrs.get("t5_prompt", "")
@@ -1473,19 +1473,13 @@ def create_new_image(image_index=0, styled=False, force=True):
 
     styled = styled or request.args.get("styled", "false").lower() == "true"
 
-    loras = []
-    lora = request.form.get("lora", "")
-    if lora:
-        # future downstream support for multiple loras.
-        loras = [
-            lora.strip(),
-        ]
-
+    from artifact_editor.loras import image_selection
     prompt = ""
     clip_prompt = ""
-
     image_xml = g.chapter.get_image(image_index)
-    image_xml.attrs["loras"] = json.dumps(loras)
+    if "lora" in request.form:
+        image_xml.attrs["loras"] = json.dumps([v for v in request.form.getlist("lora") if v])
+    image_selection(g.chapter, image_xml)
 
     image_model = image_xml.attrs.get("t2i", "flux.schnell")
     paragraph = image_xml.find_parent("paragraph")
@@ -1724,7 +1718,6 @@ def base(image_index: int, override=None):
         title=g.title,
         pretty_title=pretty_title,
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         image_index=image_index,
         section="images",
         section_cosmetic="Images",
@@ -2208,6 +2201,7 @@ def draw_all_missing_images():
     """
     Draw all missing images for the current chapter.
     """
+    from artifact_editor.textoviva.workflow import default_image_workflow
     for image_xml in g.chapter.images():
         image_index = int(image_xml.attrs.get("index", 0))
 
@@ -2230,7 +2224,7 @@ def draw_all_missing_images():
             if workflow_template == SOURCE_WORKFLOW:
                 return f"Choose a source image for image {image_index} from Chapter Source", 400
             if not workflow_template:
-                workflow_template = const.DEFAULT_IMAGE_TEMPLATE
+                workflow_template = default_image_workflow(g.chapter, const.DEFAULT_IMAGE_TEMPLATE)
                 image_xml.attrs["workflow_image_template"] = workflow_template
 
             # mode.workflow_template

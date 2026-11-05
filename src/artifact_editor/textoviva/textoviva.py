@@ -462,6 +462,7 @@ class Textoviva:
 
     def generate_missing_images(self, progress=None):
         """Generate still images only; preserve existing images."""
+        from artifact_editor.textoviva.workflow import default_image_workflow
         from artifact_editor.images.images import reuse_existing_image
         from artifact_editor.images.source import SOURCE_WORKFLOW
 
@@ -471,7 +472,7 @@ class Textoviva:
             # Keep the prompt tab's workflow selector populated, including for
             # images whose files already exist and therefore skip generation.
             if not image_xml.attrs.get("workflow_image_template"):
-                workflow_template = const.DEFAULT_IMAGE_TEMPLATE
+                workflow_template = default_image_workflow(self.chapter, const.DEFAULT_IMAGE_TEMPLATE)
                 if "." in workflow_template:
                     workflow_template = image_workflow_name(workflow_template)
                 image_xml.attrs["workflow_image_template"] = workflow_template
@@ -493,7 +494,7 @@ class Textoviva:
             # the image generator.  The specific phrases unique to _this_ image
             # are also specified.  We're going to block, so if things aren't going well
             # it's easier to stop early.
-            workflow_template = const.DEFAULT_IMAGE_TEMPLATE
+            workflow_template = image_xml.attrs.get("workflow_image_template") or default_image_workflow(self.chapter, const.DEFAULT_IMAGE_TEMPLATE)
             # mode.workflow_template
             if "." in workflow_template:
                 workflow_template = image_workflow_name(workflow_template)
@@ -546,7 +547,11 @@ class Textoviva:
                 video_index=None,
                 template_environment=template_environment,
             )
-            pending.append((image_xml, workflow_fn))
+            pending.append((
+                image_xml,
+                workflow_fn,
+                set(selector_htmx.gather_candidate_images(image_xml, self.chapter)),
+            ))
 
         if pending:
             total_pending = len(pending)
@@ -557,7 +562,7 @@ class Textoviva:
             )
 
             def collect_image(position, result):
-                image_xml, _ = pending[position]
+                image_xml, _, previous_candidates = pending[position]
                 image_index = image_xml.attrs["index"]
                 position_end = 20 + int(40 * (position + 1) / total_pending)
                 if isinstance(result, Exception):
@@ -568,8 +573,11 @@ class Textoviva:
                     return
                 report(position_end, f"Saving generated Image {image_index} ({position + 1}/{total_pending})")
                 candidates = selector_htmx.gather_candidate_images(image_xml, self.chapter)
-                image_xml.attrs['src'] = candidates[0] if candidates else ""
-                if image_xml.attrs['src']:
+                current_image = self.chapter.get_image_filename(image_xml)
+                if not (current_image and os.path.isfile(current_image)) and candidates:
+                    fresh_candidates = [path for path in candidates if path not in previous_candidates]
+                    selected_image = max(fresh_candidates or candidates, key=os.path.getmtime)
+                    image_xml.attrs['src'] = os.path.basename(selected_image)
                     # Persist each completed still immediately. Theater's live
                     # progress view can then reveal it while later GPU tasks
                     # remain queued.
@@ -592,7 +600,7 @@ class Textoviva:
                         "workflow_fn": workflow_fn,
                         "label": f"Generate still image · {self.chapter.title} · shot {image_xml.attrs['index']}",
                     }
-                    for image_xml, workflow_fn in pending
+                    for image_xml, workflow_fn, _ in pending
                 ],
                 on_complete=collect_image,
                 return_exceptions=True,
@@ -618,6 +626,11 @@ class Textoviva:
             if regenerate_image_index is not None:
                 selected.add(int(regenerate_image_index))
             animation_images = [image for image in animation_images if int(image['index']) in selected]
+        else:
+            # Bulk preparation honors per-image opt-outs. Explicit per-image
+            # re-renders remain available when the user requests one directly.
+            animation_images = [image for image in animation_images
+                                if image.get('do_not_animate') != '1']
         missing = [image for image in animation_images
                    if not self.chapter.get_image_filename(image)
                    or not os.path.isfile(self.chapter.get_image_filename(image))]

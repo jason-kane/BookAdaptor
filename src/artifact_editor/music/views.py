@@ -35,7 +35,6 @@ from artifact_editor.tools import (
     get_bookdir,
     get_bookurl,
     get_chapterdir,
-    get_chapterurl,
 )
 from artifact_editor.video import htmx as video_htmx
 
@@ -82,7 +81,6 @@ def base():
         title=g.title,
         pretty_title=pretty_title,
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         buttons=buttons,
         section="music",
         section_cosmetic="Music",

@@ -53,7 +53,8 @@ def pop_interactive_job(client, queue='video_render_jobs'):
                     or action == 'stockpile_image_metadata'
                 if not background then
                     redis.call('LREM', KEYS[1], 1, jobs[i])
-                    return jobs[i]
+                    if not task.priority_removed then task.priority = true end
+                    return cjson.encode(task)
                 end
             end
         end

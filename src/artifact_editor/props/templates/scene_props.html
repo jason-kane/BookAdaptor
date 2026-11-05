@@ -4,7 +4,7 @@
         hx-trigger="change" hx-target="closest #scene_props" hx-swap="outerHTML"
         hint="Choose props present in this scene.">
         {% for tag, prop in props.items() %}
-        <wa-option value="{{ tag }}"{% if tag in selected %} selected{% endif %}>{{ prop.name }}</wa-option>
+        <wa-option value="{{ tag }}"{% if tag in selected %} selected{% endif %}>{{ prop.name }}{% if prop.get('alias') %} ({{ prop.get('alias')|join(', ') }}){% endif %}</wa-option>
         {% endfor %}
     </wa-select>
 </div>

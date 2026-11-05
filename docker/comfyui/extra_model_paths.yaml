@@ -1,0 +1,3 @@
+bookadaptor:
+  base_path: /active
+  loras: loras

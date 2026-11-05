@@ -36,6 +36,8 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(records['Fox']['description'], 'A red fox')
         self.assertEqual(records['Fox']['voices'], [])
         self.assertEqual(model.call_count, 2)
+        self.assertTrue(all(call.kwargs['max_output_tokens'] == 4096
+                            for call in model.call_args_list))
         self.assertIn('complete first-pass inventory', model.call_args_list[0].args[0])
         self.assertIn('Independently audit', model.call_args_list[1].args[0])
         self.assertNotIn('invented dragon', model.call_args_list[0].args[0])

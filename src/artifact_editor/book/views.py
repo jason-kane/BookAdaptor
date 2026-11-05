@@ -1,5 +1,8 @@
 import os
 import re
+import json
+from html import escape
+from artifact_editor import loras
 
 from flask import (
     Blueprint,
@@ -43,7 +46,24 @@ def set_book_metadata(author, title):
     if not book.bookdir:
         return render_template("404.html"), 404
 
+    if 'default_image_template' in request.form:
+        from artifact_editor.textoviva.workflow import image_engine_choices
+        if request.form['default_image_template'] not in dict(image_engine_choices()):
+            return "Invalid image generation engine", 400
+
+    if "default_loras" in request.form:
+        try:
+            selected = loras.normalize(json.loads(request.form["default_loras"]))
+            available = {item["filename"] for item in loras.catalog()}
+            if any(value not in available for value in selected):
+                raise ValueError("Unknown LoRA")
+        except (ValueError, TypeError):
+            return "Invalid LoRA selection", 400
+        book.config["default_loras"] = selected
+
     for name, value in request.form.items():
+        if name == "default_loras":
+            continue
         match name:
             case "style":
                 log.info('Setting book config "default_style" to "%s"', value)
@@ -58,7 +78,261 @@ def set_book_metadata(author, title):
     return book_metadata
 
 
+@bp.route("/loras/new", methods=["GET", "POST"])
+def lora_creation_wizard(author, title):
+    from artifact_editor.book import lora_wizard
+    from artifact_editor.book.lora_training import training_progress, training_steps
+
+    author_obj = Author(author)
+    book = Book(author_obj, title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    character_catalog = character_store.get_all_characters(book, is_global=True)
+    draft_id = request.args.get("draft", "")
+    draft = None
+    error = None
+    try:
+        if draft_id:
+            draft = lora_wizard.load(book, draft_id)
+        step = int(request.args.get("step", draft.get("step", 1) if draft else 1))
+        if step not in range(1, 5) or (not draft and step != 1) or (draft and step > draft['step']):
+            return "Complete the previous wizard steps first.", 400
+    except (ValueError, FileNotFoundError):
+        return "LoRA draft not found.", 404
+    if request.method == "POST":
+        try:
+            from artifact_editor.book import lora_training
+            if request.form.get('action') == 'save_source_selection':
+                if not draft or step != 2:
+                    return "Source image selection is unavailable.", 400
+                with lora_training.locked(book, draft_id):
+                    draft = lora_wizard.load(book, draft_id)
+                    if draft['status'] in (*lora_training.ACTIVE, 'complete'):
+                        return "This dataset is locked because training has been submitted.", 409
+                    lora_wizard.save_source_selection(book, draft, request.form, character_catalog)
+                return {"saved": True}
+            if draft and draft['status'] in (*lora_training.ACTIVE, 'complete') and step != 4:
+                return "This dataset is locked because training has been submitted.", 409
+            if step == 4:
+                draft = lora_training.enqueue(book, draft_id)
+                from gpu_service import queue_manual_switch
+                import os
+                import redis
+                client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
+                try:
+                    queue_manual_switch(client, "training")
+                finally:
+                    client.close()
+                return redirect(url_for("library.book.lora_creation_wizard", author=author,
+                                        title=title, draft=draft['id'], step=4))
+            if draft is None:
+                draft = lora_wizard.create(book, request.form)
+            else:
+                with lora_training.locked(book, draft_id):
+                    draft = lora_wizard.load(book, draft_id)
+                    if step == 3 and request.form.get('remove_image'):
+                        if draft['status'] in (*lora_training.ACTIVE, 'complete'):
+                            return "This dataset is locked because training has been submitted.", 409
+                        draft = lora_wizard.remove_image(book, draft, request.form['remove_image'],
+                                                        request.form, character_catalog)
+                        return redirect(url_for("library.book.lora_creation_wizard", author=author,
+                                                title=title, draft=draft['id'], step=3))
+                    if (draft['status'] in (*lora_training.ACTIVE, 'complete')
+                            or draft.get('caption_state') in ('queued', 'running')):
+                        return "This dataset is locked while captions or training are being generated.", 409
+                    draft = lora_wizard.update(book, draft, step, request.form, character_catalog)
+            if step == 2:
+                from artifact_editor.book import lora_captioning
+                lora_captioning.enqueue(book, draft['id'])
+            return redirect(url_for("library.book.lora_creation_wizard", author=author,
+                                    title=title, draft=draft['id'], step=draft['step']))
+        except ValueError as exc:
+            error = str(exc)
+    from artifact_editor.images.source import source_images
+    references = source_images(book) if step == 2 else []
+    return render_template("lora_creation_wizard.html", book=book, draft=draft,
+                           training_progress=training_progress(lora_wizard.directory(book, draft['id'])) if draft and draft.get('status') == 'training' else {},
+                           training_steps=training_steps(len(draft['images'])) if draft else 0,
+                           uncaptioned_count=sum(lora_wizard.needs_caption(item, draft['trigger']) for item in draft['images']) if draft else 0,
+                           source_images=references, character_catalog=character_catalog,
+                           source_characters={item.get('source_path'): item.get('character_tags', []) for item in (draft or {}).get('images', [])},
+                           caption_text=lambda item: lora_wizard.caption_text(item, (draft or {}).get('trigger', '')),
+                           selected_sources={item.get('source_path') for item in (draft or {}).get('images', [])},
+                           author=author_obj, title=title, section="book", step=step,
+                           steps=lora_wizard.STEPS, error=error,
+                           values=request.form if request.method == "POST" and step == 1 else draft or {})
+
+
+@bp.route("/loras/drafts/<draft_id>/images/<image_id>", methods=["PATCH"])
+def autosave_lora_image(author, title, draft_id, image_id):
+    from flask import jsonify
+    from artifact_editor.book import lora_wizard, lora_training
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return jsonify(error="Book not found."), 404
+    changes = request.get_json(silent=True)
+    if not isinstance(changes, dict) or not changes or set(changes) - {'caption', 'character_tags'}:
+        return jsonify(error="Invalid image edit."), 400
+    try:
+        with lora_training.locked(book, draft_id):
+            draft = lora_wizard.load(book, draft_id)
+            if (draft['status'] in (*lora_training.ACTIVE, 'complete')
+                    or draft.get('caption_state') in ('queued', 'running')):
+                return jsonify(error="Image editing is locked while captioning or training is running."), 409
+            catalog = character_store.get_all_characters(book, is_global=True)
+            item = lora_wizard.save_image_edit(book, draft, image_id, changes, catalog)
+        return jsonify(saved=True, image_id=image_id, caption=lora_wizard.caption_text(item))
+    except FileNotFoundError:
+        return jsonify(error="Image draft not found."), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@bp.route("/loras/drafts/<draft_id>/images/<image_id>/caption", methods=["GET", "POST"])
+def generate_one_lora_caption(author, title, draft_id, image_id):
+    from flask import jsonify
+    from artifact_editor.book import lora_wizard, lora_captioning
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return jsonify(error="Book not found."), 404
+    try:
+        draft = (lora_captioning.enqueue(book, draft_id, image_id=image_id)
+                 if request.method == "POST" else lora_wizard.load(book, draft_id))
+        item = next((item for item in draft['images'] if item['id'] == image_id), None)
+        if item is None:
+            return jsonify(error="Image not found."), 404
+        return jsonify(state=draft.get('caption_state', 'draft'),
+                       ready=bool(item.get('caption_generated')), caption=item['caption'],
+                       error=draft.get('caption_error'))
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@bp.route("/loras/drafts/<draft_id>/captions", methods=["POST"])
+def generate_lora_captions(author, title, draft_id):
+    from artifact_editor.book import lora_captioning
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    try:
+        replace_all = request.form.get('replace_all') == 'true'
+        lora_captioning.enqueue(book, draft_id, replace_all=replace_all)
+    except (ValueError, FileNotFoundError) as exc:
+        return str(exc), 400
+    return redirect(url_for("library.book.lora_creation_wizard", author=author,
+                            title=title, draft=draft_id, step=3))
+
+
+@bp.route("/loras/characters", methods=["POST"])
+def add_lora_character(author, title):
+    from flask import jsonify
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return jsonify(error="Book not found."), 404
+    name = request.form.get('name', '').strip()
+    if not name or len(name) > 160:
+        return jsonify(error="Enter a character name of 1–160 characters."), 400
+    tag = character_store.name_to_tag(name)
+    if not tag:
+        return jsonify(error="Enter a character name containing letters or numbers."), 400
+    catalog = character_store.get_all_characters(book, is_global=True)
+    for existing_tag, character in catalog.items():
+        if existing_tag == tag or character.get('name', '').casefold() == name.casefold():
+            return jsonify(tag=existing_tag, name=character.get('name', name))
+    catalog[tag] = {'name': name, 'tag': tag, 'description': '',
+                    'tts_engine': 'kokoro', 'voices': [], 'alias': [], 'is_global': True}
+    character_store.save_characters(book, catalog, is_global=True)
+    return jsonify(tag=tag, name=name), 201
+
+
+@bp.route("/loras/source")
+def lora_book_source_image(author, title):
+    from artifact_editor.images.source import source_image_path
+    from flask import send_file
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    try:
+        path = source_image_path(book, request.args.get('file', ''))
+    except (ValueError, FileNotFoundError):
+        return "Source image not found.", 404
+    return send_file(path)
+
+
+@bp.route("/loras/drafts/<draft_id>/images/<image_id>")
+def lora_reference_image(author, title, draft_id, image_id):
+    from artifact_editor.book import lora_wizard
+    from flask import send_file
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    try:
+        draft = lora_wizard.load(book, draft_id)
+        item = next(item for item in draft['images'] if item['id'] == image_id)
+    except (ValueError, FileNotFoundError, StopIteration):
+        return "Reference image not found.", 404
+    return send_file(lora_wizard.directory(book, draft_id) / 'dataset' / item['filename'])
+
+
+@bp.route("/loras/drafts/<draft_id>/log")
+def lora_training_log(author, title, draft_id):
+    from artifact_editor.book import lora_wizard
+    from flask import Response
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    try:
+        lora_wizard.load(book, draft_id)
+        path = lora_wizard.directory(book, draft_id) / 'training.log'
+        if path.exists():
+            with path.open('rb') as stream:
+                stream.seek(max(0, path.stat().st_size - 65536))
+                content = stream.read().decode('utf-8', errors='replace')
+        else:
+            content = "Waiting for the local training worker."
+    except (ValueError, FileNotFoundError):
+        return "LoRA draft not found.", 404
+    return Response(content, mimetype='text/plain')
+
+
+@bp.route("/loras/status")
+def lora_status(author, title):
+    book = Book(Author(author), title)
+    if not book.bookdir:
+        return render_template("404.html"), 404
+    return lora_training_controls(book)
+
+
+def lora_training_controls(book):
+    from artifact_editor.book import lora_training
+    entries = lora_training.queue_entries(const.LIBRARY_DIR, bookdir=book.bookdir)
+    return render_template(
+        "book_lora_training.html", book=book, entries=entries,
+        training_active=any(entry['state'] in ('queued', 'running') for entry in entries),
+    )
+
+
+def lora_field(book):
+    selected = loras.normalize(book.config.get("default_loras", []))
+    options = "".join(
+        f'<wa-option value="{escape(item["filename"], quote=True)}" {"selected" if item["filename"] in selected else ""}>{escape(item["name"])}</wa-option>'
+        for item in loras.catalog()
+    )
+    return f"""<div class="wa-cluster" style="align-items: center">
+        <wa-select label="Z-Image Turbo LoRAs" multiple clearable
+        placeholder="Choose LoRAs" value="{escape(' '.join(selected), quote=True)}"
+        hint="Default LoRAs for new Z-Image Turbo images in this book."
+        hx-put="{book.set_book_metadata_url}" hx-trigger="change"
+        hx-target="#book_metadata" hx-swap="outerHTML"
+        hx-vals='js:{{default_loras: JSON.stringify(this.value)}}'>
+        {options}</wa-select>
+        {lora_training_controls(book)}
+        </div>"""
+
+
+
 def get_book_metadata(book):
+    from artifact_editor.textoviva.workflow import default_image_workflow, image_engine_choices
     book_metadata = "".join(
         [
             book.input_field(
@@ -73,6 +347,11 @@ def get_book_metadata(book):
                 book.config.get("default_style"),
                 styles_htmx.get_style_choices(),
             ),
+            book.choice_field(
+                "T2I engine:", "default_image_template",
+                default_image_workflow(book, const.DEFAULT_IMAGE_TEMPLATE), image_engine_choices(),
+            ),
+            lora_field(book),
             book.choice_field(
                 "Aspect:",
                 "aspect_ratio",
@@ -117,12 +396,12 @@ def table_of_contents(author, title):
 
 
 @bp.route("/characters", methods=["GET"])
-def characters_panel(author, title):
+def characters_panel(author, title, message=""):
     author_obj = Author(author)
     chapter = Chapter(author_obj, title, 1, language="english")
     catalog = character_store.get_all_characters(chapter, is_global=True)
     character_cards = {
-        tag: character_htmx.character_data(chapter, character)
+        tag: character_htmx.character_data(chapter, character, True)
         for tag, character in catalog.items()
     }
     return render_template(
@@ -132,6 +411,7 @@ def characters_panel(author, title):
         chapter=chapter,
         characters=catalog,
         character_cards=character_cards,
+        message=message,
     )
 
 
@@ -605,3 +885,16 @@ def breakdown_chapters(author, title):
         title=title,
     )
     return redirect(book_url, code=302)
+
+
+@bp.route("/characters/<character_tag>/merge", methods=["POST"])
+def merge_book_character(author, title, character_tag):
+    chapter = Chapter(Author(author), title, 1, language="english")
+    try:
+        character_store.merge_characters(
+            chapter, character_tag, request.form.get("target_tag", ""), book_scope=True
+        )
+        message = "Characters merged. Names retained as aliases and references updated."
+    except ValueError as exc:
+        message = str(exc)
+    return characters_panel(author, title, message=message)

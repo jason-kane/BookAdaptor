@@ -62,7 +62,7 @@ def workflow_link_button(chapter, image_xml, video_index=0, animation=False):
     """
     log.info(
         "workflow_link_button",
-        chapter=chapter.url,
+        chapter=chapter.kwargs,
         image_index=image_xml.attrs["index"],
         animation=animation,
     )
@@ -590,7 +590,7 @@ def skeleton():
 def animation_workshop(image_xml: Tag, chapter, small_preview=False) -> str:
     llog = log.bind(
         prefix="[animation_workshop]",
-        chapter=chapter.url,
+        chapter=chapter.kwargs,
         image_index=image_xml.attrs["index"],
     )
 
@@ -1316,7 +1316,10 @@ def scene_to_prompt_button(chapter, image_xml):
 
 def create_prompt_button(chapter, image_xml):
     button_id = "create-prompt-button"
-    url = f"{chapter.url}/images/{image_xml.attrs['index']}/actions/create_t5_prompt"
+    url = url_for(
+        "library.book.chapter.images.create_t5_prompt",
+        image_index=image_xml.attrs["index"], **chapter.kwargs,
+    )
 
     # <wa-tooltip for="{button_id}">Use original text to create a prompt</wa-tooltip>
     out = f"""<div>
@@ -1503,7 +1506,7 @@ def meta_prompt(chapter, image, image_index):
         label="Meta Prompt" 
         name="meta_prompt"
         id="metaprompt-textarea"
-        hx-post="/{chapter.url}/images/{image_index}/actions/set_meta_prompt" 
+        hx-post="{url_for('library.book.chapter.images.set_meta_prompt', image_index=image_index, **chapter.kwargs)}"
         hx-swap="outerHTML transition:true"
         hx-trigger="change"
         id="meta_prompt-textarea" 
@@ -1515,7 +1518,7 @@ def meta_prompt(chapter, image, image_index):
 def copy_from_previous_button(chapter, image_index=0):
     return f"""
         <wa-button
-            hx-post="/{chapter.url}/images/{image_index}/actions/copy_from_previous"
+            hx-post="{url_for('library.book.chapter.images.scene.copy_from_previous', image_index=image_index, **chapter.kwargs)}"
             hx-swap="outerHTML transition:true"
             name="copy_from_previous"
             variant="secondary"

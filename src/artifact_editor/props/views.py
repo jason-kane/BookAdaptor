@@ -25,7 +25,7 @@ def base():
             return panel('Enter a prop name.'), 400
         records = props.get_all_props(g.chapter)
         tag = uuid.uuid4().hex
-        records[tag] = {'name': name, 'description': request.form.get('description', '').strip()}
+        records[tag] = {'name': name, 'description': request.form.get('description', '').strip(), 'alias': []}
         props.save_props(g.chapter, records)
         return panel(active_tag=tag)
     return panel()
@@ -47,6 +47,25 @@ def update(tag):
     if request.args.get('autosave') == '1':
         return '', 200
     return panel(active_tag=tag)
+
+
+@bp.route('/<tag>/aliases', methods=['POST'])
+def aliases(tag):
+    try:
+        props.set_aliases(g.chapter, tag, request.form.get('aliases', '').splitlines())
+        return 'Aliases saved.'
+    except ValueError as exc:
+        return str(exc), 400
+
+
+@bp.route('/<tag>/merge', methods=['POST'])
+def merge(tag):
+    target_tag = request.form.get('target_tag', '')
+    try:
+        props.merge_props(g.chapter, tag, target_tag)
+    except ValueError as exc:
+        return panel(str(exc), active_tag=tag), 400
+    return panel(active_tag=target_tag, message='Props merged. Names retained as aliases and scene references updated.')
 
 
 @bp.route('/<tag>/image.png')

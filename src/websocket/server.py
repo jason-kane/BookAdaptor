@@ -67,6 +67,22 @@ def redis_connection():
     )
 
 
+def cleanup_startup_progress():
+    from progress_cleanup import expire_stale_progress
+
+    client = redis_connection()
+    try:
+        count = expire_stale_progress(client)
+        log.info("Expired stale Redis progress snapshots", expired=count)
+    except redis.RedisError:
+        log.exception("Could not expire stale Redis progress at startup")
+    finally:
+        client.close()
+
+
+cleanup_startup_progress()
+
+
 def publish_progress(client, job_id, percent, message, state="running", action=None,
                      debug_details=None):
     event = {
@@ -84,6 +100,8 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
     event.update(
         {key: value for key, value in previous.items() if key.startswith("comfy_")}
     )
+    if "image_index" in previous:
+        event["image_index"] = previous["image_index"]
     action = action or previous.get("action")
     if action:
         event["action"] = action
@@ -127,14 +145,16 @@ def progress_html(event):
     state = escape(str(event['state']), quote=True)
     message = escape(re.sub(r"\(?\b\d+(?:\.\d+)?\s*%\)?\s*[—·-]?\s*", "", str(event.get('message', ''))))
     status = 'success' if state == 'complete' else 'danger' if state == 'failed' else 'neutral' if state == 'cancelled' else 'brand'
-    payload = {key: event[key] for key in ('job_id', 'state', 'timing', 'queue_started_at', 'duration_seconds') if key in event}
+    payload = {key: event[key] for key in ('job_id', 'state', 'action', 'image_index', 'timing', 'queue_started_at', 'duration_seconds') if key in event}
     metadata = escape(json.dumps(payload), quote=True)
     bar = 'value="100"' if state == 'complete' else 'value="0"' if state == 'cancelled' else 'indeterminate'
     detail = escape(str(event.get('comfy_message', '')))
     return (
         f'<div id="video-progress-{job_id}" data-task-progress '
         f'hx-swap-oob="outerHTML:#video-progress-{job_id}" class="wa-stack" '
-        f'data-video-job="{job_id}" data-video-state="{state}">'
+        f'data-video-job="{job_id}" data-video-state="{state}" '
+        f'data-video-action="{escape(str(event.get("action", "")), quote=True)}" '
+        f'data-image-index="{escape(str(event.get("image_index", "")), quote=True)}">'
         f'<wa-progress-bar {bar} data-task-timing="{metadata}" variant="{status}"></wa-progress-bar>'
         f'<span data-task-eta class="task-timing-label">{escape(eta_label(event))}</span>'
         f'<small data-task-timing-stats class="task-timing-stats"></small>'
@@ -163,6 +183,10 @@ def pending_video_progress(pubsub, client):
 
 
 def run_video_job(client, task):
+    # Provider handoffs can move priority caption jobs into the normal GPU queue.
+    if task.get("action") == "lora_captions":
+        from artifact_editor.book.lora_captioning import run_job
+        return run_job(client, task)
     if task.get("action") in ("gpu_workflow", "gpu_llama"):
         from gpu_tasks import run_job
         return run_job(client, task)
@@ -175,12 +199,22 @@ def run_video_job(client, task):
     )):
         enqueue_task(client, VIDEO_QUEUE, task)
         return
+    chapter = None
+
+    def report_progress(*args, **kwargs):
+        state = kwargs.get("state", args[4] if len(args) > 4 else "running")
+        if state == "complete" and chapter is not None:
+            from artifact_editor.chapter.workflow import complete_step
+            complete_step(chapter, task.get("action"))
+        publish_progress(*args, **kwargs)
+
     job_id = task["job_id"]
     message = {
         "scene_description": "Preparing scene description",
         "scene_image": "Preparing scene image",
         "timeline_metadata": "Preparing image metadata",
         "timeline_animation_description": "Preparing animation description",
+        "textoviva_regenerate_animation": "Preparing image animation",
         "timeline_image": "Preparing timeline image",
         "character_image": "Preparing character image",
         "prop_image": "Preparing prop image",
@@ -190,10 +224,13 @@ def run_video_job(client, task):
         "chapter_missing_animations": "Preparing missing animations",
         "chapter_missing_characters": "Finding missing characters",
         "chapter_character_appearances": "Processing character appearance changes",
+        "chapter_assign_characters": "Assigning phrase speakers",
+        "chapter_place_image_slots": "Placing image slots",
+        "chapter_missing_audio": "Generating missing audio",
         "chapter_missing_props": "Finding missing props",
         "chapter_add_all": "Adding all missing chapter assets",
     }.get(task.get("action"), task.get("job_type") or "Preparing chapter video render")
-    publish_progress(client, job_id, 0, message, action=task.get("action"))
+    report_progress(client, job_id, 0, message, action=task.get("action"))
     from comfy import workflow_progress
 
     progress_token = workflow_progress.set(
@@ -212,6 +249,8 @@ def run_video_job(client, task):
             number=int(task["chapter_number"]),
             language=task["language"],
         )
+        from artifact_editor.chapter.workflow import begin_step
+        begin_step(chapter, task.get("action"))
         if task.get("action") in (
             "scene_description",
             "scene_image",
@@ -236,7 +275,7 @@ def run_video_job(client, task):
                 generate_time_of_day(chapter, scene)
             else:
                 generate_image(chapter, scene, task["description"])
-            publish_progress(
+            report_progress(
                 client, job_id, 100, "Scene generation complete", "complete"
             )
             return
@@ -246,11 +285,11 @@ def run_video_job(client, task):
             generate_timeline_metadata(
                 chapter,
                 task["image_index"],
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
-            publish_progress(client, job_id, 100, "Image metadata complete", "complete")
+            report_progress(client, job_id, 100, "Image metadata complete", "complete")
             return
         if task.get("action") == "timeline_animation_description":
             from artifact_editor.images.jobs import generate_timeline_animation_description
@@ -258,11 +297,11 @@ def run_video_job(client, task):
             generate_timeline_animation_description(
                 chapter,
                 task["image_index"],
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
-            publish_progress(
+            report_progress(
                 client, job_id, 100, "Animation description complete", "complete"
             )
             return
@@ -270,7 +309,7 @@ def run_video_job(client, task):
             from artifact_editor.images.jobs import generate_timeline_image
 
             generate_timeline_image(chapter, task["image_index"], force=True)
-            publish_progress(
+            report_progress(
                 client, job_id, 100, "Image generation complete", "complete"
             )
             return
@@ -278,7 +317,7 @@ def run_video_job(client, task):
             from artifact_editor.props.props import draw_prop
 
             draw_prop(chapter, task["prop_tag"], description=task["description"])
-            publish_progress(client, job_id, 100, "Prop image complete", "complete")
+            report_progress(client, job_id, 100, "Prop image complete", "complete")
             return
         if task.get("action") == "character_image":
             from artifact_editor.characters.characters import draw_headshot
@@ -289,7 +328,7 @@ def run_video_job(client, task):
                 force=True,
                 description=task["description"],
             )
-            publish_progress(
+            report_progress(
                 client, job_id, 100, "Character image complete", "complete"
             )
             return
@@ -303,7 +342,7 @@ def run_video_job(client, task):
                 else chapter.textoviva.generate_missing_animations
             )
             method(
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
                 # An animation that exists but ends before its image's audio
@@ -312,48 +351,55 @@ def run_video_job(client, task):
                 **({"regenerate_insufficient": True}
                    if task["action"] == "chapter_missing_animations" else {})
             )
-            publish_progress(client, job_id, 100, "Missing assets complete", "complete")
+            report_progress(client, job_id, 100, "Missing assets complete", "complete")
             return
         if task.get("action") == "chapter_missing_metadata":
             from artifact_editor.images.images import generate_missing_metadata
 
             generate_missing_metadata(
                 chapter,
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
-            publish_progress(
+            report_progress(
                 client, job_id, 100, "Missing metadata complete", "complete"
             )
             return
         if task.get("action") in ("chapter_missing_characters", "chapter_missing_props"):
             if task["action"] == "chapter_missing_characters":
-                from artifact_editor.characters.characters import extract_characters, assign_phrase_speakers
+                from artifact_editor.characters.characters import extract_characters
                 count = extract_characters(chapter)
-                assigned = assign_phrase_speakers(
-                    chapter,
-                    progress=lambda percent, detail: publish_progress(
-                        client, job_id, percent, detail, action=task["action"]
-                    ),
-                )
                 noun = "characters"
             else:
                 from artifact_editor.props.props import extract_props
                 count = extract_props(chapter)
-                assigned = 0
                 noun = "props"
             message = f"Found {count} missing {noun}"
-            if task["action"] == "chapter_missing_characters":
-                message += f"; assigned {assigned} phrase speakers"
-            publish_progress(client, job_id, 100, message, "complete", task["action"])
+            report_progress(client, job_id, 100, message, "complete", task["action"])
+            return
+        if task.get("action") == "chapter_assign_characters":
+            from artifact_editor.characters.characters import assign_phrase_speakers
+
+            assigned = assign_phrase_speakers(
+                chapter, reassign_all=True,
+                progress=lambda percent, detail: report_progress(
+                    client, job_id, percent, detail, action=task["action"]
+                ),
+            )
+            unresolved = sum(phrase.get("speaker_source") == "llm_unresolved"
+                             for phrase in chapter.get_xml().find_all("phrase"))
+            message = f"Speaker assignment complete; {assigned} speakers updated"
+            if unresolved:
+                message += f"; {unresolved} phrases need speaker review"
+            report_progress(client, job_id, 100, message, "complete", task["action"])
             return
         if task.get("action") == "chapter_character_appearances":
             from artifact_editor.characters.characters import extract_all_description_timelines
 
             result = extract_all_description_timelines(
                 chapter,
-                progress=lambda percent, detail: publish_progress(client, job_id, percent, detail),
+                progress=lambda percent, detail: report_progress(client, job_id, percent, detail),
             )
             message = (
                 f"Processed appearance changes for {result['characters']} characters; "
@@ -362,44 +408,68 @@ def run_video_job(client, task):
             failures = result["failures"]
             if failures:
                 message += ". Failed: " + "; ".join(failures)
-            publish_progress(client, job_id, 100, message,
+            report_progress(client, job_id, 100, message,
                              "failed" if failures else "complete", task["action"])
             return
+        if task.get("action") == "chapter_missing_audio":
+            from artifact_editor.phrases.phrases import generate_all_audio
+
+            generate_all_audio(chapter, force=False, batch=True,
+                               progress=lambda percent, detail: report_progress(client, job_id, percent, detail))
+            report_progress(client, job_id, 100, "Missing audio complete", "complete")
+            return
+        if task.get("action") == "chapter_place_image_slots":
+            from artifact_editor.chapter.timeline import place_image_slots
+
+            place_image_slots(chapter)
+            report_progress(client, job_id, 100, "Image slot placement complete", "complete")
+            return
         if task.get("action") == "chapter_add_all":
-            from artifact_editor.characters.characters import extract_characters, assign_phrase_speakers
+            from artifact_editor.characters.characters import (
+                extract_characters, assign_phrase_speakers, extract_all_description_timelines,
+            )
             from artifact_editor.props.props import extract_props
             from artifact_editor.images.images import generate_missing_metadata
+            from artifact_editor.phrases.phrases import generate_all_audio
+            from artifact_editor.chapter.timeline import place_image_slots
             from gpu_tasks import task_label
+            from artifact_editor.chapter.workflow import ACTIONS, complete_step
 
-            def find_characters_and_assign_speakers(report):
-                count = extract_characters(chapter)
-                assign_phrase_speakers(chapter, progress=report)
-                return count
+            def process_appearances(report):
+                result = extract_all_description_timelines(chapter, progress=report)
+                if result["failures"]:
+                    raise RuntimeError("Character appearance processing failed: " + "; ".join(result["failures"]))
 
             stages = [
-                ("Finding characters and assigning phrase speakers", find_characters_and_assign_speakers),
+                ("Adding missing characters", lambda report: extract_characters(chapter)),
+                ("Assigning characters", lambda report: assign_phrase_speakers(chapter, reassign_all=True, progress=report)),
+                ("Processing appearance changes for all characters", process_appearances),
+                ("Generating missing audio", lambda report: generate_all_audio(chapter, force=False, batch=True, progress=report)),
+                ("Placing image slots", lambda report: place_image_slots(chapter)),
                 ("Finding missing props", lambda report: extract_props(chapter)),
-                ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report, skip_existing_images=True)),
+                ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
                 ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
                 ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
             ]
+            stage_width = 100 / len(stages)
             for position, (label, operation) in enumerate(stages):
-                publish_progress(client, job_id, position * 20, label)
+                report_progress(client, job_id, position * stage_width, label)
                 stage_lock = Lock()
-                stage_percent = position * 20
+                stage_percent = position * stage_width
 
                 def stage_progress(percent, detail):
                     nonlocal stage_percent
-                    scaled = position * 20 + max(0, min(100, int(percent))) * 0.2
+                    scaled = (position + max(0, min(100, int(percent))) / 100) * stage_width
                     with stage_lock:
                         if scaled <= stage_percent:
                             return
                         stage_percent = scaled
-                        publish_progress(client, job_id, scaled, detail)
+                        report_progress(client, job_id, scaled, detail)
                 with task_label(label):
                     operation(stage_progress)
-                publish_progress(client, job_id, (position + 1) * 20, f"{label} complete")
-            publish_progress(client, job_id, 100, "All missing chapter assets complete", "complete")
+                complete_step(chapter, ACTIONS[position + 1])
+                report_progress(client, job_id, (position + 1) * stage_width, f"{label} complete")
+            report_progress(client, job_id, 100, "All chapter assets ready; assemble frames and generate video separately", "complete")
             return
         if task.get("action") == "chapter_import":
             from artifact_editor.chapter.views import import_chapter_content
@@ -407,22 +477,22 @@ def run_video_job(client, task):
             import_chapter_content(
                 chapter,
                 sections_json=task["sections"],
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
-            publish_progress(client, job_id, 100, "Chapter import complete", "complete")
+            report_progress(client, job_id, 100, "Chapter import complete", "complete")
             return
         if task.get("action") == "textoviva_time_align":
             from artifact_editor.textoviva.time_align import align_chapter_time
 
             count = align_chapter_time(
                 chapter,
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
-            publish_progress(
+            report_progress(
                 client,
                 job_id,
                 100,
@@ -430,9 +500,27 @@ def run_video_job(client, task):
                 "complete",
             )
             return
+        if task.get("action") == "textoviva_regenerate_animation":
+            chapter.load_xml(force=True)
+            image_index = int(task["image_index"])
+            image = chapter.get_image(index=image_index)
+            if image is None:
+                raise ValueError(f"Image {image_index} not found")
+            image.attrs["animation_prompt"] = task["animation_prompt"]
+            chapter.save_image(image)
+            chapter.textoviva.generate_missing_animations(
+                force=True,
+                regenerate_image_index=image_index,
+                progress=lambda percent, message: report_progress(
+                    client, job_id, percent, message
+                ),
+            )
+            report_progress(
+                client, job_id, 100, f"Image {image_index} animation complete", "complete"
+            )
+            return
         if task.get("action") in (
             "textoviva_rerender",
-            "textoviva_regenerate_animation",
             "textoviva_missing_animation",
         ):
             from artifact_editor.textoviva.jobs import rerender_chapter
@@ -445,7 +533,7 @@ def run_video_job(client, task):
                 == "textoviva_missing_animation",
                 theater_stage=task.get("theater_stage"),
                 theater_project_id=task.get("theater_project_id"),
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
@@ -454,16 +542,17 @@ def run_video_job(client, task):
                 chapter,
                 aspect=task["aspect"],
                 force=bool(task.get("force", False)),
-                progress=lambda percent, message: publish_progress(
+                progress=lambda percent, message: report_progress(
                     client, job_id, percent, message
                 ),
             )
         else:
             raise ValueError(f"Unsupported render job action: {task.get('action')!r}")
-        publish_progress(client, job_id, 100, "Video render complete", "complete")
+        report_progress(client, job_id, 100, "Video render complete", "complete")
     except Exception as exc:
         log.exception("Video render job %s failed", job_id)
         label = {
+            "textoviva_regenerate_animation": "Image animation",
             "scene_description": "Scene description generation",
             "scene_image": "Scene image generation",
             "timeline_metadata": "Image metadata generation",
@@ -477,10 +566,13 @@ def run_video_job(client, task):
             "chapter_missing_animations": "Animation generation",
             "chapter_missing_characters": "Character extraction",
             "chapter_character_appearances": "Character appearance processing",
+            "chapter_assign_characters": "Phrase speaker assignment",
+            "chapter_place_image_slots": "Image slot placement",
+            "chapter_missing_audio": "Audio generation",
             "chapter_missing_props": "Prop extraction",
             "chapter_add_all": "Add all chapter assets",
         }.get(task.get("action"), "Video render")
-        publish_progress(
+        report_progress(
             client, job_id, 100, f"{label} failed: {exc}", "failed",
             debug_details=traceback.format_exc(),
         )
@@ -493,7 +585,7 @@ def _active_task_provider(client):
     service = client.get("gpu:active-service")
     if isinstance(service, bytes):
         service = service.decode()
-    return {"comfy": "comfyui", "llama": "llama"}.get(service)
+    return {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}.get(service)
 
 
 def _pop_priority_task_for_provider(client, *, allow_background=True):
@@ -503,6 +595,11 @@ def _pop_priority_task_for_provider(client, *, allow_background=True):
     switch_task = pop_gpu_service_switch(client, PRIORITY_QUEUE)
     if switch_task:
         return switch_task
+    # Explicit user work must not wait for background tasks on the loaded
+    # provider to drain. Dispatch it so run_tracked_task can switch providers.
+    interactive = pop_tag_job(client, PRIORITY_QUEUE, allow_background=False)
+    if interactive:
+        return interactive
     provider = _active_task_provider(client)
     if provider is None:
         return pop_tag_job(
@@ -535,8 +632,6 @@ def _has_queued_provider_task(client, provider):
 
     allow_background = get_mode(client) != "off"
     for queue in (PRIORITY_QUEUE, VIDEO_QUEUE, TAG_QUEUE):
-        if not allow_background and queue == TAG_QUEUE:
-            continue
         for payload in client.lrange(queue, 0, -1):
             try:
                 task = json.loads(payload)
@@ -544,7 +639,7 @@ def _has_queued_provider_task(client, provider):
                 continue
             if not isinstance(task, dict) or task_provider(task) != provider:
                 continue
-            if not allow_background and (
+            if not allow_background and not task.get("promoted") and (
                 task.get("idle_maintenance")
                 or task.get("background_category")
                 or task.get("action") in (
@@ -565,9 +660,28 @@ def _has_queued_provider_task(client, provider):
     return False
 
 
+def wait_for_worker_redis(client):
+    """Keep the worker alive while Redis starts or restores its dataset."""
+    waiting = False
+    while True:
+        try:
+            client.ping()
+            if waiting:
+                log.info("Redis is ready; video worker resuming")
+            return
+        except redis.exceptions.AuthenticationError:
+            raise
+        except (redis.exceptions.BusyLoadingError, redis.ConnectionError, redis.TimeoutError):
+            if not waiting:
+                log.warning("Video worker waiting for Redis to finish loading and accept connections")
+                waiting = True
+            time.sleep(2)
+
+
 def video_worker():
     os.environ["VIDEO_WORKER_PROCESS"] = "1"
     client = redis_connection()
+    wait_for_worker_redis(client)
     from gpu_service import initialize_active_service
 
     initialize_active_service(client)
@@ -607,6 +721,15 @@ def video_worker():
             from styler.style_scan import pop_scan_job
 
             active_provider = _active_task_provider(client)
+            if active_provider == "training":
+                # Training mode is a manual GPU lease. Only an explicit mode
+                # switch may leave it; keep every other GPU task queued.
+                mode_switch = pop_gpu_service_switch(client, PRIORITY_QUEUE, manual_only=True)
+                if mode_switch:
+                    run_priority_task(client, mode_switch)
+                    continue
+                time.sleep(1)
+                continue
             if active_provider == "llama":
                 priority_tag = _pop_priority_task_for_provider(
                     client, allow_background=allow_background
@@ -623,12 +746,9 @@ def video_worker():
                         tag_style = priority_tag["style_tag"]
                     styler_engine = run_priority_task(client, priority_tag)
                     continue
-                tag_payload = (
-                    pop_tag_job(
-                        client, TAG_QUEUE, tag_style, provider="llama",
-                        allow_background=allow_background,
-                    )
-                    if allow_background else None
+                tag_payload = pop_tag_job(
+                    client, TAG_QUEUE, tag_style, provider="llama",
+                    allow_background=allow_background,
                 )
                 if tag_payload:
                     styler_engine = None
@@ -690,9 +810,9 @@ def video_worker():
                     pending_payload = client.rpop(VIDEO_QUEUE)
                     queued = (VIDEO_QUEUE, pending_payload) if pending_payload else None
                 else:
-                    tag_payload = (
-                        pop_tag_job(client, TAG_QUEUE, tag_style)
-                        if allow_background else None
+                    tag_payload = pop_tag_job(
+                        client, TAG_QUEUE, tag_style,
+                        allow_background=allow_background,
                     )
                     if tag_payload:
                         styler_engine = None
@@ -725,9 +845,9 @@ def video_worker():
                     # already queued image-tag task before creating that work,
                     # so hidden maintenance jobs cannot jump ahead of the
                     # queue's visible next task.
-                    tag_payload = (
-                        pop_tag_job(client, TAG_QUEUE, tag_style)
-                        if allow_background else None
+                    tag_payload = pop_tag_job(
+                        client, TAG_QUEUE, tag_style,
+                        allow_background=allow_background,
                     )
                     if tag_payload:
                         styler_engine = None
@@ -777,9 +897,9 @@ def video_worker():
                             tag_style = tag_task["style_tag"]
                             run_queued_tag_task(client, tag_task, const.LIBRARY_DIR)
                         elif not client.exists(BACKFILL_STATE) or not backfill_ready:
-                            tag_payload = (
-                                pop_tag_job(client, TAG_QUEUE, tag_style)
-                                if allow_background else None
+                            tag_payload = pop_tag_job(
+                                client, TAG_QUEUE, tag_style,
+                                allow_background=allow_background,
                             )
                             if tag_payload:
                                 priority_tag = _pop_priority_task_for_provider(
@@ -908,6 +1028,8 @@ def video_worker():
                 styler_engine = None
                 client.delete("styler:worker-model")
                 run_tracked_task(client, run_video_job, client, task)
+        except redis.exceptions.BusyLoadingError:
+            wait_for_worker_redis(client)
         except Exception:
             log.exception("Video render worker loop failed")
             time.sleep(2)
@@ -1013,6 +1135,9 @@ def run_priority_task(client, task):
         from styler.topic_jobs import run_taxonomy_rebuild
 
         run_tracked_task(client, run_taxonomy_rebuild, client, task)
+    elif action == "lora_captions":
+        from artifact_editor.book.lora_captioning import run_job
+        run_tracked_task(client, run_job, client, task)
     elif action == "worker_rpc":
         run_tracked_task(client, run_worker_rpc, client, task)
     else:
@@ -1021,7 +1146,7 @@ def run_priority_task(client, task):
 
 
 def run_gpu_service_switch_task(client, task):
-    """Switch to a user-selected provider, bypassing only the cooldown rule."""
+    """Switch to a user-selected provider through the exclusive GPU handoff."""
     from gpu_service import service_switching_enabled, use_gpu_service
 
     if not service_switching_enabled():
@@ -1031,7 +1156,7 @@ def run_gpu_service_switch_task(client, task):
         )
         raise RuntimeError("GPU provider switching is disabled in the worker")
     target = task.get("target_provider")
-    service = {"comfyui": "comfy", "llama": "llama"}.get(target)
+    service = {"comfyui": "comfy", "llama": "llama", "training": "training", "python": "python"}.get(target)
     if service is None:
         raise ValueError(f"Unsupported GPU provider target: {target!r}")
     log.info(
@@ -1043,7 +1168,6 @@ def run_gpu_service_switch_task(client, task):
         with use_gpu_service(
             client,
             service,
-            override_cooldown=True,
             transition_task=task,
         ):
             pass
@@ -1108,7 +1232,6 @@ def run_tracked_task(client, callback, *args):
         from task_queue import with_task_provider
         from gpu_service import (
             service_switching_enabled,
-            switch_cooldown_remaining,
             use_gpu_service,
         )
 
@@ -1117,9 +1240,9 @@ def run_tracked_task(client, callback, *args):
         if (
             service_switching_enabled()
             and task.get("action") != "gpu_service_switch"
-            and provider in ("llama", "comfyui")
+            and provider in ("llama", "comfyui", "python")
         ):
-            service = "comfy" if provider == "comfyui" else "llama"
+            service = "comfy" if provider == "comfyui" else provider
             active_provider = _active_task_provider(client)
             if active_provider != provider:
                 priority = bool(task.get("priority"))
@@ -1166,20 +1289,10 @@ def run_tracked_task(client, callback, *args):
                 )
                 if waiting_for_active_provider and not priority:
                     return None
-                cooldown = switch_cooldown_remaining(client)
-                if cooldown > 0 and not priority:
-                    client.publish(
-                        "styler_sample_events",
-                        json.dumps(
-                            {"job_id": task["job_id"], "state": "queue_changed"}
-                        ),
-                    )
-                    time.sleep(min(cooldown, 5))
-                    return None
                 # Keep the original task queued, but report its provider
                 # transition separately and let the same Home-backed handoff
                 # path handle automatic and user-requested switches.
-                service_names = {"comfy": "ComfyUI", "llama": "Llama"}
+                service_names = {"comfy": "ComfyUI", "llama": "Llama", "training": "Training", "python": "Python"}
                 transition_task = {
                     "job_id": f"gpu-switch-auto-{task['job_id']}",
                     "action": "gpu_service_switch",
@@ -1187,6 +1300,7 @@ def run_tracked_task(client, callback, *args):
                     "service_from": {
                         "comfyui": "ComfyUI",
                         "llama": "Llama",
+                        "training": "Training", "python": "Python",
                     }.get(active_provider, "Stopped"),
                     "service_to": service_names[service],
                     "target_provider": provider,
@@ -1203,7 +1317,6 @@ def run_tracked_task(client, callback, *args):
                 with use_gpu_service(
                     client,
                     service,
-                    override_cooldown=priority,
                     transition_task=transition_task,
                 ):
                     pass
@@ -1551,14 +1664,19 @@ def clear_removed_task_markers(client, task):
 
 
 def run_worker_rpc(client, task):
-    from worker_operations import execute
+    from worker_operations import execute_isolated as execute
 
     # Do not start requests whose caller has already timed out.
     if time.time() >= task["deadline"]:
         return
     response = {"job_id": task["job_id"]}
     try:
-        response["result"] = execute(task["operation"], task["arguments"])
+        from gpu_service import use_gpu_service
+        if task.get("operation") == "t5_tokens":
+            response["result"] = execute(task["operation"], task["arguments"])
+        else:
+            with use_gpu_service(client, "python"):
+                response["result"] = execute(task["operation"], task["arguments"])
     except Exception as exc:
         log.exception("Worker RPC failed", operation=task["operation"])
         response["error"] = str(exc)
@@ -1799,6 +1917,7 @@ def chapter_frames_websocket(ws):
 @sock.route("/styler-ws")
 def styler_websocket(ws):
     from styler.jobs import EVENTS, sample_task, request_sample
+    from gpu_metrics import get_gpu_metrics
     from task_queue import PRIORITY_QUEUE as _priority_queue, TAG_QUEUE as _tag_queue
     import const
 
@@ -1818,6 +1937,7 @@ def styler_websocket(ws):
     last_running_id = None
     last_cpu_sent = 0.0
     last_cpu_signature = None
+    last_gpu_sent = float('-inf')
 
     def send_queue_plan(completed_job_id=None):
         nonlocal queue_dirty, last_queue_state, last_queue_sent, last_running_id
@@ -1836,6 +1956,9 @@ def styler_websocket(ws):
     try:
         send_queue_plan()
         while True:
+            if time.monotonic() - last_gpu_sent >= 2:
+                ws.send(json.dumps({"state": "gpu_metrics", **get_gpu_metrics()}))
+                last_gpu_sent = time.monotonic()
             if time.monotonic() - last_cpu_sent >= 1:
                 from cpu_queue import snapshot as cpu_snapshot
                 cpu_plan = cpu_snapshot(client)
@@ -1956,75 +2079,89 @@ def styler_websocket(ws):
                             "comfyui": "comfy",
                             "comfy": "comfy",
                             "llama": "llama",
+                            "training": "training", "python": "python",
                         }.get(target_provider)
                         if service is None:
                             response = dict(
                                 state="gpu_service_switch_failed",
-                                message="Choose ComfyUI or Llama",
+                                message="Choose ComfyUI, Llama, Training, or Python",
                             )
                         else:
-                            target_provider = "comfyui" if service == "comfy" else "llama"
-                            existing = _pending_gpu_switch_id(client)
-                            if existing:
+                            target_provider = {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}[service]
+                            active_service = client.get("gpu:active-service")
+                            if isinstance(active_service, bytes):
+                                active_service = active_service.decode()
+                            training_running = False
+                            if active_service == "training" and target_provider != "training":
+                                from artifact_editor.book.lora_training import queue_entries
+                                training_running = any(row["state"] == "running" for row in queue_entries())
+                            if training_running:
                                 response = dict(
-                                    state="gpu_service_switch_queued",
-                                    job_id=existing,
-                                    already_queued=True,
+                                    state="gpu_service_switch_failed",
+                                    message="Wait for LoRA training to finish before leaving Training mode.",
                                 )
                             else:
-                                task = {
-                                    "job_id": uuid.uuid4().hex,
-                                    "action": "gpu_service_switch",
-                                    "job_type": "GPU service switch",
-                                    "service_to": "ComfyUI" if service == "comfy" else "Llama",
-                                    "target_provider": target_provider,
-                                    "provider": target_provider,
-                                    "priority": True,
-                                    "manual_override": True,
-                                }
-                                if client.set(
-                                    GPU_SWITCH_REQUEST_KEY,
-                                    task["job_id"],
-                                    nx=True,
-                                    ex=7200,
-                                ):
-                                    try:
-                                        enqueue_task(
-                                            client,
-                                            PRIORITY_QUEUE,
-                                            task,
-                                            front=True,
-                                            ensure_ascii=False,
-                                        )
-                                        client.publish(
-                                            EVENTS,
-                                            json.dumps(
-                                                {
-                                                    "state": "job_queued",
-                                                    **task,
-                                                },
-                                                ensure_ascii=False,
-                                            ),
-                                        )
-                                        log.info(
-                                            "Queued GPU service switch %s targeting %s",
-                                            task["job_id"],
-                                            target_provider,
-                                        )
-                                    except Exception:
-                                        client.delete(GPU_SWITCH_REQUEST_KEY)
-                                        raise
+                                existing = _pending_gpu_switch_id(client)
+                                if existing:
                                     response = dict(
                                         state="gpu_service_switch_queued",
-                                        job_id=task["job_id"],
-                                        provider=target_provider,
-                                    )
-                                else:
-                                    response = dict(
-                                        state="gpu_service_switch_queued",
-                                        job_id=client.get(GPU_SWITCH_REQUEST_KEY),
+                                        job_id=existing,
                                         already_queued=True,
                                     )
+                                else:
+                                    task = {
+                                        "job_id": uuid.uuid4().hex,
+                                        "action": "gpu_service_switch",
+                                        "job_type": "GPU service switch",
+                                        "service_to": {"comfy": "ComfyUI", "llama": "Llama", "training": "Training · Clear VRAM", "python": "Python"}[service],
+                                        "target_provider": target_provider,
+                                        "provider": target_provider,
+                                        "priority": True,
+                                        "manual_override": True,
+                                    }
+                                    if client.set(
+                                        GPU_SWITCH_REQUEST_KEY,
+                                        task["job_id"],
+                                        nx=True,
+                                        ex=7200,
+                                    ):
+                                        try:
+                                            enqueue_task(
+                                                client,
+                                                PRIORITY_QUEUE,
+                                                task,
+                                                front=True,
+                                                ensure_ascii=False,
+                                            )
+                                            client.publish(
+                                                EVENTS,
+                                                json.dumps(
+                                                    {
+                                                        "state": "job_queued",
+                                                        **task,
+                                                    },
+                                                    ensure_ascii=False,
+                                                ),
+                                            )
+                                            log.info(
+                                                "Queued GPU service switch %s targeting %s",
+                                                task["job_id"],
+                                                target_provider,
+                                            )
+                                        except Exception:
+                                            client.delete(GPU_SWITCH_REQUEST_KEY)
+                                            raise
+                                        response = dict(
+                                            state="gpu_service_switch_queued",
+                                            job_id=task["job_id"],
+                                            provider=target_provider,
+                                        )
+                                    else:
+                                        response = dict(
+                                            state="gpu_service_switch_queued",
+                                            job_id=client.get(GPU_SWITCH_REQUEST_KEY),
+                                            already_queued=True,
+                                        )
                         ws.send(json.dumps(response))
                         queue_dirty = True
                     elif message.get("action") == "worker_reset":
@@ -2368,6 +2505,8 @@ def styler_queue_entry(task, priority=False):
 
     action = task.get("action") or ""
     labels = {
+        "lora_captions": "Generating Caption",
+        "lora_training": "Training LoRA",
         "styler_tag_sample": "Image tags",
         "styler_tag_group": "Image tags",
         "styler_sample": "Sample image",
@@ -2385,6 +2524,9 @@ def styler_queue_entry(task, priority=False):
         "chapter_missing_animations": "Animation generation",
         "chapter_missing_characters": "Character extraction",
         "chapter_character_appearances": "Character appearance processing",
+        "chapter_assign_characters": "Phrase speaker assignment",
+        "chapter_place_image_slots": "Image slot placement",
+        "chapter_missing_audio": "Audio generation",
         "chapter_missing_props": "Prop extraction",
         "chapter_add_all": "Add all chapter assets",
         "timeline_metadata": "Image metadata",
@@ -2404,6 +2546,8 @@ def styler_queue_entry(task, priority=False):
         key: task[key]
         for key in (
             "job_id",
+            "externally_managed",
+            "executor",
             "parent_job_id",
             "style_tag",
             "engine",
@@ -2472,6 +2616,10 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     completed_history = recent_completions(client)
     failed_history = recent_failures(client)
     learn_outcomes(client, [*completed_history, *failed_history])
+    from artifact_editor.book.lora_training import queue_entries
+    training_entries = queue_entries()
+    completed_history += [entry for entry in training_entries if entry['state'] == 'complete']
+    failed_history += [entry for entry in training_entries if entry['state'] == 'failed']
     estimator = Estimator(client)
     running = None
     raw_running = client.get("gpu:service-transition") or client.get(
@@ -2517,6 +2665,7 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
     active_provider = {
         "comfy": "comfyui",
         "llama": "llama",
+        "training": "training", "python": "python",
     }.get(active_service)
     transition_task = None
     raw_transition = client.get("gpu:service-transition")
@@ -2616,6 +2765,11 @@ def styler_queue_snapshot(client, priority_queue, tag_queue, capacity=10):
             return 2
         return 4
 
+    for training_entry in training_entries:
+        if training_entry['state'] == 'running' and running is None:
+            running = training_entry
+        elif training_entry['state'] in ('queued', 'running'):
+            queued.append(training_entry)
     queued.sort(key=rank)
     running, queued = estimator.serial(running, queued)
     capacity = max(0, min(200, int(capacity)))
@@ -2682,6 +2836,7 @@ def handle_websocket(ws):
     client = redis_connection()
     pubsub = client.pubsub()
     pubsub.subscribe(VIDEO_EVENTS)
+    legacy_cursor = 0
     try:
         while True:
             incoming = ws.receive(timeout=0.1)
@@ -2695,6 +2850,9 @@ def handle_websocket(ws):
                         "chapter_missing_animations",
                         "chapter_missing_characters",
                         "chapter_character_appearances",
+                        "chapter_assign_characters",
+                        "chapter_place_image_slots",
+                        "chapter_missing_audio",
                         "chapter_missing_props",
                         "chapter_add_all",
                         "chapter_missing_metadata",
@@ -2789,6 +2947,12 @@ def handle_websocket(ws):
                             )
                         elif task["action"] == "chapter_missing_metadata":
                             label = "Queued for missing metadata"
+                        elif task["action"] == "chapter_missing_audio":
+                            label = "Queued for missing audio"
+                        elif task["action"] == "chapter_place_image_slots":
+                            label = "Queued for image slot placement"
+                        elif task["action"] == "chapter_assign_characters":
+                            label = "Queued for phrase speaker assignment"
                         elif task["action"] == "chapter_character_appearances":
                             label = "Queued for character appearance changes"
                         elif task["action"] in (
@@ -2803,13 +2967,19 @@ def handle_websocket(ws):
                         # coordinator must still be able to finish the request.
                         queued_status = {
                             "job_id": task["job_id"], "action": task["action"],
-                            "percent": 0, "message": label, "state": "queued",
+                            "percent": 0, "message": label, "state": "queued", "job_type": label.removeprefix("Queued for ").capitalize(),
                         }
+                        if "image_index" in task:
+                            queued_status["image_index"] = task["image_index"]
                         enqueue_task(
                             client, VIDEO_QUEUE, task,
                             status_key=f"video_job:{task['job_id']}", status=queued_status,
                             event_channel=VIDEO_EVENTS, event=queued_status,
                         )
+                        # Worker startup can take a long time. Acknowledge the
+                        # queued job on the initiating socket before waiting
+                        # for Home to start the CPU coordinator.
+                        ws.send(progress_html(queued_status))
                         from task_queue import RENDER_ACTIONS
                         if task["action"] in RENDER_ACTIONS:
                             from worker_startup import ensure_worker_services
@@ -2829,8 +2999,12 @@ def handle_websocket(ws):
                 except (redis.RedisError, ValueError, TypeError):
                     log.exception("Could not deliver video progress event")
 
-            # Preserve the existing image-generation progress protocol.
-            for key in client.scan_iter(f"{LEGACY_PREFIX}*"):
+            # Bound legacy polling: scanning the entire cache on every socket
+            # loop delays receiving new commands when Redis holds many keys.
+            legacy_cursor, legacy_keys = client.scan(
+                cursor=legacy_cursor, match=f"{LEGACY_PREFIX}*", count=200
+            )
+            for key in legacy_keys:
                 message = client.lpop(key)
                 if message is None:
                     continue

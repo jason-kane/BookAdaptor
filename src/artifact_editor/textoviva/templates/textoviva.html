@@ -103,7 +103,7 @@
 
 {% block scripts %}
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='5') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='workflow-gating-8') }}" defer></script>
 <script>
     // The image editor page normally provides this helper through images.js;
     // Textoviva uses the same selector without loading that page's scripts.
@@ -193,6 +193,7 @@
                 hx-vals='{{ rerender_task|tojson }}'
                 variant="brand"
                 appearance="accent"
+                {% if video_prerequisite %}disabled title="{{ video_prerequisite }}"{% endif %}
             >Re-render</wa-button>
             <div id="video-progress-{{ rerender_task.job_id }}" role="status" aria-live="polite"></div>
         </div>

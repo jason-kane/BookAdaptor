@@ -1,6 +1,7 @@
 # we're going to fade out the old image and fade in the new one
 # half the given duration for each.
 import os
+from flask import url_for
 import json
 import parselmouth
 import const
@@ -24,7 +25,7 @@ class PitchShift(AudioEffect):
         """
         return ["octaves"]
 
-    def get_configuration_widgets(self, chapterurl, character_name, effect_config_dict=None):
+    def get_configuration_widgets(self, chapter, character_name, effect_config_dict=None):
         """
         These are individually responseive for submitting themselves on-change.
         """
@@ -37,7 +38,7 @@ class PitchShift(AudioEffect):
                 max="2"
                 step="0.05"
                 value="{octaves}"
-                hx-put="/{chapterurl}/characters/{character_name}/effect/{self.key}"
+                hx-put="{url_for('library.book.chapter.characters.htmx_update_effect_config', character_name=character_name, effect_key=self.key, **chapter.kwargs)}"
                 hx-vals='{{"character_name": "{character_name}"}}'
                 hx-target="#{character_name}_effects"
                 hx-include="this"

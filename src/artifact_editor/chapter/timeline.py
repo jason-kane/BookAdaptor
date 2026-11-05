@@ -169,9 +169,9 @@ def silence_duration(value):
     try:
         duration = Decimal(str(value))
     except InvalidOperation:
-        raise ValueError("Silence must be a number between 0 and 3 seconds")
-    if not duration.is_finite() or not 0 <= duration <= 3:
-        raise ValueError("Silence must be between 0 and 3 seconds")
+        raise ValueError("Silence must be a number between 0 and 5 seconds")
+    if not duration.is_finite() or not 0 <= duration <= 5:
+        raise ValueError("Silence must be between 0 and 5 seconds")
     return duration.quantize(Decimal("0.001"))
 
 
@@ -191,9 +191,15 @@ def add_silence(chapter, target_type, target_index, fps):
     if target is None:
         raise ValueError("Timeline item no longer exists; reload the chapter")
     index = max((int(tag["index"]) for tag in soup.find_all("silence")), default=-1) + 1
-    silence = soup.new_tag("silence", attrs={"index": str(index)})
+    duration = silence_duration("0.500")
+    silence = soup.new_tag("silence", attrs={
+        "index": str(index), "duration": format(duration, ".3f"),
+        "frames": str(round(duration * fps)),
+    })
     target.insert_after(silence)
-    save_silence(chapter, silence, "0.500", fps)
+    update_image_frames(soup)
+    # New entries need a structural save before timing-only updates can use them.
+    chapter.save_timeline()
     return silence
 
 
@@ -280,6 +286,14 @@ def add_import_silences(soup, fps):
     if phrases:
         append_pause(phrases[-1], 2.0)
 
+    # Consecutive illustrations need screen time without inventing narration.
+    # Document order also covers image runs that cross paragraph boundaries.
+    items = soup.find_all(["image", "phrase", "silence"])
+    for previous, following in zip(items, items[1:]):
+        if previous.name == following.name == "image":
+            append_pause(previous, 5.0)
+    update_image_frames(soup)
+
 
 def phrase_audio_missing(chapter, phrase, library_dir):
     """Check the paragraph-local WAV used by phrase audio generation."""
@@ -291,30 +305,76 @@ def phrase_audio_missing(chapter, phrase, library_dir):
     return not (directory / Path(source).name).is_file()
 
 
+def place_image_slots(chapter):
+    """Place generated slots once narration timing is available."""
+    soup = chapter.get_xml()
+    if any("duration" not in phrase.attrs or "frames" not in phrase.attrs
+           for phrase in soup.find_all("phrase")):
+        raise ValueError("Add missing audio before placing image slots")
+    add_import_images(soup)
+    chapter.save_timeline()
+
+
 def add_import_images(soup):
     """Place slots at phrase starts nearest eight-second chapter marks."""
     # Chapter.get_xml() can return either a document or its <chapter> tag.
     # Only BeautifulSoup documents implement new_tag, including for detached tags.
     document = soup if isinstance(soup, BeautifulSoup) else BeautifulSoup("", "xml")
     elapsed = Decimal(0)
-    starts = []
-    for tag in soup.find_all(["phrase", "silence"]):
-        if tag.name == "phrase":
+    starts, anchors = [], []
+    for tag in soup.find_all(["phrase", "silence", "illustration", "image"]):
+        if tag.name in ("illustration", "image"):
+            anchors.append((elapsed, tag))
+        elif tag.name == "phrase":
             starts.append((elapsed, tag))
-        elapsed += Decimal(str(tag.get("duration", 0)))
-    if not starts:
+        if tag.name in ("phrase", "silence"):
+            elapsed += Decimal(str(tag.get("duration", 0)))
+    if not starts and not anchors:
         return
 
-    selected = {0}
-    mark = MAX_ANIMATION_DURATION_SECONDS
-    while mark < elapsed:
-        nearest = min(range(len(starts)), key=lambda i: abs(starts[i][0] - mark))
-        selected.add(nearest)
-        mark += MAX_ANIMATION_DURATION_SECONDS
+    if anchors:
+        # Fixed source illustrations take precedence. Fill each interval evenly
+        # so a generated slot cannot crowd the upcoming illustration.
+        selected = []
+        occupied = [time for time, _ in anchors]
+        if starts and starts[0][0] not in occupied:
+            selected.append(starts[0])
+            occupied.append(starts[0][0])
+        boundaries = sorted(set([*occupied, elapsed]))
+        for left, right in zip(boundaries, boundaries[1:]):
+            count = max(1, int(((right - left) / MAX_ANIMATION_DURATION_SECONDS).to_integral_value()))
+            for step in range(1, count):
+                target = left + (right - left) * step / count
+                candidates = [(time, tag) for time, tag in starts
+                              if left < time < right
+                              and all(abs(time - other) >= 6 for other in occupied)]
+                if candidates:
+                    choice = min(candidates, key=lambda item: abs(item[0] - target))
+                    selected.append(choice)
+                    occupied.append(choice[0])
+        entries = [(time, tag, False) for time, tag in selected]
+        entries += [(time, tag, True) for time, tag in anchors]
+        entries.sort(key=lambda item: item[0])
+    else:
+        selected = {0}
+        mark = MAX_ANIMATION_DURATION_SECONDS
+        while mark < elapsed:
+            nearest = min(range(len(starts)), key=lambda i: abs(starts[i][0] - mark))
+            selected.add(nearest)
+            mark += MAX_ANIMATION_DURATION_SECONDS
+        entries = [(starts[position][0], starts[position][1], False) for position in sorted(selected)]
 
-    for index, position in enumerate(sorted(selected)):
-        image = document.new_tag("image", attrs={"index": str(index)})
-        starts[position][1].insert_before(image)
+    next_index = max((int(image["index"]) for image in soup.find_all("image")), default=-1) + 1
+    for _, target, fixed in entries:
+        if fixed and target.name == "image":
+            continue  # Keep source assets and their persisted identities stable.
+        image = document.new_tag("image", attrs={"index": str(next_index)})
+        next_index += 1
+        if fixed:
+            image["source_image"] = target["source_image"]
+            target.replace_with(image)
+        else:
+            target.insert_before(image)
     update_image_frames(soup)
 
 

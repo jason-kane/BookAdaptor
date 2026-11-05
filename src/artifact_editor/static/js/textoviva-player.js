@@ -186,7 +186,7 @@
     document.addEventListener('htmx:wsAfterSend', event => {
         const button = event.detail.elt?.closest('#video-generation-notice')
             ?.querySelector('wa-button');
-        if (button) button.disabled = true;
+        if (button && !button.hasAttribute('data-workflow-action')) button.disabled = true;
     });
     document.addEventListener('htmx:wsAfterMessage', () => {
         let refresh = false;
@@ -195,11 +195,12 @@
             if (status.closest('#video-generation-notice') &&
                 ['complete', 'failed'].includes(status.dataset.videoState)) {
                 const button = status.closest('#video-generation-notice').querySelector('wa-button');
-                if (button) button.disabled = false;
+                if (button && !button.hasAttribute('data-workflow-action')) button.disabled = false;
             }
             if (status.dataset.videoState !== 'complete') {
                 completedJobs.delete(job);
-            } else if (!completedJobs.has(job)) {
+            } else if (!completedJobs.has(job) &&
+                       status.dataset.videoAction === 'textoviva_rerender') {
                 completedJobs.add(job);
                 refresh = true;
             }

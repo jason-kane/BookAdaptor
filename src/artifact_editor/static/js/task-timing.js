@@ -129,7 +129,7 @@
     function bind(bar, job, label = null, options = {}) {
         job = remember(job) || {};
         const owner = bar || label;
-        if (!owner) return;
+        if (!owner || owner.closest?.('[data-task-timing-ignore]')) return;
         if (bar && label) bindings.delete(label);
         if (bar) bar.dataset.timedProgress = '';
         const binding = {bar, label, job, options, receivedAt: job._timingAt || Date.now()};
@@ -141,7 +141,7 @@
         const bars = [...(root.matches?.('wa-progress-bar, wa-progress-ring') ? [root] : []),
             ...(root.querySelectorAll?.('wa-progress-bar, wa-progress-ring') || [])];
         for (const bar of bars) {
-            if (bindings.has(bar)) continue;
+            if (bar.closest('[data-task-timing-ignore]') || bindings.has(bar)) continue;
             let job = {};
             try { job = JSON.parse(bar.dataset.taskTiming || '{}'); } catch (_) { /* uninitialized progress */ }
             const parent = bar.closest('[data-task-progress], [data-video-job], [id^="video-progress-"]');

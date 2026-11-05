@@ -18,6 +18,7 @@ from artifact_editor.images.source import SOURCE_WORKFLOW, source_picker
 
 # scene_htmx
 from artifact_editor.images.scene.htmx import (
+    characters_section,
     image_scene_workshop,
 )
 
@@ -95,6 +96,7 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         """
         Response is a string of HTML components.
         """
+        from artifact_editor.textoviva.workflow import default_image_workflow
         # from artifact_editor.chapter.chapter import Chapter
         # chapter_kwargs = tools.requestToChapterKwargs(request.url)
         # chapter_kwargs["author"] = Author(chapter_kwargs["author"])
@@ -136,7 +138,7 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         }
         selected_workflow = selected_image_workflow(
             image_xml, [template for group in templates_by_mode.values() for template in group],
-            const.DEFAULT_IMAGE_TEMPLATE,
+            default_image_workflow(chapter, const.DEFAULT_IMAGE_TEMPLATE),
         )
 
         workflow_selector = f"""
@@ -232,16 +234,39 @@ class ComfyWorkflowUI(TextToImageProviderUI):
         #     animation=False,
         # )
 
-        scene_workshop = image_scene_workshop(chapter, image_xml)
+        scene_workshop = image_scene_workshop(
+            chapter, image_xml, include_characters=False
+        )
+        character_workshop = characters_section(chapter, image_xml)
 
-        # prompt = chapter.get_prompt(image_xml)
-
+        # Keep the two main editing sections compact and the generation actions
+        # visible while either section's contents scroll.
         out = f"""
-        {scene_workshop}
-       
-        <div class="wa-cluster">
-            {workflow_run_button}
-            {workflow_link_button}
+        <div class="image-generation-panel">
+            <wa-tab-group class="image-generation-tabs">
+                <wa-tab panel="scene">Scene</wa-tab>
+                <wa-tab panel="characters">Characters</wa-tab>
+                <wa-tab-panel name="scene">
+                    <div class="image-generation-scroll" data-custom-scrollbar data-scrollbar-shape="pinball"
+                        data-scrollbar-label="Scroll scene settings">
+                        <div data-scroll-viewport>
+                            <div>{scene_workshop}</div>
+                        </div>
+                    </div>
+                </wa-tab-panel>
+                <wa-tab-panel name="characters">
+                    <div class="image-generation-scroll" data-custom-scrollbar data-scrollbar-shape="pinball"
+                        data-scrollbar-label="Scroll character settings">
+                        <div data-scroll-viewport>
+                            <div>{character_workshop}</div>
+                        </div>
+                    </div>
+                </wa-tab-panel>
+            </wa-tab-group>
+            <div class="image-generation-actions">
+                {workflow_run_button}
+                {workflow_link_button}
+            </div>
         </div>"""
         return out
 

@@ -9,8 +9,13 @@
             hx-sync="closest form:queue last"></wa-textarea>
         <span role="status" aria-live="polite" data-alias-status></span>
     </form>
+    {% if book_scope %}
+    <form class="wa-stack" hx-post="{{ url_for('library.book.merge_book_character', author=chapter.author.name, title=chapter.title, character_tag=tag) }}"
+          hx-target="#book-characters-panel" hx-swap="outerHTML">
+    {% else %}
     <form class="wa-stack" hx-post="{{ url_for('library.book.chapter.characters.merge', character_tag=tag, **chapter.kwargs) }}"
           hx-target="#character_cards" hx-select="#character_cards" hx-swap="outerHTML">
+    {% endif %}
         <wa-select name="target_tag" label="This character is an alias of" required>
             {% for other_tag, other in catalog.items() if other_tag != tag and other_tag != 'Narrator' %}
             <wa-option value="{{ other_tag }}">{{ other.name }}</wa-option>

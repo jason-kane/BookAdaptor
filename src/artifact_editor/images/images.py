@@ -357,7 +357,8 @@ def all_images_by_image_index(paragraph_dir, image_index):
         paragraph_dir,
         f"img_{image_index}_*.png",
     )
-    images = glob.glob(globpath)
+    images = [path for path in glob.glob(globpath)
+              if not os.path.basename(path).endswith("_last_frame_of_previous.png")]
     log.info("images matching glob", globpath=globpath, images=images)
 
     return images
@@ -799,6 +800,7 @@ def generate_metadata_character_pose(character, image_xml, chapter, force=False)
     """
     if f"{character['tag']}_pose" in image_xml.attrs and not force:
         return
+    pose_keys = [key for key, _ in scene_const.POSE_CHOICES]
     surrounding_text = get_image_narration_context(image_xml)
 
     text = get_text_to_next(
@@ -829,23 +831,36 @@ def generate_metadata_character_pose(character, image_xml, chapter, force=False)
             prompt,
             system_prompt=(
                 'Choose exactly one pose key from the supplied choices. '
+                'Use the closest listed pose for specific movements; hobbling and limping are walking. '
                 'Return only a JSON object with one string field named "pose".'
             ),
             max_tokens=128,
             thinking_budget_tokens=0,
-            response_format={"type": "json_object"},
+            response_format={
+                "type": "json_object",
+                "schema": {
+                    "type": "object",
+                    "properties": {"pose": {"type": "string", "enum": pose_keys}},
+                    "required": ["pose"],
+                    "additionalProperties": False,
+                },
+            },
             label=gpu_label.get() or "Choosing pose",
         )
         pose = json.loads(raw_pose)
     finally:
         client.close()
-    valid_pose = {key for key, label in scene_const.POSE_CHOICES}
+    valid_pose = set(pose_keys)
     candidates = ([pose.get(key) for key in ("pose", "character_pose", "pose_selection")]
                   if isinstance(pose, dict) else [pose])
     clean_pose = None
     for candidate in candidates:
         if isinstance(candidate, str):
             normalized = "_".join(candidate.strip().lower().replace("-", "_").split())
+            # A specific walking gait may appear in older or unconstrained
+            # responses. Keep the selectable pose canonical; action metadata
+            # remains responsible for the more detailed movement.
+            normalized = {"hobbling": "walking", "limping": "walking"}.get(normalized, normalized)
             if normalized in valid_pose:
                 clean_pose = normalized
                 break
@@ -1153,7 +1168,8 @@ def generate_image_description(image_xml, force=False):
 def reuse_existing_image(chapter, image_xml):
     """Reuse a selected still or recover a completed output after an interrupted save."""
     image_fn = chapter.get_image_filename(image_xml)
-    if image_fn and os.path.isfile(image_fn):
+    if (image_fn and os.path.isfile(image_fn)
+            and not os.path.basename(image_fn).endswith("_last_frame_of_previous.png")):
         return image_fn
 
     from artifact_editor.images.selector.htmx import gather_candidate_images

@@ -364,3 +364,21 @@ def test_failed_history_five_minute_retention_and_retry_cleanup(monkeypatch):
         assert queue_history.recent_completions(proxy)[-1]['job_id'] == 'oom'
     finally:
         client.delete(queue_history.KEY, queue_history.FAILED_KEY)
+
+
+def test_dedicated_lora_trainer_appears_in_shared_gpu_snapshot(monkeypatch):
+    from artifact_editor.book import lora_training
+    row = dict(job_id='training', action='lora_training', job_type='Training LoRA',
+               filename='Denslow', provider='none', externally_managed=True,
+               state='running', percent=50, message='Training LoRA: 1500/3000 steps', priority=False)
+    monkeypatch.setattr(lora_training, 'queue_entries', lambda: [dict(row)])
+    functions = queue_functions()
+    functions.update(GPU_SWITCH_REQUEST_KEY='gpu-switch', _pending_gpu_switch_id=lambda *args, **kwargs: None)
+    snapshot = functions['styler_queue_snapshot'](client_with_queues(), 'priority', 'tags')
+    assert snapshot['running']['job_id'] == 'training'
+    assert snapshot['running']['percent'] == 50
+    assert snapshot['queue_count'] == 1
+    row.update(state='queued', message='Waiting for the GPU to be released')
+    snapshot = functions['styler_queue_snapshot'](client_with_queues(), 'priority', 'tags')
+    assert snapshot['jobs'][0]['job_id'] == 'training'
+    assert snapshot['jobs'][0]['externally_managed'] is True

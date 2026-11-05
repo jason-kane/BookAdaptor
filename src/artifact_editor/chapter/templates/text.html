@@ -5,7 +5,7 @@
 {% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="/static/styles/image-leaves.css?v=1">
+<link rel="stylesheet" href="/static/styles/image-leaves.css?v=11">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles/custom-scrollbar.css', v='2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles/styler-queue.css') }}?v=20261028-gpu-traceback-1">
 <link rel="stylesheet" href="https://vjs.zencdn.net/8.23.8/video-js.css">
@@ -326,26 +326,106 @@
         height: 0;
         min-height: 0;
     }
-    .chapter-column.is-active-panel [data-custom-scrollbar] {
+    .chapter-column.is-active-panel [data-custom-scrollbar]:not([data-scrollbar-shape]) {
         --scrollbar-width: 55px;
         --scrollbar-radius: 999px;
         --scrollbar-track: linear-gradient(90deg, #171107, #46300e 50%, #171107);
         --scrollbar-thumb:
-            radial-gradient(ellipse at 28% 18%, rgba(255, 255, 225, 0.95), rgba(255, 249, 193, 0.25) 22%, transparent 52%),
-            radial-gradient(ellipse at 38% 32%, #ffe995 0%, #e5b63e 42%, #a66b14 76%, #593208 100%);
+            radial-gradient(ellipse at 30% 23%, #f1d8a84d, transparent 48%),
+            repeating-radial-gradient(ellipse at -45% 42%, transparent 0 3px, #60381740 3.5px 4px, transparent 4.5px 8px, #f3d5a333 8.5px 9px, transparent 9.5px 13px),
+            repeating-linear-gradient(82deg, transparent 0 6px, #51331819 6.5px 7px, transparent 7.5px 11px),
+            radial-gradient(circle at 35% 29%, #d6b181 0%, #bd915c 40%, #956532 71%, #603a1e 94%, #442716 100%);
         --scrollbar-thumb-hover:
-            radial-gradient(ellipse at 28% 18%, #fffde6, rgba(255, 250, 199, 0.4) 25%, transparent 56%),
-            radial-gradient(ellipse at 38% 32%, #fff0b0 0%, #f3c850 42%, #ba7d1a 76%, #70400a 100%);
+            radial-gradient(ellipse at 30% 23%, #f1d8a85e, transparent 48%),
+            repeating-radial-gradient(ellipse at -45% 42%, transparent 0 3px, #60381740 3.5px 4px, transparent 4.5px 8px, #f3d5a333 8.5px 9px, transparent 9.5px 13px),
+            repeating-linear-gradient(82deg, transparent 0 6px, #51331819 6.5px 7px, transparent 7.5px 11px),
+            radial-gradient(circle at 35% 29%, #dfbd90 0%, #c79c66 40%, #a06f3a 71%, #6b4325 94%, #4b2c19 100%);
     }
-    .chapter-column.is-active-panel [data-custom-scrollbar] > .custom-scrollbar-rail {
+    .chapter-column.is-active-panel [data-custom-scrollbar]:not([data-scrollbar-shape]) > .custom-scrollbar-rail {
         box-shadow: inset 0 0 0 1px rgba(222, 172, 65, 0.4), inset 2px 0 7px rgba(0, 0, 0, 0.65);
     }
-    .chapter-column.is-active-panel [data-custom-scrollbar] > .custom-scrollbar-rail > .custom-scrollbar-thumb {
-        border: 1px solid #99701d;
-        box-shadow: inset 1px 2px 3px rgba(255, 249, 199, 0.75), inset -3px -4px 7px rgba(75, 38, 0, 0.65), 0 3px 6px rgba(0, 0, 0, 0.65);
+    .chapter-column.is-active-panel [data-custom-scrollbar]:not([data-scrollbar-shape]) > .custom-scrollbar-rail > .custom-scrollbar-thumb {
+        border: 1px solid #654127;
+        box-shadow: inset 1px 2px 4px #e4c69c66, inset -4px -5px 9px #3d230c80, 0 4px 7px #0009;
     }
     #chapter-timeline-scroll {
         overscroll-behavior-y: contain;
+        inset-inline-start: 0;
+        inset-inline-end: 24px;
+    }
+    /* The active column borrows its neighbors' space for chrome only.
+       Keep the content viewport and its text wrapping exactly the same. */
+    .chapter-column.is-active-panel {
+        z-index: 20;
+    }
+    .chapter-column.is-active-panel > .chapter-column-content,
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group,
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group::part(base),
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group::part(body),
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group > wa-tab-panel[active],
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group > wa-tab-panel[active]::part(base),
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group > wa-tab-panel > [data-custom-scrollbar],
+    .chapter-column.is-active-panel .chapter-timeline-scroll-area {
+        overflow: visible;
+    }
+    .chapter-column-content > wa-tab-group > wa-tab-panel > [data-custom-scrollbar] > [data-scroll-viewport] {
+        inset-inline-end: 24px;
+    }
+    .chapter-column.is-active-panel > .chapter-column-content > wa-tab-group > wa-tab-panel > [data-custom-scrollbar] > .custom-scrollbar-rail,
+    .chapter-column.is-active-panel .chapter-timeline-scroll-area > .custom-scrollbar-rail {
+        inset-inline-end: calc(20px - var(--scrollbar-width));
+    }
+    .chapter-timeline-image-nav {
+        display: none;
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: -82px;
+        width: 76px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        padding: 4px;
+        box-sizing: border-box;
+        background: rgba(12, 15, 20, 0.94);
+        border-inline-end: 1px solid #9a762b;
+    }
+    .chapter-column.is-active-panel .chapter-timeline-image-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .chapter-timeline-image-nav button {
+        position: relative;
+        flex: none;
+        width: 100%;
+        padding: 0;
+        border: 2px solid transparent;
+        border-radius: 5px;
+        overflow: hidden;
+        background: #181818;
+        cursor: pointer;
+    }
+    .chapter-timeline-image-nav button:hover,
+    .chapter-timeline-image-nav button:focus-visible,
+    .chapter-timeline-image-nav button[aria-current] {
+        border-color: #f5d77b;
+        outline: none;
+    }
+    .chapter-timeline-image-nav img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+    }
+    .chapter-timeline-image-nav span {
+        position: absolute;
+        inset-inline-end: 0;
+        bottom: 0;
+        padding: 0 4px;
+        background: #000c;
+        color: #fff;
+        font-size: 0.75rem;
+        line-height: 1.4;
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] {
         position: relative;
@@ -397,6 +477,17 @@
         margin-bottom: 0.5em;
         margin-top: 0.5em;
     }
+    fieldset.phrase-container[data-timeline-type="phrase"] {
+        min-width: 0;
+        margin-inline: 0;
+        padding: 0;
+    }
+    .chapter-phrase-legend {
+        margin-inline-start: 0.5rem;
+        padding-inline: 0.35rem;
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
     .phrase-container[data-timeline-type="phrase"] .chapter-audio-warning-badge {
         pointer-events: none;
     }
@@ -429,6 +520,11 @@
         inset-inline-end: 0.125rem;
         z-index: 2;
     }
+    #chapter-phrase-list .chapter-timeline-image > summary > .chapter-timeline-delete {
+        display: inline-block;
+        z-index: 4;
+    }
+    .chapter-image-footer { padding: 0.5rem; }
     .chapter-timeline-time { cursor: pointer; }
     .chapter-timeline-time:focus-visible {
         outline: 2px solid currentColor;
@@ -752,15 +848,20 @@
 <script defer src="/static/js/library-image-leaves.js?v=2"></script>
 <script defer src="/static/js/frame-image-leaves.js?v=1"></script>
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='6') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='workflow-gating-8') }}" defer></script>
 <script src="{{ url_for('static', filename='js/textoviva-director.js', v='1') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-columns.js', v='7') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-import.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='2') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='timeline-animation-description-job-1') }}" defer></script>
+{% if chapter.get_aspect() != 'portrait' %}
+<script src="{{ url_for('static', filename='js/chapter-thumbnail.js', v='2') }}" defer></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/chapter-columns.js', v='8') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-import.js', v='stable-video-gating-6') }}"
+    data-workflow-status-url="{{ url_for('library.book.chapter.chapter_workflow_status', **chapter.kwargs) }}" defer></script>
+<script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='6') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-image-delete.js', v='1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-background-boundary-2') }}" defer></script>
 <script src="/static/js/chapter-typesetting.js?v=1" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
-<script defer src="/static/js/styler-samples.js?v=chapter-image-events-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script defer src="/static/js/styler-samples.js?v=no-provider-cooldown-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.
@@ -919,9 +1020,11 @@
         }
     }
 
-    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}, afterSection = null) {
-        const afterIndex = afterSection ? chapterSections.indexOf(afterSection) : -1;
-        const insertIndex = afterIndex >= 0 ? afterIndex + 1 : chapterSections.length;
+    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}, relativeSection = null, position = 'after') {
+        const relativeIndex = relativeSection ? chapterSections.indexOf(relativeSection) : -1;
+        const insertIndex = relativeIndex >= 0
+            ? relativeIndex + (position === 'before' ? 0 : 1)
+            : chapterSections.length;
         const editorId = `text_editor_${nextChapterSectionId++}`;
         const sectionElement = document.createElement('section');
         sectionElement.className = 'chapter-section wa-stack';
@@ -932,11 +1035,12 @@
                     <wa-option value="verse">Verse</wa-option>
                     <wa-option value="plain">Plain</wa-option>
                 </wa-select>
-                <wa-button class="add-section" type="button" variant="neutral" appearance="accent">Add Section</wa-button>
+                <wa-button class="add-section-before" type="button" variant="neutral" appearance="accent" aria-label="Add section above" title="Add section above">Add Section <wa-icon slot="end" name="arrow-up" aria-hidden="true"></wa-icon></wa-button>
+                <wa-button class="add-section-after" type="button" variant="neutral" appearance="accent" aria-label="Add section below" title="Add section below">Add Section <wa-icon slot="end" name="arrow-down" aria-hidden="true"></wa-icon></wa-button>
                 <wa-button class="delete-section" type="button" variant="danger" appearance="outlined" aria-label="Delete this section">Delete Section</wa-button>
             </div>`;
-        if (afterIndex >= 0) {
-            afterSection.element.after(sectionElement);
+        if (relativeIndex >= 0) {
+            relativeSection.element[position === 'before' ? 'before' : 'after'](sectionElement);
         } else {
             document.getElementById('chapter-sections').appendChild(sectionElement);
         }
@@ -969,9 +1073,11 @@
             section.typesetting_method = event.target.value;
             saveChapterSections();
         });
-        sectionElement.querySelector('.add-section').addEventListener('click', () => {
-            addChapterSection(undefined, section);
-            saveChapterSections();
+        ['before', 'after'].forEach(position => {
+            sectionElement.querySelector(`.add-section-${position}`).addEventListener('click', () => {
+                addChapterSection(undefined, section, position);
+                saveChapterSections();
+            });
         });
         sectionElement.querySelector('.delete-section').addEventListener('click', () => {
             if (chapterSections.length <= 1) return;
@@ -987,7 +1093,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         fetch('sections').then(response => response.json()).then(sections => {
-            (sections.length ? sections : [{typesetting_method: 'verse', ops: []}]).forEach(addChapterSection);
+            (sections.length ? sections : [{typesetting_method: 'verse', ops: []}]).forEach(section => addChapterSection(section));
         }).catch(error => {
             console.error('Could not load chapter sections:', error);
             addChapterSection();
@@ -1025,6 +1131,15 @@
     </div>
 </wa-dialog>
 
+<wa-dialog id="chapter-image-delete-dialog" label="Delete image?" style="--width: 26rem;">
+    <p id="chapter-image-delete-message">Delete this image from the timeline?</p>
+    <wa-checkbox id="chapter-image-delete-skip">Don't show this again</wa-checkbox>
+    <div slot="footer" class="wa-cluster wa-gap-s">
+        <wa-button id="chapter-image-delete-cancel" type="button">Cancel</wa-button>
+        <wa-button id="chapter-image-delete-confirm" type="button" variant="danger">Delete Image</wa-button>
+    </div>
+</wa-dialog>
+
 <div class="chapter-layout">
     <div class="chapter-column wa-stack wa-gap-0 chapter-editor-column">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
@@ -1036,7 +1151,7 @@
             <wa-tab panel="mood">Mood</wa-tab>
             <wa-tab panel="theme">Theme</wa-tab>
             <wa-tab-panel name="text">
-                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll chapter text">
+                <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-shape="sphere" data-scrollbar-label="Scroll chapter text">
                     <div id="chapter-text-scroll" class="chapter-text-scroll" data-scroll-viewport tabindex="0" aria-label="Chapter text">
                         <div class="wa-stack">
                             <div id="chapter-sections" class="wa-stack"></div>
@@ -1183,12 +1298,20 @@
         <div id="chapter-output-content" class="chapter-column-content">
             <wa-tab-group active="textoviva">
                 <wa-tab panel="textoviva">Textoviva</wa-tab>
+                {% if chapter.get_aspect() != 'portrait' %}
+                <wa-tab panel="thumbnail">Thumbnail</wa-tab>
+                {% endif %}
                 <wa-tab panel="publish">Publish</wa-tab>
-                <wa-tab-panel name="textoviva" data-scrollbar-panel data-scrollbar-label="Scroll video controls"
+                <wa-tab-panel name="textoviva" data-scrollbar-panel data-scrollbar-shape="sphere" data-scrollbar-label="Scroll video controls"
                     hx-get="{{ url_for('library.book.chapter.textoviva.player', **chapter.kwargs) }}"
                     hx-trigger="load" hx-swap="innerHTML">
                 </wa-tab-panel>
-                <wa-tab-panel name="publish" data-scrollbar-panel data-scrollbar-label="Scroll publishing controls">
+                {% if chapter.get_aspect() != 'portrait' %}
+                <wa-tab-panel name="thumbnail" data-scrollbar-panel data-scrollbar-shape="sphere" data-scrollbar-label="Scroll thumbnail workshop">
+                    {% include "chapter_thumbnail.html" %}
+                </wa-tab-panel>
+                {% endif %}
+                <wa-tab-panel name="publish" data-scrollbar-panel data-scrollbar-shape="sphere" data-scrollbar-label="Scroll publishing controls">
                     <wa-tab-group active="publish-youtube">
                         <wa-tab panel="publish-youtube">YouTube</wa-tab>
                         <wa-tab panel="publish-tiktok">TikTok</wa-tab>

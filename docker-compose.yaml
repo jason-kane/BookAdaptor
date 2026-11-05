@@ -50,7 +50,7 @@ services:
     networks:
       - home-network
   postgres:
-    profiles: ["on-demand"]
+    profiles: ["on-demand", "training"]
     image: postgres:18
     ports:
       - "127.0.0.1:5432:5432"
@@ -209,6 +209,8 @@ services:
       - "./comfy/ComfyUI:/root/ComfyUI"
       - "./comfy/ComfyUI/custom_nodes:/root/ComfyUI/custom_nodes"
       - "./comfy/ComfyUI/models:/root/ComfyUI/models"
+      - "./active/loras:/active/loras:ro"
+      - "./docker/comfyui/extra_model_paths.yaml:/root/ComfyUI/extra_model_paths.yaml:ro"
       - "./comfy/ComfyUI/hf-hub:/root/.cache/huggingface/hub"
       - "./comfy/ComfyUI/torch-hub:/root/.cache/torch/hub"
       - "./comfy/ComfyUI/input:/root/ComfyUI/input"
@@ -276,6 +278,7 @@ services:
   websocket:
     profiles: ["on-demand"]
     image: bookadaptor-app:latest
+    restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
@@ -288,9 +291,17 @@ services:
       - ./active:/active:ro
     environment:
       - GPU_SERVICE_SWITCHING=1
+      - NVIDIA_DRIVER_CAPABILITIES=utility
       - PGHOST=postgres
       - CHAPTER_STORAGE=postgres
     entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     networks:
       - home-network
 
@@ -407,7 +418,39 @@ services:
     networks:
       - home-network
 
+  lora_trainer:
+    profiles: ["training"]
+    build:
+      context: ./docker/ai-toolkit
+      args:
+        AI_TOOLKIT_REF: ${AI_TOOLKIT_REF:-main}
+    image: bookadaptor-ai-toolkit:local
+    restart: unless-stopped
+    volumes:
+      - ./src:/app:ro
+      - ./active:/active
+      - ./configuration.toml:/app/configuration.toml:ro
+      - ai_toolkit_cache:/root/.cache/huggingface
+    environment:
+      - PGHOST=postgres
+      - CHAPTER_STORAGE=postgres
+      - AITK_TEXT_EMBED_CACHE_BATCH=1
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - home-network
+
 volumes:
+  ai_toolkit_cache:
   postgres_data:
   pgadmin_data:
 

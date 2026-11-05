@@ -8,6 +8,7 @@ function activateChapterColumn(event) {
         if (active !== column) active.classList.remove('is-active-panel');
     });
     column.classList.add('is-active-panel');
+    document.dispatchEvent(new Event('chapter-column-activation-changed'));
 }
 document.addEventListener('pointerdown', activateChapterColumn, true);
 document.addEventListener('click', activateChapterColumn, true);

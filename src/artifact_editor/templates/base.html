@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="/static/images/apple-touch-icon.png">
 
   <!-- HTMX -->
-  <script defer src="{{ url_for('static', filename='js/source-images.js', v='5') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/source-images.js', v='6') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles/source-images.css', v='2') }}">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4"
@@ -225,7 +225,7 @@
     </style>
 
   <link rel="stylesheet" href="/static/styles/task-timing.css?v=1">
-  <script defer src="/static/js/task-timing.js?v=5"></script>
+  <script defer src="/static/js/task-timing.js?v=6"></script>
   {% block scripts %}{% endblock %}
   {% block styles %}{% endblock %}
 
@@ -401,9 +401,10 @@
         {% if chapter %}
         <wa-breadcrumb-item>
           <wa-dropdown>
-            <wa-button slot="trigger" with-caret size="medium" appearance="filled">
+            <wa-button slot="trigger" with-caret size="medium" appearance="filled" disabled>
               {{section_cosmetic or 'Workshops'}}
             </wa-button>
+            {# Workshops navigation is disabled during the UI reachability audit.
             <a
               href="{{ url_for('library.book.chapter.characters.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Characters</wa-dropdown-item></a>
             <wa-dropdown-item>
@@ -419,6 +420,7 @@
             <a href="{{ url_for('library.book.chapter.frames.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Frames</wa-dropdown-item></a>
             <a href="{{ url_for('library.book.chapter.music.base', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Music</wa-dropdown-item></a>
             <a href="{{ url_for('library.book.chapter.video.base_video', author=author.name, title=title, chapter_number=chapter.number, language=language) }}"><wa-dropdown-item>Video</wa-dropdown-item></a>
+            #}
           </wa-dropdown>
         </wa-breadcrumb-item>
         {% endif %}

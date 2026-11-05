@@ -294,7 +294,6 @@ def base(aspect="widescreen", frame_index=0):
         title=g.title,
         pretty_title=pretty_title,
         chapter=g.chapter,
-        chapterurl=g.chapter.url,
         buttons=buttons,
         section="frames",
         section_cosmetic="Frames",
