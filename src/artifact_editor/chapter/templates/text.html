@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 
 {% block title %}
-<title>Chapter: {{ chapter_title }}</title>
+{% set numbered_chapter_title = 'Chapter ' ~ chapter.number|string %}
+<title>{% if chapter_title == numbered_chapter_title %}{{ numbered_chapter_title }}{% else %}{{ numbered_chapter_title }}: {{ chapter_title }}{% endif %}</title>
 {% endblock %}
 
 {% block styles %}
