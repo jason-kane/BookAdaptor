@@ -2,17 +2,17 @@
     const oneShotJobKey = 'textoviva-one-shot-job';
 
     function restoreOneShotProgressTarget() {
-        const host = document.getElementById('chapter-job-progress');
-        if (!host) return;
+        const container = document.getElementById('textoviva-one-shot');
+        if (!container) return;
         const activeStatus = document.querySelector(
             '#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="running"], ' +
-            '#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="queued"]'
+            '#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="queued"], ' +
+            '#chapter-job-progress [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="running"], ' +
+            '#chapter-job-progress [data-video-job][data-video-action="textoviva_one_shot"][data-video-state="queued"]'
         );
         if (activeStatus) {
             sessionStorage.setItem(oneShotJobKey, activeStatus.dataset.videoJob);
-            const staleTarget = document.getElementById(activeStatus.id);
-            if (staleTarget && staleTarget !== activeStatus) staleTarget.remove();
-            host.append(activeStatus);
+            container.querySelector('wa-button')?.after(activeStatus);
             return;
         }
         const jobId = sessionStorage.getItem(oneShotJobKey);
@@ -21,7 +21,7 @@
         target.id = `video-progress-${jobId}`;
         target.setAttribute('role', 'status');
         target.setAttribute('aria-live', 'polite');
-        host.append(target);
+        container.querySelector('wa-button')?.after(target);
     }
 
     restoreOneShotProgressTarget();
@@ -105,9 +105,9 @@
         if (event.detail.parameters.action === 'textoviva_one_shot') {
             const jobId = event.detail.parameters.job_id;
             const progress = document.getElementById(`video-progress-${jobId}`);
-            const host = document.getElementById('chapter-job-progress');
             if (jobId) sessionStorage.setItem(oneShotJobKey, jobId);
-            if (progress && host) host.append(progress);
+            const button = document.querySelector('#textoviva-one-shot [data-workflow-action="textoviva_one_shot"]');
+            if (progress && button) button.after(progress);
         }
     });
 
@@ -135,7 +135,7 @@
     });
 
     document.addEventListener('htmx:wsAfterMessage', () => {
-        document.querySelectorAll('#chapter-job-progress [data-video-job][data-video-action="textoviva_one_shot"]')
+        document.querySelectorAll('#textoviva-one-shot [data-video-job][data-video-action="textoviva_one_shot"]')
             .forEach(status => {
                 if (['complete', 'failed', 'cancelled'].includes(status.dataset.videoState) &&
                     sessionStorage.getItem(oneShotJobKey) === status.dataset.videoJob) {
