@@ -136,9 +136,13 @@ and the test runner. Test runs use the existing `bookadaptor-app:latest` image.
 TODO data persists in `src/todo/home.json`.
 
 The video worker delegates GPU provider handoffs to Home through
-`POST /api/gpu/provider/switch`. Home stops the other provider and starts the
-requested `comfyui` or `llama` Compose service; `GET /api/gpu/provider` reports
-which provider services are running.
+`POST /api/gpu/provider/switch`. Before a sibling handoff, the worker asks the
+current provider to unload its model and verifies at least 8 GiB of free VRAM.
+Home keeps both provider containers running during a normal handoff and starts
+the requested `comfyui` or `llama` service. If model unloading fails, the
+worker requests a sibling container stop as a recovery. Training and Python
+switches still stop both model services. `GET /api/gpu/provider` reports which
+provider services are running.
 
 Nginx remains an optional shared entry point on port 80. Starting it currently
 starts its declared editor, ComfyUI, and WebSocket dependencies as well.

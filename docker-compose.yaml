@@ -237,7 +237,8 @@ services:
       - home-network
 
   # Llama.cpp serves Qwen3.5-9B Q5_K_M directly. It has a separate
-  # profile so Compose never starts it beside ComfyUI on the shared GPU.
+  # profile so it starts only when requested. Its idle timer unloads weights
+  # while leaving the API container available to wake on the next request.
   llama:
     profiles: ["llama"]
     container_name: llama-vision
@@ -259,6 +260,8 @@ services:
       - "16384"
       - "--parallel"
       - "1"
+      - "--sleep-idle-seconds"
+      - "10"
       - "--reasoning-budget"
       - "1024"
       - "--reasoning-budget-message"

@@ -99,11 +99,15 @@ def gpu_provider_status():
 def switch_gpu_provider():
     from .programs import GPU_PROVIDER_SERVICES, switch_gpu_provider
 
-    provider = (request.get_json(silent=True) or {}).get("provider")
+    payload = request.get_json(silent=True) or {}
+    provider = payload.get("provider")
+    stop_sibling = payload.get("stop_sibling", False)
     if not isinstance(provider, str) or provider not in (*GPU_PROVIDER_SERVICES, "training", "python"):
         return jsonify(error="Choose ComfyUI, Llama, Training, or Python."), 400
+    if not isinstance(stop_sibling, bool):
+        return jsonify(error="stop_sibling must be a boolean."), 400
     try:
-        switch_gpu_provider(provider)
+        switch_gpu_provider(provider, stop_sibling=stop_sibling)
     except (OSError, RuntimeError, ValueError) as exc:
         log.exception("Unable to switch GPU provider to %s", provider)
         return jsonify(error=str(exc) or "Compose could not switch GPU providers."), 503

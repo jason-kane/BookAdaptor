@@ -24,6 +24,8 @@ STOPPED_OWNER_GRACE_SECONDS = 30
 MANUAL_SWITCH_LOCK_WAIT_SECONDS = 5
 SERVICE_START_TIMEOUT_SECONDS = 300
 SERVICE_POLL_SECONDS = 1
+SIBLING_FREE_VRAM_GIB = 8.0
+SIBLING_UNLOAD_TIMEOUT_SECONDS = 120
 LAST_SWITCH_KEY = "gpu:last-switch-at"
 TRANSITION_KEY = "gpu:service-transition"
 STYLER_EVENTS = "styler_sample_events"
@@ -79,14 +81,17 @@ def initialize_active_service(client) -> GPUService | None:
         )
         return None
 
-    if len(providers) == 1:
-        service = {"comfyui": "comfy", "llama": "llama"}.get(providers[0])
+    previous = client.get("gpu:active-service")
+    if isinstance(previous, bytes):
+        previous = previous.decode()
+    if len(providers) == 1 or (previous in ("comfy", "llama") and
+                               {"comfy": "comfyui", "llama": "llama"}[previous] in providers):
+        service = previous if previous in ("comfy", "llama") and len(providers) > 1 else {
+            "comfyui": "comfy", "llama": "llama"
+        }.get(providers[0])
         if service is None:
             client.delete("gpu:active-service")
             return None
-        previous = client.get("gpu:active-service")
-        if isinstance(previous, bytes):
-            previous = previous.decode()
         client.set("gpu:active-service", service)
         if previous != service:
             client.publish(STYLER_EVENTS, json.dumps({"state": "queue_changed"}))
@@ -254,6 +259,59 @@ def _ready(service: GPUService, client: httpx.Client) -> bool:
     return response.status_code == 200
 
 
+def _gpu_free_vram_gib() -> float:
+    """Read free GPU memory in GiB from the worker's NVIDIA runtime."""
+    import subprocess
+
+    result = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, check=True, timeout=15,
+    )
+    values = [float(value.strip()) for value in result.stdout.splitlines() if value.strip()]
+    return min(values, default=0.0) / 1024
+
+
+def _release_sibling_vram(previous: str, progress: Callable[[str], None] | None = None) -> None:
+    """Unload the previous provider's models and verify memory is available."""
+    if previous not in ("comfy", "llama"):
+        return
+    name = "ComfyUI" if previous == "comfy" else "Llama"
+    deadline = time.monotonic() + SIBLING_UNLOAD_TIMEOUT_SECONDS
+    with httpx.Client(timeout=httpx.Timeout(connect=5, read=10, write=10, pool=5)) as probe:
+        if previous == "comfy":
+            response = probe.post(
+                f"{_api_url('comfy')}/free",
+                json={"unload_models": True, "free_memory": True},
+            )
+            response.raise_for_status()
+            unloaded = True
+        else:
+            unloaded = False
+
+        while time.monotonic() < deadline:
+            try:
+                if previous == "llama" and not unloaded:
+                    response = probe.get(f"{_api_url('llama')}/props")
+                    response.raise_for_status()
+                    unloaded = response.json().get("is_sleeping") is True
+                free_gib = _gpu_free_vram_gib()
+                if unloaded and free_gib >= SIBLING_FREE_VRAM_GIB:
+                    log.info("%s released GPU models (%.2f GiB free)", name, free_gib)
+                    return
+            except (httpx.HTTPError, OSError, ValueError, TypeError) as exc:
+                log.debug("Waiting for %s to release GPU memory: %s", name, exc)
+            if progress:
+                progress(f"Unloading {name} models ({_remaining(deadline)}s)")
+            time.sleep(SERVICE_POLL_SECONDS)
+    raise TimeoutError(
+        f"{name} did not release enough GPU memory within {SIBLING_UNLOAD_TIMEOUT_SECONDS}s"
+    )
+
+
+def _remaining(deadline: float) -> int:
+    return max(0, int(deadline - time.monotonic()))
+
+
 def _wait_until_ready(
     service: GPUService,
     progress: Callable[[str], None] | None = None,
@@ -307,8 +365,20 @@ def _switch(
 ) -> None:
     provider = {"comfy": "comfyui", "llama": "llama", "training": "training", "python": "python"}[service]
     name = {"comfy": "ComfyUI", "llama": "Llama", "training": "Training", "python": "Python"}[service]
+    previous = client.get("gpu:active-service")
+    if isinstance(previous, bytes):
+        previous = previous.decode()
+    stop_sibling = False
+    if service in ("comfy", "llama") and previous in ("comfy", "llama") and previous != service:
+        if progress:
+            progress(f"Releasing GPU memory held by {'ComfyUI' if previous == 'comfy' else 'Llama'}")
+        try:
+            _release_sibling_vram(previous, progress)
+        except Exception:
+            log.exception("Could not unload %s models; falling back to stopping its container", previous)
+            stop_sibling = True
     if progress:
-        progress(f"Asking Home to stop the other service and start {name} with Compose")
+        progress(f"Asking Home to start {name} with Compose")
     log.info(
         "GPU switch: POST %s/api/gpu/provider/switch target=%s",
         _home_api_url(),
@@ -317,7 +387,7 @@ def _switch(
     try:
         response = httpx.post(
             f"{_home_api_url()}/api/gpu/provider/switch",
-            json={"provider": provider},
+            json={"provider": provider, "stop_sibling": stop_sibling},
             timeout=httpx.Timeout(570, connect=5),
         )
     except httpx.HTTPError as exc:
@@ -650,7 +720,7 @@ def use_gpu_service(
                 )
                 if service == "python" and not running_providers:
                     log.debug("Python already owns the exclusive GPU; skipping provider switch")
-                elif service in ("training", "python") or running_providers != [target_provider]:
+                elif service in ("training", "python") or target_provider not in running_providers:
                     _switch_with_task(
                         redis_client,
                         previous,
@@ -659,7 +729,7 @@ def use_gpu_service(
                     )
                 elif service not in ("training", "python"):
                     _wait_until_ready(service)
-                if transition_task and running_providers == [target_provider]:
+                if transition_task and target_provider in running_providers:
                     from styler.queue_history import publish_queue_event
 
                     publish_queue_event(

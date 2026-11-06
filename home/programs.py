@@ -111,8 +111,8 @@ def gpu_provider_status():
     }
 
 
-def switch_gpu_provider(provider):
-    """Switch GPU providers, or stop both model services for Training or Python."""
+def switch_gpu_provider(provider, *, stop_sibling=False):
+    """Switch GPU providers, optionally stopping the sibling as a recovery."""
     if not isinstance(provider, str) or provider not in (*GPU_PROVIDER_SERVICES, "training", "python"):
         raise ValueError("GPU provider must be 'comfyui', 'llama', 'training', or 'python'")
 
@@ -126,15 +126,14 @@ def switch_gpu_provider(provider):
                 raise RuntimeError(f"Docker Compose failed to stop {service}: {output or f'exit status {result.returncode}'}")
         return
 
-    inactive_service = "llama" if provider == "comfyui" else "comfyui"
-    commands = [
-        (
-            base_command
-            + ["stop", "--timeout", "20", inactive_service],
+    commands = []
+    if stop_sibling:
+        inactive_service = "llama" if provider == "comfyui" else "comfyui"
+        commands.append((
+            base_command + ["stop", "--timeout", "20", inactive_service],
             f"stop {inactive_service}",
             60,
-        ),
-    ]
+        ))
     start_command = compose_command()
     if provider == "llama":
         start_command += ["--profile", "llama"]
