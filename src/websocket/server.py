@@ -209,6 +209,9 @@ def run_chapter_add_all(chapter, progress):
         ("Placing image slots", lambda report: place_image_slots(chapter)),
         ("Finding missing props", lambda report: extract_props(chapter)),
         ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
+        ("Preparing animation descriptions", lambda report: chapter.textoviva.generate_missing_animations(
+            progress=report, regenerate_insufficient=True, prepare_prompts_only=True,
+        )),
         ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
         ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
     ]

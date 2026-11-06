@@ -616,7 +616,8 @@ class Textoviva:
 
     def generate_missing_animations(self, progress=None, force=False,
                                     regenerate_image_index=None, regenerate_image_indices=None,
-                                    regenerate_insufficient=False, _allow_batch=True):
+                                    regenerate_insufficient=False, _allow_batch=True,
+                                    prepare_prompts_only=False):
         """Generate animations from existing stills without building a video."""
         report = progress or (lambda percent, message: None)
         animation_images = list(self.chapter.images())
@@ -634,7 +635,7 @@ class Textoviva:
         missing = [image for image in animation_images
                    if not self.chapter.get_image_filename(image)
                    or not os.path.isfile(self.chapter.get_image_filename(image))]
-        if missing:
+        if missing and not prepare_prompts_only:
             raise ValueError("Generate missing images before generating animations")
         required_frames_by_image = {}
         if regenerate_insufficient:
@@ -703,6 +704,24 @@ class Textoviva:
         if not work_items:
             report(100, "All images already have complete animations")
             self.chapter.save_images()
+            return
+
+        if prepare_prompts_only:
+            for position, (image_xml, _) in enumerate(work_items):
+                start = int(100 * position / len(work_items))
+                end = int(100 * (position + 1) / len(work_items))
+                image_label = (
+                    f"Preparing animation description for Image {image_xml.attrs['index']} "
+                    f"({position + 1}/{len(work_items)})"
+                )
+                report(start, image_label)
+                if not image_xml.attrs.get("animation_prompt"):
+                    image_xml.attrs["animation_prompt"] = images.generate_animation_prompt(
+                        chapter=self.chapter,
+                        image_xml=image_xml,
+                    )
+                    self.chapter.save_image(image_xml)
+                report(end, image_label)
             return
 
         for animation_position, (image_xml, force) in enumerate(work_items):
