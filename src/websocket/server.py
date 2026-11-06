@@ -601,6 +601,11 @@ def run_video_job(client, task):
         report_progress(client, job_id, 100, "Video render complete", "complete")
     except Exception as exc:
         log.exception("Video render job %s failed", job_id)
+        try:
+            last_progress = client.hget(f"video_job:{job_id}", "message")
+        except redis.RedisError:
+            log.exception("Could not load the last progress message for failed job %s", job_id)
+            last_progress = None
         label = {
             "textoviva_regenerate_animation": "Image animation",
             "scene_description": "Scene description generation",
@@ -623,8 +628,11 @@ def run_video_job(client, task):
             "chapter_add_all": "Add all chapter assets",
             "textoviva_one_shot": "One Shot chapter workflow",
         }.get(task.get("action"), "Video render")
+        failure_message = f"{label} failed: {exc}"
+        if task.get("action") == "textoviva_one_shot" and last_progress:
+            failure_message = f"One Shot failed during {last_progress}: {exc}"
         report_progress(
-            client, job_id, 100, f"{label} failed: {exc}", "failed", task.get("action"),
+            client, job_id, 100, failure_message, "failed", task.get("action"),
             debug_details=traceback.format_exc(),
         )
     finally:
