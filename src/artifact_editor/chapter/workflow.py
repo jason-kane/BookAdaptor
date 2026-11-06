@@ -24,7 +24,8 @@ ACTIONS = [action for action, _ in STEPS]
 
 def _path(chapter):
     import const
-    return Path(const.LIBRARY_DIR) / chapter.chapterdir / chapter.language / 'workflow.json'
+    chapter_dir = getattr(chapter, 'chapterdir', None) or chapter.get_chapterdir()
+    return Path(const.LIBRARY_DIR) / chapter_dir / chapter.language / 'workflow.json'
 
 
 def completed_steps(chapter):
@@ -65,8 +66,14 @@ def _save(path, completed):
         temporary.unlink(missing_ok=True)
 
 
-def begin_step(chapter, action):
+def begin_step(chapter, action, *, force=False):
     if action not in ACTIONS and action != 'chapter_add_all':
+        return
+    # Import determines whether source sections changed before it should
+    # invalidate work based on the previous phrases. Its early begin_step call
+    # must therefore be a no-op; import_chapter_content forces this only after
+    # it has ruled out an unchanged import.
+    if action == 'chapter_import' and not force:
         return
     path = _path(chapter)
     path.parent.mkdir(parents=True, exist_ok=True)

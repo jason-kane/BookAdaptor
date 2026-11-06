@@ -1,4 +1,5 @@
 import glob
+import hashlib
 import json
 import os
 import re
@@ -1972,6 +1973,34 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             legacy_delta = {"ops": [{"insert": text}]} if text else {"ops": []}
         sections = [{"typesetting_method": "verse", "ops": legacy_delta.get("ops", [])}]
 
+    # Sections are autosaved independently from their import. Keep a separate
+    # fingerprint of the last successful import so repeatedly clicking Import
+    # (or running One Shot) does not rebuild phrases, typesetting, mood, and theme.
+    sections_fingerprint = hashlib.sha256(
+        json.dumps(sections, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    import_state_fn = os.path.join(
+        const.LIBRARY_DIR,
+        chapter.get_chapterdir(),
+        chapter.language,
+        "chapter-import-state.json",
+    )
+    try:
+        with open(import_state_fn, "r", encoding="utf-8") as state_file:
+            import_state = json.load(state_file)
+    except (OSError, TypeError, ValueError):
+        import_state = {}
+    if (
+        isinstance(import_state, dict)
+        and import_state.get("version") == 1
+        and import_state.get("sections_sha256") == sections_fingerprint
+    ):
+        progress(100, "Chapter sections are unchanged; import skipped")
+        return False
+
+    from artifact_editor.chapter.workflow import begin_step
+    begin_step(chapter, "chapter_import", force=True)
+
     from .illustrations import extract_illustrations
     sections, combined_ops = extract_illustrations(sections, chapter)
     delta = {"ops": combined_ops}
@@ -2452,7 +2481,16 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     generate_chapter_mood(chapter)
     progress(99, "Generating chapter theme")
     generate_chapter_theme(chapter)
+    os.makedirs(os.path.dirname(import_state_fn), exist_ok=True)
+    temporary_import_state = import_state_fn + ".tmp"
+    with open(temporary_import_state, "w", encoding="utf-8") as state_file:
+        json.dump(
+            {"version": 1, "sections_sha256": sections_fingerprint},
+            state_file,
+        )
+    os.replace(temporary_import_state, import_state_fn)
     progress(100, "Chapter import complete")
+    return True
 
 
 #  /update_title
