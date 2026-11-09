@@ -6,6 +6,9 @@
 
 {% block scripts %}
 <script src="/static/js/characters.js"></script>
+<script defer src="{{ url_for('static', filename='js/library-storage.js', v='5') }}"></script>
+<script defer src="{{ url_for('static', filename='js/book-lora-training.js', v='websocket-1') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/book-pages.js', v='4') }}"></script>
 {% endblock %}
 
 {% block styles %}
@@ -37,6 +40,15 @@
         background-color: #333333;
         border-color: white;
     }
+    .book-page-editor .ql-editor { min-height: 18rem; }
+    .book-page-template { width: 100%; max-width: 60rem; min-width: 0; }
+    .book-page-template > .ql-toolbar,
+    .book-page-editor { box-sizing: border-box; width: 100%; min-width: 0; }
+    #book-video { display: block; width: min(100%, 70rem); max-height: 70vh; }
+    #book-video[hidden] { display: none; }
+    .book-page-template .ql-picker.ql-font [data-value]::before,
+    .book-page-template .ql-picker.ql-size [data-value]::before { content: attr(data-value) !important; }
+    .book-page-template .ql-picker.ql-font [data-value="Cardo"]::before { font-family: "Cardo", serif; }
 </style>
 {% endblock %}
 
@@ -44,11 +56,31 @@
 
 <h2>Book {{ pretty_title }}</h2>
 <h3>By <i>{{author.pretty_name}}</i></h3>
+<section id="book-storage" aria-label="Book location" data-storage-available="{{ 'true' if storage_available else 'false' }}" data-shelf-available="{{ 'true' if shelf_available else 'false' }}" data-transfer-websocket="{{ websocket_url('/library-transfers-ws') }}" data-transfer-complete-url="{{ url_for('library.library') }}">
+    <div class="library-book" data-author="{{ author.name }}" data-title="{{ title }}" data-location="{{ book_location }}" data-transfer-state="{{ storage_transfer.get('state', '') }}" data-location-url="{{ url_for('library.move_book', author=author.name, title=title) }}">
+        <p>Location: {{ book_location|title }}{% if book_location == 'shelf' %} · Read/write{% endif %}</p>
+        {% if storage_conflict and not book_move_controls %}
+        <p role="alert">Copies exist in multiple locations. Resolve the duplicate before moving.</p>
+        {% else %}
+        <div class="wa-cluster">
+        {% for control in book_move_controls %}
+        <wa-button size="small" appearance="outlined" data-move-target="{{ control.target }}" data-move-source="{{ control.source }}" {% if not control.available or storage_transfer.get('state') in ('queued', 'running') %}disabled{% endif %}>{{ 'Finish move to' if control.resume else 'Move to' }} {{ control.target|title }}</wa-button>
+        {% endfor %}
+        </div>
+        {% endif %}
+        {% if not shelf_available %}<p>Shelf is unavailable.</p>{% endif %}
+        {% if not storage_available %}<p>External storage is unavailable.</p>{% endif %}
+        <p class="library-transfer-status" role="status" aria-live="polite">{{ storage_transfer.get('message', '') }}</p>
+    </div>
+</section>
         
-<wa-tab-group active="chapters" aria-label="Book sections"
+<wa-tab-group id="book-tabs" active="chapters" aria-label="Book sections"
     hx-on:wa-tab-show="if (event.target.closest('wa-tab-group') === this && this.active === 'characters') htmx.trigger(document.getElementById('book-characters-loader'), 'book-characters:load')">
     <wa-tab panel="meta">Meta</wa-tab>
-    <wa-tab panel="chapters">Chapter</wa-tab>
+    <wa-tab panel="chapters">Chapters</wa-tab>
+    <wa-tab panel="title-page">Title Page</wa-tab>
+    <wa-tab panel="chapter-page">Chapter Template</wa-tab>
+    <wa-tab panel="textoviva" id="book-textoviva-tab" {% if not textoviva_status.enabled %}disabled{% endif %}>Textoviva</wa-tab>
     <wa-tab panel="characters">Characters</wa-tab>
 
     <wa-tab-panel name="meta">
@@ -60,7 +92,33 @@
         </div>
     </wa-tab-panel>
     <wa-tab-panel name="chapters">
+        <p id="book-video-availability" role="status">{% if not textoviva_status.enabled %}Textoviva becomes available when every chapter has a video.{% if textoviva_status.missing %} Missing: {{ textoviva_status.missing|join(', ') }}.{% endif %}{% endif %}</p>
         {{ chapter_list|safe }}
+    </wa-tab-panel>
+    {% for kind, panel, label in [('book_page', 'title-page', 'Title Page'), ('chapter_page', 'chapter-page', 'Chapter Page')] %}
+    <wa-tab-panel name="{{ panel }}">
+        <h3>{{ label }}</h3>
+        <p>{% if kind == 'book_page' %}Copied into the Book Page section when a chapter is imported.{% else %}Use &lt;CHAPTER TITLE&gt; and &lt;CHAPTER NUMBER&gt;. These expand for each chapter before import.{% endif %}</p>
+        <p>Template changes apply on the next chapter import. Editing a copied section in Text makes that section independent of the template.</p>
+        <div class="book-page-template" data-save-url="{{ url_for('library.book.save_page_template', author=author.name, title=title, kind=kind) }}">
+            <script type="application/json" class="page-delta">{{ page_templates[kind]|tojson }}</script>
+            <div class="book-page-editor"></div>
+            <wa-button class="save-page-template" variant="brand">Save {{ label }}</wa-button>
+            <span class="page-save-status" role="status" aria-live="polite"></span>
+        </div>
+    </wa-tab-panel>
+    {% endfor %}
+    <wa-tab-panel name="textoviva">
+        <div id="book-textoviva" class="wa-stack"
+             data-status-url="{{ url_for('library.book.book_textoviva', author=author.name, title=title) }}"
+             data-video-url="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title) }}">
+            <h3>Textoviva</h3>
+            <p>Create one video with all {{ textoviva_status.count }} chapters in order. Chapter one stays intact; later chapters omit Book Page sections. Existing chapter frames and narration are reused.</p>
+            <wa-button id="create-book-video" variant="brand" {% if not textoviva_status.enabled %}disabled{% endif %}>Create book video</wa-button>
+            <p id="book-textoviva-status" role="status" aria-live="polite"></p>
+            <video id="book-video" controls preload="metadata" {% if not textoviva_status.ready %}hidden{% endif %} {% if textoviva_status.ready %}src="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title) }}"{% endif %}></video>
+            <a id="book-video-download" href="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title, download=1) }}" {% if not textoviva_status.ready %}hidden{% endif %}>Download book video</a>
+        </div>
     </wa-tab-panel>
     <wa-tab-panel name="characters">
         <div id="book-characters-loader"

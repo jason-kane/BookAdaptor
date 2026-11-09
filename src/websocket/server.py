@@ -42,11 +42,18 @@ import redis
 from redis.maint_notifications import MaintNotificationsConfig
 from flask import Flask
 from flask_sock import Sock
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 import logger
 
 log = logger.log(__name__)
 app = Flask(__name__)
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader(str(Path(__file__).resolve().parents[1] / "artifact_editor" / "book" / "templates")),
+])
+from artifact_editor.websocket_url import websocket_url
+app.jinja_env.globals["websocket_url"] = websocket_url
 sock = Sock(app)
 app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
 
@@ -93,7 +100,8 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
     }
     previous = client.hgetall(f"video_job:{job_id}")
     event.update({key: previous[key] for key in ("execution_queue", "parent_job_id", "queue_started_at",
-                  "timing_key", "timing_units", "timing_unit", "theater_project_id", "theater_stage")
+                  "timing_key", "timing_units", "timing_unit", "theater_project_id", "theater_stage",
+                  "author", "title", "chapter_number", "language")
                   if key in previous})
     if state == 'running' and 'queue_started_at' not in event:
         event['queue_started_at'] = time.time()
@@ -182,7 +190,7 @@ def pending_video_progress(pubsub, client):
             for job_id, payload in latest.items()]
 
 
-def run_chapter_add_all(chapter, progress):
+def run_chapter_add_all(chapter, progress, *, step_offset=0, total_steps=None):
     """Generate every missing chapter asset and report aggregate progress."""
     from artifact_editor.characters.characters import (
         extract_characters, assign_phrase_speakers, extract_all_description_timelines,
@@ -192,7 +200,7 @@ def run_chapter_add_all(chapter, progress):
     from artifact_editor.phrases.phrases import generate_all_audio
     from artifact_editor.chapter.timeline import place_image_slots
     from gpu_tasks import task_label
-    from artifact_editor.chapter.workflow import ACTIONS, complete_step
+    from artifact_editor.chapter.workflow import complete_step
 
     def process_appearances(report):
         result = extract_all_description_timelines(chapter, progress=report)
@@ -202,21 +210,22 @@ def run_chapter_add_all(chapter, progress):
             )
 
     stages = [
-        ("Adding missing characters", lambda report: extract_characters(chapter)),
-        ("Assigning characters", lambda report: assign_phrase_speakers(chapter, reassign_all=True, progress=report)),
-        ("Processing appearance changes for all characters", process_appearances),
-        ("Generating missing audio", lambda report: generate_all_audio(chapter, force=False, batch=True, progress=report)),
-        ("Placing image slots", lambda report: place_image_slots(chapter)),
-        ("Finding missing props", lambda report: extract_props(chapter)),
-        ("Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
-        ("Preparing animation descriptions", lambda report: chapter.textoviva.generate_missing_animations(
+        ('chapter_missing_characters', "Adding missing characters", lambda report: extract_characters(chapter)),
+        ('chapter_assign_characters', "Assigning characters", lambda report: assign_phrase_speakers(chapter, reassign_all=True, progress=report)),
+        ('chapter_character_appearances', "Processing appearance changes for all characters", process_appearances),
+        ('chapter_missing_audio', "Generating missing audio", lambda report: generate_all_audio(chapter, force=False, batch=True, progress=report)),
+        ('chapter_place_image_slots', "Placing image slots", lambda report: place_image_slots(chapter)),
+        ('chapter_missing_props', "Finding missing props", lambda report: extract_props(chapter)),
+        ('chapter_missing_metadata', "Generating missing metadata", lambda report: generate_missing_metadata(chapter, progress=report)),
+        (None, "Preparing animation descriptions", lambda report: chapter.textoviva.generate_missing_animations(
             progress=report, regenerate_insufficient=True, prepare_prompts_only=True,
         )),
-        ("Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
-        ("Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
+        ('chapter_missing_images', "Generating missing images", lambda report: chapter.textoviva.generate_missing_images(progress=report)),
+        ('chapter_missing_animations', "Generating missing animations", lambda report: chapter.textoviva.generate_missing_animations(progress=report, regenerate_insufficient=True)),
     ]
     stage_width = 100 / len(stages)
-    for position, (label, operation) in enumerate(stages):
+    for position, (action, label, operation) in enumerate(stages):
+        label = f"Step {position + 1 + step_offset}/{total_steps or len(stages)}: {label}"
         progress(position * stage_width, label)
         stage_lock = Lock()
         stage_percent = position * stage_width
@@ -228,15 +237,18 @@ def run_chapter_add_all(chapter, progress):
                 if scaled <= stage_percent:
                     return
                 stage_percent = scaled
-                progress(scaled, detail)
+                progress(scaled, f"{label} — {detail}")
 
         with task_label(label):
             operation(stage_progress)
-        complete_step(chapter, ACTIONS[position + 1])
+        if action is not None:
+            complete_step(chapter, action)
         progress((position + 1) * stage_width, f"{label} complete")
 
 
 def run_video_job(client, task):
+    from artifact_editor.library.storage import guard_task
+    guard_task(task)
     # Provider handoffs can move priority caption jobs into the normal GPU queue.
     if task.get("action") == "lora_captions":
         from artifact_editor.book.lora_captioning import run_job
@@ -495,11 +507,11 @@ def run_video_job(client, task):
                 return lambda percent, detail: report_progress(
                     client, job_id,
                     start + width * max(0, min(100, int(percent))) / 100,
-                    detail, action="textoviva_one_shot",
+                    f"Step 1/12: Importing chapter text — {detail}", action="textoviva_one_shot",
                 )
 
             begin_step(chapter, "chapter_import")
-            report_progress(client, job_id, 0, "Importing chapter text", action="textoviva_one_shot")
+            report_progress(client, job_id, 0, "Step 1/12: Importing chapter text", action="textoviva_one_shot")
             import_chapter_content(
                 chapter,
                 sections_json=task.get("sections"),
@@ -509,16 +521,20 @@ def run_video_job(client, task):
 
             begin_step(chapter, "chapter_add_all")
             report_progress(client, job_id, 8, "Adding all missing assets", action="textoviva_one_shot")
-            run_chapter_add_all(chapter, report_phase(8, 72))
+            run_chapter_add_all(
+                chapter, lambda percent, detail: report_progress(
+                    client, job_id, 8 + 0.72 * percent, detail, action="textoviva_one_shot",
+                ), step_offset=1, total_steps=12,
+            )
 
             begin_step(chapter, "textoviva_rerender")
-            report_progress(client, job_id, 80, "Generating chapter video", action="textoviva_one_shot")
+            report_progress(client, job_id, 80, "Step 12/12: Generating chapter video", action="textoviva_one_shot")
             rerender_chapter(
                 chapter,
                 progress=lambda percent, detail: report_progress(
                     client, job_id,
                     80 + 0.2 * max(0, min(100, int(percent))),
-                    detail, action="textoviva_one_shot",
+                    f"Step 12/12: Generating chapter video — {detail}", action="textoviva_one_shot",
                 ),
             )
             complete_step(chapter, "textoviva_rerender")
@@ -1540,6 +1556,9 @@ def retry_failed_task(client, job_id):
             except (TypeError, ValueError):
                 continue
             if isinstance(queued, dict) and queued.get("job_id") == job_id:
+                # A user-requested retry is the explicit action that clears a
+                # durable cancellation tombstone for a recovered queue entry.
+                client.delete(f"task_cancelled:{job_id}")
                 from styler.queue_history import clear_job_outcome
 
                 clear_job_outcome(client, job_id)
@@ -1556,6 +1575,7 @@ def retry_failed_task(client, job_id):
         )
     try:
         if action in RENDER_ACTIONS:
+            client.delete(f"task_cancelled:{job_id}")
             enqueue_task(client, VIDEO_QUEUE, task)
             from worker_startup import ensure_worker_services
             try:
@@ -1801,6 +1821,121 @@ def handle_worker_rpc(ws):
 @sock.route("/ws")
 def websocket(ws):
     handle_websocket(ws)
+
+
+@sock.route('/library-transfers-ws')
+def library_transfers_websocket(ws):
+    from artifact_editor.library.transfer_events import serve
+    from simple_websocket import ConnectionClosed
+    try:
+        serve(ws, redis_connection())
+    except ConnectionClosed as error:
+        log.debug('Library transfer WebSocket disconnected', reason=error.reason)
+    except Exception:
+        log.exception('Library transfer WebSocket failed')
+
+
+def chapter_workflow_prerequisites(author, title, chapter_number, language):
+    from artifact_editor.author.author import Author
+    from artifact_editor.chapter.chapter import Chapter
+    from artifact_editor.chapter.workflow import ACTIONS, completed_steps, prerequisite_message
+
+    chapter = Chapter(Author(author), title, int(chapter_number), language)
+    completed = completed_steps(chapter)
+    prerequisites = {
+        action: prerequisite_message(chapter, action, completed=completed)
+        for action in [*ACTIONS, "chapter_add_all", "textoviva_time_align"]
+    }
+    return prerequisites
+
+
+@sock.route('/chapter-workflow-ws')
+def chapter_workflow_websocket(ws):
+    from simple_websocket import ConnectionClosed
+    from flask import request
+
+    author = request.args.get('author', '')
+    title = request.args.get('title', '')
+    chapter_number = request.args.get('chapter_number', '')
+    language = request.args.get('language', '')
+    if not author or not title or not chapter_number.isdigit() or not language:
+        return
+
+    client = redis_connection()
+    pubsub = client.pubsub()
+    identity = (author, title, str(chapter_number), language)
+    try:
+        pubsub.subscribe(VIDEO_EVENTS)
+        ws.send(json.dumps({
+            'type': 'workflow_prerequisites',
+            'prerequisites': chapter_workflow_prerequisites(*identity),
+        }))
+        while True:
+            ws.receive(timeout=0.1)
+            event = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+            if not event or event.get('type') != 'message':
+                continue
+            try:
+                progress = json.loads(event['data'])
+            except (TypeError, ValueError):
+                continue
+            event_identity = tuple(str(progress.get(key, '')) for key in
+                                   ('author', 'title', 'chapter_number', 'language'))
+            if event_identity != identity:
+                continue
+            ws.send(json.dumps({
+                'type': 'workflow_prerequisites',
+                'prerequisites': chapter_workflow_prerequisites(*identity),
+            }))
+    except ConnectionClosed as error:
+        log.debug('Chapter workflow WebSocket disconnected', reason=error.reason)
+    except Exception:
+        log.exception('Chapter workflow WebSocket failed')
+    finally:
+        pubsub.close()
+        client.close()
+
+
+@sock.route('/lora-training-ws')
+def lora_training_websocket(ws):
+    from flask import request
+    from simple_websocket import ConnectionClosed
+    from artifact_editor.author.author import Author
+    from artifact_editor.book.book import Book
+    from artifact_editor.book.views import lora_training_controls
+
+    author = request.args.get('author', '')
+    title = request.args.get('title', '')
+    if not author or not title:
+        return
+    book = Book(Author(author), title)
+    from urllib.parse import quote
+    book._set_book_metadata_url = f"/library/{quote(author, safe='')}/{quote(title, safe='')}/"
+    if not book.bookdir:
+        return
+    client = redis_connection()
+    pubsub = client.pubsub()
+    try:
+        pubsub.subscribe('lora_training_events')
+        ws.send(lora_training_controls(book))
+        while True:
+            ws.receive(timeout=0.1)
+            event = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+            if not event or event.get('type') != 'message':
+                continue
+            try:
+                update = json.loads(event['data'])
+            except (TypeError, ValueError):
+                continue
+            if update.get('author') == author and update.get('title') == title:
+                ws.send(lora_training_controls(book))
+    except ConnectionClosed as error:
+        log.debug('LoRA training WebSocket disconnected', reason=error.reason)
+    except Exception:
+        log.exception('LoRA training WebSocket failed')
+    finally:
+        pubsub.close()
+        client.close()
 
 
 def _theater_render_snapshot(project_id, client):
@@ -2906,6 +3041,13 @@ def handle_websocket(ws):
             if incoming:
                 try:
                     task = json.loads(incoming)
+                    from artifact_editor.library.storage import guard_task, StorageError
+                    try:
+                        guard_task(task)
+                    except StorageError as error:
+                        from html import escape
+                        ws.send('<div role="alert">' + escape(str(error)) + '</div>')
+                        continue
                     if task.get("action") in (
                         "character_image",
                         "prop_image",
@@ -3035,6 +3177,8 @@ def handle_websocket(ws):
                         queued_status = {
                             "job_id": task["job_id"], "action": task["action"],
                             "percent": 0, "message": label, "state": "queued", "job_type": label.removeprefix("Queued for ").capitalize(),
+                            "author": task["author"], "title": task["title"],
+                            "chapter_number": task["chapter_number"], "language": task["language"],
                         }
                         if "image_index" in task:
                             queued_status["image_index"] = task["image_index"]

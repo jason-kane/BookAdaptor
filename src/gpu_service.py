@@ -22,7 +22,7 @@ LOCK_TIMEOUT_SECONDS = 7_200
 LOCK_STATUS_POLL_SECONDS = 5
 STOPPED_OWNER_GRACE_SECONDS = 30
 MANUAL_SWITCH_LOCK_WAIT_SECONDS = 5
-SERVICE_START_TIMEOUT_SECONDS = 300
+SERVICE_START_TIMEOUT_SECONDS = 90
 SERVICE_POLL_SECONDS = 1
 SIBLING_FREE_VRAM_GIB = 8.0
 SIBLING_UNLOAD_TIMEOUT_SECONDS = 120
@@ -157,7 +157,7 @@ def _home_program_ready(service: GPUService) -> bool:
     """Ask Home whether the requested Compose service's API is responding."""
     if service != "comfy":
         raise ValueError("Home program readiness is only used for ComfyUI")
-    url = f"{_home_api_url()}/programs/comfyui/status"
+    url = f"{_home_api_url()}/api/gpu/provider/comfyui/ready"
     log.info("GPU status probe: GET %s", url)
     response = httpx.get(url, timeout=httpx.Timeout(10, connect=3))
     response.raise_for_status()
@@ -260,15 +260,41 @@ def _ready(service: GPUService, client: httpx.Client) -> bool:
 
 
 def _gpu_free_vram_gib() -> float:
-    """Read free GPU memory in GiB from the worker's NVIDIA runtime."""
+    """Read device free memory locally, or through Home without NVIDIA tools."""
     import subprocess
 
-    result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
-        capture_output=True, text=True, check=True, timeout=15,
-    )
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, check=True, timeout=15,
+        )
+    except FileNotFoundError:
+        # Model servers may be stopped during a handoff. Home queries the
+        # persistent NVIDIA-enabled worker instead of either model server.
+        response = httpx.get(f"{_home_api_url()}/api/gpu/memory", timeout=25)
+        response.raise_for_status()
+        free_gib = float(response.json()["free_gib"])
+        if free_gib < 0:
+            raise ValueError("GPU worker reported negative free memory")
+        return free_gib
     values = [float(value.strip()) for value in result.stdout.splitlines() if value.strip()]
     return min(values, default=0.0) / 1024
+
+
+def _log_switch_vram(job_id: str, previous: str | None, service: GPUService, state: str) -> None:
+    """Measure the GPU after a handoff without failing it if NVML is unavailable."""
+    try:
+        free_gib = _gpu_free_vram_gib()
+    except Exception:
+        log.warning(
+            "GPU switch %s ended: from=%s to=%s state=%s free_vram_gib=unavailable",
+            job_id, previous or "stopped", service, state, exc_info=True,
+        )
+    else:
+        log.info(
+            "GPU switch %s ended: from=%s to=%s state=%s free_vram_gib=%.2f",
+            job_id, previous or "stopped", service, state, free_gib,
+        )
 
 
 def _release_sibling_vram(previous: str, progress: Callable[[str], None] | None = None) -> None:
@@ -468,6 +494,7 @@ def _switch_with_task(
         client.set(LAST_SWITCH_KEY, str(time.time()))
     except Exception as exc:
         log.exception("GPU switch %s failed", task["job_id"])
+        _log_switch_vram(task["job_id"], previous, service, "failed")
         publish_queue_event(
             client,
             STYLER_EVENTS,
@@ -480,6 +507,7 @@ def _switch_with_task(
         raise
     else:
         log.info("GPU switch %s completed: %s is ready", task["job_id"], names[service])
+        _log_switch_vram(task["job_id"], previous, service, "complete")
         publish_queue_event(
             client,
             STYLER_EVENTS,

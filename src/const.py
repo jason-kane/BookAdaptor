@@ -17,6 +17,8 @@ NARRATOR: dict[str, str] = configuration.get("NARRATOR", {})
 
 # library, source, and assets directories
 LIBRARY_DIR: str = configuration.get("LIBRARY_DIR", "/active")
+SHELF_DIR: str = configuration.get("SHELF_DIR", "/home/jkane/books")
+STORAGE_DIR: str = configuration.get("STORAGE_DIR", "/storage")
 # Director-led movies have their own Theater workspace. Keep the data root
 # outside the Library's author/book inventory while sharing its mounted volume.
 THEATER_DIR: str = configuration.get(

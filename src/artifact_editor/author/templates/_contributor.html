@@ -1,0 +1,23 @@
+<wa-card class="contributor-card" data-person-id="{{ person.id }}">
+  <h3 class="contributor-name">{{ person.name }}</h3>
+  <wa-button class="research-contributor" data-url="{{ url_for('library.author.research_contributor', author=author.name, person_id=person.id) }}">Research individual</wa-button>
+  <p class="contributor-research-status" role="status" aria-live="polite"></p>
+  <form class="contributor-form" action="{{ url_for('library.author.save_contributor', author=author.name, person_id=person.id) }}">
+    <div class="author-fields">
+      <label>Name<input name="name" value="{{ person.name }}" required maxlength="1000"></label>
+      <label>Name pronunciation<input name="name_pronunciation" value="{{ person.name_pronunciation or '' }}" placeholder="IPA or phonetic spelling"></label>
+      <label>Birth name<input name="birth_name" value="{{ person.birth_name or '' }}"></label>
+      <label>Birth name pronunciation<input name="birth_name_pronunciation" value="{{ person.birth_name_pronunciation or '' }}" placeholder="IPA or phonetic spelling"></label>
+      <label>Country of birth<input name="birth_country" value="{{ person.birth_country or '' }}"></label>
+      <label>Date of birth<input name="birth_date" value="{{ person.birth_date or '' }}" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="yyyy-mm-dd"></label>
+      <label>Date of death<input name="death_date" value="{{ person.death_date or '' }}" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="yyyy-mm-dd"></label>
+    </div>
+    <label>Biography<textarea name="biography" rows="5">{{ person.biography or '' }}</textarea></label>
+    {% if person.research_sources %}
+    <div class="contributor-sources"><p>Research sources (Wikipedia text: <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA</a>):</p>
+      {% for source in person.research_sources %}<a href="{{ source }}" target="_blank" rel="noopener noreferrer">{{ source }}</a><br>{% endfor %}
+    </div>
+    {% endif %}
+    <p class="autosave-status" role="status" aria-live="polite">Changes save automatically.</p>
+  </form>
+</wa-card>

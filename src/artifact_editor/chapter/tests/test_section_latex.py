@@ -65,8 +65,9 @@ class SectionLatexTests(unittest.TestCase):
         plain, rainbow = renderer.render_chapter_xml(soup, 840)
         self.assertEqual(str(soup), before)
         self.assertNotIn("Title", plain)
-        self.assertIn(r"\highLight[B11]", rainbow)
-        self.assertIn(r"\highLight[B16]", rainbow)
+        # Phrase IDs use the same 24-bit colors as the highlight-mask reader.
+        self.assertIn(r"\highLight[B1B863F]", rainbow)  # phrase 7
+        self.assertIn(r"\highLight[BE60AAE]", rainbow)  # phrase 12
         self.assertIn("Hello", plain)
         self.assertIn("paperwidth=2.8000000000in", plain)
 
@@ -82,7 +83,7 @@ class SectionLatexTests(unittest.TestCase):
         self.assertEqual(str(soup), before)
         self.assertEqual(plain.count(r"\mbox{}"), 1)
         self.assertIn(r"\highLight[BA]", rainbow)
-        self.assertIn(r"\highLight[BF]", rainbow)
+        self.assertIn(r"\highLight[BCA8479]", rainbow)  # phrase 5
 
     def test_verse_centering_is_applied_inside_a_completed_paragraph(self):
         sections = [{"typesetting_method": "verse", "ops": [{
@@ -123,9 +124,28 @@ class SectionLatexTests(unittest.TestCase):
             self.assertNotIn(r'\begin{verse}', document)
             self.assertIn(r'\leftskip=0pt\rightskip=0pt', document)
         self.assertEqual(str(soup), before)
-        with self.assertRaisesRegex(ValueError, 'Audio phrase text does not match'):
-            renderer.render_chapter_xml(soup, 840, sections=[{
-                'typesetting_method': 'plain', 'ops': [{'insert': 'Different words.\n'}]}])
+        for document in renderer.render_chapter_xml(soup, 840, sections=[{
+                'typesetting_method': 'plain', 'ops': [{'insert': 'Different words.\n'}]}]):
+            self.assertIn('Hello world.', document)
+            self.assertNotIn('Different words.', document)
+            self.assertNotIn(r'\begin{verse}', document)
+        self.assertEqual(str(soup), before)
+
+    def test_changed_timeline_text_retains_saved_plain_section(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup('<chapter><paragraph><phrase index="0">Heading</phrase>'
+                             '<phrase index="1">Poem</phrase>'
+                             '<phrase index="2">Current prose text.</phrase>'
+                             '</paragraph></chapter>', 'xml')
+        sections = [
+            {"typesetting_method": "plain", "ops": [{"insert": "Heading\n"}]},
+            {"typesetting_method": "verse", "ops": [{"insert": "Poem\n"}]},
+            {"typesetting_method": "plain", "ops": [{"insert": "Older prose text.\n"}]},
+        ]
+        for document in renderer.render_chapter_xml(soup, 840, sections):
+            self.assertEqual(document.count(r"\begin{verse}"), 1)
+            self.assertLess(document.index(r"\end{verse}"), document.index("Current prose text."))
+            self.assertNotIn("Older", document)
 
     def test_xml_phrase_methods_preserve_section_boundaries_within_a_paragraph(self):
         from bs4 import BeautifulSoup
@@ -149,8 +169,9 @@ class SectionLatexTests(unittest.TestCase):
             animation = Path(directory) / "animation.mp4"
             animation.write_bytes(b"existing animation")
             with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "lualatex")):
-                with self.assertRaises(subprocess.CalledProcessError):
+                with self.assertRaisesRegex(RuntimeError, r'lualatex failed for chapter\.latex \(exit 1\)') as raised:
                     renderer.typeset_chapter_xml(soup, directory, 840)
+                self.assertIsInstance(raised.exception.__cause__, subprocess.CalledProcessError)
             self.assertEqual(output.read_bytes(), b"existing PDF")
             self.assertEqual(animation.read_bytes(), b"existing animation")
             self.assertEqual(len(list(Path(directory).iterdir())), 2)
@@ -206,7 +227,7 @@ class SectionLatexTests(unittest.TestCase):
             {"spoken": "one "}, {"spoken": "two\nthree "}, {"spoken": "four\n"}
         ])
         self.assertEqual(output.count(r"\\}"), 2)
-        self.assertEqual(output.count(r"\highLight[BB]"), 2)
+        self.assertEqual(output.count(r"\highLight[B2880ED]"), 2)  # phrase 1 spans both lines
         self.assertIn(" two}", output)
         self.assertIn("three}", output)
 

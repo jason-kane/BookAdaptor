@@ -8,13 +8,19 @@ from artifact_editor.book import lora_wizard as wizard, lora_training as trainin
 
 @pytest.fixture
 def training_draft(tmp_path, monkeypatch):
+    monkeypatch.setattr(training, 'reconcile_trainer', lambda: {'running': True})
     monkeypatch.setitem(sys.modules, 'const', SimpleNamespace(LIBRARY_DIR=str(tmp_path), LORA_DIR=str(tmp_path / 'loras')))
     book = SimpleNamespace(bookdir='Writer/Book')
     draft = wizard.create(book, {'name': 'Ink', 'concept': 'Ink drawings', 'trigger': 'bookink'})
     folder = wizard.directory(book, draft['id'])
     (folder / 'dataset').mkdir()
     (folder / 'dataset/a.png').write_bytes(b'normalized-image')
-    draft.update(step=4, images=[{'id': 'a', 'filename': 'a.png', 'caption': 'bookink, tree'}])
+    images = [{'id': 'a', 'filename': 'a.png', 'caption': 'bookink, tree'}]
+    for index in range(1, wizard.MIN_TRAINING_IMAGES):
+        filename = f'image-{index}.png'
+        (folder / 'dataset' / filename).write_bytes(b'normalized-image')
+        images.append({'id': str(index), 'filename': filename, 'caption': 'bookink, tree'})
+    draft.update(step=4, images=images)
     wizard.save(book, draft)
     return book, draft, folder
 
@@ -81,6 +87,10 @@ def test_success_registers_final_adapter_and_selects_book(training_draft, monkey
         save_config=lambda path, value: saved.update(value)))
     from artifact_editor import loras
     monkeypatch.setattr(loras, 'catalog', lambda: [])
+    def missing_style(key):
+        raise ValueError(key)
+    monkeypatch.setitem(sys.modules, 'styler.styles', SimpleNamespace(
+        Style=missing_style, as_id=lambda name: name.lower()))
     monkeypatch.setattr(training, 'gpu_available', lambda: True)
     def train(command, **kwargs):
         name = training.training_config(book, draft)['config']['name']
@@ -110,11 +120,12 @@ def test_training_queue_reports_waiting_running_progress_and_outcome(training_dr
     assert 'GPU to be released' in training.queue_entries(root)[0]['message']
     queued['status'] = 'training'
     wizard.save(book, queued)
-    (folder / 'training.log').write_text(training.training_config(book, draft)['config']['name'] + ': 50%|###| 1500/3000 [01:00<01:00]\r')
+    total = training.training_steps(len(draft['images']))
+    (folder / 'training.log').write_text(training.training_config(book, draft)['config']['name'] + f': 50%|###| {total // 2}/{total} [01:00<01:00]\r')
     row = training.queue_entries(root)[0]
     assert row['state'] == 'running'
     assert row['percent'] == 50
-    assert '1,500/3,000' in row['message']
+    assert f'{total // 2:,}/{total:,}' in row['message']
     queued.update(status='failed', error='Out of VRAM', failed_at=100)
     wizard.save(book, queued)
     assert training.queue_entries(root, now=101)[0]['message'] == 'Out of VRAM'
@@ -170,3 +181,18 @@ def test_failed_trainer_exposes_underlying_traceback(training_draft, monkeypatch
     assert row['message'] == 'torch.OutOfMemoryError: CUDA out of memory.'
     retried = training.enqueue(book, draft['id'])
     assert 'traceback' not in retried
+
+
+def test_submission_retries_home_start_without_duplicate_job(training_draft, monkeypatch):
+    book, draft, folder = training_draft
+    calls = []
+    def unavailable():
+        raise OSError("Home unavailable")
+    monkeypatch.setattr(training, 'reconcile_trainer', unavailable)
+    with pytest.raises(OSError):
+        training.enqueue(book, draft['id'])
+    queued = wizard.load(book, draft['id'])
+    assert queued['status'] == 'queued'
+    monkeypatch.setattr(training, 'reconcile_trainer', lambda: calls.append(True))
+    assert training.enqueue(book, draft['id'])['training_job_id'] == queued['training_job_id']
+    assert calls == [True]

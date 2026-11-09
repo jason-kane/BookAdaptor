@@ -16,6 +16,15 @@
      data-editor-url="{{ url_for('library.book.chapter.phrase_editor', phrase_index=phrase.index) }}">
     <legend class="chapter-phrase-legend">Phrase {{ phrase.index }}</legend>
     {% with item_type='phrase', item_index=phrase.index %}{% include "chapter_timeline_delete.html" %}{% endwith %}
+    <div id="phrase-typesetting-{{ phrase.index }}" hidden>
+        <wa-select name="typesetting_method" label="Typesetting method" size="small" value="{{ phrase.phrase_xml.get('typesetting_method', '') }}"
+            hx-post="{{ url_for('library.book.chapter.update_phrase_typesetting', phrase_index=phrase.index, **chapter.kwargs) }}"
+            hx-trigger="change" hx-swap="none" hx-include="this">
+            <wa-option value="">Use section default</wa-option>
+            <wa-option value="verse">Verse</wa-option>
+            <wa-option value="plain">Plain</wa-option>
+        </wa-select>
+    </div>
     {% set timing = entry.timing %}
     {% include "chapter_phrase_timing.html" %}
     <wa-textarea

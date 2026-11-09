@@ -84,3 +84,11 @@ def test_datatable_controls_and_local_dependencies_are_available():
     for asset in ('jquery-3.7.1.min.js', 'dataTables-2.3.4.min.js',
                   'dataTables-2.3.4.min.css', 'colReorder-2.1.0.min.js', 'colReorder-2.1.0.min.css'):
         assert client.get('/home-static/vendor/datatables/' + asset).status_code == 200
+
+
+def test_training_reconcile_route():
+    client = create_app({"TESTING": True}).test_client()
+    with patch("home.programs.reconcile_trainer", return_value=True):
+        assert client.post("/api/training/reconcile").json == {"running": True}
+    with patch("home.programs.reconcile_trainer", side_effect=RuntimeError("failed")):
+        assert client.post("/api/training/reconcile").status_code == 503

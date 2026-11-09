@@ -1,6 +1,5 @@
 <div id="book-lora-training" class="wa-stack" style="gap: .5rem"
-     hx-get="{{ book.set_book_metadata_url }}loras/status"
-     hx-trigger="every 5s" hx-swap="outerHTML">
+     data-lora-websocket="{{ websocket_url('/lora-training-ws?' ~ {'author': book.author.name, 'title': book.title}|urlencode) }}">
     {% if training_active %}
     <wa-button disabled aria-describedby="book-lora-training-feedback">+ Add LoRA</wa-button>
     {% else %}

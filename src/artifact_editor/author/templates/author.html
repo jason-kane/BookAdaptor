@@ -1,66 +1,119 @@
 {% extends "base.html" %}
-
-{% block title %}
-<title>Author {{author.pretty_name}}</title>
-{% endblock %}
-
+{% block title %}<title>{{ author.name.replace('_', ' ') }} · Author</title>{% endblock %}
 {% block styles %}
 <style>
-  .clickable-card {
-    position: relative;
-    cursor: pointer;
-    border: 3px solid #410f80;
-  }
-  .clickable-card:hover {
-    border-color: #ff00ff;
-  }
-  .card-link {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    text-indent: -9999px; /* Hide link text */
-  }   
+.author-page { max-width: 1100px; margin: auto; padding: 1.5rem; }
+.author-page form { display: grid; gap: 1rem; }
+.author-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; }
+.author-page label { display: grid; gap: .4rem; }
+.author-page input, .author-page textarea { width: 100%; box-sizing: border-box; }
+.author-profile { display: flex; gap: 2rem; align-items: start; flex-wrap: wrap; }
+.author-profile form { flex: 1; min-width: 250px; }
+.author-portrait { margin: 0; width: 220px; }
+.author-portrait img { width: 100%; border-radius: .5rem; }
+.author-books { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; }
+.author-book img { height: 180px; max-width: 100%; object-fit: contain; }
+.bibliography-series > summary { cursor: pointer; }
+.series-heading { display: inline; }
+.bibliography-series > .author-books { margin-top: 1rem; }
+.author-book h4 { margin: .75rem 0; }
+.author-page details { margin-top: 1rem; }
+.contributor-card { display: block; margin: 1rem 0; }
+[data-personal-field][hidden], #contributors-section[hidden] { display: none !important; }
+.author-page section { margin: 2rem 0; }
 </style>
 {% endblock %}
-
-
-
 {% block body %}
-       
-        <div class="wa-stack">
-
-            <h1>Author {{author.pretty_name}}</h1>
-            
-            <h2>Biography</h2>
-            <div>
-              full name, country of birth, year born, died
-              all editable fields
-              any authentic images or paintings available
-            </div>
-
-            <h2>Bibliography</h2>
-            <div>
-              every book attributed to this author, default ordered by 
-              date of publication
-            </div>
-            <p>widget to add a new bibliographic entry</p>
-
-            <div class="wa-cluster">
-                {% for title,bookdir in books %}
-                <wa-card class="card-media clickable-card" style="width: 200px;">
-                  <a class="card-link" href="{{ url_for('library.book.table_of_contents', author=author.name, title=title) }}"></a>  
-                  <img
-                      slot="media"
-                      src="{{ url_for('library.book_cover', author=author.name, title=title) }}"
-                      alt="Cover of {{title}}"
-                  ></img>
-                  <h4>{{title}}</h4>
-                </wa-card>
-                {% endfor %}
-            </div>
-
+<main class="author-page">
+  <h1>{{ author.name.replace('_', ' ') }}</h1>
+  <div class="wa-cluster">
+    <wa-button id="author-research" data-url="{{ url_for('library.author.research', author=author.name) }}" data-name="{{ author.name.replace('_', ' ') }}" variant="brand">Research biography</wa-button>
+    <span>Look up blank biography fields on Wikipedia and Wikidata. Changes save automatically.</span>
+  </div>
+  <p id="research-status" role="status" aria-live="polite"></p>
+  {% if saved %}<p role="status">{{ 'Biography' if saved == 'biography' else 'Bibliography' }} saved.</p>{% endif %}
+  <section aria-labelledby="biography-heading">
+    <h2 id="biography-heading">Biography</h2>
+    <div class="author-profile">
+      <form id="author-profile" method="post" action="{{ url_for('library.author.save_profile', author=author.name) }}">
+        <div class="author-fields">
+          <label>Pen name<input name="pen_name" value="{{ author.name }}" required maxlength="255" data-rename-url="{{ url_for('library.author.change_pen_name', author=author.name) }}"></label>
+          <label>Author identity<select name="identity_type" id="author-identity-type">
+            <option value="individual" {% if profile.identity_type == 'individual' %}selected{% endif %}>One individual</option>
+            <option value="collective" {% if profile.identity_type == 'collective' %}selected{% endif %}>Shared pen name / multiple individuals</option>
+          </select></label>
+          <label>Pen name pronunciation<input name="pen_name_pronunciation" value="{{ profile.pen_name_pronunciation or '' }}" placeholder="English IPA or phonetic spelling"></label>
+          <label data-personal-field {% if profile.identity_type == 'collective' %}hidden{% endif %}>Birth name<input name="birth_name" value="{{ profile.birth_name or '' }}"></label>
+          <label data-personal-field {% if profile.identity_type == 'collective' %}hidden{% endif %}>Birth name pronunciation<input name="birth_name_pronunciation" value="{{ profile.birth_name_pronunciation or '' }}" placeholder="English IPA or phonetic spelling"></label>
+          <label data-personal-field {% if profile.identity_type == 'collective' %}hidden{% endif %}>Country of birth<input name="birth_country" value="{{ profile.birth_country or '' }}"></label>
+          <label data-personal-field {% if profile.identity_type == 'collective' %}hidden{% endif %}>Date of birth<input name="birth_date" inputmode="numeric" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="yyyy-mm-dd" value="{{ profile.birth_date or '' }}"><small>yyyy-mm-dd{% if not profile.birth_date and profile.birth_year %} · Previously recorded year: {{ profile.birth_year }}{% endif %}</small></label>
+          <label data-personal-field {% if profile.identity_type == 'collective' %}hidden{% endif %}>Date of death<input name="death_date" inputmode="numeric" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="yyyy-mm-dd" value="{{ profile.death_date or '' }}"><small>yyyy-mm-dd; leave blank if living or unknown.{% if not profile.death_date and profile.death_year %} Previously recorded year: {{ profile.death_year }}{% endif %}</small></label>
         </div>
-
+        <small>Changing the pen name renames the author directory and opens its new address.</small>
+        <p id="rename-status" role="status" aria-live="polite"></p>
+        <small>Researched pronunciations are English IPA suggestions; review for the author’s preferred pronunciation.</small>
+        <label>Biography<textarea name="biography" rows="5">{{ profile.biography or '' }}</textarea></label>
+        <details {% if portrait %}open{% endif %}><summary>Portrait or painting and attribution</summary>
+          <div class="wa-stack">
+            <figure id="portrait-preview" class="author-portrait" {% if not portrait %}hidden{% endif %}>
+              <a id="portrait-image-link" {% if portrait %}href="{{ url_for('library.author.portrait_image', author=author.name, record=portrait, kind='image') }}"{% endif %} target="_blank" rel="noopener">
+                <img id="portrait-thumbnail" {% if portrait %}src="{{ url_for('library.author.portrait_image', author=author.name, record=portrait, kind='thumb') }}"{% endif %} alt="Portrait of {{ profile.pen_name or author.name }}">
+              </a>
+              <figcaption id="portrait-caption">{{ profile.portrait_credit or '' }}</figcaption>
+            </figure>
+            <p>Use an authentic portrait or painting and include its source. The image is downloaded and kept locally.</p>
+            <label>Image URL<input type="url" name="portrait_url" value="{{ profile.portrait_url or '' }}"></label>
+            <div><wa-button id="download-portrait" data-url="{{ url_for('library.author.fetch_portrait', author=author.name) }}">Download portrait</wa-button></div>
+            <p id="portrait-status" role="status" aria-live="polite"></p>
+            <label>Source page URL<input type="url" name="portrait_source" value="{{ profile.portrait_source or '' }}"></label>
+            <label>Artist, photographer, or credit<input name="portrait_credit" value="{{ profile.portrait_credit or '' }}"></label>
+          </div>
+        </details>
+        <input type="hidden" name="research_sources" value='{{ (profile.research_sources or [])|tojson }}'>
+        <div id="research-sources">
+          {% if profile.research_sources %}<p>Research sources (Wikipedia text is available under <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA</a>):</p>
+          {% for source in profile.research_sources %}<a href="{{ source }}" target="_blank" rel="noopener noreferrer">{{ source }}</a><br>{% endfor %}{% endif %}
+        </div>
+        <p class="autosave-status" role="status" aria-live="polite">Changes save automatically.</p>
+      </form>
+    </div>
+  </section>
+  <section id="contributors-section" aria-labelledby="contributors-heading" {% if profile.identity_type != 'collective' %}hidden{% endif %}>
+    <h2 id="contributors-heading">Individual authors</h2>
+    <p>Each person has an independent profile. Books and the library directory remain under the shared pen name.</p>
+    <div id="contributors-list">{% include '_contributors.html' %}</div>
+    <form id="add-contributor" action="{{ url_for('library.author.add_contributor', author=author.name) }}">
+      <label>Individual author’s name<input name="name" required maxlength="1000"></label>
+      <div><wa-button type="submit">Add individual</wa-button></div>
+      <p class="add-contributor-status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+  <section aria-labelledby="bibliography-heading">
+    <h2 id="bibliography-heading">Bibliography <small id="bibliography-count">({{ books|length }})</small></h2>
+    <div class="wa-cluster">
+      <wa-button id="bibliography-research" variant="brand" data-url="{{ url_for('library.author.discover_bibliography', author=author.name) }}">Research bibliography</wa-button>
+      <span>Find missing books and fill blank details. Existing entries are preserved.</span>
+    </div>
+    <p id="bibliography-research-status" role="status" aria-live="polite"></p>
+    <p>Grouped by series, with books in first-publication order. Undated works appear last within each group.</p>
+    <details><summary>Add a bibliographic entry</summary>
+      <form method="post" action="{{ url_for('library.author.save_bibliography', author=author.name) }}">
+        <input type="hidden" name="create" value="1">
+        <div class="author-fields">
+          <label>Book title<input name="book_name" required></label>
+          <label>Series<input name="series" maxlength="250" placeholder="No series recorded"></label>
+          <label>Series source URL<input name="series_source" type="url"></label>
+          <label>First publication date<input name="publication_date" placeholder="yyyy-mm-dd, if known" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"></label>
+          <label>First publication year<input name="publication_year" type="number" min="1" max="9999"></label>
+          <label>Bibliographic source URL<input name="source_url" type="url"></label>
+          <label>Copyright status and jurisdiction<input name="copyright_status" maxlength="2000" placeholder="Unknown; e.g. Public domain — United States"></label>
+          <label>Copyright source URL<input name="copyright_source" type="url"></label>
+        </div>
+        <div><wa-button type="submit" variant="brand">Add book</wa-button></div>
+      </form>
+    </details>
+    <div id="bibliography-results">{% include '_bibliography_books.html' %}</div>
+  </section>
+</main>
+<script defer src="{{ url_for('static', filename='js/author-research.js', v='15') }}"></script>
 {% endblock %}

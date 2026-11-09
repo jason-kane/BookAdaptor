@@ -37,7 +37,7 @@ def _docker(method, path, body=None, allowed=(200,)):
 
 
 PROGRAMS = {
-    "comfyui": {"name": "Comfy UI", "port": 8188, "timeout": 300, "image": "comfyui.png"},
+    "comfyui": {"name": "Comfy UI", "port": 8188, "timeout": 1, "image": "comfyui.png"},
     "artifactserver": {"name": "Library", "port": 8082, "internal_port": 8080,
                        "services": ("artifactserver", "websocket"),
                        "path": "/library/", "timeout": 300, "image": "library.png"},
@@ -91,6 +91,19 @@ def start_services(service_names, allowed_services, *, recreate=True):
         raise RuntimeError(exc.stderr or "Compose could not start the program") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Compose startup timed out; please retry") from exc
+
+
+def gpu_free_memory():
+    """Read device memory through the NVIDIA-enabled worker, independent of models."""
+    result = subprocess.run(
+        compose_command() + ["exec", "-T", "video_worker", "nvidia-smi",
+                             "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+        check=True, capture_output=True, text=True, timeout=20,
+    )
+    values = [float(value.strip()) for value in result.stdout.splitlines() if value.strip()]
+    if not values:
+        raise ValueError("GPU worker returned no free-memory measurement")
+    return min(values) / 1024
 
 
 def gpu_provider_status():
@@ -264,3 +277,35 @@ def program_ready(service_name):
         return False
     finally:
         connection.close()
+
+
+def reconcile_trainer(root="/active", lock_path="/tmp/lora-trainer-lifecycle.lock"):
+    """Serialize start/stop decisions across Home workers and recheck durable jobs.
+
+    Enqueue saves before calling Home, so a concurrent shutdown either sees the
+    new job or finishes before that submission's startup request.
+    """
+    import fcntl
+    from pathlib import Path
+
+    with open(lock_path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        pending = False
+        for path in Path(root).glob("*/*/lora_training/*/draft.json"):
+            # Fail closed on unreadable drafts rather than stop active training.
+            draft = json.loads(path.read_text())
+            if draft.get("status") in ("queued", "waiting_for_gpu", "training"):
+                pending = True
+                break
+        command = compose_command()
+        if pending:
+            command += ["up", "-d", "--no-build", "--no-deps", "--no-recreate", "lora_trainer"]
+        else:
+            command += ["stop", "--timeout", "20", "lora_trainer"]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True, timeout=120)
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(exc.stderr or "Unable to update trainer lifecycle") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Trainer lifecycle update timed out") from exc
+        return pending

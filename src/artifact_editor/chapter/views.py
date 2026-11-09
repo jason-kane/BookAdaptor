@@ -552,6 +552,24 @@ def add_timeline_phrase_below(phrase_index):
     )
 
 
+@bp.post("/timeline/phrase/<int:phrase_index>/typesetting")
+def update_phrase_typesetting(phrase_index):
+    phrase_xml = g.chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        return "Phrase no longer exists; reload the chapter", 404
+    method = request.form.get("typesetting_method", "")
+    if method not in {"", "plain", "verse"}:
+        return "Invalid typesetting method", 400
+    if method:
+        phrase_xml["typesetting_method"] = method
+    else:
+        phrase_xml.attrs.pop("typesetting_method", None)
+    g.chapter.save_phrase(phrase_xml)
+    _sync_sections_from_phrase_deltas(g.chapter)
+    enqueue_typesetting(g.chapter)
+    return "", 204
+
+
 @bp.post("/timeline/add-image-below/<int:phrase_index>")
 def add_timeline_image_below(phrase_index):
     from .timeline import add_image_below, image_timings
@@ -846,8 +864,6 @@ def chapter_workflow_status():
         action: prerequisite_message(g.chapter, action, completed=completed)
         for action in [*ACTIONS, "chapter_add_all", "textoviva_time_align"]
     }
-    from .readiness import video_prerequisite
-    prerequisites['textoviva_rerender'] = video_prerequisite(g.chapter, prerequisites['textoviva_rerender'])
     return {"prerequisites": prerequisites}, 200, {"Cache-Control": "no-store"}
 
 
@@ -894,6 +910,20 @@ def chapter_base():
         chapter=g.chapter,
         is_chapter=True,
     )
+
+
+@bp.post("/delete")
+def delete_chapter():
+    """Delete this numbered chapter and return to its book's contents."""
+    author, title = g.author.name, g.title
+    g.chapter.delete()
+    return redirect(url_for("library.book.table_of_contents", author=author, title=title))
+
+
+@bp.post("/insert_after")
+def insert_chapter_after_current():
+    inserted = g.chapter.insert_after()
+    return redirect(url_for("library.book.chapter.chapter_base", **inserted.kwargs))
 
 
 def add_author(chapter_xml, chapter):
@@ -1226,7 +1256,10 @@ def phrase_editor(phrase_index: int):
         return render_template("chapter_phrase_collapsed.html", phrase=phrase)
     previous_phrase_index = int(request.args.get("previous_phrase_index", -1))
 
-    previous_phrase_xml = g.chapter.get_phrase(previous_phrase_index)
+    previous_phrase_xml = (
+        g.chapter.get_phrase(previous_phrase_index)
+        if previous_phrase_index != phrase_index else None
+    )
     if previous_phrase_xml:
         previous_phrase = chapter.Phrase(
             chapter=g.chapter, phrase_xml=previous_phrase_xml
@@ -1287,13 +1320,18 @@ def phrase_editor(phrase_index: int):
     out += f"""
 <div id="js-executor" hx-swap-oob="true">
     <script>
+      {{
+        const editorElement = document.getElementById('phrase_{phrase.index}_ta');
+        const existingEditor = Quill.find(editorElement);
         document.querySelectorAll('#phrase-stack .phrase-container.selected').forEach(
             container => container.classList.remove('selected')
         );
         document.getElementById('phrase_{phrase.index}')?.classList.add('selected');
 
-        // first things first.. remove every child of #phrase-stack that has a role="toolbar"
-        clearToolbars('phrase-stack');
+        const phraseTypesetting = document.getElementById('phrase-typesetting-{phrase.index}');
+        if (phraseTypesetting) phraseTypesetting.hidden = false;
+
+        clearToolbars('phrase-stack', existingEditor?.getModule('toolbar')?.container);
 """
     if previous_phrase:
         out += (
@@ -1307,7 +1345,7 @@ def phrase_editor(phrase_index: int):
     out += f"""
         // the new previous.
         window.previous_phrase_index = '{phrase_index}';
-        phraseEditor = new Quill('#phrase_{phrase.index}_ta',
+        const editor = existingEditor || new Quill(editorElement,
         {{
             modules: {{
                 syntax: false, 
@@ -1338,13 +1376,14 @@ def phrase_editor(phrase_index: int):
         //    tooltipInput.dataset.video = ''; // 'Paste video URL here...';
         //    tooltipInput.dataset.formula = 'e = mc^2';
         //
+        phraseEditor = editor;
+        if (!existingEditor) {{
         var delta = {phrase.delta} || [];
-        phraseEditor.setContents(delta);
-        showUniformTypography(phraseEditor);
-        phraseEditor.on('text-change', function(delta, oldDelta, source)
+        editor.setContents(delta);
+        editor.on('text-change', function(delta, oldDelta, source)
         {{
             window.chapterPhraseSaves = window.chapterPhraseSaves || {{}};
-            const contents = JSON.stringify(phraseEditor.getContents());
+            const contents = JSON.stringify(editor.getContents());
             const previous = window.chapterPhraseSaves[{phrase_index}] || Promise.resolve();
             window.chapterPhraseSaves[{phrase_index}] = previous.catch(() => {{}}).then(() => htmx.ajax('POST', {json.dumps(phrase_delta_url)},
             {{
@@ -1357,6 +1396,9 @@ def phrase_editor(phrase_index: int):
                 }}
             }}));
         }});
+        }}
+        showUniformTypography(editor);
+      }}
     </script>
 </div>
 """
@@ -1365,6 +1407,10 @@ def phrase_editor(phrase_index: int):
     # controls as its rich editor is returned to the lightweight state.
     if previous_phrase and previous_phrase_index != phrase_index:
         out += f"""
+<script>
+    const previousTypesetting = document.getElementById('phrase-typesetting-{previous_phrase_index}');
+    if (previousTypesetting) previousTypesetting.hidden = true;
+</script>
 <div id="chapter-audio-controls-{previous_phrase_index}"
     class="wa-stack wa-gap-xs" hx-swap-oob="true"></div>
 """
@@ -1934,6 +1980,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     New algorithm based on scoring every word based on how good of a phrase
     break it is and how suitable it is as a new image.
     """
+    import hashlib
     from artifact_editor.textoviva.workflow import default_image_workflow
     progress = progress or (lambda percent, message: None)
     progress(2, "Reading chapter sections")
@@ -1946,32 +1993,14 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         chapter.language,
         "chapter.sections.json",
     )
+    from artifact_editor.book.pages import load_sections, prepare_sections, validate_sections
     if sections_json:
-        try:
-            sections = json.loads(sections_json)
-            if not isinstance(sections, list) or not sections:
-                raise ValueError("At least one section is required")
-            if any(
-                not isinstance(section, dict)
-                or section.get("typesetting_method") not in {"verse", "plain"}
-                or not isinstance(section.get("ops"), list)
-                for section in sections
-            ):
-                raise ValueError("Invalid chapter section")
-        except (TypeError, ValueError, json.JSONDecodeError) as error:
-            raise ValueError(f"Invalid chapter sections: {error}") from error
-        os.makedirs(os.path.dirname(sections_fn), exist_ok=True)
-        with open(sections_fn, "w", encoding="utf-8") as section_file:
-            json.dump(sections, section_file, indent=2)
-    elif os.path.exists(sections_fn):
-        with open(sections_fn, "r", encoding="utf-8") as section_file:
-            sections = json.load(section_file)
+        sections = prepare_sections(chapter, sections=validate_sections(json.loads(sections_json)))
     else:
-        legacy_delta = chapter.load_delta()
-        if not legacy_delta or not legacy_delta.get("ops"):
-            text = chapter.load_txt()
-            legacy_delta = {"ops": [{"insert": text}]} if text else {"ops": []}
-        sections = [{"typesetting_method": "verse", "ops": legacy_delta.get("ops", [])}]
+        sections = load_sections(chapter)
+    os.makedirs(os.path.dirname(sections_fn), exist_ok=True)
+    with open(sections_fn, "w", encoding="utf-8") as section_file:
+        json.dump(sections, section_file, indent=2)
 
     # Sections are autosaved independently from their import. Keep a separate
     # fingerprint of the last successful import so repeatedly clicking Import
@@ -1992,7 +2021,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         import_state = {}
     if (
         isinstance(import_state, dict)
-        and import_state.get("version") == 1
+        and import_state.get("version") == 2
         and import_state.get("sections_sha256") == sections_fingerprint
     ):
         progress(100, "Chapter sections are unchanged; import skipped")
@@ -2072,7 +2101,9 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                     log.info("sentence: %s", repr(sentence))
                     for word in re.split(r"([ \n])", sentence):
                         # tape the whitespace dribble to the previous
-                        if out_ops and out_ops[-1].get("type") != "illustration" and word in [" ", "\n"]:
+                        if (out_ops and out_ops[-1].get("type") != "illustration" and word in [" ", "\n"]
+                                and out_ops[-1].get("attributes", {}).get("_section_index")
+                                == ops.get("attributes", {}).get("_section_index")):
                             out_ops[-1]["insert"] += word
                             continue
 
@@ -2154,6 +2185,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             section_end < len(out_ops)
             and out_ops[section_end].get("type") != "illustration"
             and out_ops[section_end].get("speech_run") == out_ops[index].get("speech_run")
+            and out_ops[section_end].get("attributes", {}).get("_section_index")
+            == out_ops[index].get("attributes", {}).get("_section_index")
             and out_ops[section_end]
             .get("attributes", {})
             .get("_typesetting_method", "verse")
@@ -2221,7 +2254,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         for operation in our_ops:
             render_operation = dict(operation)
             attributes = dict(render_operation.get("attributes") or {})
-            attributes.pop("_typesetting_method", None)
+            for internal_key in ("_typesetting_method", "_section_type", "_section_index"):
+                attributes.pop(internal_key, None)
             render_operation["attributes"] = attributes
             render_ops.append(render_operation)
 
@@ -2270,6 +2304,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
                 "latex": as_latex,
                 "delta": render_ops,
                 "typesetting_method": typesetting_method,
+                "section_type": our_ops[0].get("attributes", {}).get("_section_type", "chapter_text"),
+                "section_index": our_ops[0].get("attributes", {}).get("_section_index", 0),
             }
         )
 
@@ -2294,7 +2330,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     #     },
     # ] + out_ops
     for operation in out_ops:
-        operation.get("attributes", {}).pop("_typesetting_method", None)
+        for internal_key in ("_typesetting_method", "_section_type", "_section_index"):
+            operation.get("attributes", {}).pop(internal_key, None)
     chapter.save_delta({"ops": [op for op in out_ops if op.get("type") != "illustration"]})
 
     chapter_xml = chapter_soup.find("chapter")
@@ -2392,6 +2429,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             phrase.attrs["speaker"] = "Narrator"
             phrase.attrs["index"] = index
             phrase.attrs["typesetting_method"] = p["typesetting_method"]
+            phrase.attrs["section_type"] = p["section_type"]
+            phrase.attrs["section_index"] = str(p["section_index"])
             phrase.attrs["delta"] = json.dumps(compress_ops(p["delta"]))
 
             # Step by 2654435 per phrase, wrapping through the 24-bit color space.
@@ -2411,8 +2450,11 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             )
 
             # double newline == paragraph break.
-            if first or phrase.attrs["latex"].lstrip(" ").startswith(r"\n\n"):
+            if (first or paragraph.get("section_index") != str(p["section_index"])
+                    or phrase.attrs["latex"].lstrip(" ").startswith(r"\n\n")):
                 new_paragraph = chapter_soup.new_tag("paragraph")
+                new_paragraph["section_type"] = p["section_type"]
+                new_paragraph["section_index"] = str(p["section_index"])
                 new_paragraph.append(phrase)
                 chapter_xml.append(new_paragraph)
                 paragraph = new_paragraph
@@ -2485,7 +2527,7 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     temporary_import_state = import_state_fn + ".tmp"
     with open(temporary_import_state, "w", encoding="utf-8") as state_file:
         json.dump(
-            {"version": 1, "sections_sha256": sections_fingerprint},
+            {"version": 2, "sections_sha256": sections_fingerprint},
             state_file,
         )
     os.replace(temporary_import_state, import_state_fn)
@@ -2509,30 +2551,12 @@ def chapter_sections():
         g.chapter.language,
         "chapter.sections.json",
     )
+    from artifact_editor.book.pages import load_sections, validate_sections
     if request.method == "GET":
-        if os.path.exists(sections_fn):
-            with open(sections_fn, "r", encoding="utf-8") as section_file:
-                return flask.jsonify(json.load(section_file))
-        delta = g.chapter.load_delta()
-        if not delta or not delta.get("ops"):
-            text = g.chapter.load_txt()
-            delta = {"ops": [{"insert": text}]} if text else {"ops": []}
-        return flask.jsonify(
-            [{"typesetting_method": "verse", "ops": delta.get("ops", [])}]
-        )
-
+        return flask.jsonify(load_sections(g.chapter))
     try:
-        sections = json.loads(request.form["sections"])
-        if not isinstance(sections, list) or not sections:
-            raise ValueError("At least one section is required")
-        for section in sections:
-            if (
-                not isinstance(section, dict)
-                or section.get("typesetting_method") not in {"verse", "plain"}
-                or not isinstance(section.get("ops"), list)
-            ):
-                raise ValueError("Invalid chapter section")
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        sections = validate_sections(json.loads(request.form["sections"]))
+    except (KeyError, TypeError, ValueError) as error:
         return f"Invalid chapter sections: {error}", 400
 
     os.makedirs(os.path.dirname(sections_fn), exist_ok=True)
@@ -2647,6 +2671,52 @@ def save_delta():
     return "", 200
 
 
+@bp.post("/phrase_typography")
+def set_phrase_typography():
+    """Apply only font and size to every persisted phrase delta."""
+    selection = request.get_json(silent=True)
+    fonts = {"Helvetica", "Cardo", "Roboto Condensed", "Times New Roman",
+             "Calibri", "Calibri Light", "Sans-Serif", None}
+    sizes = {"10px", "11px", "12px", "14px", "16px", "18px", "24px", "32px", "48px", None}
+    if (not isinstance(selection, dict) or set(selection) != {"font", "size"}
+            or not isinstance(selection["font"], (str, type(None)))
+            or not isinstance(selection["size"], (str, type(None)))
+            or selection["font"] not in fonts or selection["size"] not in sizes):
+        return "Invalid font or font size", 400
+
+    phrases = g.chapter.get_xml().find_all("phrase")
+    updates = []
+    try:
+        for phrase in phrases:
+            raw = phrase.get("delta")
+            delta = json.loads(raw) if raw else [{"insert": phrase.get_text()}]
+            operations = delta["ops"] if isinstance(delta, dict) else delta
+            if not isinstance(operations, list):
+                raise ValueError("Expected delta operations")
+            for operation in operations:
+                if (not isinstance(operation, dict) or not isinstance(operation.get("insert"), str)
+                        or not isinstance(operation.get("attributes", {}), dict)):
+                    raise ValueError("Expected text delta operations")
+                attributes = dict(operation.get("attributes", {}))
+                for name, value in selection.items():
+                    if value is None:
+                        attributes.pop(name, None)
+                    else:
+                        attributes[name] = value
+                if attributes:
+                    operation["attributes"] = attributes
+                else:
+                    operation.pop("attributes", None)
+            updates.append(json.dumps(delta))
+    except (KeyError, TypeError, ValueError) as error:
+        return f"Invalid phrase delta: {error}", 400
+
+    for phrase, delta in zip(phrases, updates):
+        phrase["delta"] = delta
+    g.chapter.save_phrases(phrases)
+    return flask.jsonify(updated=len(phrases))
+
+
 @bp.route("/phrase_delta/<int:phrase_index>/", methods=["POST"])
 def save_phrase_delta(phrase_index: int):
     """Save the Quill rich text content for one chapter phrase."""
@@ -2689,20 +2759,23 @@ def save_phrase_delta(phrase_index: int):
 def _sync_sections_from_phrase_deltas(chapter):
     """Refresh saved section text and formatting from the current phrase deltas."""
     sections = []
+    current_section = None
     for paragraph in chapter.soup.find_all("paragraph"):
         if "has-text=false" in paragraph.get("tags", "").replace(" ", "").lower():
             continue
-        current_section = None
         for phrase in paragraph.find_all("phrase"):
             raw_delta = phrase.get("delta")
             operations = json.loads(raw_delta) if raw_delta else [{"insert": phrase.get_text()}]
             if isinstance(operations, dict):
                 operations = operations.get("ops", [])
-            method = phrase.get(
-                "typesetting_method", paragraph.get("typesetting_method", "verse")
-            )
-            if current_section is None or current_section["typesetting_method"] != method:
-                current_section = {"typesetting_method": method, "ops": []}
+            method = phrase.get("typesetting_method", paragraph.get("typesetting_method", "verse"))
+            role = phrase.get("section_type", paragraph.get("section_type", "chapter_text"))
+            section_index = phrase.get("section_index", paragraph.get("section_index"))
+            if (current_section is None or current_section["typesetting_method"] != method
+                    or current_section["section_type"] != role
+                    or current_section.get("section_index") != section_index):
+                current_section = {"typesetting_method": method, "section_type": role,
+                                   "section_index": section_index, "ops": []}
                 sections.append(current_section)
             current_section["ops"].extend(operations)
 

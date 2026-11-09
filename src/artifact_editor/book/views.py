@@ -38,6 +38,57 @@ bp = Blueprint(
 )
 
 
+@bp.route('/pages/<kind>', methods=['PUT'])
+def save_page_template(author, title, kind):
+    from flask import jsonify
+    from .pages import validate_delta
+    keys = {'book_page': 'title_page_delta', 'chapter_page': 'chapter_page_delta'}
+    if kind not in keys:
+        return jsonify(error='Unknown page template.'), 404
+    try:
+        delta = validate_delta(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    book = Book(Author(author), title)
+    book.config[keys[kind]] = delta
+    book.save_config()
+    return jsonify(saved=True)
+
+
+@bp.route('/textoviva', methods=['GET', 'POST'])
+def book_textoviva(author, title):
+    from flask import jsonify
+    from .textoviva import availability, enqueue
+    book = Book(Author(author), title)
+    if request.method == 'POST':
+        try:
+            return jsonify(job_id=enqueue(book)), 202
+        except (ValueError, OSError) as error:
+            return jsonify(error=str(error)), 409
+    from cpu_queue import connection
+    client = connection()
+    try:
+        job_id = client.get(f'book_textoviva:{author}:{title}')
+        job = json.loads(client.get(f'cpu_job:{job_id}') or '{}') if job_id else {}
+        return jsonify(**availability(book), job={key: job[key] for key in
+                       ('job_id', 'state', 'message', 'duration_seconds') if key in job})
+    finally:
+        client.close()
+
+
+@bp.route('/textoviva/video')
+def book_textoviva_video(author, title):
+    from flask import send_file
+    from .textoviva import output_path
+    path = output_path(Book(Author(author), title))
+    if not path.is_file():
+        return 'Create the book video first.', 404
+    response = send_file(path, mimetype='video/mp4', conditional=True,
+                         as_attachment=request.args.get('download') == '1', download_name=f'{title}.mp4')
+    response.cache_control.no_cache = True
+    return response
+
+
 @bp.route("/", methods=["PUT"])
 def set_book_metadata(author, title):
     author = Author(author)
@@ -120,6 +171,7 @@ def lora_creation_wizard(author, title):
                 import redis
                 client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
                 try:
+                    lora_training.publish_training_event(client, book)
                     queue_manual_switch(client, "training")
                 finally:
                     client.close()
@@ -333,6 +385,39 @@ def lora_field(book):
 
 def get_book_metadata(book):
     from artifact_editor.textoviva.workflow import default_image_workflow, image_engine_choices
+    body_font_choices = [
+        ("Helvetica", "Helvetica"),
+        ("Cardo", "Cardo"),
+        ("Roboto Condensed", "Roboto Condensed"),
+        ("Times New Roman", "Times New Roman"),
+        ("Calibri", "Calibri"),
+        ("Calibri Light", "Calibri Light"),
+        ("Sans-Serif", "Sans-Serif"),
+    ]
+    body_size_choices = [(f"{size}px", f"{size}px") for size in (12, 14, 16, 18, 20, 24, 28, 32)]
+    body_font_styles = {
+        "Helvetica": 'font-family: Helvetica, Arial, sans-serif;',
+        "Cardo": 'font-family: Cardo, serif;',
+        "Roboto Condensed": 'font-family: "Roboto Condensed", sans-serif;',
+        "Times New Roman": 'font-family: "Times New Roman", serif;',
+        "Calibri": 'font-family: Calibri, sans-serif;',
+        "Calibri Light": 'font-family: "Calibri Light", sans-serif;',
+        "Sans-Serif": 'font-family: sans-serif;',
+    }
+    def body_font_field():
+        selected = book.config.get("default_body_font", "Helvetica")
+        options = "".join(
+            f'<wa-option value="{escape(font, quote=True)}" {"selected" if font == selected else ""} style="{style}">{escape(font)}</wa-option>'
+            for font, style in body_font_styles.items()
+        )
+        return f'''<div class="wa-cluster">
+            <div class="label">Body font:</div>
+            <wa-select name="default_body_font" value="{escape(selected, quote=True)}"
+                hx-put="{book.set_book_metadata_url}" hx-trigger="change"
+                hx-target="#book_metadata" hx-swap="outerHTML transition:true">
+                {options}
+            </wa-select>
+        </div>'''
     book_metadata = "".join(
         [
             book.input_field(
@@ -358,6 +443,11 @@ def get_book_metadata(book):
                 book.config.get("aspect_ratio", ""),
                 htmx.get_aspect_ratio_choices(),
             ),
+            body_font_field(),
+            book.choice_field(
+                "Body font size:", "default_body_font_size",
+                book.config.get("default_body_font_size", "16px"), body_size_choices,
+            ),
         ]
     )
     return f"""<div id="book_metadata">
@@ -378,8 +468,35 @@ def table_of_contents(author, title):
 
     book_metadata = get_book_metadata(book)
 
+    from artifact_editor.library.storage import location_roots, placements, status_key, move_controls
+    from cpu_queue import connection
+    import redis
+    locations = location_roots()
+    book_locations = placements(author.name, title)
+    book_location = next(iter(book_locations), 'active')
+    transfer = {}
+    client = connection()
+    try:
+        transfer = client.hgetall(status_key(author.name, title))
+    except redis.RedisError:
+        pass
+    finally:
+        client.close()
+    storage_conflict = len(book_locations) > 1
+
+    from .pages import templates
+    from .textoviva import availability
     return render_template(
         "book.html",
+        book=book,
+        page_templates=templates(book),
+        textoviva_status=availability(book),
+        storage_available=locations['storage'].is_dir(),
+        shelf_available=locations['shelf'].is_dir(),
+        book_location=book_location,
+        book_move_controls=move_controls(author.name, title, book_location, transfer),
+        storage_transfer=transfer,
+        storage_conflict=storage_conflict,
         section="book",
         book_metadata=book_metadata,
         language="english",
@@ -760,6 +877,7 @@ def breakdown_chapters(author, title):
     log.info("config: %s", book_config)
     index = 0
     chapter_text_list = []
+    chapter_heading = None
     chapter_list = []
 
     raw = request.form.get("raw", "")
@@ -773,7 +891,8 @@ def breakdown_chapters(author, title):
             language=language,
         )
         os.makedirs(os.path.join(const.LIBRARY_DIR, chapter.languagedir), exist_ok=True)
-        chapter.save_txt(raw)
+        from .pages import save_raw_chapter
+        save_raw_chapter(chapter, raw, book_config)
     else:
         previous_line = ""
         log.info("Breaking book into chapters (%s characters)", len(raw))
@@ -806,9 +925,10 @@ def breakdown_chapters(author, title):
                         language=language,
                     )
 
-                    os.makedirs(chapter.languagedir, exist_ok=True)
+                    os.makedirs(os.path.join(const.LIBRARY_DIR, chapter.languagedir), exist_ok=True)
 
-                    chapter.save_txt("\n".join(chapter_text_list))
+                    from .pages import save_raw_chapter
+                    save_raw_chapter(chapter, "\n".join(chapter_text_list), book_config, heading=chapter_heading)
 
                     index = len(chapter_list) + 1
                     chapter_list.append(
@@ -818,12 +938,15 @@ def breakdown_chapters(author, title):
                         }
                     )
                     chapter_text_list = [line]
+                    chapter_heading = line
                 elif first:
                     log.info("Starting first chapter")
                     first = False
+                    chapter_heading = line
                     chapter_text_list.append(line)
                 else:
                     chapter_text_list = [line]
+                    chapter_heading = line
             else:
                 if book_config["BIBLE_BREAKDOWN"]:
                     # some cleanup, want verses separated by newlines
@@ -867,9 +990,10 @@ def breakdown_chapters(author, title):
                 language=language,
             )
 
-            os.makedirs(chapter.languagedir, exist_ok=True)
+            os.makedirs(os.path.join(const.LIBRARY_DIR, chapter.languagedir), exist_ok=True)
 
-            chapter.save_txt("\n".join(chapter_text_list))
+            from .pages import save_raw_chapter
+            save_raw_chapter(chapter, "\n".join(chapter_text_list), book_config, heading=chapter_heading)
 
             chapter_list.append(
                 {

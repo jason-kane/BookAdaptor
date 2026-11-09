@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from ncdeltaprocess.latex_line_render import LineRenderLaTeX
 import logger
@@ -28,6 +29,7 @@ def video_page_geometry(text_width):
 
 
 FONT_FAMILIES = {
+    "Cardo": ("quillCardo", ("Cardo",)),
     "Helvetica": ("quillHelvetica", ("Helvetica", "Arial", "Liberation Sans", "TeX Gyre Heros")),
     "Sans-Serif": ("quillHelvetica", ("Helvetica", "Arial", "Liberation Sans", "TeX Gyre Heros")),
     "Roboto Condensed": ("quillRobotoCondensed", ("Roboto Condensed", "Liberation Sans Narrow", "TeX Gyre Heros Cn")),
@@ -41,6 +43,15 @@ def font_preamble():
     """Prefer the requested font, then fonts with similar letter widths."""
     declarations = [r"\usepackage{fontspec}"]
     for command, candidates in dict.fromkeys(FONT_FAMILIES.values()):
+        if command == "quillCardo":
+            directory = Path(__file__).resolve().parents[1] / "static/fonts/cardo"
+            declarations.append(
+                rf"\newfontfamily\{command}[Path={{{directory.as_posix()}/}},"
+                r"BoldFont=Cardo-Bold.ttf,ItalicFont=Cardo-Italic.ttf,"
+                r"BoldItalicFont=Cardo-Italic.ttf,BoldItalicFeatures={FakeBold=1.5}]"
+                r"{Cardo-Regular.ttf}"
+            )
+            continue
         declaration = rf"\newfontfamily\{command}{{{candidates[-1]}}}"
         for candidate in reversed(candidates[:-1]):
             declaration = (
@@ -227,6 +238,56 @@ def render_sections(sections, phrases=None):
     return "\n".join(output) + "\n"
 
 
+def restore_section_methods(sections, saved_sections):
+    """Transfer editor layout to current text, retaining current inline formatting."""
+    source, methods = [], []
+    for section in saved_sections:
+        for operation in section["ops"]:
+            for character in operation.get("insert", ""):
+                if not character.isspace():
+                    source.append(character)
+                    methods.append(section["typesetting_method"])
+    current = "".join(
+        c for section in sections for op in section["ops"]
+        for c in op.get("insert", "") if not c.isspace()
+    )
+    mapped = [None] * len(current)
+    matcher = SequenceMatcher(None, "".join(source), current, autojunk=False)
+    for tag, start, end, target, target_end in matcher.get_opcodes():
+        if tag == "equal":
+            mapped[target:target_end] = methods[start:end]
+        elif tag == "replace":
+            mapped[target:target_end] = [methods[start]] * (target_end - target)
+    # Edited text inherits the preceding matched section; leading additions
+    # inherit the first match. Entirely unrelated text keeps its XML methods.
+    previous = next((method for method in mapped if method is not None), None)
+    if previous is None:
+        return sections
+    for index, method in enumerate(mapped):
+        if method is not None:
+            previous = method
+        else:
+            mapped[index] = previous
+    result, offset = [], 0
+    for section in sections:
+        for operation in section["ops"]:
+            for character in operation.get("insert", ""):
+                method = mapped[min(offset, len(mapped) - 1)]
+                if character.isspace() and result:
+                    method = result[-1]["typesetting_method"]
+                if not result or result[-1]["typesetting_method"] != method:
+                    result.append({"typesetting_method": method, "ops": []})
+                ops = result[-1]["ops"]
+                attributes = operation.get("attributes")
+                if ops and ops[-1].get("attributes") == attributes:
+                    ops[-1]["insert"] += character
+                else:
+                    ops.append(dict(operation, insert=character))
+                if not character.isspace():
+                    offset += 1
+    return result
+
+
 def render_chapter_xml(soup, text_width, sections=None):
     """Build both documents from saved phrases, without modifying chapter XML."""
     import json
@@ -278,8 +339,9 @@ def render_chapter_xml(soup, text_width, sections=None):
         if section_text == phrase_text:
             sections = saved_sections
         else:
+            sections = restore_section_methods(sections, saved_sections)
             log.warning(
-                "Saved chapter sections differ from timeline phrase text; using current phrase deltas for typesetting",
+                "Saved chapter sections differ from timeline phrase text; preserving editor methods on current phrase deltas",
                 chapter_characters=len(section_text), phrase_characters=len(phrase_text),
             )
     colors = []

@@ -15,6 +15,8 @@ log = logger.log(__name__)
 
 class Book:
     def __init__(self, author, title):
+        from artifact_editor.library.storage import guard_task
+        guard_task({'author': author.name, 'title': title})
         self.author = author
         self.title = title
         
@@ -28,11 +30,17 @@ class Book:
             )
         )
         self.subtitle = self.config.get("subtitle", "")
-        self.set_book_metadata_url = url_for(
-            "library.book.set_book_metadata",
-            author=self.author.name,
-            title=self.title,
-        )
+        self._set_book_metadata_url = None
+
+    @property
+    def set_book_metadata_url(self):
+        if self._set_book_metadata_url is None:
+            self._set_book_metadata_url = url_for(
+                "library.book.set_book_metadata",
+                author=self.author.name,
+                title=self.title,
+            )
+        return self._set_book_metadata_url
 
     def input_field(self, label, key, value):
         return f"""

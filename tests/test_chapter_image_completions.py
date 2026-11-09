@@ -79,7 +79,7 @@ def test_notification_failure_does_not_fail_a_saved_generation():
 
 def test_shared_websocket_snapshots_and_forwards_only_the_watched_chapter(monkeypatch):
     import sys
-    from task_queue import CHAPTER_IMAGE_EVENTS, PRIORITY_QUEUE, TAG_QUEUE, VIDEO_EVENTS
+    from task_queue import CHAPTER_IMAGE_EVENTS, FRAME_EVENTS, PRIORITY_QUEUE, TAG_QUEUE, VIDEO_EVENTS
     path = Path(__file__).parents[1] / 'src/websocket/server.py'
     function = next(node for node in ast.parse(path.read_text()).body
                     if isinstance(node, ast.FunctionDef) and node.name == 'styler_websocket')
@@ -97,6 +97,7 @@ def test_shared_websocket_snapshots_and_forwards_only_the_watched_chapter(monkey
                                   RuntimeError('Connection closed')]
     snapshot = Mock(return_value={'state': 'chapter_image_snapshot', **IDENTITY, 'images': []})
     monkeypatch.setitem(sys.modules, 'const', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'gpu_metrics', SimpleNamespace(get_gpu_metrics=lambda: {}))
     monkeypatch.setitem(sys.modules, 'styler.jobs', SimpleNamespace(
         EVENTS='style_events', sample_task=Mock(), request_sample=Mock()))
     monkeypatch.setitem(sys.modules, 'cpu_queue', SimpleNamespace(
@@ -107,7 +108,7 @@ def test_shared_websocket_snapshots_and_forwards_only_the_watched_chapter(monkey
     namespace = dict(
         json=json, time=time, redis_connection=lambda: client, log=Mock(),
         styler_queue_snapshot=lambda *args: {'running': None},
-        CHAPTER_IMAGE_EVENTS=CHAPTER_IMAGE_EVENTS, VIDEO_EVENTS=VIDEO_EVENTS,
+        CHAPTER_IMAGE_EVENTS=CHAPTER_IMAGE_EVENTS, FRAME_EVENTS=FRAME_EVENTS, VIDEO_EVENTS=VIDEO_EVENTS,
         PRIORITY_QUEUE=PRIORITY_QUEUE, TAG_QUEUE=TAG_QUEUE,
     )
     exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
@@ -115,7 +116,7 @@ def test_shared_websocket_snapshots_and_forwards_only_the_watched_chapter(monkey
         namespace['styler_websocket'](socket)
     sent = [json.loads(call.args[0]) for call in socket.send.call_args_list]
     assert [item['state'] for item in sent] == [
-        'queue_plan', 'cpu_queue_plan', 'chapter_image_snapshot', 'chapter_image_complete']
+        'queue_plan', 'gpu_metrics', 'cpu_queue_plan', 'chapter_image_snapshot', 'chapter_image_complete']
     assert sent[-1] == event
     snapshot.assert_called_once_with(IDENTITY)
     assert CHAPTER_IMAGE_EVENTS in pubsub.subscribe.call_args.args

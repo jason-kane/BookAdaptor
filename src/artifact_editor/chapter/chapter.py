@@ -443,6 +443,8 @@ class Chapter:
     def __init__(
         self, author: Author, title: str, number: int, language: str = "english"
     ):
+        from artifact_editor.library.storage import guard_task
+        guard_task({'author': author.name, 'title': title})
         log.info("Initializing Chapter")
         # unique key used for redis, doorway for reconstructing this chapter from a redis task.
         self.key = str(json.dumps([author.name, title, number, language]))
@@ -593,13 +595,17 @@ class Chapter:
             timings = phrase_timings(self.soup)
             silence_times = phrase_timings(self.soup, item_type="silence")
             image_times = image_timings(self.soup)
+            from .readiness import animation_is_complete
+            image_animation_ready = {}
             from artifact_editor.images.animation_source import animation_frame_count
             for image in self.soup.find_all("image"):
                 timing = image_times.get(str(image["index"]))
+                directory = Path(const.LIBRARY_DIR) / self.get_paragraph_dir(
+                    int(image.find_parent("paragraph")["index"]))
+                count = animation_frame_count(image, directory, const.FPS)
+                required = int(timing["frames"] if timing is not None else image.get("frames", 0))
+                image_animation_ready[str(image["index"])] = animation_is_complete(image, count, required)
                 if timing is not None:
-                    directory = Path(const.LIBRARY_DIR) / self.get_paragraph_dir(
-                        int(image.find_parent("paragraph")["index"]))
-                    count = animation_frame_count(image, directory, const.FPS)
                     timing["animation_frames"] = count
                     timing["animation_shortfall"] = count is not None and count < timing["frames"]
 
@@ -617,6 +623,7 @@ class Chapter:
                 else:
                     image_filename = self.get_image_filename(tag)
                     yield {"type": "image", "image": tag,
+                           "animation_ready": image_animation_ready.get(str(tag["index"]), False),
                            "missing_image": not image_filename or not os.path.isfile(image_filename),
                            "timing": image_times.get(str(tag["index"]))}
 
@@ -2604,19 +2611,108 @@ class Chapter:
 
     def delete(self):
         """
-        Delete all files associated with this chapter.
+        Delete this chapter and compact all later chapter numbers.
         """
+        chapter_root = os.path.join(const.LIBRARY_DIR, self.bookdir, "chapter")
         full_path = os.path.join(const.LIBRARY_DIR, self.chapterdir)
+        os.makedirs(chapter_root, exist_ok=True)
+        later = []
+        for entry in os.scandir(chapter_root):
+            if entry.is_dir() and entry.name.isdigit() and int(entry.name) > self.number:
+                later.append((int(entry.name), entry.path))
+        later.sort()
 
-        if uses_postgres():
-            from artifact_editor.db.chapter_content import delete_content
-            delete_content(self)
-
-        if os.path.exists(full_path):
-            log.info("Deleting chapter directory: %s", full_path)
-            shutil.rmtree(full_path)
+        operation_id = uuid.uuid4().hex
+        tombstone = os.path.join(chapter_root, f".deleting-{self.number:04}-{operation_id}")
+        moved_to_temp = []
+        installed = []
+        if os.path.isdir(full_path):
+            os.rename(full_path, tombstone)
         else:
-            log.warning("Chapter directory not found for deletion: %s", full_path)
+            tombstone = None
+
+        try:
+            # Vacate all source names first, then install their compacted names.
+            for index, (number, source) in enumerate(later):
+                temporary = os.path.join(chapter_root, f".renumber-{operation_id}-{index}")
+                os.rename(source, temporary)
+                moved_to_temp.append((number, source, temporary))
+            for index, (number, source, temporary) in enumerate(moved_to_temp):
+                destination_number = self.number + index
+                destination = os.path.join(chapter_root, f"{destination_number:04}")
+                os.rename(temporary, destination)
+                installed.append((number, source, destination))
+
+            if uses_postgres():
+                from artifact_editor.db.chapter_content import delete_content
+                delete_content(self)
+        except Exception:
+            # Restore chapter folders if staging or the database transaction fails.
+            for number, source, destination in reversed(installed):
+                if os.path.exists(destination):
+                    os.rename(destination, source)
+            for number, source, temporary in moved_to_temp:
+                if os.path.exists(temporary):
+                    os.rename(temporary, source)
+            if tombstone and os.path.exists(tombstone):
+                os.rename(tombstone, full_path)
+            raise
+
+        if tombstone and os.path.exists(tombstone):
+            try:
+                shutil.rmtree(tombstone)
+            except OSError:
+                log.exception("Could not remove staged deleted chapter directory: %s", tombstone)
+
+    def insert_after(self):
+        """Insert an empty chapter after this one and shift later chapters."""
+        chapter_root = os.path.join(const.LIBRARY_DIR, self.bookdir, "chapter")
+        os.makedirs(chapter_root, exist_ok=True)
+        later = []
+        for entry in os.scandir(chapter_root):
+            if entry.is_dir() and entry.name.isdigit() and int(entry.name) > self.number:
+                later.append((int(entry.name), entry.path))
+        later.sort()
+
+        inserted_number = self.number + 1
+        operation_id = uuid.uuid4().hex
+        stage = os.path.join(chapter_root, f".inserting-{operation_id}")
+        new_chapter = Chapter(self.author, self.title, inserted_number, self.language)
+        new_chapter_root = os.path.join(const.LIBRARY_DIR, new_chapter.chapterdir)
+        os.mkdir(stage)
+        moved_to_temp = []
+        installed = []
+
+        try:
+            for number, source in later:
+                temporary = os.path.join(stage, f"{number:04}")
+                os.rename(source, temporary)
+                moved_to_temp.append((number, source, temporary))
+            for number, source, temporary in moved_to_temp:
+                destination = os.path.join(chapter_root, f"{number + 1:04}")
+                os.rename(temporary, destination)
+                installed.append((number, source, destination))
+
+            os.makedirs(os.path.join(const.LIBRARY_DIR, new_chapter.languagedir), exist_ok=True)
+            new_chapter.save_config()
+
+            if uses_postgres():
+                from artifact_editor.db.chapter_content import insert_chapter_after
+                insert_chapter_after(self, new_chapter)
+        except Exception:
+            if os.path.isdir(new_chapter_root):
+                shutil.rmtree(new_chapter_root)
+            for number, source, destination in reversed(installed):
+                if os.path.exists(destination):
+                    os.rename(destination, os.path.join(stage, f"{number:04}"))
+            for number, source, temporary in moved_to_temp:
+                if os.path.exists(temporary):
+                    os.rename(temporary, source)
+            os.rmdir(stage)
+            raise
+
+        os.rmdir(stage)
+        return new_chapter
 
     # syntax sugar
     @property
@@ -3076,7 +3172,6 @@ class Chapter:
         return chapter_audio_tracks(self, const.LIBRARY_DIR, wav_append_delay)
 
     def safe_title(self):
-        log.info(self.config)
         full_title = self.config["title"]
         safe_title = re.sub(r"[/\\?%*:|\"<>\x7F\x00-\x1F]", "-", full_title)
         return safe_title.replace(" ", "_")

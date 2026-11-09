@@ -13,15 +13,19 @@
                 loop: false,
             });
             const stack = player.el().closest('#player-stack');
-            const renderControls = stack && stack.querySelector('#video-generation-notice');
+            const playerElement = player.el();
+            const controls = stack
+                ? Array.from(stack.children).filter(child => child !== playerElement && !child.contains(playerElement))
+                : [];
             function fitPlayer() {
                 if (!stack || player.isDisposed() || player.isFullscreen()) return;
                 const bounds = stack.getBoundingClientRect();
                 if (bounds.width <= 0) return;
-                const controlsHeight = renderControls ? renderControls.getBoundingClientRect().height : 0;
+                const controlsHeight = controls.reduce((height, element) => height + element.getBoundingClientRect().height, 0);
                 const gap = parseFloat(getComputedStyle(stack).rowGap) || 0;
-                const availableHeight = Math.max(0,
-                    window.innerHeight - Math.max(0, bounds.top) - controlsHeight - gap - 16);
+                const panelHeight = bounds.height - controlsHeight - gap - 16;
+                const viewportHeight = window.innerHeight - Math.max(0, bounds.top) - controlsHeight - gap - 16;
+                const availableHeight = Math.max(0, Math.min(panelHeight, viewportHeight));
                 if (!availableHeight) return;
                 const ratio = player.videoWidth() && player.videoHeight()
                     ? player.videoWidth() / player.videoHeight() : 16 / 9;
@@ -31,7 +35,7 @@
             }
             const sizeObserver = new ResizeObserver(fitPlayer);
             if (stack) sizeObserver.observe(stack);
-            if (renderControls) sizeObserver.observe(renderControls);
+            controls.forEach(element => sizeObserver.observe(element));
             window.addEventListener('resize', fitPlayer);
             document.addEventListener('column-expanded', fitPlayer);
             ['loadedmetadata', 'resize', 'fullscreenchange'].forEach(name => player.on(name, fitPlayer));
@@ -44,7 +48,7 @@
             let timeline = null;
             let centeredPhrase = null;
             let pauseRequested = false;
-            function syncTimeline() {
+            function syncTimeline(forceScroll = false) {
                 if (!timeline || player.isDisposed()) return;
                 const frame = Math.floor(player.currentTime() * timeline.fps);
                 const phrase = timeline.phrases.find(item => item.start <= frame && frame <= item.end);
@@ -63,7 +67,7 @@
                 });
                 const scroller = activePhrase && activePhrase.closest('#chapter-timeline-scroll');
                 if (scroller && scroller.getClientRects().length) {
-                    if (activePhrase !== centeredPhrase) {
+                    if (activePhrase !== centeredPhrase && (forceScroll === true || !player.paused())) {
                         const bounds = scroller.getBoundingClientRect();
                         const phraseBounds = activePhrase.getBoundingClientRect();
                         scroller.scrollTo({
@@ -92,12 +96,15 @@
                 if (animationFrame !== null) cancelAnimationFrame(animationFrame);
                 animationFrame = null;
             }
+            let timelineRequest = 0;
             function loadTimeline() {
                 if (!timelineUrl) return;
+                const request = ++timelineRequest;
                 return fetch(timelineUrl, { cache: 'no-store' }).then(response => {
                     if (!response.ok) throw new Error('Could not load playback timeline');
                     return response.json();
                 }).then(data => {
+                    if (request !== timelineRequest || player.isDisposed()) return;
                     timeline = data;
                     syncTimeline();
                     if (pauseRequested) reportPausedFrame();
@@ -131,9 +138,10 @@
             });
             if (timelineUrl) {
                 loadTimeline();
-                ['timeupdate', 'seeked', 'loadedmetadata', 'play', 'pause', 'ended'].forEach(name => {
+                ['timeupdate', 'loadedmetadata', 'play', 'pause', 'ended'].forEach(name => {
                     player.on(name, syncTimeline);
                 });
+                player.on('seeked', () => { centeredPhrase = null; syncTimeline(true); });
                 player.on('play', () => { stopFollowing(); followPlayback(); });
                 function reportPausedFrame() {
                     stopFollowing();
@@ -154,11 +162,30 @@
                     if (player.paused()) reportPausedFrame();
                 });
                 player.on('ended', stopFollowing);
-                document.addEventListener('htmx:afterSettle', syncTimeline);
+                const timingSignature = () => JSON.stringify(Array.from(
+                    document.querySelectorAll('#chapter-phrase-list > [data-timeline-type]'),
+                    row => [row.dataset.timelineType, row.dataset.timelineIndex,
+                        row.querySelector('.chapter-timeline-time')?.textContent.trim()],
+                ));
+                let previousTimingSignature = timingSignature();
+                let timingRefreshTimer;
+                const refreshEditedTimeline = event => {
+                    const target = event.detail.target || event.detail.elt;
+                    if (target?.id !== 'chapter-phrase-list'
+                        && !target?.closest?.('#chapter-phrase-list')) return;
+                    const signature = timingSignature();
+                    if (signature === previousTimingSignature) return;
+                    previousTimingSignature = signature;
+                    centeredPhrase = null;
+                    clearTimeout(timingRefreshTimer);
+                    timingRefreshTimer = setTimeout(loadTimeline, 80);
+                };
+                document.addEventListener('htmx:afterSettle', refreshEditedTimeline);
                 document.addEventListener('column-expanded', syncTimeline);
                 player.on('dispose', () => {
                     stopFollowing();
-                    document.removeEventListener('htmx:afterSettle', syncTimeline);
+                    clearTimeout(timingRefreshTimer);
+                    document.removeEventListener('htmx:afterSettle', refreshEditedTimeline);
                     document.removeEventListener('column-expanded', syncTimeline);
                     document.querySelectorAll('.playback-current').forEach(item => {
                         item.classList.remove('playback-current');
@@ -235,6 +262,18 @@
             } else if (!completedJobs.has(job) &&
                        ['textoviva_rerender', 'textoviva_one_shot'].includes(action)) {
                 completedJobs.add(job);
+                if (action === 'textoviva_one_shot') {
+                    const timeline = document.querySelector(
+                        '#chapter-timeline-content > wa-tab-group > wa-tab-panel[name="timeline"]'
+                    );
+                    if (timeline && window.htmx) window.htmx.trigger(timeline, 'load-column');
+                    const pdfUrl = document.getElementById('chapter-pdf-scroll')?.dataset.pdfUrl;
+                    if (pdfUrl) {
+                        document.dispatchEvent(new CustomEvent('chapter-typeset-complete', {
+                            detail: {pdf_url: pdfUrl},
+                        }));
+                    }
+                }
                 refresh = true;
             }
         });

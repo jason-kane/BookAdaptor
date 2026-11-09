@@ -374,8 +374,9 @@ def save_animation_preference(image_index):
         "chapter_phrase_timing.html",
         timing_id=f"chapter-image-timing-{image_index}",
         timing=entry["timing"] if entry else None,
-        missing_image=not image.get("src"),
+        missing_image=entry["missing_image"] if entry else not image.get("src"),
         animation_disabled=value == "1",
+        animation_ready=entry.get("animation_ready", False) if entry else False,
         timing_oob=True,
     )
 
@@ -432,8 +433,7 @@ def regenerate_animation(image_index):
 
 def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
     from artifact_editor.chapter.workflow import prerequisite_message
-    from artifact_editor.chapter.readiness import video_prerequisite
-    reason = video_prerequisite(chapter, prerequisite_message(chapter, 'textoviva_rerender'))
+    reason = prerequisite_message(chapter, 'textoviva_rerender')
     disabled = ' disabled' if reason else ''
     tooltip = f' title="{escape(reason)}"' if reason else ''
     job_id = uuid.uuid4().hex

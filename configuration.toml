@@ -6,6 +6,8 @@ DEBUG = false
 # these should align with any mischief you are
 # doing in the docker-compose.yml file.
 LIBRARY_DIR = "/active"
+SHELF_DIR = "/home/jkane/books"
+STORAGE_DIR = "/storage"
 SRC_DIR = "/app"
 ASSETS_DIR = "/assets"
 STYLES_DIR = "/custom_nodes/ComfyUI_MileHighStyler/data"

@@ -10,6 +10,16 @@ import flask
 import pytest
 import cpu_queue
 
+
+@pytest.fixture(autouse=True)
+def isolated_library(tmp_path, monkeypatch):
+    from artifact_editor.library import storage
+    active, stored = tmp_path / 'active', tmp_path / 'storage'
+    active.mkdir()
+    stored.mkdir()
+    monkeypatch.setattr(storage, 'roots', lambda: (active, stored))
+    monkeypatch.delenv('LIBRARY_LOCK_DIR', raising=False)
+
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location('cpu_typesetting', ROOT / 'src/artifact_editor/chapter/typesetting.py')
 typesetting = importlib.util.module_from_spec(spec)

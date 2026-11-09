@@ -36,6 +36,17 @@
         const timing = job.timing || {};
         const state = job.state || 'running';
         const stopped = terminal.has(state);
+        if (job.action === 'move_book') {
+            const done = numeric(job.bytes_done);
+            const total = numeric(job.bytes_total);
+            const value = state === 'complete' ? 100
+                : done !== null && total > 0 ? Math.max(0, Math.min(100, done / total * 100)) : null;
+            const bytes = count => `${(count / 1e9).toFixed(2)} GB`;
+            const label = total > 0 && done !== null
+                ? `${bytes(done)} / ${bytes(total)} · ${Math.floor(value || 0)}%`
+                : state === 'complete' ? 'Done' : 'Waiting for byte count';
+            return {value, label, title: `${label}\n${job.message || ''}`, stats: '', remaining: null};
+        }
         const elapsed = numeric(timing.elapsed_seconds);
         const seconds = elapsed === null ? null : elapsed + (stopped || state === 'queued' ? 0 : age);
         const average = numeric(timing.avg_seconds);
@@ -79,6 +90,16 @@
             }
         }
         const message = String(job.message || '');
+        const imageProgress = message.match(/Generated\s+(\d+)\s+of\s+(\d+)\s+images?/i);
+        if (!stopped && state !== 'queued' && imageProgress) {
+            const completed = Number(imageProgress[1]);
+            const total = Number(imageProgress[2]);
+            const reported = numeric(job.percent);
+            value = total > 0 ? Math.max(0, Math.min(100, completed / total * 100)) : null;
+            // One Shot reports a percentage across the whole pipeline.
+            if (job.action === 'textoviva_one_shot' && reported !== null) value = reported;
+            label = `${completed} of ${total} images complete`;
+        }
         const audioProgress = message.match(/Generated audio for\s+(\d+)\s+of\s+(\d+)\s+phrases?/i)
             || message.match(/Generating audio:\s*phrase\s+(\d+)\s+of\s+(\d+)/i);
         if (!stopped && state !== 'queued' && audioProgress) {
@@ -89,7 +110,7 @@
                 ? Math.max(0, Math.min(100, reportedPercent))
                 : total > 0 ? Math.max(0, Math.min(100, completed / total * 100)) : null;
         }
-        if (!stopped && state !== 'queued' && average === null && dependency && job.job_id) {
+        if (!stopped && state !== 'queued' && average === null && dependency && job.job_id && !imageProgress) {
             const child = [...jobs.values()].find(item => item.parent_job_id === job.job_id && !terminal.has(item.state));
             if (child) {
                 const childInfo = describe(child, Math.max(0, (Date.now() - child._timingAt) / 1000), true, false);

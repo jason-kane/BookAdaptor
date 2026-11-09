@@ -12,6 +12,8 @@ import tempfile
 from bs4 import BeautifulSoup, Tag
 from filelock import FileLock
 
+from artifact_editor.chapter_errors import RecordDeletedError
+
 
 def remember_content(chapter):
     chapter._persisted_content = deepcopy(chapter.soup)
@@ -85,8 +87,10 @@ def save_records(chapter, records, *, include_contents=True):
                 raise TypeError("Expected a chapter record")
             previous = _find(baseline, record)
             target = _find(latest, record)
-            if previous is None or target is None:
+            if previous is None:
                 raise ValueError(f"{record.name} {record.get('index', '')} is not persisted; use save_timeline() for structural changes")
+            if target is None:
+                raise RecordDeletedError(f"{record.name} {record.get('index', '')} is not persisted; it was deleted")
             attributes = {
                 key: deepcopy(value) for key, value in record.attrs.items()
                 if key not in previous.attrs or str(value) != str(previous[key])

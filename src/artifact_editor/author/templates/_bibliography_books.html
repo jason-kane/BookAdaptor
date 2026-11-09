@@ -1,0 +1,34 @@
+    {% if not books %}<p>No books yet. Add the author's first work above.</p>{% endif %}
+    {% for group in book_groups %}
+    <details class="bibliography-series" data-series-key="{{ group.key }}" {% if group.processed_count %}open{% endif %}>
+      <summary><h3 class="series-heading">{{ group.name }} <small>({{ group.books|length }})</small></h3></summary>
+      <div class="author-books">
+      {% for book in group.books %}
+      <wa-card class="author-book" data-series="{{ book.series }}" data-title="{{ book.title }}" data-year="{{ book.publication_year }}" data-date="{{ book.publication_date }}" data-processed="{{ 'true' if book.processed else 'false' }}">
+        <a href="{{ url_for('library.book.table_of_contents', author=author.name, title=book.title) }}">
+          <img loading="lazy" src="{{ url_for('library.book_cover', author=author.name, title=book.title) }}" alt="Cover of {{ book.title }}">
+          <h4>{{ book.title }}</h4>
+        </a>
+        <p class="publication-date">{{ book.publication_date or book.publication_year or 'Publication date unknown' }}</p>
+        <a class="series-source" {% if book.series_source %}href="{{ book.series_source }}"{% else %}hidden{% endif %} target="_blank" rel="noopener noreferrer">Series source</a>
+        <p>Copyright: <span class="copyright-status">{{ book.copyright_status or 'Unknown' }}</span></p>
+        <a class="copyright-source" {% if book.copyright_source %}href="{{ book.copyright_source }}"{% else %}hidden{% endif %} target="_blank" rel="noopener noreferrer">Copyright source</a>
+        {% if book.source_url %}<a href="{{ book.source_url }}" target="_blank" rel="noopener noreferrer">Bibliographic source</a>{% endif %}
+        <details><summary>Edit bibliographic details</summary>
+          <form class="bibliography-edit" method="post" action="{{ url_for('library.author.save_bibliography', author=author.name) }}">
+            <input type="hidden" name="book_name" value="{{ book.title }}">
+            <label>Series<input name="series" maxlength="250" value="{{ book.series }}" placeholder="No series recorded"></label>
+            <label>Series source URL<input name="series_source" type="url" value="{{ book.series_source }}"></label>
+            <label>First publication date<input name="publication_date" value="{{ book.publication_date }}" placeholder="yyyy-mm-dd, if known" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"></label>
+            <label>First publication year<input name="publication_year" type="number" min="1" max="9999" value="{{ book.publication_year }}"></label>
+            <label>Bibliographic source URL<input name="source_url" type="url" value="{{ book.source_url }}"></label>
+            <label>Copyright status and jurisdiction<input name="copyright_status" maxlength="2000" value="{{ book.copyright_status }}" placeholder="Unknown; e.g. Public domain — United States"></label>
+            <label>Copyright source URL<input name="copyright_source" type="url" value="{{ book.copyright_source }}"></label>
+            <p class="autosave-status" role="status" aria-live="polite">Changes save automatically.</p>
+          </form>
+        </details>
+      </wa-card>
+      {% endfor %}
+    </div>
+    </details>
+    {% endfor %}

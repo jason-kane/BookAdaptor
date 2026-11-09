@@ -22,7 +22,7 @@ def run_job(client, task):
     import const
     from task_timing import prepare, safe_record
 
-    task = {**task, 'queue_started_at': time.time()}
+    task = {**task, 'queue_started_at': time.time(), 'pid': os.getpid()}
 
     identity = {key: task[key] for key in ("author", "title", "chapter_number", "language")}
     token = render_context.set({**identity, "parent_job_id": task["job_id"]})

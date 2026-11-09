@@ -9,6 +9,12 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).parents[1] / 'src/artifact_editor/chapter'
 
 
+@pytest.fixture(autouse=True)
+def isolated_import_library(tmp_path, monkeypatch):
+    import const
+    monkeypatch.setattr(const, 'LIBRARY_DIR', str(tmp_path))
+
+
 def load(name):
     spec = importlib.util.spec_from_file_location(name, ROOT / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
@@ -95,7 +101,7 @@ def test_import_keeps_three_trailing_illustrations_without_empty_phrases(monkeyp
     names = {'compress_ops', 'apply_paragraph_alignment', 'import_chapter_content'}
     nodes = [node for node in ast.parse(path.read_text()).body if isinstance(node, ast.FunctionDef) and node.name in names]
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), scope)
-    chapter = SimpleNamespace(language='en', aspect='test', title='Oz', author=SimpleNamespace(name='Baum'),
+    chapter = SimpleNamespace(soup=BeautifulSoup('<chapter/>', 'xml'), language='en', aspect='test', title='Oz', author=SimpleNamespace(name='Baum'),
                               get_chapterdir=lambda: 'chapter', get_paragraph_dir=lambda i: f'paragraphs/{i}',
                               save_delta=Mock(), save_timeline=Mock())
     chapter.replace_content = lambda soup: setattr(chapter, 'soup', soup)
@@ -211,7 +217,7 @@ def test_import_never_merges_narration_with_interrupted_dialogue(monkeypatch, tm
     names = {'compress_ops', 'apply_paragraph_alignment', 'import_chapter_content'}
     nodes = [node for node in ast.parse(path.read_text()).body if isinstance(node, ast.FunctionDef) and node.name in names]
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), scope)
-    chapter = SimpleNamespace(language='en', aspect='test', title='Oz', author=SimpleNamespace(name='Baum'),
+    chapter = SimpleNamespace(soup=BeautifulSoup('<chapter/>', 'xml'), language='en', aspect='test', title='Oz', author=SimpleNamespace(name='Baum'),
                               get_chapterdir=lambda: 'chapter', get_paragraph_dir=lambda i: f'paragraphs/{i}',
                               save_delta=Mock(), save_timeline=Mock())
     chapter.replace_content = lambda soup: setattr(chapter, 'soup', soup)

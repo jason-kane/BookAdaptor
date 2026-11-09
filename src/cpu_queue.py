@@ -14,6 +14,7 @@ import signal
 import traceback
 import time
 import uuid
+from artifact_editor.library.storage import protect_cpu_submission
 from werkzeug.routing import BuildError
 
 import redis
@@ -27,6 +28,7 @@ RUNNING = "cpu_jobs:running"
 POOL = "cpu_jobs:pool"
 FAILURES = "cpu_jobs:failures"
 RECENT = "cpu_jobs:recent"
+FAILURE_RETENTION_SECONDS = 7 * 24 * 60 * 60
 RENDER_RUNNING = "chapter_render:running"
 PAYLOAD_PREFIX = "cpu_job_payload:"
 CANCEL_PREFIX = "task_cancelled:"
@@ -114,7 +116,7 @@ def cancel_dependents(client, parent_job_id):
     for raw in client.hvals(RUNNING):
         task = json.loads(raw)
         if task.get("parent_job_id") == parent_job_id:
-            client.set(CANCEL_PREFIX + task["job_id"], "1", ex=86400)
+            client.set(CANCEL_PREFIX + task["job_id"], "1")
     for queue in (PRIORITY_QUEUE, VIDEO_QUEUE):
         for raw in client.lrange(queue, 0, -1):
             task = json.loads(raw)
@@ -142,7 +144,9 @@ def cancel_task(client, job_id, *, allow_running=False):
             if task.get("job_id") != job_id:
                 continue
             if client.lrem(queue, 1, raw):
-                client.set(CANCEL_PREFIX + job_id, "1", ex=86400)
+                # Keep this tombstone until an explicit retry clears it. Render
+                # claims survive worker restarts and can be recovered much later.
+                client.set(CANCEL_PREFIX + job_id, "1")
                 if queue == CPU_QUEUE:
                     finish_cancelled_cpu(client, task, raw)
                 else:
@@ -159,9 +163,12 @@ def cancel_task(client, job_id, *, allow_running=False):
     task = next((item for item in active if item.get("job_id") == job_id), None)
     if task is None:
         return {**rejected, "message": "Task has already finished or is no longer queued"}
+    if task.get('action') == 'move_book':
+        return {**rejected, 'message': 'A running book move must finish verifying and cleaning up its source before it can stop.'}
     if not allow_running:
         return {**rejected, "message": "Task has started. Confirm cancellation of the running task."}
-    client.set(CANCEL_PREFIX + job_id, "1", ex=86400)
+    # Keep cancellation durable across long shutdowns and Redis task recovery.
+    client.set(CANCEL_PREFIX + job_id, "1")
     if "batch_id" not in task:
         client.hset(f"video_job:{job_id}", mapping={"state": "cancelling", "message": "Cancelling task…"})
         cancel_dependents(client, job_id)
@@ -206,8 +213,16 @@ def batch_key(batch_id):
 
 
 def execute(task, chapters):
+    from artifact_editor.library.storage import guard_task
+    guard_task(task)
     arguments = task["arguments"]
-    if task["action"] == "draw_frame":
+    if task["action"] == "move_book":
+        from artifact_editor.library.storage import execute_transfer
+        execute_transfer(task)
+    elif task["action"] == "assemble_book":
+        from artifact_editor.book.textoviva import execute as assemble_book
+        assemble_book(task)
+    elif task["action"] == "draw_frame":
         from artifact_editor.author.author import Author
         from artifact_editor.chapter.chapter import Chapter
         from artifact_editor.frames.frames import draw_frame
@@ -235,7 +250,7 @@ def run_task(client, payload, worker_id, chapters, processing_key=PROCESSING):
     task = prepare(task)
     key = batch_key(task["batch_id"])
     public = {k: v for k, v in task.items() if k != "arguments"}
-    public.update(worker_id=worker_id, state="running", started_at=time.time())
+    public.update(worker_id=worker_id, pid=os.getpid(), state="running", started_at=time.time())
     client.hset(RUNNING, worker_id, json.dumps(public))
     if task.get('track_status'):
         client.set(f"cpu_job:{task['job_id']}", json.dumps(public), ex=86400)
@@ -278,8 +293,8 @@ def run_task(client, payload, worker_id, chapters, processing_key=PROCESSING):
                 if error:
                     pipe.hset(key, "error", error)
                     pipe.lpush(FAILURES, json.dumps(public))
-                    pipe.ltrim(FAILURES, 0, 9)
-                    pipe.expire(FAILURES, 86400)
+                    pipe.ltrim(FAILURES, 0, 49)
+                    pipe.expire(FAILURES, FAILURE_RETENTION_SECONDS)
                 pipe.expire(key, 86400)
                 pipe.hdel(RUNNING, worker_id)
                 pipe.lrem(processing_key, 1, payload)
@@ -386,6 +401,7 @@ class Batch:
         self.client.hset(self.key, mapping={"completed": 0, "failed": 0, "total": 0})
         self.client.expire(self.key, 86400)
 
+    @protect_cpu_submission
     def submit(self, action, arguments, label):
         if self.parent_job_id and cancellation_requested(self.client, {"job_id": self.parent_job_id}):
             raise TaskCancelled("Parent task cancelled by user")
@@ -465,7 +481,7 @@ def retry_task(client, job_id):
     task.update(job_id=uuid.uuid4().hex, batch_id=uuid.uuid4().hex)
     task.pop("parent_job_id", None)
     task.pop("state", None)
-    for field in ("worker_id", "started_at", "completed_at", "duration_seconds", "message",
+    for field in ("worker_id", "pid", "started_at", "completed_at", "duration_seconds", "message",
                   "debug_details", "percent", "timing"):
         task.pop(field, None)
     # A one-task batch keeps the original render's counters and cancellation
@@ -527,7 +543,7 @@ def snapshot(client, capacity=12):
     active, queued = estimator.parallel(active, queued, pool.get('workers', 0))
     renders = [estimator.attach(task) for task in renders]
     # Never send frame arguments or complete chapter/workflow data to the browser.
-    fields = ("job_id", "batch_id", "parent_job_id", "label", "action", "worker_id",
+    fields = ("job_id", "batch_id", "parent_job_id", "label", "action", "worker_id", "pid",
               "state", "message", "started_at", "duration_seconds", "chapter",
               "author", "title", "chapter_number", "language", "image_index",
               "thumbnail_image_index",
@@ -536,6 +552,15 @@ def snapshot(client, capacity=12):
               "timing_units", "timing_unit")
     def public(task):
         item = {k: task[k] for k in fields if k in task}
+        if item.get("action") == "move_book":
+            from artifact_editor.library.storage import status_key, task_identity
+            identity = task_identity(task)
+            transfer = client.hgetall(status_key(*identity)) if identity else {}
+            # A previous attempt must not supply progress for a later move.
+            if transfer.get("job_id") == item.get("job_id"):
+                for field in ("bytes_done", "bytes_total", "phase", "message"):
+                    if field in transfer:
+                        item[field] = transfer[field]
         state = item.get("state", "queued")
         if item.get("action") in {
             "chapter_missing_animations",
@@ -571,6 +596,7 @@ def snapshot(client, capacity=12):
         item = public(task)
         item["retryable"] = bool(
             task.get("state") in ("failed", "complete", "cancelled")
+            and task.get("action") in {"draw_frame", "encode_video", "typeset_latex"}
             and client.exists(f"{PAYLOAD_PREFIX}{task.get('job_id', '')}")
         )
         return item
@@ -582,8 +608,8 @@ def snapshot(client, capacity=12):
             "renders": [public(task) for task in renders],
             "completed": [with_retry(estimator.attach(task)) for raw in client.lrange(RECENT, 0, 9)
                           if (task := json.loads(raw)).get('completed_at', 0) >= time.time() - 90],
-            "failed": [with_retry(estimator.attach(task)) for raw in client.lrange(FAILURES, 0, 2)
-                       if (task := json.loads(raw)).get('completed_at', 0) >= time.time() - 300]}
+            "failed": [with_retry(estimator.attach(task)) for raw in client.lrange(FAILURES, 0, 9)
+                       if (task := json.loads(raw)).get('completed_at', 0) >= time.time() - FAILURE_RETENTION_SECONDS]}
 
 
 if __name__ == "__main__":

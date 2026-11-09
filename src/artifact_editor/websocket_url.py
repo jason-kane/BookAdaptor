@@ -5,10 +5,10 @@ from urllib.parse import urlsplit, urlunsplit
 from flask import request
 
 
-def websocket_url():
+def websocket_url(path='/ws'):
     host = urlsplit(request.host_url).hostname
     # Preserve brackets for IPv6 addresses when attaching the service port.
     if ":" in host:
         host = f"[{host}]"
     scheme = "wss" if request.is_secure else "ws"
-    return urlunsplit((scheme, f"{host}:5001", "/ws", "", ""))
+    return urlunsplit((scheme, f"{host}:5001", path, "", ""))

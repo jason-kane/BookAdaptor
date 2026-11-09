@@ -40,7 +40,7 @@ def rerender_chapter(chapter, progress=None, image_index=None, animation_prompt=
         if progress:
             progress(1, "Checking chapter text layers")
         if ensure_text_layers(chapter) and progress:
-            progress(3, "Rebuilt missing chapter text layers")
+            progress(3, "Rebuilt outdated or missing chapter text layers")
 
         if theater_stage == "rough":
             from artifact_editor.theater.rendering import (

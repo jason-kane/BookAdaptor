@@ -439,7 +439,9 @@ def remove_image_animation(chapter, image):
             explicit_path = library_root / explicit_video.lstrip("/")
         try:
             explicit_path = explicit_path.resolve()
-            if explicit_path.is_relative_to(library_root) and explicit_path.is_file():
+            within_library = (explicit_path.is_relative_to(library_root)
+                              or explicit_path.is_relative_to(Path(const.SHELF_DIR).resolve()))
+            if within_library and explicit_path.is_relative_to(paragraph_dir.resolve()) and explicit_path.is_file():
                 explicit_path.unlink()
         except (OSError, ValueError):
             pass

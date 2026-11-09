@@ -382,11 +382,13 @@ class TimelineTests(unittest.TestCase):
         self.assertIn('draggable="true"', rendered)
         self.assertIn('data-timeline-index="8"', rendered)
         self.assertIn('Not generated', rendered)
-        preview = BeautifulSoup(rendered, 'html.parser').find('img')
-        self.assertEqual(preview['src'], '/static/images/x.png')
+        item = BeautifulSoup(rendered, 'html.parser').select_one('.chapter-timeline-image')
+        self.assertEqual(item['data-timeline-thumbnail-url'], '/image/8')
+        self.assertNotIn('data-timeline-background-url', item.attrs)
+        self.assertEqual(item.select_one('[data-timeline-background-marker]')['data-background-url'], '')
         image['src'] = 'generated.png'
         rendered = env.get_template('chapter_timeline_image.html').render(chapter=self.chapter, image=image)
-        self.assertEqual(BeautifulSoup(rendered, 'html.parser').find('img')['src'], '/image/8')
+        self.assertEqual(BeautifulSoup(rendered, 'html.parser').select_one('.chapter-timeline-image')['data-timeline-background-url'], '/image/8')
 
     def test_remove_all_metadata_preserves_image_assets_timing_and_workflows(self):
         preserved = {'index': '4', 'src': 'picture.png', 'animated_src': 'animation.mp4',
@@ -439,7 +441,7 @@ class TimelineTests(unittest.TestCase):
         for filename in ['first.png', 'replacement.png']:
             image['src'] = filename
             rendered = template.render(chapter=self.chapter, image=image)
-            url = BeautifulSoup(rendered, 'html.parser').find('img')['src']
+            url = BeautifulSoup(rendered, 'html.parser').select_one('.chapter-timeline-image')['data-timeline-thumbnail-url']
             self.assertIn('v=' + filename, url)
             self.assertIn('image_index=4', url)
             urls.append(url)
@@ -464,8 +466,11 @@ class TimelineTests(unittest.TestCase):
             self.assertEqual(label['hx-swap-oob'], 'outerHTML')
             self.assertEqual('Not generated' in label.text, not bool(src))
             self.assertIn('Image 7', label.text)
-            self.assertEqual(len(previews), 2)
+            self.assertEqual(len(previews), 1)
             self.assertTrue(all(preview['src'] == expected for preview in previews))
+            marker = BeautifulSoup(rendered, 'html.parser').select_one('[data-timeline-background-marker]')
+            self.assertEqual(marker['hx-swap-oob'], 'outerHTML')
+            self.assertEqual(marker['data-background-url'], '/image/7' if src else '')
 
     def test_add_to_empty_image_timeline_and_missing_phrase(self):
         for image in self.soup.find_all('image'):

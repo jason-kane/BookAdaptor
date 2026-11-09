@@ -8,7 +8,7 @@
         hx-get="{{ url_for('library.book.chapter.timeline_image_editor', image_index=image['index'], **chapter.kwargs) }}"
         hx-target="#timeline-image-editor-{{ image['index'] }}" hx-swap="innerHTML"
         hx-trigger="click once">
-    {% with timing=entry.timing if entry is defined else timing, timing_id='chapter-image-timing-' ~ image['index'], missing_image=entry.missing_image if entry is defined else not image.get('src'), animation_disabled=image.get('do_not_animate') == '1' %}
+    {% with timing=entry.timing if entry is defined else timing, timing_id='chapter-image-timing-' ~ image['index'], missing_image=entry.missing_image if entry is defined else not image.get('src'), animation_disabled=image.get('do_not_animate') == '1', animation_ready=entry.animation_ready if entry is defined else false %}
     {% include "chapter_phrase_timing.html" %}
     {% endwith %}
     <span aria-hidden="true" title="Drag to move image">⠿</span>

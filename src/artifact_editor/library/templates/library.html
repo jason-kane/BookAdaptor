@@ -1,59 +1,125 @@
 {% extends "base.html" %}
-
-{% block title %}
-<title>Your Library</title>
-{% endblock %}
-
+{% block title %}<title>Your Library</title>{% endblock %}
 {% block styles %}
 <style>
-  .clickable-card {
-    position: relative;
-    cursor: pointer;
-    border: 3px solid #410f80;
-    height: 20em;
-  }
-  .clickable-card:hover {
-    border-color: #ff00ff;
-  }
-  .card-link {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    text-indent: -9999px; /* Hide link text */
-  }   
-  .author {
-    border: 1px solid var(--wa-color-neutral-300);
-    border-radius: var(--wa-border-radius-m);
-    background: #484848;
-    border: 1px solid grey;
-    padding: 12px;
-    min-height: 422px;
-  }
+body:has(.library-page) > .wa-stack { gap: 1rem; }
+body:has(.library-page) > .wa-stack > .wa-split { flex-wrap: wrap; gap: .75rem 1.5rem; padding: .75rem 1rem 0; }
+.library-page { box-sizing: border-box; width: 100%; margin: 0; padding: 0 1rem 1.5rem; }
+.library-capacity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 0 0 1rem; }
+.library-capacity-card { min-width: 0; padding: .85rem 1rem; border: 1px solid var(--wa-color-surface-border, #30313e); border-radius: .75rem; background: var(--wa-color-surface-default); }
+.library-capacity-card h2 { margin: 0 0 .55rem; font-size: .95rem; }
+.library-capacity-card p { margin: .35rem 0 0; font-size: .8rem; color: var(--wa-color-text-quiet); }
+.library-capacity-card strong { color: var(--wa-color-text-normal, inherit); }
+.library-capacity-meter { display: block; width: 100%; height: .65rem; overflow: hidden; border-radius: 999px; background: var(--wa-color-surface-border, #30313e); accent-color: var(--wa-color-focus, #8c83d9); }
+.library-capacity-meter::-webkit-meter-bar { border: 0; border-radius: 999px; background: var(--wa-color-surface-border, #30313e); }
+.library-capacity-meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--wa-color-focus, #8c83d9); }
+.library-capacity-meter::-moz-meter-bar { border-radius: 999px; background: var(--wa-color-focus, #8c83d9); }
+.library-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.25rem; margin: 0; font-size: .875rem; }
+.library-controls label { display: flex; gap: .5rem; align-items: center; }
+.library-controls select { width: auto; max-width: 100%; margin: 0; color: inherit; background: var(--wa-color-surface-default); border: 1px solid var(--wa-color-surface-border, #30313e); border-radius: .4rem; padding: .4rem .6rem; font: inherit; }
+.library-controls input { margin: 0; }
+.library-authors { columns: 320px; column-gap: 1rem; }
+.library-author { break-inside: avoid; margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--wa-color-surface-border, #30313e); border-radius: .75rem; background: var(--wa-color-surface-default); }
+.library-author h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .65rem; margin: 0 0 .65rem; font-size: 1.125rem; line-height: 1.4; }
+.library-author h2 a { color: inherit; text-decoration: none; }
+.library-author h2 a:hover { text-decoration: underline; }
+.library-author-count { font-size: .75rem; font-weight: normal; white-space: nowrap; color: var(--wa-color-text-quiet); }
+.library-series { margin: .5rem 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.library-series > summary { margin: 0; border-radius: 0; background: transparent; padding: .5rem 0; cursor: pointer; border-top: 1px solid var(--wa-color-surface-border, #30313e); }
+.library-series h3 { display: inline; margin: 0; font-size: .875rem; line-height: 1.4; }
+.library-series h3 small { margin-inline-start: .25rem; font-size: .75rem; font-weight: normal; color: var(--wa-color-text-quiet); }
+.library-books { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: .65rem; margin-top: .35rem; }
+.library-book { display: block; min-width: 0; --spacing: .75rem; position: relative; border: 1px solid var(--wa-color-surface-border, #30313e); border-radius: .5rem; }
+.library-book::part(body) { padding: .75rem; }
+.library-book:hover, .library-book:focus-within { border-color: var(--wa-color-focus, #8c83d9); }
+.library-book a, .library-book-heading { display: flex; flex-direction: column; gap: .65rem; align-items: flex-start; color: inherit; text-decoration: none; }
+.library-book a:hover h4 { text-decoration: underline; }
+.library-book img { display: block; width: 136px; height: 102px; object-fit: contain; border-radius: .2rem; }
+.library-book h4 { margin: 0; font-size: .9375rem; line-height: 1.4; overflow-wrap: anywhere; }
+.library-book p { margin: .5rem 0 0; font-size: .8125rem; line-height: 1.45; color: var(--wa-color-text-quiet); }
+.library-book .library-location { display: inline-block; font-size: .75rem; font-weight: 600; }
+.library-book[data-location="storage"] .library-location { color: var(--wa-color-text-normal, #b7b1ed); }
+.library-book wa-button { display: block; width: fit-content; max-width: 100%; margin-top: .65rem; }
+.library-book wa-button::part(base) { box-sizing: border-box; max-width: 100%; font-size: .8125rem; }
+.library-book wa-button::part(label) { white-space: normal; overflow-wrap: anywhere; }
+.library-book .library-transfer-status { color: inherit; overflow-wrap: anywhere; }
+.library-transfer-status:empty { display: none; }
+.library-series-empty, #library-filter-empty { margin: .65rem 0; font-size: .875rem; color: var(--wa-color-text-quiet); }
+.library-book[hidden], .library-author[hidden], .library-series-empty[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  .library-capacity { grid-template-columns: 1fr; }
+  .library-authors { columns: 1; }
+  .library-page { padding-inline: .75rem; }
+  .library-author { padding: .85rem; }
+  .library-controls { width: 100%; }
+  .library-controls label { flex-wrap: wrap; }
+}
 </style>
 {% endblock %}
-
+{% block navbar_center %}
+  <div class="library-controls">
+    <label>Location <select id="library-location"><option value="all">All locations</option><option value="active">Active</option><option value="shelf">Shelf (read/write)</option><option value="storage">Storage (read-only)</option></select></label>
+    <label><input type="checkbox" id="show-unprocessed-books">Show unprocessed books</label>
+  </div>
+{% endblock %}
 {% block body %}
-<div class="wa-cluster">
-    {% for author in authors %}
-    <div class="wa-stack author">
-        <h2><a href="{{ url_for('library.author.author_base', author=author.name) }}">{{author.name}}</a></h2>
-
-        <div class="wa-cluster">
-            {% for book in author.books %}                
-            <wa-card class="card-media clickable-card" style="width: 200px;">   
-                <a class="card-link" href="{{ url_for('library.book.table_of_contents', author=author.name, title=book.title) }}"></a>
-                <img
-                    slot="media"
-                    src="{{ url_for('library.book_cover', author=author.name, title=book.title) }}"
-                    alt="Cover of {{book.title}} by {{author.pretty_name}}"
-                />
-                <h4>{{book.title}}</h4>
-            </wa-card>
-            {% endfor %}
-        </div>
-    </div>
+<main class="library-page" id="library-page" aria-label="Library" data-storage-available="{{ 'true' if storage_available else 'false' }}" data-shelf-available="{{ 'true' if shelf_available else 'false' }}" data-transfer-websocket="{{ websocket_url('/library-transfers-ws') }}">
+  <section class="library-capacity" aria-label="Disk capacity">
+    {% for name in ('storage', 'shelf', 'active') %}
+    {% set disk = capacity[name] %}
+    <article class="library-capacity-card">
+      <h2>{{ name|title }}</h2>
+      {% if disk %}
+      {% if loop.first or capacity.storage.device != disk.device %}
+      <meter class="library-capacity-meter" min="0" max="100" value="{{ disk.percent }}" aria-label="{{ name|title }} disk used: {{ disk.percent }} percent"></meter>
+      <p><strong>{{ disk.free|filesizeformat(binary=True) }} free</strong> of {{ disk.total|filesizeformat(binary=True) }}</p>
+      <p>{{ disk.used|filesizeformat(binary=True) }} used · {{ disk.percent }}% used</p>
+      {% else %}
+      <p>Shares disk with Storage</p>
+      <p><strong>{{ disk.free|filesizeformat(binary=True) }} free</strong> of {{ disk.total|filesizeformat(binary=True) }}</p>
+      {% endif %}
+      {% else %}<p>Unavailable</p>{% endif %}
+    </article>
     {% endfor %}
-</div>
+  </section>
+  {% if not shelf_available %}<p role="status">Shelf is unavailable.</p>{% endif %}
+  {% if not storage_available %}<p role="status">External storage is unavailable. Connect the drive to move or list stored books.</p>{% endif %}
+  <p id="library-filter-empty" hidden>No books match the current filters.</p>
+  <div class="library-authors">
+    {% for author in authors %}
+    <section class="library-author" data-author="{{ author.name }}" data-processed-count="{{ author.processed_count }}" {% if not author.processed_count %}hidden{% endif %}>
+      <h2>{% if author.is_active %}<a href="{{ url_for('library.author.author_base', author=author.name) }}">{{ author.name }}</a>{% else %}{{ author.name }}{% endif %} <span class="library-author-count">{{ author.processed_count }}/{{ author.book_count }} processed</span></h2>
+      {% for group in author.book_groups %}
+      <details class="library-series" data-series-key="{{ group.key }}" {% if group.processed_count %}open{% endif %}>
+        <summary><h3>{{ group.name }} <small title="{{ group.processed_count }} processed / {{ group.books|length }} books">({{ group.processed_count }}/{{ group.books|length }})</small></h3></summary>
+        <p class="library-series-empty" {% if group.processed_count %}hidden{% endif %}>No books match the current filters.</p>
+        <div class="library-books">
+          {% for book in group.books %}
+          <wa-card class="library-book" data-author="{{ author.name }}" data-title="{{ book.title }}" data-location="{{ book.location }}" data-transfer-state="{{ book.transfer.get('state', '') }}" data-location-url="{{ url_for('library.move_book', author=author.name, title=book.title) }}" data-processed="{{ 'true' if book.processed else 'false' }}" {% if not book.processed %}hidden{% endif %}>
+            {% if book.location != 'storage' and not book.conflict %}
+            <a href="{{ url_for('library.book.table_of_contents', author=author.name, title=book.title) }}">
+            {% else %}<div class="library-book-heading">{% endif %}
+              <h4>{{ book.title }}</h4>
+              <img loading="lazy" src="{{ url_for('library.book_cover', author=author.name, title=book.title) }}" alt="Cover of {{ book.title }} by {{ author.name }}">
+            {% if book.location != 'storage' and not book.conflict %}</a>{% else %}</div>{% endif %}
+            {% if book.publication_date or book.publication_year %}<p>{{ book.publication_date or book.publication_year }}</p>{% endif %}
+            <p class="library-location">{{ {'active': 'Active', 'shelf': 'Shelf · Read/write', 'storage': 'Storage · Read-only'}[book.location] }}</p>
+            <p class="library-book-size" title="Approximate disk usage">On disk · {{ book.disk_size }}</p>
+            {% if book.conflict and not book.move_controls %}<p role="alert">Copies exist in multiple locations. Resolve the duplicate before moving or editing.</p>{% else %}
+            {% for control in book.move_controls %}
+            <wa-button size="small" appearance="outlined" data-move-target="{{ control.target }}" data-move-source="{{ control.source }}" {% if not control.available or book.transfer.get('state') in ('queued', 'running') %}disabled{% endif %}>{{ 'Finish move to' if control.resume else 'Move to' }} {{ control.target|title }}</wa-button>
+            {% endfor %}
+            {% endif %}
+            <p class="library-transfer-status" role="status" aria-live="polite">{{ book.transfer.get('message', '') }}</p>
+          </wa-card>
+          {% endfor %}
+        </div>
+      </details>
+      {% else %}<p>No books yet.</p>{% endfor %}
+    </section>
+    {% endfor %}
+  </div>
+</main>
+<script defer src="{{ url_for('static', filename='js/library-groups.js', v='4') }}"></script>
+<script defer src="{{ url_for('static', filename='js/library-storage.js', v='6') }}"></script>
 {% endblock %}

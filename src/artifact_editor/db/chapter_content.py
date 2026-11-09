@@ -14,6 +14,8 @@ from uuid import uuid4
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from sqlalchemy import select, text
 
+from artifact_editor.chapter_errors import RecordDeletedError
+
 from . import models as m
 from .session import session_scope
 
@@ -383,8 +385,10 @@ def save_records(chapter, records, *, include_contents=True, engine=None):
                 raise TypeError("Expected a chapter record")
             previous = _find(baseline, record)
             target = _find(latest, previous if previous is not None else record)
-            if previous is None or target is None:
+            if previous is None:
                 raise ValueError(f"{record.name} is not persisted; use save_timeline() for structural changes")
+            if target is None:
+                raise RecordDeletedError(f"{record.name} {record.get('index', '')} is not persisted; it was deleted")
             for key, value in record.attrs.items():
                 if key not in previous.attrs or str(value) != str(previous[key]):
                     target[key] = deepcopy(value)
@@ -410,6 +414,56 @@ def delete_content(chapter, *, engine=None):
         row = _locked_chapter(session, chapter)
         # Chapter.delete removes the entire numbered chapter directory,
         # including every language, so the database must follow that scope.
-        for sibling in session.scalars(select(m.Chapter).where(
-                m.Chapter.book_id == row.book_id, m.Chapter.number == row.number)):
+        siblings = list(session.scalars(select(m.Chapter).where(
+            m.Chapter.book_id == row.book_id,
+            m.Chapter.number >= row.number,
+        ).order_by(m.Chapter.number, m.Chapter.language).with_for_update()))
+        removed = [sibling for sibling in siblings if sibling.number == row.number]
+        later = [sibling for sibling in siblings if sibling.number > row.number]
+        for sibling in removed:
             session.delete(sibling)
+        session.flush()
+
+        # Move later chapter rows above the current range first to avoid the
+        # (book_id, number, language) unique constraint during compaction.
+        if later:
+            old_numbers = {sibling.id: sibling.number for sibling in later}
+            offset = max(old_numbers.values()) + len(later) + 1
+            for sibling in later:
+                sibling.number += offset
+            session.flush()
+            targets = {
+                number: row.number + index
+                for index, number in enumerate(sorted(set(old_numbers.values())))
+            }
+            for sibling in later:
+                sibling.number = targets[old_numbers[sibling.id]]
+            session.flush()
+
+
+def insert_chapter_after(chapter, inserted_chapter, *, engine=None):
+    """Shift later chapter rows and create an empty row for the insertion."""
+    with session_scope(engine=engine) as session:
+        current = _locked_chapter(session, chapter)
+        inserted_number = int(current.number) + 1
+        later = list(session.scalars(select(m.Chapter).where(
+            m.Chapter.book_id == current.book_id,
+            m.Chapter.number >= inserted_number,
+        ).order_by(m.Chapter.number, m.Chapter.language).with_for_update()))
+        old_numbers = {row.id: row.number for row in later}
+        if later:
+            offset = max(old_numbers.values()) + len(later) + 1
+            for row in later:
+                row.number += offset
+            session.flush()
+            for row in later:
+                row.number = old_numbers[row.id] + 1
+            session.flush()
+        session.add(m.Chapter(
+            book_id=current.book_id,
+            number=inserted_number,
+            language=inserted_chapter.language,
+            title=inserted_chapter.chapter_title,
+            mood=inserted_chapter.mood,
+            theme=inserted_chapter.theme,
+        ))

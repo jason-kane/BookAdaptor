@@ -1,12 +1,18 @@
 // Replacing the phrase list temporarily collapses its scrollable height.
 // Keep the insertion phrase at the same viewport offset through that swap.
 const timelineInsertionPositions = new WeakMap();
-document.addEventListener('htmx:beforeSwap', event => {
+document.addEventListener('htmx:beforeRequest', event => {
     const {target, xhr, requestConfig} = event.detail;
     const button = requestConfig?.elt?.closest('[data-preserve-timeline-position]');
     const viewport = document.getElementById('chapter-timeline-scroll');
     if (target?.id !== 'chapter-phrase-list' || !button || !viewport || !xhr) return;
-    const anchor = button.closest('[data-timeline-type="phrase"]');
+    const phrase = button.closest('[data-timeline-type="phrase"]');
+    const phraseRows = Array.from(document.querySelectorAll(
+        '#chapter-phrase-list > [data-timeline-type="phrase"]'));
+    const phraseIndex = phraseRows.indexOf(phrase);
+    const anchor = button.dataset.preserveTimelinePosition === 'previous-phrase' && phraseIndex > 0
+        ? phraseRows[phraseIndex - 1]
+        : phrase;
     timelineInsertionPositions.set(xhr, {
         top: viewport.scrollTop,
         anchorId: anchor?.id,
@@ -23,14 +29,87 @@ function restoreTimelineInsertionPosition(event) {
             ? viewport.scrollTop + anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top - position.offset
             : position.top;
     }
-    if (event.type === 'htmx:afterSettle') timelineInsertionPositions.delete(event.detail.xhr);
+    if (event.type === 'htmx:afterSettle') {
+        // Custom elements finish sizing after HTMX settles. Keep the anchor
+        // fixed while those asynchronous layout changes resize the list.
+        const list = document.getElementById('chapter-phrase-list');
+        let frame;
+        const restore = () => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => restoreTimelineInsertionPosition({detail: event.detail}));
+        };
+        const observer = new ResizeObserver(restore);
+        if (list) {
+            observer.observe(list);
+            for (const row of list.children) observer.observe(row);
+        }
+        const finish = () => {
+            observer.disconnect();
+            cancelAnimationFrame(frame);
+            timelineInsertionPositions.delete(event.detail.xhr);
+            viewport?.removeEventListener('wheel', finish);
+            viewport?.removeEventListener('pointerdown', finish);
+            viewport?.removeEventListener('keydown', finish);
+        };
+        // Stop preserving immediately when the user moves the timeline.
+        viewport?.addEventListener('wheel', finish, {passive: true});
+        viewport?.addEventListener('pointerdown', finish);
+        viewport?.addEventListener('keydown', finish);
+        restore();
+        setTimeout(finish, 1500);
+    }
 }
 document.addEventListener('htmx:afterSwap', restoreTimelineInsertionPosition);
 document.addEventListener('htmx:afterSettle', restoreTimelineInsertionPosition);
 
+let timelineHideComplete = false;
+try {
+    timelineHideComplete = localStorage.getItem('chapter-timeline-hide-complete') === 'true';
+} catch (_) { /* Storage may be unavailable. Keep the page-local preference. */ }
+
+function initializeTimelineCompletionFilter(list) {
+    const checkbox = document.getElementById('chapter-timeline-hide-complete');
+    if (!checkbox) return;
+    checkbox.checked = timelineHideComplete;
+    if (list.dataset.completionFilterInitialized) return;
+    list.dataset.completionFilterInitialized = 'true';
+    const apply = () => {
+        for (const panel of list.children) {
+            const type = panel.dataset.timelineType;
+            if (!type) continue;
+            const timing = panel.querySelector('.chapter-timeline-timing');
+            const complete = type === 'silence'
+                || (type === 'scene' && panel.querySelector('[data-view-type="scene"]:not([disabled])') !== null)
+                || (type === 'phrase' && timing?.dataset.missingAudio === 'false')
+                || (type === 'image' && timing?.dataset.missingImage === 'false'
+                    && timing.dataset.animationReady === 'true');
+            panel.hidden = timelineHideComplete && complete;
+        }
+    };
+    const change = () => {
+        timelineHideComplete = checkbox.checked;
+        try {
+            localStorage.setItem('chapter-timeline-hide-complete', String(timelineHideComplete));
+        } catch (_) { /* The filter also works without persistent storage. */ }
+        apply();
+    };
+    checkbox.addEventListener('change', change);
+    const observer = new MutationObserver(apply);
+    observer.observe(list, {childList: true, subtree: true, attributes: true,
+        attributeFilter: ['data-missing-audio', 'data-missing-image', 'data-animation-ready', 'disabled']});
+    document.addEventListener('htmx:beforeCleanupElement', function cleanup(event) {
+        if (event.detail.elt !== list && !event.detail.elt.contains?.(list)) return;
+        observer.disconnect();
+        checkbox.removeEventListener('change', change);
+        document.removeEventListener('htmx:beforeCleanupElement', cleanup);
+    });
+    apply();
+}
+
 function initializeChapterTimeline() {
     const list = document.getElementById('chapter-phrase-list');
     if (!list) return;
+    initializeTimelineCompletionFilter(list);
     initializeTimelineImageNavigation(list);
     initializeTimelineImageBackgrounds(list);
     if (list.dataset.initialized) return;
@@ -42,25 +121,26 @@ function initializeChapterTimeline() {
         const timeLabel = event.target.closest('.chapter-timeline-time');
         // Focusing the label must not select it before its click toggles it.
         if (timeLabel && event.type === 'focusin') return;
-        if (timeLabel && panel.dataset.timelineType === 'phrase') {
-            const textarea = panel.querySelector('wa-textarea.phrase-editor');
-            if (textarea) {
-                // Use the textarea's existing HTMX request and response context.
-                textarea.click();
+        if (event.type === 'click' && panel.dataset.timelineType === 'phrase') {
+            const collapsed = panel.querySelector('wa-textarea.phrase-editor');
+            const control = event.target.closest('wa-button, wa-select, button, a, input, audio, .ql-editor, .ql-toolbar');
+            if ((collapsed && !control) || (timeLabel && !collapsed)) {
+                // Handle expansion here instead of forwarding a synthetic click
+                // through a web component and a second HTMX event handler.
+                event.stopPropagation();
+                if (panel.dataset.editorLoading) return;
+                panel.dataset.editorLoading = 'true';
+                htmx.ajax('GET', panel.dataset.editorUrl, {
+                    source: panel,
+                    target: panel,
+                    swap: 'none',
+                    values: {
+                        previous_phrase_index: window.previous_phrase_index ?? -1,
+                        ...(collapsed ? {} : {collapse: '1'}),
+                    },
+                }).finally(() => { delete panel.dataset.editorLoading; });
                 return;
             }
-            if (panel.dataset.editorLoading) return;
-            panel.dataset.editorLoading = 'true';
-            htmx.ajax('GET', panel.dataset.editorUrl, {
-                source: panel,
-                target: panel,
-                swap: 'none',
-                values: {
-                    previous_phrase_index: window.previous_phrase_index ?? -1,
-                    collapse: '1',
-                },
-            }).finally(() => { delete panel.dataset.editorLoading; });
-            return;
         }
         const deselect = timeLabel && panel.classList.contains('selected');
         list.querySelectorAll(':scope > .selected').forEach(item => {
@@ -69,7 +149,7 @@ function initializeChapterTimeline() {
         if (panel.dataset.timelineType !== 'image') panel.classList.toggle('selected', !deselect);
         // Image labels live inside summary, whose default click toggles open.
     };
-    list.addEventListener('click', selectPanel);
+    list.addEventListener('click', selectPanel, true);
     list.addEventListener('focusin', selectPanel);
     list.addEventListener('keydown', event => {
         const label = event.target.closest('.chapter-timeline-time');
@@ -534,7 +614,7 @@ function initializeTimelineImageNavigation(list) {
     viewport.addEventListener('scroll', schedule, {...options, passive: true});
     window.addEventListener('resize', schedule, options);
     const rebuild = () => {
-        images = Array.from(list.querySelectorAll(':scope > [data-timeline-type="image"]'));
+        images = Array.from(list.querySelectorAll(':scope > [data-timeline-type="image"]')).filter(panel => !panel.hidden);
         const items = images.map(panel => {
             const url = new URL(panel.dataset.timelineThumbnailUrl, location.href);
             const marker = panel.querySelector('[data-timeline-background-marker]');
@@ -582,7 +662,7 @@ function initializeTimelineImageNavigation(list) {
     }, options);
     const observer = new MutationObserver(rebuild);
     observer.observe(list, {childList: true, subtree: true, attributes: true,
-        attributeFilter: ['data-timeline-thumbnail-url', 'data-background-url']});
+        attributeFilter: ['data-timeline-thumbnail-url', 'data-background-url', 'hidden']});
     const sizes = new ResizeObserver(schedule);
     sizes.observe(viewport);
     sizes.observe(nav);

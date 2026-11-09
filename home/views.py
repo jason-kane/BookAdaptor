@@ -95,6 +95,29 @@ def gpu_provider_status():
         return jsonify(error="Unable to inspect GPU provider services."), 503
 
 
+@bp.get("/api/gpu/provider/comfyui/ready")
+def comfyui_provider_ready():
+    from .programs import program_ready
+
+    try:
+        return jsonify(ready=program_ready("comfyui"))
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.error("Unable to check ComfyUI API readiness: %s", exc)
+        return jsonify(ready=False), 503
+
+
+@bp.get("/api/gpu/memory")
+def gpu_memory_status():
+    import subprocess
+    from .programs import gpu_free_memory
+
+    try:
+        return jsonify(free_gib=gpu_free_memory())
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        log.exception("Unable to measure GPU free memory")
+        return jsonify(error=str(exc)), 503
+
+
 @bp.post("/api/gpu/provider/switch")
 def switch_gpu_provider():
     from .programs import GPU_PROVIDER_SERVICES, switch_gpu_provider
@@ -225,3 +248,13 @@ def start_member(panel_id, service_name):
         log.error("Unable to start member %s: %s", service_name, exc)
         return jsonify(error="Unable to start this service. Please try again."), 503
     return jsonify(started=True)
+
+
+@bp.post("/api/training/reconcile")
+def reconcile_trainer():
+    from .programs import reconcile_trainer
+    try:
+        return jsonify(running=reconcile_trainer())
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.error("Unable to update trainer lifecycle: %s", exc)
+        return jsonify(error="Unable to update training service. Retry training."), 503

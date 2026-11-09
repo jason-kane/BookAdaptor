@@ -325,6 +325,7 @@ def chapter_timing_updates(chapter):
                         timing_id=f"chapter-{entry['type']}-timing-" + str(
                             entry['phrase'].index if entry['type'] == 'phrase' else entry[entry['type']]['index']),
                         timing=entry["timing"], missing_audio=entry.get("missing_audio", False),
+                        animation_ready=entry.get("animation_ready", False),
                         animation_disabled=(entry['type'] == 'image' and entry['image'].get('do_not_animate') == '1'),
                         missing_image=entry.get("missing_image", False), timing_oob=True)
         for entry in chapter.timeline()
@@ -399,6 +400,7 @@ def chapter_merge_with_previous_button(chapter, phrase_xml):
     )
     return f"""<wa-button
         hx-post="{merge_url}"
+        data-preserve-timeline-position="previous-phrase"
         hx-target="#chapter-phrase-list"
         hx-swap="innerHTML"
         hx-vals='{{"phrase_index": "{phrase_xml["index"]}", "page": "{request.args.get("page", 1)}"}}'

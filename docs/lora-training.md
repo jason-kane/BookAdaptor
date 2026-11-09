@@ -45,7 +45,6 @@ Training submissions are idempotent; editing is locked while queued or running.
 
 ```sh
 docker compose --profile training build lora_trainer
-docker compose --profile training up -d lora_trainer
 docker compose logs -f lora_trainer
 ```
 
@@ -54,12 +53,17 @@ application. Set `AI_TOOLKIT_REF` to a tested upstream commit or tag before buil
 to pin the trainer version; the default is upstream `main`.
 The trainer also installs Flask, Flask-Caching, and filelock because completed
 adapter registration imports the shared style catalog. After changing trainer
-dependencies, rebuild the image and recreate the service with the commands above.
+dependencies, rebuild the image and recreate the stopped service with
+`docker compose --profile training create lora_trainer`.
 
 The worker processes jobs serially and waits while `nvidia-smi` reports other
 GPU compute processes. Selecting Training stops ComfyUI and Llama and releases
 their GPU memory. Select ComfyUI or Llama manually after the LoRA run finishes.
-Its idle process does not load a model onto the GPU.
+The trainer stays stopped by default, including after Docker restarts. Submitting
+or retrying training calls Home to start it; after the queue finishes (success
+or failure), the worker calls Home to stop it. Home rechecks all persisted drafts
+before stopping, so another queued job keeps the worker running. Selecting
+Training mode alone does not start the trainer. Build the image before first use.
 
 First training downloads the Z-Image Turbo base model and its training adapter;
 the Hugging Face cache persists in the `ai_toolkit_cache` Docker volume. No

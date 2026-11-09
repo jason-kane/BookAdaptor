@@ -59,6 +59,8 @@ def publish_frame_completion(chapter, aspect, frame_index, identity=None):
         language = identity["language"]
         chapter_number = identity["chapter_number"]
         completed_at = time.time_ns()
+        from artifact_editor.library.book_size import mark_dirty
+        mark_dirty(r, author, title)
         url = (
             f"/library/{quote(author, safe='')}/{quote(title, safe='')}/"
             f"{int(chapter_number)}/{quote(language, safe='')}/frames/"

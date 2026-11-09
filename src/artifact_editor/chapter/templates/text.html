@@ -113,6 +113,64 @@
         --spacing: 0;
         padding-block: 0;
     }
+    .chapter-output-tabs {
+        position: relative;
+        height: 100%;
+        min-height: 0;
+    }
+    .chapter-output-tabs > wa-tab-group {
+        display: block;
+        height: 100%;
+        min-height: 0;
+    }
+    .chapter-output-tabs > wa-tab-group::part(base) {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+    .chapter-output-tabs > wa-tab-group::part(body) {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .chapter-output-tabs > wa-tab-group > wa-tab-panel {
+        position: relative;
+        display: none;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .chapter-output-tabs > wa-tab-group > wa-tab-panel[active] {
+        display: block;
+    }
+    .chapter-output-tabs > wa-tab-group > wa-tab-panel[data-scrollbar-panel] > [data-custom-scrollbar] > [data-scroll-viewport] > div {
+        min-height: 100%;
+    }
+    #player-stack {
+        height: 100%;
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .chapter-output-tabs > wa-tab-group::part(nav) {
+        padding-inline-end: 3.25rem;
+    }
+    .chapter-delete-trigger {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        z-index: 1;
+        width: 2.5rem;
+    }
+    .chapter-insert-trigger {
+        position: absolute;
+        top: 0.25rem;
+        right: 3rem;
+        z-index: 1;
+        width: 2.5rem;
+    }
     .chapter-column-content > wa-tab-group > wa-tab {
         height: 3.5rem;
         min-height: 0;
@@ -435,9 +493,20 @@
     }
     .chapter-phrase-column wa-tab-panel[name="timeline"] > .wa-stack > .chapter-timeline-scroll-area {
         position: absolute;
-        inset: 0;
+        inset: 2.75rem 0 0;
         height: auto;
         min-height: 0;
+    }
+    .chapter-timeline-controls {
+        position: absolute;
+        inset: 0 0 auto;
+        height: 2.75rem;
+        display: flex;
+        align-items: center;
+        padding-inline: 0.5rem;
+    }
+    #chapter-phrase-list > [data-timeline-type][hidden] {
+        display: none !important;
     }
     .chapter-rendered-scroll > canvas,
     .chapter-rendered-scroll > img {
@@ -478,6 +547,25 @@
         border: 1px solid #5c5b5b;
         margin-bottom: 0.5em;
         margin-top: 0.5em;
+    }
+    .chapter-silence-control {
+        display: flex;
+        align-items: end;
+        width: 100%;
+    }
+    .chapter-silence-control > wa-slider {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    wa-slider.silence span {
+        text-shadow: 1px 1px 1px black;
+    }
+    .chapter-silence-duration {
+        flex: 0 0 6rem;
+    }
+    .chapter-silence-duration input {
+        box-sizing: border-box;
+        width: 100%;
     }
     fieldset.phrase-container[data-timeline-type="phrase"] {
         min-width: 0;
@@ -806,6 +894,14 @@
         content: "16px";
     }
 
+    /* Quill leaves default formats inactive, though they are selected. */
+    .ql-snow .ql-picker:is(.ql-font, .ql-size) .ql-picker-label:not([data-value]) {
+        color: #06c;
+    }
+    .ql-snow .ql-picker:is(.ql-font, .ql-size) .ql-picker-label:not([data-value]) .ql-stroke {
+        stroke: #06c;
+    }
+
     .ql-snow .ql-picker.ql-size .ql-picker-label[data-value]::before,
     .ql-snow .ql-picker.ql-size .ql-picker-item[data-value]::before {
         content: attr(data-value) !important;
@@ -821,6 +917,9 @@
     }
     .ql-snow .ql-picker.ql-font [data-value="Times New Roman"]::before {
         font-family: "Times New Roman", serif;
+    }
+    .ql-snow .ql-picker.ql-font [data-value="Cardo"]::before {
+        font-family: "Cardo", serif;
     }
     .ql-snow .ql-picker.ql-font [data-value="Calibri"]::before {
         font-family: "Calibri", sans-serif;
@@ -850,33 +949,38 @@
 <script defer src="/static/js/library-image-leaves.js?v=2"></script>
 <script defer src="/static/js/frame-image-leaves.js?v=1"></script>
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='workflow-gating-10') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='playback-timing-changes-3') }}" defer></script>
 {% if chapter.get_aspect() != 'portrait' %}
 <script src="{{ url_for('static', filename='js/chapter-thumbnail.js', v='2') }}" defer></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='8') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-import.js', v='stable-video-gating-9') }}"
-    data-workflow-status-url="{{ url_for('library.book.chapter.chapter_workflow_status', **chapter.kwargs) }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-import.js', v='workflow-websocket-1') }}"
+    data-workflow-websocket="{{ websocket_url('/chapter-workflow-ws?' ~ {'author': chapter.author.name, 'title': chapter.title, 'chapter_number': chapter.number, 'language': chapter.language}|urlencode) }}" defer></script>
 <script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-image-delete.js', v='1') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-background-boundary-2') }}" defer></script>
-<script src="/static/js/chapter-typesetting.js?v=1" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-completion-4') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-typesetting.js', v='2') }}" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
-<script defer src="/static/js/styler-samples.js?v=no-provider-cooldown-2" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script defer src="/static/js/styler-samples.js?v=panel-state-3" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.
-    const fontFamilyArr = [false, "Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
+    const fontFamilyArr = [false, "Helvetica", "Cardo", "Roboto Condensed", "Times New Roman", "Calibri", "Calibri Light", "Sans-Serif"];
     let fonts = Quill.import("attributors/style/font");
     fonts.whitelist = fontFamilyArr.filter(Boolean);
     Quill.register(fonts, true);
 
-    const fontSizeArr = ['10px', '11px', '12px', '14px', false, '18px', '24px'];
+    const fontSizeArr = ['10px', '11px', '12px', '14px', false, '18px', '24px', '32px', '48px'];
     var Size = Quill.import('attributors/style/size');
     Size.whitelist = [...fontSizeArr.filter(Boolean), '16px'];
     Quill.register(Size, true);
 
     function showUniformTypography(editor) {
+        if (editor.refreshTypography) {
+            editor.refreshTypography();
+            queueMicrotask(editor.refreshTypography);
+            return;
+        }
         const update = () => {
             const runs = editor.getContents().ops.filter(operation =>
                 typeof operation.insert === 'string' && operation.insert.replace(/\n/g, '').length
@@ -899,13 +1003,19 @@
                 const picker = editor.theme.pickers.find(item => item.select === select);
                 if (picker) {
                     picker.update();
+                    // Quill can retain the selected item while resetting its label
+                    // during initialization. Restore both parts of the picker.
                     if (values.size > 1) picker.label.dataset.value = 'Mixed';
+                    else if (value !== false) picker.label.dataset.value = value;
+                    else delete picker.label.dataset.value;
                 }
             }
         };
         // Run after Quill's own toolbar and picker event handlers have finished.
+        editor.refreshTypography = update;
         editor.on('editor-change', () => queueMicrotask(update));
         update();
+        queueMicrotask(update);
     }
 
     function fixPreviousEditor(previous_simple_text) {
@@ -916,16 +1026,11 @@
         }
     }
 
-    function clearToolbars(phraseStack_id='phrase-stack') {
-        var phraseStack = document.getElementById(phraseStack_id);
-        Array.from(phraseStack.children).forEach(child => {
-            // are any of by children toolbars?
-            Array.from(child.children).forEach(quillComponent => {
-                if (quillComponent.getAttribute('role') === 'toolbar') {
-                    quillComponent.remove();
-                }
-            });
-        });        
+    function clearToolbars(phraseStack_id='phrase-stack', activeToolbar=null) {
+        const phraseStack = document.getElementById(phraseStack_id);
+        phraseStack?.querySelectorAll('.phrase-container .ql-toolbar').forEach(toolbar => {
+            if (toolbar !== activeToolbar) toolbar.remove();
+        });
     }    
 </script>
 
@@ -975,6 +1080,8 @@
 
     window.getChapterSectionsPayload = () => chapterSections.map(section => ({
         typesetting_method: section.typesetting_method,
+        section_type: section.section_type,
+        template: section.template || '',
         ops: section.editor.getContents().ops
     }));
 
@@ -1021,7 +1128,7 @@
         }
     }
 
-    function addChapterSection(sectionData = {typesetting_method: 'verse', ops: []}, relativeSection = null, position = 'after') {
+    function addChapterSection(sectionData = {typesetting_method: 'plain', ops: []}, relativeSection = null, position = 'after') {
         const relativeIndex = relativeSection ? chapterSections.indexOf(relativeSection) : -1;
         const insertIndex = relativeIndex >= 0
             ? relativeIndex + (position === 'before' ? 0 : 1)
@@ -1032,7 +1139,12 @@
         sectionElement.innerHTML = `
             <div id="${editorId}" class="text-editor chapter-section-editor"></div>
             <div class="wa-cluster chapter-section-controls">
-                <wa-select class="typesetting-method" label="Typesetting method" value="verse">
+                <wa-select class="section-type" label="Section" value="chapter_text">
+                    <wa-option value="book_page">Book Page</wa-option>
+                    <wa-option value="chapter_page">Chapter Page</wa-option>
+                    <wa-option value="chapter_text">Chapter Text</wa-option>
+                </wa-select>
+                <wa-select class="typesetting-method" label="Typesetting method" value="plain">
                     <wa-option value="verse">Verse</wa-option>
                     <wa-option value="plain">Plain</wa-option>
                 </wa-select>
@@ -1062,13 +1174,24 @@
         const section = {
             editor,
             element: sectionElement,
-            typesetting_method: sectionData.typesetting_method || 'verse'
+            typesetting_method: sectionData.typesetting_method || 'plain',
+            section_type: sectionData.section_type || 'chapter_text',
+            template: sectionData.template || ''
         };
         chapterSections.splice(insertIndex, 0, section);
         sectionElement.querySelector('.typesetting-method').value = section.typesetting_method;
         editor.setContents({ops: sectionData.ops || []});
         showUniformTypography(editor);
-        editor.on('text-change', saveChapterSections);
+        sectionElement.querySelector('.section-type').value = section.section_type;
+        sectionElement.querySelector('.section-type').addEventListener('change', event => {
+            section.section_type = event.target.value;
+            section.template = '';
+            saveChapterSections();
+        });
+        editor.on('text-change', (delta, oldDelta, source) => {
+            if (source === 'user') section.template = '';
+            saveChapterSections();
+        });
         updateChapterSectionControls();
         sectionElement.querySelector('.typesetting-method').addEventListener('change', event => {
             section.typesetting_method = event.target.value;
@@ -1093,8 +1216,38 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        const chapterFontDialog = document.getElementById('chapter-font-dialog');
+        document.getElementById('open-chapter-font-dialog').addEventListener('click', () => chapterFontDialog.show());
+        async function applyChapterTypography(reset = false) {
+            const applyButton = document.getElementById('apply-chapter-font');
+            const feedback = document.getElementById('chapter-font-status');
+            applyButton.loading = true;
+            feedback.textContent = '';
+            try {
+                const response = await fetch(chapterFontDialog.dataset.saveUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        font: reset ? null : document.getElementById('chapter-font-family').value,
+                        size: reset ? null : document.getElementById('chapter-font-size').value
+                    })
+                });
+                if (!response.ok) throw new Error(await response.text());
+                chapterFontDialog.open = false;
+                window.previous_phrase_index = -1;
+                const timeline = document.querySelector('#chapter-timeline-content wa-tab-panel[name="timeline"]');
+                if (timeline) htmx.trigger(timeline, 'load-column');
+            } catch (error) {
+                feedback.textContent = error.message;
+                console.error('Could not save chapter font settings', error);
+            } finally {
+                applyButton.loading = false;
+            }
+        }
+        document.getElementById('apply-chapter-font').addEventListener('click', () => applyChapterTypography());
+        document.getElementById('reset-chapter-font').addEventListener('click', () => applyChapterTypography(true));
         fetch('sections').then(response => response.json()).then(sections => {
-            (sections.length ? sections : [{typesetting_method: 'verse', ops: []}]).forEach(section => addChapterSection(section));
+            (sections.length ? sections : [{typesetting_method: 'plain', ops: []}]).forEach(section => addChapterSection(section));
         }).catch(error => {
             console.error('Could not load chapter sections:', error);
             addChapterSection();
@@ -1130,6 +1283,26 @@
         <wa-button id="chapter-image-previous" aria-label="Previous image" appearance="plain">❮</wa-button>
         <img id="chapter-image-full" alt="Chapter image">
         <wa-button id="chapter-image-next" aria-label="Next image" appearance="plain">❯</wa-button>
+    </div>
+</wa-dialog>
+
+<wa-dialog id="chapter-delete-dialog" label="Delete chapter?" style="--width: 28rem;">
+    <p>Delete Chapter {{ chapter.number }} and all of its language versions and files? This cannot be undone.</p>
+    <div slot="footer" class="wa-cluster wa-gap-s">
+        <wa-button type="button" onclick="document.getElementById('chapter-delete-dialog').open=false">Cancel</wa-button>
+        <form method="post" action="{{ url_for('library.book.chapter.delete_chapter', **chapter.kwargs) }}">
+            <wa-button type="submit" variant="danger"><wa-icon name="trash" aria-hidden="true"></wa-icon> Delete Chapter</wa-button>
+        </form>
+    </div>
+</wa-dialog>
+
+<wa-dialog id="chapter-insert-dialog" label="Insert chapter?" style="--width: 30rem;">
+    <p>Insert a blank chapter after Chapter {{ chapter.number }}? Later chapter numbers will move up by one. The current chapter's content will stay in place.</p>
+    <div slot="footer" class="wa-cluster wa-gap-s">
+        <wa-button type="button" onclick="document.getElementById('chapter-insert-dialog').open=false">Cancel</wa-button>
+        <form method="post" action="{{ url_for('library.book.chapter.insert_chapter_after_current', **chapter.kwargs) }}">
+            <wa-button type="submit" variant="success"><wa-icon name="plus" aria-hidden="true"></wa-icon> Insert Chapter</wa-button>
+        </form>
     </div>
 </wa-dialog>
 
@@ -1211,6 +1384,29 @@
             <button class="chapter-actions-close" type="button" aria-label="Close Text actions" title="Close Text actions" onclick="this.closest('wa-drawer').open=false"><wa-icon name="chevron-down" aria-hidden="true"></wa-icon></button>
         </wa-drawer>
     </div>
+    <wa-dialog id="chapter-font-dialog" label="Set font for all phrases"
+        data-save-url="{{ url_for('library.book.chapter.set_phrase_typography', **chapter.kwargs) }}">
+        <div class="wa-stack">
+            <wa-select id="chapter-font-family" label="Font" value="Helvetica">
+                <wa-option value="Helvetica" style="font-family: Helvetica, Arial, sans-serif">Helvetica</wa-option>
+                <wa-option value="Cardo" style="font-family: Cardo, serif">Cardo</wa-option>
+                <wa-option value="Roboto Condensed" style="font-family: 'Roboto Condensed', sans-serif">Roboto Condensed</wa-option>
+                <wa-option value="Times New Roman" style="font-family: 'Times New Roman', serif">Times New Roman</wa-option>
+                <wa-option value="Calibri" style="font-family: Calibri, sans-serif">Calibri</wa-option>
+                <wa-option value="Calibri Light" style="font-family: 'Calibri Light', sans-serif">Calibri Light</wa-option>
+                <wa-option value="Sans-Serif" style="font-family: sans-serif">Sans-Serif</wa-option>
+            </wa-select>
+            <wa-select id="chapter-font-size" label="Font size" value="16px">
+                <wa-option value="10px">10 px</wa-option><wa-option value="11px">11 px</wa-option>
+                <wa-option value="12px">12 px</wa-option><wa-option value="14px">14 px</wa-option>
+                <wa-option value="16px">16 px</wa-option><wa-option value="18px">18 px</wa-option>
+                <wa-option value="24px">24 px</wa-option><wa-option value="32px">32 px</wa-option>
+                <wa-option value="48px">48 px</wa-option>
+            </wa-select>
+        </div>
+        <p id="chapter-font-status" role="status" aria-live="polite"></p>
+        <wa-button slot="footer" type="button" id="apply-chapter-font" variant="brand">Apply to all phrases</wa-button>
+    </wa-dialog>
     <div id="phrase-stack" class="chapter-column wa-stack wa-gap-0 chapter-phrase-column is-active-panel">
         <wa-button class="chapter-column-toggle" size="small" appearance="outlined"
             data-column-label="Timeline" aria-expanded="true" aria-controls="chapter-timeline-content"
@@ -1256,7 +1452,7 @@
             <wa-tab panel="rainbow">Rainbow</wa-tab>
             <wa-tab-panel name="pdf">
                 <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll PDF preview">
-                    <div id="chapter-pdf-scroll" class="chapter-rendered-scroll" data-scroll-viewport tabindex="0" aria-label="PDF preview">
+                    <div id="chapter-pdf-scroll" class="chapter-rendered-scroll" data-scroll-viewport data-pdf-url="{{ chapter_pdf_url }}" tabindex="0" aria-label="PDF preview">
                         <canvas id="the-canvas"></canvas>
                     </div>
                 </div>
@@ -1298,6 +1494,7 @@
             data-column-label="Video" aria-expanded="true" aria-controls="chapter-output-content"
             aria-label="Collapse Video column" title="Collapse Video column"><wa-icon name="arrow-left" aria-hidden="true"></wa-icon></wa-button>
         <div id="chapter-output-content" class="chapter-column-content">
+            <div class="chapter-output-tabs">
             <wa-tab-group active="textoviva">
                 <wa-tab panel="textoviva">Textoviva</wa-tab>
                 {% if chapter.get_aspect() != 'portrait' %}
@@ -1333,6 +1530,17 @@
                     </wa-tab-group>
                 </wa-tab-panel>
             </wa-tab-group>
+            <wa-button class="chapter-insert-trigger" size="small" appearance="plain" variant="success"
+                aria-label="Insert chapter after {{ chapter.number }}" title="Insert chapter after {{ chapter.number }}"
+                onclick="document.getElementById('chapter-insert-dialog').open=true">
+                <wa-icon name="plus" aria-hidden="true"></wa-icon>
+            </wa-button>
+            <wa-button class="chapter-delete-trigger" size="small" appearance="plain" variant="danger"
+                aria-label="Delete chapter {{ chapter.number }}" title="Delete chapter {{ chapter.number }}"
+                onclick="document.getElementById('chapter-delete-dialog').open=true">
+                <wa-icon name="trash" aria-hidden="true"></wa-icon>
+            </wa-button>
+            </div>
         </div>
     </div>
 

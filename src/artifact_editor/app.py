@@ -141,6 +141,10 @@ class RegexConverter(BaseConverter):
 
 def create_app(config_dict: t.Optional[dict] = None) -> Flask:
     app = Flask(__name__)
+    from artifact_editor.author.rename import register_redirects
+    register_redirects(app)
+    from artifact_editor.library.storage import register_guards
+    register_guards(app)
 
     @app.get("/")
     def home_redirect():

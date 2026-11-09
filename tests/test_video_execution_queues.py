@@ -30,6 +30,16 @@ from task_queue import VIDEO_QUEUE, RENDER_QUEUE, enqueue_task, task_provider
 ROOT = Path(__file__).parents[1]
 
 
+@pytest.fixture(autouse=True)
+def isolated_library(tmp_path, monkeypatch):
+    from artifact_editor.library import storage
+    active, stored = tmp_path / 'active', tmp_path / 'storage'
+    active.mkdir()
+    stored.mkdir()
+    monkeypatch.setattr(storage, 'roots', lambda: (active, stored))
+    monkeypatch.delenv('LIBRARY_LOCK_DIR', raising=False)
+
+
 def load_functions(relative, names, namespace):
     path = ROOT / relative
     nodes = [node for node in ast.parse(path.read_text()).body
@@ -281,6 +291,9 @@ def test_cpu_worker_failure_is_recorded_and_claim_acknowledged(monkeypatch):
     task = dict(job_id='frame-1', batch_id='batch-1', action='draw_frame', arguments={})
     payload = json.dumps(task)
     cpu_queue.run_task(client, payload, '1', {}, 'processing:1')
+    running = json.loads(client.hset.call_args.args[2])
+    assert running['pid'] == os.getpid()
+    assert running['worker_id'] == '1'
     pipe.hincrby.assert_called_once_with('cpu_batch:batch-1', 'failed', 1)
     pipe.lrem.assert_called_once_with('processing:1', 1, payload)
     pipe.execute.assert_called_once()
@@ -384,3 +397,36 @@ def test_selected_animation_does_not_require_or_prompt_unselected_stills(tmp_pat
         cls(chapter).generate_missing_animations(regenerate_image_index=1)
     prompt.assert_called_once_with(chapter=chapter, image_xml=soup.find('image', index='1'))
     assert 'animation_prompt' not in soup.find('image', index='0').attrs
+
+
+def test_cpu_panel_reads_byte_progress_only_for_matching_transfer():
+    from artifact_editor.library.storage import status_key
+    client = Mock()
+    task = dict(job_id='moving', action='move_book', state='running',
+                chapter=dict(author='Example', title='Book'))
+    client.get.side_effect = lambda key: json.dumps({'workers': 2}) if key == cpu_queue.POOL else None
+    client.hvals.return_value = [json.dumps(task)]
+    client.llen.return_value = 0
+    client.lrange.return_value = []
+    transfer = dict(job_id='moving', bytes_done='25', bytes_total='100', phase='copying', message='Copying files')
+    client.hgetall.side_effect = lambda key: transfer if key == status_key('Example', 'Book') else {}
+    item = cpu_queue.snapshot(client)['running'][0]
+    assert item['bytes_done'] == '25'
+    assert item['bytes_total'] == '100'
+    assert item['message'] == 'Copying files'
+    transfer['job_id'] = 'older-attempt'
+    assert 'bytes_done' not in cpu_queue.snapshot(client)['running'][0]
+
+
+@pytest.mark.parametrize('action,retryable', [('move_book', False), ('draw_frame', True), ('encode_video', True), ('typeset_latex', True)])
+def test_cpu_panel_only_offers_supported_retries(action, retryable):
+    import time
+    client = Mock()
+    task = dict(job_id='finished', action=action, state='complete', completed_at=time.time())
+    client.get.side_effect = lambda key: json.dumps({'workers': 2}) if key == cpu_queue.POOL else None
+    client.hvals.return_value = []
+    client.hgetall.return_value = {}
+    client.llen.return_value = 0
+    client.exists.return_value = True
+    client.lrange.side_effect = lambda key, *_: [json.dumps(task)] if key == cpu_queue.RECENT else []
+    assert cpu_queue.snapshot(client)['completed'][0]['retryable'] is retryable

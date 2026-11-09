@@ -30,6 +30,10 @@
             <h3 id="timeline-typesetting-heading">Typesetting</h3>
             <div class="chapter-action-grid">
                 <div class="chapter-action-item">
+                    <wa-button type="button" id="open-chapter-font-dialog">Set Font and Size</wa-button>
+                    <wa-button type="button" id="reset-chapter-font">Reset Font</wa-button>
+                </div>
+                <div class="chapter-action-item">
                     <wa-button id="typeset-latex-btn"
                         hx-post="{{ url_for('library.book.chapter.typeset_latex', **chapter.kwargs) }}"
                         hx-disabled-elt="this"

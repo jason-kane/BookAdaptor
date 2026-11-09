@@ -35,38 +35,51 @@
         event.preventDefault();
         pending.then(() => event.detail.issueRequest(true)).catch(error => console.error('Phrase save failed; audio not regenerated', error));
     });
-    const workflowUrl = document.currentScript?.dataset.workflowStatusUrl;
-    let workflowRequest = null;
-    let lastWorkflowRefresh = 0;
+    const workflowSocketUrl = document.currentScript?.dataset.workflowWebsocket;
+    let workflowSocket;
+    let workflowReconnect;
+    let workflowReconnectDelay = 1000;
+    let workflowSocketClosed = false;
 
-    function refreshPrerequisites() {
-        if (!workflowUrl || workflowRequest || Date.now() - lastWorkflowRefresh < 1000) return;
-        lastWorkflowRefresh = Date.now();
-        workflowRequest = fetch(workflowUrl, {cache: 'no-store'})
-            .then(response => {
-                if (!response.ok) throw new Error(`Workflow status failed: ${response.status}`);
-                return response.json();
-            }).then(({prerequisites}) => {
-                document.querySelectorAll('[data-workflow-action]').forEach(button => {
-                    const action = button.dataset.workflowAction;
-                    if (!Object.hasOwn(prerequisites, action)) return;
-                    const reason = prerequisites[action];
-                    button.disabled = Boolean(reason) || button.dataset.workflowBusy === 'true';
-                    for (const target of [button, button.closest('[data-workflow-control]')]) {
-                        if (!target) continue;
-                        if (reason) target.setAttribute('title', reason);
-                        else target.removeAttribute('title');
-                    }
-                });
-            }).catch(error => console.error(error))
-            .finally(() => { workflowRequest = null; });
+    function applyPrerequisites(prerequisites) {
+        document.querySelectorAll('[data-workflow-action]').forEach(button => {
+            const action = button.dataset.workflowAction;
+            if (!Object.hasOwn(prerequisites, action)) return;
+            const reason = prerequisites[action];
+            button.disabled = Boolean(reason) || button.dataset.workflowBusy === 'true';
+            for (const target of [button, button.closest('[data-workflow-control]')]) {
+                if (!target) continue;
+                if (reason) target.setAttribute('title', reason);
+                else target.removeAttribute('title');
+            }
+        });
     }
-    if (workflowUrl) {
-        document.addEventListener('DOMContentLoaded', refreshPrerequisites);
-        window.setInterval(() => {
-            if (document.visibilityState !== 'hidden') refreshPrerequisites();
-        }, 2000);
+
+    function connectWorkflowSocket() {
+        if (workflowSocketClosed || !workflowSocketUrl) return;
+        workflowSocket = new WebSocket(workflowSocketUrl);
+        workflowSocket.addEventListener('open', () => { workflowReconnectDelay = 1000; });
+        workflowSocket.addEventListener('message', event => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'workflow_prerequisites') applyPrerequisites(message.prerequisites || {});
+            } catch (error) { console.error('Invalid workflow prerequisite update', error); }
+        });
+        workflowSocket.addEventListener('close', () => {
+            if (workflowSocketClosed) return;
+            workflowReconnect = window.setTimeout(connectWorkflowSocket, workflowReconnectDelay);
+            workflowReconnectDelay = Math.min(10000, workflowReconnectDelay * 2);
+        });
     }
+    connectWorkflowSocket();
+    window.addEventListener('pagehide', () => {
+        workflowSocketClosed = true;
+        window.clearTimeout(workflowReconnect);
+        workflowSocket?.close();
+    });
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) { workflowSocketClosed = false; connectWorkflowSocket(); }
+    });
 
     // Report the click even when HTMX is waiting for a disconnected socket.
     document.addEventListener('click', event => {
@@ -151,7 +164,6 @@
                 if (status.dataset.videoAction === 'textoviva_one_shot') button.disabled = false;
             }
         });
-        refreshPrerequisites();
         document.querySelectorAll('[data-chapter-import], [data-chapter-metadata], [data-chapter-assets]').forEach(container => {
             const job = container.dataset.chapterImport || container.dataset.chapterMetadata || container.dataset.chapterAssets;
             const status = document.getElementById(`video-progress-${job}`);

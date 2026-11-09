@@ -136,7 +136,7 @@ def test_record_save_does_not_resurrect_concurrently_deleted_image(chapter_path)
     first.soup.image.decompose()
     first.save_timeline()
     second.soup.image["src"] = "stale.png"
-    with pytest.raises(ValueError, match="not persisted"):
+    with pytest.raises(persistence.RecordDeletedError, match="not persisted"):
         second.save_image(second.soup.image)
     assert read(chapter_path).find("image", index="3") is None
 

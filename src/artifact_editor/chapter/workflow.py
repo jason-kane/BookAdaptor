@@ -38,6 +38,16 @@ def completed_steps(chapter):
 
 
 def prerequisite_message(chapter, action, *, completed=None):
+    if action == 'textoviva_rerender':
+        from .readiness import video_prerequisite
+        return video_prerequisite(chapter)
+    if action == 'chapter_missing_animations':
+        from .readiness import has_missing_images
+        return 'Must finish generating missing images first' if has_missing_images(chapter) else None
+    if action == 'chapter_missing_images':
+        from .readiness import has_missing_images
+        if not has_missing_images(chapter):
+            return 'No missing images'
     if action == 'chapter_import':
         return None
     if action == 'chapter_add_all':
@@ -52,6 +62,9 @@ def prerequisite_message(chapter, action, *, completed=None):
     # Explain the earliest missing step, including when an earlier rerun
     # invalidated several downstream milestones.
     for candidate, label in STEPS[:ACTIONS.index(required) + 1]:
+        # Slot placement is optional, including for downstream preparation.
+        if candidate == 'chapter_place_image_slots':
+            continue
         if candidate not in done:
             return f'Must {label} first'
     return None

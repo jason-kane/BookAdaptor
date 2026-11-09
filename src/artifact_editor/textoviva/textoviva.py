@@ -462,6 +462,7 @@ class Textoviva:
 
     def generate_missing_images(self, progress=None):
         """Generate still images only; preserve existing images."""
+        from artifact_editor.chapter_errors import RecordDeletedError
         from artifact_editor.textoviva.workflow import default_image_workflow
         from artifact_editor.images.images import reuse_existing_image
         from artifact_editor.images.source import SOURCE_WORKFLOW
@@ -553,25 +554,27 @@ class Textoviva:
                 set(selector_htmx.gather_candidate_images(image_xml, self.chapter)),
             ))
 
+        # Save workflow/prompt preparation before the long GPU batch. A final
+        # bulk save would also submit stale records deleted in the live editor.
+        self.chapter.save_images()
+
         if pending:
             total_pending = len(pending)
-            first_image = pending[0][0]
-            report(
-                20,
-                f"Generating Image {first_image.attrs['index']} (1/{total_pending})",
-            )
+            completed_count = 0
+            failed_count = 0
+            report(0, f"Generated 0 of {total_pending} images")
 
             def collect_image(position, result):
+                nonlocal completed_count, failed_count
                 image_xml, _, previous_candidates = pending[position]
                 image_index = image_xml.attrs["index"]
-                position_end = 20 + int(40 * (position + 1) / total_pending)
                 if isinstance(result, Exception):
+                    failed_count += 1
                     report(
-                        position_end,
-                        f"Image {image_index} failed; collecting remaining images ({position + 1}/{total_pending})",
+                        100 * completed_count / total_pending,
+                        f"Generated {completed_count} of {total_pending} images · {failed_count} failed · Image {image_index} failed",
                     )
                     return
-                report(position_end, f"Saving generated Image {image_index} ({position + 1}/{total_pending})")
                 candidates = selector_htmx.gather_candidate_images(image_xml, self.chapter)
                 current_image = self.chapter.get_image_filename(image_xml)
                 if not (current_image and os.path.isfile(current_image)) and candidates:
@@ -582,17 +585,21 @@ class Textoviva:
                     # progress view can then reveal it while later GPU tasks
                     # remain queued.
                     image_xml.attrs['image_generation_id'] = uuid.uuid4().hex
-                    self.chapter.save_image(image_xml)
-                    from artifact_editor.images.completions import publish_image_completion
-                    publish_image_completion(self.chapter, image_xml)
-                if position + 1 < total_pending:
-                    next_image = pending[position + 1][0]
-                    report(
-                        position_end,
-                        f"Generating Image {next_image.attrs['index']} ({position + 2}/{total_pending})",
-                    )
-                else:
-                    report(position_end, f"Generated {total_pending} missing images")
+                    try:
+                        self.chapter.save_image(image_xml)
+                    except RecordDeletedError:
+                        log.info("Image %s was deleted while generating; leaving its output unselected", image_index)
+                    else:
+                        from artifact_editor.images.completions import publish_image_completion
+                        publish_image_completion(self.chapter, image_xml)
+                if not (current_image and os.path.isfile(current_image)) and not candidates:
+                    raise RuntimeError(f"Image {image_index} finished without a saved image")
+                completed_count += 1
+                failure_detail = f" · {failed_count} failed" if failed_count else ""
+                report(
+                    100 * completed_count / total_pending,
+                    f"Generated {completed_count} of {total_pending} images{failure_detail} · Image {image_index} complete",
+                )
 
             results = comfy.run_workflow_fn_batch(
                 [
@@ -611,7 +618,9 @@ class Textoviva:
                     f"Could not generate {len(failures)} of {len(pending)} missing shot images: {failures[0]}"
                 ) from failures[0]
 
-        self.chapter.save_images()
+        # Animation preparation must use current selections and timeline
+        # structure, including edits made while these stills were generating.
+        self.chapter.load_xml(force=True)
 
 
     def generate_missing_animations(self, progress=None, force=False,
@@ -637,11 +646,10 @@ class Textoviva:
                    or not os.path.isfile(self.chapter.get_image_filename(image))]
         if missing and not prepare_prompts_only:
             raise ValueError("Generate missing images before generating animations")
-        required_frames_by_image = {}
-        if regenerate_insufficient:
-            from artifact_editor.chapter.timeline import image_timings
+        from artifact_editor.chapter.timeline import image_timings
+        from artifact_editor.images.animation_source import animation_frame_count
 
-            required_frames_by_image = image_timings(self.chapter.get_xml())
+        required_frames_by_image = image_timings(self.chapter.get_xml())
         # Build the actual work list up front so progress is divided only
         # across images that need a new animation, not every image in XML.
         force_all = force
@@ -654,18 +662,16 @@ class Textoviva:
                 const.LIBRARY_DIR,
                 self.chapter.get_paragraph_dir(int(paragraph["index"])),
             )
-            if regenerate_insufficient:
-                from artifact_editor.images.animation_source import animation_frame_count
-
-                frame_count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
-                required = int(
-                    required_frames_by_image.get(str(image_index), {}).get(
-                        "frames", image_xml.attrs.get("frames", 0)
-                    )
+            required = int(
+                required_frames_by_image.get(str(image_index), {}).get(
+                    "frames", image_xml.attrs.get("frames", 0)
                 )
-                if required > 0 and int(image_xml.attrs.get("frames", 0) or 0) != required:
-                    image_xml.attrs["frames"] = str(required)
-                    self.chapter.save_image(image_xml)
+            )
+            if required > 0 and int(image_xml.attrs.get("frames", 0) or 0) != required:
+                image_xml.attrs["frames"] = str(required)
+                self.chapter.save_image(image_xml)
+            if regenerate_insufficient:
+                frame_count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
                 if frame_count is not None and frame_count >= required and selected is None and not force_all:
                     continue
                 if frame_count is None or frame_count < required:
@@ -986,15 +992,14 @@ class Textoviva:
                 shutil.move(candidate, animated_path)
                 image_xml['animated_src'] = animated_src
                 self.chapter.save_image(image_xml)
-                if regenerate_insufficient:
-                    count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
-                    if count is None or count < audio_frames:
-                        raise RuntimeError(
-                            f"Image {image_xml.attrs['index']}: generated animation has "
-                            f"{count if count is not None else 'unknown'} frames; "
-                            f"the audio requires {audio_frames}. Check the workflow's "
-                            "duration and output frame rate."
-                        )
+                count = animation_frame_count(image_xml, paragraph_dir, const.FPS)
+                if count is None or count < audio_frames:
+                    raise RuntimeError(
+                        f"Image {image_xml.attrs['index']}: generated animation has "
+                        f"{count if count is not None else 'unknown'} frames; "
+                        f"the audio requires {audio_frames}. Check the workflow's "
+                        "duration and output frame rate."
+                    )
                 report(chunk_end, f"{image_label} · Complete")
             else:
                 raise RuntimeError(
@@ -1194,14 +1199,13 @@ class Textoviva:
                 report(35, f"Shot {image_index}: retrying at {next_quality.title()} quality · full {duration:.2f}s duration")
             remaining = next_remaining
 
-        if regenerate_insufficient:
-            for item in items.values():
-                count = animation_frame_count(item["image"], item["paragraph_dir"], const.FPS)
-                if count is None or count < item["required_frames"]:
-                    raise RuntimeError(
-                        f"Shot {item['image_index']} animation has {count if count is not None else 'unknown'} "
-                        f"frames; the narration requires {item['required_frames']}."
-                    )
+        for item in items.values():
+            count = animation_frame_count(item["image"], item["paragraph_dir"], const.FPS)
+            if count is None or count < item["required_frames"]:
+                raise RuntimeError(
+                    f"Shot {item['image_index']} animation has {count if count is not None else 'unknown'} "
+                    f"frames; the narration requires {item['required_frames']}."
+                )
         self.chapter.save_images()
 
 

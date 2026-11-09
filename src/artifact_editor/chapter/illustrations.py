@@ -13,8 +13,11 @@ def extract_illustrations(sections, chapter):
     available = None
     cleaned, operations = [], []
     for section_index, section in enumerate(sections):
+        attributes = {'_typesetting_method': section['typesetting_method'],
+                      '_section_type': section.get('section_type', 'chapter_text'),
+                      '_section_index': section_index}
         if section_index:
-            operations.append({'insert': '\n'})
+            operations.append({'insert': '\n', 'attributes': attributes})
         text = ''.join(op.get('insert', '') for op in section['ops'])
         matches = list(MARKER.finditer(text))
         cues = {}
@@ -44,8 +47,7 @@ def extract_illustrations(sections, chapter):
                     continue
                 piece = dict(op, insert=value[start-offset:stop-offset])
                 clean_ops.append(piece)
-                attributes = dict(piece.get('attributes') or {}, _typesetting_method=section['typesetting_method'])
-                operations.append(dict(piece, attributes=attributes))
+                operations.append(dict(piece, attributes=dict(piece.get('attributes') or {}, **attributes)))
             offset = end
         cleaned.append(dict(section, ops=clean_ops))
     return cleaned, operations

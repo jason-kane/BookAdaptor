@@ -28,3 +28,20 @@ now += 5000;
 timing.enrich({job_id: 'a', state: 'running', percent: 100});
 assert.equal(timing.describe({job_id: 'render', state: 'running'}).label, 'GPU · ~10s left', 'Progress messages must not restart the timing clock');
 console.log('Historical ETA, queue wait, overrun, uncertainty, and clock behavior passed');
+
+const transfer = {...job, action: 'move_book', bytes_done: '2500000000', bytes_total: '10000000000'};
+assert.equal(timing.describe(transfer).value, 25);
+assert.equal(timing.describe(transfer, 86400).value, 25, 'Elapsed time cannot advance a byte-based bar');
+assert.match(timing.describe(transfer).label, /2.50 GB \/ 10.00 GB · 25%/);
+assert.equal(timing.describe({...transfer, bytes_done: '7000000000'}).value, 70);
+assert.equal(timing.describe({...transfer, bytes_total: 0}).value, null);
+assert.equal(timing.describe({...transfer, state: 'complete'}).value, 100);
+assert.equal(timing.describe(transfer).stats, '');
+console.log('Storage transfer progress uses bytes independently of elapsed time');
+
+const imageBatch = {...job, action: 'chapter_missing_images', percent: 3,
+    message: 'Generated 17 of 62 images · Image 66 complete'};
+assert.equal(timing.describe(imageBatch, 9000).value, 17 / 62 * 100);
+assert.equal(timing.describe(imageBatch).label, '17 of 62 images complete');
+assert.equal(timing.describe({...imageBatch, action: 'textoviva_one_shot', percent: 69}).value, 69);
+console.log('Image progress counts completions and preserves overall One Shot progress');

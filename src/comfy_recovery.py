@@ -1,4 +1,4 @@
-"""Recover contradictory CUDA allocation failures without restart loops."""
+"""Release ComfyUI's CUDA process after VRAM OOMs without restart loops."""
 import fcntl
 import os
 from pathlib import Path
@@ -8,25 +8,33 @@ import time
 import httpx
 
 
-def contradictory_oom(message):
-    """Require explicit allocator statistics and substantial reported headroom."""
-    if not isinstance(message, str) or 'out of memory' not in message.lower():
-        return False
-    if 'exceed allowed memory' not in message.lower():
-        return False
-    def amount(label):
-        match = re.search(label + r'\s*:\s*([\d.]+)\s*(bytes?|[KMGT]i?B)\b', message, re.I)
-        if not match:
-            return None
-        powers = {'b': 0, 'byte': 0, 'bytes': 0, 'kb': 1, 'mb': 2, 'gb': 3, 'tb': 4,
-                  'kib': 1, 'mib': 2, 'gib': 3, 'tib': 4}
-        unit = match[2].lower()
-        return float(match[1]) * (1024 if 'i' in unit else 1000) ** powers[unit]
-    allocated, requested, limit, free = (
-        amount(label) for label in ('Currently allocated', 'Requested', 'Device limit', r'Free \(according to CUDA\)'))
-    return (all(value is not None for value in (allocated, requested, limit, free))
-            and requested > 0 and limit > 0 and free >= requested * 1.25
-            and allocated + requested <= limit * 0.9)
+class VRAMOutOfMemoryError(RuntimeError):
+    """A failed ComfyUI execution exhausted GPU memory."""
+
+
+def is_vram_oom(message, exception_type=''):
+    text = str(message).casefold()
+    return ('out of memory' in text or 'outofmemoryerror' in text) and (
+        'cuda' in text or 'allocation on device' in text
+        or 'outofmemoryerror' in str(exception_type).casefold()
+    )
+
+
+def wait_for_comfyui(timeout_seconds=300):
+    """Wait for the restarted process to finish loading and serve requests."""
+    import const
+
+    deadline = time.monotonic() + timeout_seconds
+    with httpx.Client(timeout=httpx.Timeout(5, connect=2)) as client:
+        while time.monotonic() < deadline:
+            try:
+                response = client.get(const.COMFYUI_API_URL.rstrip('/') + '/system_stats')
+                if response.status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            time.sleep(1)
+    raise TimeoutError(f'ComfyUI did not become ready within {timeout_seconds} seconds after OOM recovery.')
 
 
 def restart_comfyui():
@@ -38,11 +46,11 @@ def restart_comfyui():
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return 'ComfyUI recovery is already in progress.'
+            raise RuntimeError('ComfyUI recovery is already in progress.')
         lock.seek(0)
         previous = lock.read().strip()
         if previous and time.time() - float(previous) < 300:
-            return 'ComfyUI recovery was recently attempted; restart suppressed for 5 minutes.'
+            raise RuntimeError('ComfyUI recovery was recently attempted; restart suppressed for 5 minutes.')
         container = os.environ.get('COMFYUI_CONTAINER_NAME', 'comfyui-megapak')
         # Container names are a path component, never shell input.
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', container):
@@ -59,6 +67,9 @@ def restart_comfyui():
             lock.truncate()
             lock.write(str(time.time()))
             lock.flush()
-            response = client.post(f'/containers/{container}/restart', params={'t': 10})
+            # Stop completes only after the old process exits and releases its CUDA context.
+            response = client.post(f'/containers/{container}/stop', params={'t': 10})
             response.raise_for_status()
-        return 'ComfyUI was restarted after an inconsistent CUDA OOM. Retry once ComfyUI is ready.'
+            response = client.post(f'/containers/{container}/start')
+            response.raise_for_status()
+        return 'ComfyUI was restarted with a full process shutdown to clear VRAM.'

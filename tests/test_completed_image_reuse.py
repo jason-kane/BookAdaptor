@@ -22,14 +22,17 @@ ROOT = Path(__file__).resolve().parents[1]
     ('t2i.qwen', None, 'qwen'),
     ('t2i.qwen', 't2i.zit-paragraph', 'zit-paragraph'),
 ])
-def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch, book_default, image_workflow, expected):
+def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch, tmp_path, book_default, image_workflow, expected):
     import sys
     from artifact_editor.textoviva.workflow import image_workflow_name
     image = BeautifulSoup('<image index="3" prompt="Prepared prompt"/>', 'xml').image
     if image_workflow:
         image['workflow_image_template'] = image_workflow
+    finished = tmp_path / "finished.png"
+    finished.touch()
     notifications = []
-    chapter = SimpleNamespace(title='Book', images=lambda: [image], get_workflow=Mock(return_value='workflow'))
+    chapter = SimpleNamespace(title='Book', images=lambda: [image], get_workflow=Mock(return_value='workflow'), load_xml=Mock())
+    chapter.get_image_filename = lambda _: None
     chapter.config = {'default_image_template': book_default}
     chapter.save_image = Mock(side_effect=lambda image: notifications.append('saved'))
     chapter.save_images = Mock(side_effect=lambda: notifications.append('saved'))
@@ -48,9 +51,10 @@ def test_each_completed_batch_image_notifies_after_being_saved(monkeypatch, book
         const=SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default'), os=os, log=Mock(), uuid=uuid,
         image_workflow_name=image_workflow_name,
         comfy=SimpleNamespace(run_workflow_fn_batch=batch),
-        selector_htmx=SimpleNamespace(gather_candidate_images=lambda *_: ['finished.png'])))
+        selector_htmx=SimpleNamespace(gather_candidate_images=lambda *_: [str(finished)])))
     function(SimpleNamespace(chapter=chapter))
-    assert notifications == ['saved', 'notified', 'saved']
+    assert notifications == ['saved', 'saved', 'notified']
+    chapter.load_xml.assert_called_once_with(force=True)
     assert chapter.get_workflow.call_args.kwargs['workflow_name'] == expected
 
 
@@ -121,7 +125,7 @@ def test_missing_stills_recovers_candidate_without_queueing_generation(monkeypat
                         SimpleNamespace(reuse_existing_image=reuse))
     image = BeautifulSoup('<image index="3"/>', 'xml').image
     chapter = SimpleNamespace(images=lambda: [image], get_image_filename=lambda _: None,
-                              get_workflow=Mock(), save_image=Mock(), save_images=Mock())
+                              get_workflow=Mock(), save_image=Mock(), save_images=Mock(), load_xml=Mock())
     comfy = SimpleNamespace(run_workflow_fn_batch=Mock())
     function = load_function('src/artifact_editor/textoviva/textoviva.py', 'generate_missing_images', dict(
         const=SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default'), os=os, log=Mock(), comfy=comfy))
@@ -181,3 +185,38 @@ def test_image_selection_rejects_reserved_frame():
         request=SimpleNamespace(form={'selectedImage': 'img_10_last_frame_of_previous.png', 'image_index': '10'})))
     assert choose()[1] == 400
     chapter.save_image.assert_not_called()
+
+
+@pytest.mark.parametrize('failed', [False, True])
+def test_image_progress_counts_actual_completions_out_of_order(monkeypatch, tmp_path, failed):
+    import sys
+    from artifact_editor.textoviva.workflow import image_workflow_name
+    soup = BeautifulSoup('<chapter><image index="5" prompt="a"/><image index="9" prompt="b"/><image index="66" prompt="c"/></chapter>', 'xml')
+    images = soup.find_all('image')
+    report = Mock()
+    output = tmp_path / 'image.png'
+    output.touch()
+    chapter = SimpleNamespace(title='Book', config={}, images=lambda: images,
+        get_workflow=Mock(return_value='workflow'), get_image_filename=lambda _: str(output),
+        save_image=Mock(), save_images=Mock(), load_xml=Mock())
+    error = RuntimeError('GPU failed')
+    def batch(requests, on_complete, **kwargs):
+        on_complete(2, None)
+        assert report.call_args.args == (100 / 3, 'Generated 1 of 3 images · Image 66 complete')
+        on_complete(0, error if failed else None)
+        on_complete(1, None)
+        return [error if failed else None, None, None]
+    monkeypatch.setitem(sys.modules, 'artifact_editor.images.images', SimpleNamespace(reuse_existing_image=lambda *_: None))
+    function = load_function('src/artifact_editor/textoviva/textoviva.py', 'generate_missing_images', dict(
+        const=SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default'), os=os, log=Mock(), uuid=uuid,
+        image_workflow_name=image_workflow_name, comfy=SimpleNamespace(run_workflow_fn_batch=batch),
+        selector_htmx=SimpleNamespace(gather_candidate_images=lambda *_: [])))
+    if failed:
+        with pytest.raises(RuntimeError, match='Could not generate 1 of 3'):
+            function(SimpleNamespace(chapter=chapter), progress=report)
+        assert report.call_args.args[1] == 'Generated 2 of 3 images · 1 failed · Image 9 complete'
+    else:
+        function(SimpleNamespace(chapter=chapter), progress=report)
+        assert report.call_args.args == (100, 'Generated 3 of 3 images · Image 9 complete')
+    percentages = [call.args[0] for call in report.call_args_list]
+    assert percentages == sorted(percentages)

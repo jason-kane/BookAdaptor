@@ -130,3 +130,40 @@ assert.equal(elements['cpu-queue-renders'].children[0].dataset.state, 'running')
 emit('cpu:queue-plan', {...beforeSubmit, renders: [{job_id: 'instant', state: 'complete'}]});
 assert.equal(elements['cpu-queue-renders'].children[0].dataset.state, 'complete');
 console.log('Immediate chapter task visibility and acknowledgement passed');
+
+// One Shot opens the CPU queue immediately, then keeps its persisted progress.
+const oneShot = {job_id: 'one-shot', action: 'textoviva_one_shot', title: 'Example', chapter_number: 2};
+emit('htmx:wsAfterSend', {elt: {closest: selector => selector.includes('#textoviva-one-shot') ? {} : null},
+    message: JSON.stringify(oneShot)});
+assert.equal(elements['cpu-queue-renders'].children[0].dataset.jobId, 'one-shot');
+assert.equal(elements['cpu-queue-renders'].children[0].querySelector('.cpu-queue-label').textContent,
+    'One Shot · Example · Chapter 2');
+assert.equal(elements['cpu-queue-toggle'].attributes['aria-expanded'], 'true');
+emit('cpu:queue-plan', {workers: 2, running_count: 0, queued_count: 0, render_count: 1,
+    renders: [{...oneShot, state: 'running', percent: 28, message: 'Step 4/12: Processing appearance changes'}]});
+assert.equal(elements['cpu-queue-renders'].children.length, 1);
+assert.equal(elements['cpu-queue-renders'].children[0].querySelector('.cpu-queue-message').textContent,
+    'Step 4/12: Processing appearance changes');
+console.log('One Shot CPU submission and progress passed');
+
+// A PID can arrive after the first running update; queued tasks must not show one.
+function pidPlan(pid, state = 'running') {
+    emit('cpu:queue-plan', {workers: 2, running_count: 1, queued_count: 0, render_count: 0,
+        renders: [], running: [{job_id: 'pid-task', label: 'Copy book', state, pid}]});
+    return elements['cpu-queue-running'].children[0].querySelector('.cpu-queue-label').textContent;
+}
+assert.equal(pidPlan(undefined), 'Copy book');
+assert.equal(pidPlan(4321), 'Copy book · PID 4321 (container)');
+assert.equal(pidPlan(4322), 'Copy book · PID 4322 (container)');
+assert.equal(pidPlan(4322, 'queued'), 'Copy book');
+assert.equal(pidPlan('invalid'), 'Copy book');
+console.log('CPU task PID rendering and updates passed');
+
+emit('cpu:queue-plan', {workers: 2, running_count: 0, queued_count: 0, renders: [],
+    completed: [{job_id: 'moved', action: 'move_book', state: 'complete',
+        message: 'Book moved successfully.', retryable: false}]});
+assert.equal(elements['cpu-queue-completed'].children[0].querySelector('[data-cpu-retry]'), undefined);
+emit('cpu:queue-plan', {workers: 2, running_count: 0, queued_count: 0, renders: [],
+    completed: [{job_id: 'frame', action: 'draw_frame', state: 'complete', retryable: true}]});
+assert.equal(elements['cpu-queue-completed'].children[0].querySelector('[data-cpu-retry]').textContent, 'Run again');
+console.log('Successful moves have no retry button; supported reruns have an accurate label');

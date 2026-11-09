@@ -59,7 +59,37 @@ def training_config(book, draft):
     }]}}
 
 
+def reconcile_trainer():
+    """Home owns Docker; persisted drafts determine whether the trainer is needed."""
+    from urllib.request import Request, urlopen
+    url = os.environ.get('HOME_API_URL', 'http://home:8080').rstrip('/')
+    request = Request(url + '/api/training/reconcile', data=b'{}',
+                      headers={'Content-Type': 'application/json'}, method='POST')
+    with urlopen(request, timeout=150) as response:
+        return json.load(response)
+
+
 def enqueue(book, draft_id):
+    draft = _enqueue(book, draft_id)
+    if draft['status'] in ACTIVE:
+        # Repeated submission also retries startup if Home was unavailable.
+        reconcile_trainer()
+    return draft
+
+
+def publish_training_event(client, book):
+    """Notify book status subscribers that this book's training state changed."""
+    if client is None:
+        return
+    parts = Path(book.bookdir).parts
+    if len(parts) < 2:
+        return
+    client.publish('lora_training_events', json.dumps({
+        'author': parts[0], 'title': '/'.join(parts[1:]),
+    }))
+
+
+def _enqueue(book, draft_id):
     with locked(book, draft_id):
         draft = wizard.load(book, draft_id)
         if draft['status'] in (*ACTIVE, 'complete'):
@@ -166,7 +196,7 @@ def training_failure_details(folder):
         return None, ''
 
 
-def run_job(book, draft_id, toolkit):
+def run_job(book, draft_id, toolkit, client=None):
     with locked(book, draft_id):
         draft = wizard.load(book, draft_id)
         if draft['status'] not in ('queued', 'waiting_for_gpu'):
@@ -175,19 +205,39 @@ def run_job(book, draft_id, toolkit):
             if not gpu_available():
                 draft['status'] = 'waiting_for_gpu'
                 wizard.save(book, draft)
+                publish_training_event(client, book)
                 return
             draft.update(status='training', started_at=time.time(), error=None)
             wizard.save(book, draft)
+            publish_training_event(client, book)
             folder = wizard.directory(book, draft_id)
+            from threading import Event, Thread
+            stop_watcher = Event()
+            def publish_progress_changes():
+                previous_progress = None
+                while not stop_watcher.wait(2):
+                    progress = training_progress(folder)
+                    signature = (progress['percent'], progress['message'])
+                    if signature != previous_progress:
+                        publish_training_event(client, book)
+                        previous_progress = signature
+            watcher = Thread(target=publish_progress_changes, daemon=True)
             with (folder / 'training.log').open('w') as log:
-                subprocess.run([sys.executable, '-u', str(toolkit / 'run.py'), str(folder / 'training.json')],
-                               cwd=toolkit, stdout=log, stderr=subprocess.STDOUT, check=True)
+                watcher.start()
+                try:
+                    subprocess.run([sys.executable, '-u', str(toolkit / 'run.py'), str(folder / 'training.json')],
+                                   cwd=toolkit, stdout=log, stderr=subprocess.STDOUT, check=True)
+                finally:
+                    stop_watcher.set()
+                    watcher.join()
             register(book, draft)
+            publish_training_event(client, book)
         except Exception as error:
             summary, details = training_failure_details(wizard.directory(book, draft_id))
             draft.update(status='failed', error=summary or str(error), failed_at=time.time(),
                          traceback=details if isinstance(error, subprocess.CalledProcessError) and details else traceback.format_exc())
             wizard.save(book, draft)
+            publish_training_event(client, book)
 
 
 def main():
@@ -212,10 +262,17 @@ def main():
                         draft.update(status='failed', failed_at=time.time(), error='Training worker restarted. Retry training; saved checkpoints remain in the output folder.')
                         wizard.save(book, draft)
                     if client.get('gpu:active-service') == 'training' and draft['status'] in ('queued', 'waiting_for_gpu'):
-                        run_job(book, draft['id'], toolkit)
+                        run_job(book, draft['id'], toolkit, client)
                 except (ValueError, OSError) as error:
                     print(f'Cannot process LoRA draft {path}: {error}', flush=True)
             recovered = True
+            if not any(entry['state'] in ('queued', 'running') for entry in queue_entries(root)):
+                try:
+                    reconcile_trainer()
+                except Exception as error:
+                    # Home may stop this very container before replying. If it
+                    # failed instead, keep polling so shutdown can be retried.
+                    print(f'Trainer shutdown request: {error}', flush=True)
             time.sleep(5)
 
 

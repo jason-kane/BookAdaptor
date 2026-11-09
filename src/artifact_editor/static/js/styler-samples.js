@@ -317,16 +317,6 @@
         if (spinner) spinner.hidden = false;
     }
 
-    document.addEventListener('click', event => {
-        const button = event.target.closest('#styler-queue-toggle');
-        if (!button) return;
-        const queue = document.getElementById('styler-job-queue');
-        const minimized = queue.classList.toggle('is-minimized');
-        const label = minimized ? 'Expand GPU queue' : 'Minimize GPU queue';
-        button.setAttribute('aria-expanded', String(!minimized));
-        button.setAttribute('aria-label', label);
-        button.setAttribute('title', label);
-    });
     // Build a readable label for an incoming job event.
     function jobLabel(event) {
         // TODO(MONITOR): count distinct action, job_type, and engine categories; avoid filenames and tags.

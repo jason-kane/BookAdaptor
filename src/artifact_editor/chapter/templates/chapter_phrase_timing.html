@@ -1,4 +1,7 @@
-<div id="{{ timing_id if timing_id is defined else 'chapter-phrase-timing-' ~ phrase.index }}" class="chapter-timeline-timing wa-cluster wa-gap-s{% if timing and (timing.exceeds_animation_duration or timing.animation_shortfall) %} animation-duration-warning{% endif %}"{% if timing_oob %} hx-swap-oob="outerHTML"{% endif %}>
+<div id="{{ timing_id if timing_id is defined else 'chapter-phrase-timing-' ~ phrase.index }}" class="chapter-timeline-timing wa-cluster wa-gap-s{% if timing and (timing.exceeds_animation_duration or timing.animation_shortfall) %} animation-duration-warning{% endif %}"
+     data-missing-audio="{{ 'true' if missing_audio else 'false' }}"
+     data-missing-image="{{ 'true' if missing_image else 'false' }}"
+     data-animation-ready="{{ 'true' if animation_disabled or animation_ready else 'false' }}"{% if timing_oob %} hx-swap-oob="outerHTML"{% endif %}>
     {% if missing_audio %}<wa-badge class="chapter-audio-warning-badge" variant="danger">Audio</wa-badge>{% endif %}
     {% if missing_image or (timing and timing.animation_shortfall) %}
     <span class="chapter-image-warning-badges">

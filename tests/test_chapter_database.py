@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from artifact_editor.db import chapter_content as storage
 from artifact_editor.db import models as m
+from artifact_editor.chapter_errors import RecordDeletedError
 from test_database_models import engine
 
 
@@ -148,8 +149,73 @@ def test_record_save_rejects_deleted_row(chapter, engine):
     chapter.soup.image.decompose()
     storage.replace_content(chapter, chapter.soup, engine=engine)
     stale.soup.image['src'] = 'resurrect.png'
-    with pytest.raises(ValueError, match='not persisted'):
+    with pytest.raises(RecordDeletedError, match='not persisted'):
         storage.save_records(stale, [stale.soup.image], engine=engine)
+
+
+@pytest.mark.parametrize('delete_generated', [False, True])
+def test_still_batch_preserves_live_deletions_and_selections(chapter, engine, monkeypatch, tmp_path, delete_generated):
+    """One Shot can finish after a source or pending image is deleted live."""
+    import os
+    import sys
+    from unittest.mock import Mock
+    from test_completed_image_reuse import load_function
+    from artifact_editor.textoviva.workflow import image_workflow_name
+
+    tree = load(chapter, engine)
+    original_id = storage._identity(tree.image)
+    generated = tree.new_tag('image', index='5', prompt='Ready')
+    tree.image.insert_after(generated)
+    storage.replace_content(chapter, tree, engine=engine)
+    generated_id = storage._identity(generated)
+    source = tmp_path / 'old.png'
+    source.touch()
+    output = tmp_path / 'generated.png'
+    notify = Mock()
+    chapter.config = {}
+    chapter.images = lambda: chapter.soup.find_all('image')
+    chapter.get_image_filename = lambda image: str(tmp_path / image['src']) if image.get('src') else None
+    chapter.get_workflow = Mock(return_value='workflow')
+    chapter.save_image = lambda image: storage.save_records(chapter, [image], engine=engine)
+    chapter.save_images = lambda: storage.save_records(chapter, chapter.images(), engine=engine)
+    chapter.load_xml = lambda force: load(chapter, engine)
+
+    def batch(requests, on_complete, **kwargs):
+        assert len(requests) == 1
+        other = again(chapter)
+        current = load(other, engine)
+        # A live editor deletes an image and changes a retained selection.
+        current.find('image', index='5' if delete_generated else '4').decompose()
+        if delete_generated:
+            current.image['src'] = 'selected-live.png'
+        current.phrase['speaker'] = 'Jack'
+        storage.replace_content(other, current, engine=engine)
+        output.touch()
+        on_complete(0, None)
+        return [None]
+
+    monkeypatch.setitem(sys.modules, 'artifact_editor.images.images',
+                        SimpleNamespace(reuse_existing_image=lambda c, i: c.get_image_filename(i)))
+    monkeypatch.setitem(sys.modules, 'artifact_editor.images.completions',
+                        SimpleNamespace(publish_image_completion=notify))
+    function = load_function('src/artifact_editor/textoviva/textoviva.py', 'generate_missing_images', dict(
+        const=SimpleNamespace(DEFAULT_IMAGE_TEMPLATE='default'), os=os, log=Mock(), uuid=SimpleNamespace(uuid4=uuid4),
+        image_workflow_name=image_workflow_name, comfy=SimpleNamespace(run_workflow_fn_batch=batch),
+        selector_htmx=SimpleNamespace(gather_candidate_images=lambda *_: [str(output)] if output.exists() else [])))
+    function(SimpleNamespace(chapter=chapter))
+
+    actual = load(again(chapter), engine)
+    assert actual.phrase['speaker'] == chapter.soup.phrase['speaker'] == 'Jack'
+    assert actual.find('image', index='5' if delete_generated else '4') is None
+    assert chapter.soup.find('image', index='5' if delete_generated else '4') is None
+    if delete_generated:
+        assert storage._identity(actual.image) == original_id
+        assert actual.image['src'] == chapter.soup.image['src'] == 'selected-live.png'
+        notify.assert_not_called()
+    else:
+        assert storage._identity(actual.image) == generated_id
+        assert actual.image['src'] == output.name
+        notify.assert_called_once()
 
 
 def test_direct_orm_edits_project_into_compatibility_tags(chapter, engine):

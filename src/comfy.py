@@ -379,22 +379,41 @@ def _node_title(prompt: dict[str, Any], node_id: Any, fallback: str = "Processin
 
 
 def _handle_execution_failure(kind: str, data: dict[str, Any], job_id: str, report) -> None:
-    """Report execution failure and recover only contradictory CUDA OOMs."""
+    """Report execution failure and distinguish VRAM OOMs for bounded recovery."""
     message = data.get("exception_message", kind)
-    if kind == "execution_error":
-        from comfy_recovery import contradictory_oom, restart_comfyui
-
-        if contradictory_oom(message):
-            report(0, "ComfyUI: Inconsistent CUDA OOM; restarting ComfyUI")
-            try:
-                recovery = restart_comfyui()
-            except Exception as error:
-                log.exception("ComfyUI OOM recovery failed")
-                recovery = f"ComfyUI restart failed: {error}"
-            message = f"{message}\n{recovery}"
-
+    from comfy_recovery import VRAMOutOfMemoryError, is_vram_oom
     report(0, f"ComfyUI: {message}")
+    if kind == "execution_error" and is_vram_oom(message, data.get("exception_type", "")):
+        raise VRAMOutOfMemoryError(f"ComfyUI workflow {job_id} {kind}: {message}")
     raise RuntimeError(f"ComfyUI workflow {job_id} {kind}: {message}")
+
+
+def _retry_after_vram_oom(function):
+    """Retry the unchanged workflow once after releasing the entire CUDA process."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        from comfy_recovery import VRAMOutOfMemoryError, restart_comfyui, wait_for_comfyui
+
+        for attempt in range(2):
+            try:
+                return function(*args, **kwargs)
+            except VRAMOutOfMemoryError as error:
+                if attempt:
+                    raise
+                report = workflow_progress.get()
+                if report:
+                    report(0, "ComfyUI: VRAM OOM; fully stopping and restarting ComfyUI")
+                log.warning("ComfyUI VRAM OOM; releasing the CUDA process before one retry")
+                try:
+                    log.info("ComfyUI OOM recovery", result=restart_comfyui())
+                    if report:
+                        report(0, "ComfyUI: Waiting for restart readiness")
+                    wait_for_comfyui()
+                except Exception as recovery_error:
+                    raise RuntimeError(f"{error}\nComfyUI OOM recovery failed: {recovery_error}") from error
+                if report:
+                    report(0, "ComfyUI: Restart complete; retrying workflow once")
+    return wrapped
 
 
 def _report_workflow_event(event: dict[str, Any], prompt: dict[str, Any], active_node: Any, report) -> Any:
@@ -453,6 +472,7 @@ def _workflow_output_paths(api_url: str, job_id: str) -> list[str]:
 
 
 @_requires_gpu_service("comfy")
+@_retry_after_vram_oom
 def run_workflow(
     workflow: Workflow | dict[Any, Any],
     template_environment: dict[str, Any] | None = None,

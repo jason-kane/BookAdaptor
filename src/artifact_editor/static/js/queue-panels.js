@@ -17,8 +17,9 @@
                 if (saved === 'expanded' || saved === 'minimized') applyExpanded(saved === 'expanded');
             } catch (_) { /* optional storage */ }
             toggle.addEventListener('click', () => {
-                const expanded = !panel.classList.contains('is-minimized');
-                try { localStorage.setItem(stateKey, expanded ? 'minimized' : 'expanded'); } catch (_) { /* optional storage */ }
+                const expanded = panel.classList.contains('is-minimized');
+                applyExpanded(expanded);
+                try { localStorage.setItem(stateKey, expanded ? 'expanded' : 'minimized'); } catch (_) { /* optional storage */ }
             });
         }
         const handle = panel.querySelector('[data-queue-drag-handle]');

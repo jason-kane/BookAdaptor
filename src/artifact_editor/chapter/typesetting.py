@@ -54,28 +54,28 @@ def execute_typesetting(task):
 
 
 def ensure_text_layers(chapter):
-    """Rebuild the paired text PNGs when a video render needs missing layers."""
+    """Keep paired text layers aligned with the current phrase/color mapping."""
     from filelock import FileLock
     import const
-    from .section_latex import typeset_chapter_xml
+    from .section_latex import render_chapter_xml, typeset_documents
 
     directory = Path(const.LIBRARY_DIR) / chapter.get_chapterdir() / chapter.language
-    text_image = directory / "chapter-1.png"
-    rainbow_image = directory / "chapter.rainbow-1.png"
-    if text_image.is_file() and rainbow_image.is_file():
-        return False
-
     directory.mkdir(parents=True, exist_ok=True)
     with FileLock(str(directory / ".typeset.lock")):
-        if text_image.is_file() and rainbow_image.is_file():
-            return False
         chapter.load_xml(force=True)
         sections_file = directory / "chapter.sections.json"
         sections = json.loads(sections_file.read_text(encoding="utf-8")) if sections_file.is_file() else None
-        typeset_chapter_xml(
-            chapter.get_xml(),
-            directory,
-            const.GEOMETRY[chapter.get_aspect()]["TEXT_WIDTH"],
-            sections=sections,
+        documents = tuple(render_chapter_xml(
+            chapter.get_xml(), const.GEOMETRY[chapter.get_aspect()]["TEXT_WIDTH"], sections=sections,
+        ))
+        names = ("chapter", "chapter.rainbow")
+        current = all(
+            (directory / f"{name}-1.png").is_file()
+            and (directory / f"{name}.latex").is_file()
+            and (directory / f"{name}.latex").read_text(encoding="utf-8") == document
+            for name, document in zip(names, documents)
         )
+        if current:
+            return False
+        typeset_documents(documents, directory)
     return True

@@ -96,3 +96,27 @@ class GlancesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_trainer_lifecycle_follows_durable_queue(tmp_path):
+    import json
+    from unittest.mock import patch
+    from home.programs import reconcile_trainer
+    root = tmp_path / "active"
+    draft = root / "Author/Book/lora_training/id/draft.json"
+    draft.parent.mkdir(parents=True)
+    for status in ("queued", "waiting_for_gpu", "training", "complete", "failed"):
+        draft.write_text(json.dumps({"status": status}))
+        with patch("home.programs.compose_command", return_value=["docker", "compose"]), patch("home.programs.subprocess.run") as run:
+            running = reconcile_trainer(root, tmp_path / "lock")
+            assert running == (status in ("queued", "waiting_for_gpu", "training"))
+            command = run.call_args.args[0]
+            assert command[-1] == "lora_trainer"
+            assert ("up" in command) == running
+            assert ("stop" in command) != running
+    draft.write_text("invalid")
+    with patch("home.programs.subprocess.run") as run:
+        import pytest
+        with pytest.raises(ValueError):
+            reconcile_trainer(root, tmp_path / "lock")
+        run.assert_not_called()

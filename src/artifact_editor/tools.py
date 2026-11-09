@@ -812,6 +812,12 @@ def assemble_mp4(
             os.remove(temporary_video)
     # subprocess.run(cmd)
     log.info(f"DONE assemble_mp4({fps=}, {framedir=}, {wavfile=}, {videofile=})")
+    try:
+        from artifact_editor.cache import r
+        from artifact_editor.library.book_size import mark_dirty_for_path
+        mark_dirty_for_path(r, videofile)
+    except Exception:
+        log.debug("Could not mark library book size stale after video creation", exc_info=True)
     return videofile
 
 

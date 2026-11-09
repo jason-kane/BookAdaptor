@@ -43,7 +43,8 @@ def run_pipeline(monkeypatch, failures=()):
     scope = dict(chapter=SimpleNamespace(textoviva=SimpleNamespace(
         generate_missing_images=operation('images'), generate_missing_animations=operation('animations'))),
         client=object(), job_id='test', report_progress=progress, Lock=Lock)
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), str(path), 'exec'), scope)
+    helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'run_chapter_add_all')
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[helper, function], type_ignores=[])), str(path), 'exec'), scope)
     return scope['run'], calls, progress
 
 
@@ -51,7 +52,10 @@ def test_add_all_prepares_all_assets_in_order_without_assembling_video(monkeypat
     run, calls, progress = run_pipeline(monkeypatch)
     run()
     assert [name for name, _ in calls] == [
-        'characters', 'assign', 'appearances', 'audio', 'slots', 'props', 'metadata', 'images', 'animations']
+        'characters', 'assign', 'appearances', 'audio', 'slots', 'props', 'metadata', 'animations', 'images', 'animations']
+    animation_calls = [options for name, options in calls if name == 'animations']
+    assert animation_calls[0]['prepare_prompts_only'] is True
+    assert 'prepare_prompts_only' not in animation_calls[1]
     options = dict(calls)
     assert options['assign']['reassign_all'] is True
     assert options['audio']['force'] is False

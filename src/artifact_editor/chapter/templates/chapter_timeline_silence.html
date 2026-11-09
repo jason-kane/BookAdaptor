@@ -4,16 +4,18 @@
     {% include "chapter_phrase_timing.html" %}
     {% endwith %}
     {% with item_type='silence', item_index=silence['index'] %}{% include "chapter_timeline_delete.html" %}{% endwith %}
-    <form class="wa-stack wa-gap-s"
-          hx-post="{{ url_for('library.book.chapter.update_timeline_silence', silence_index=silence['index'], **chapter.kwargs) }}"
-          hx-trigger="change" hx-swap="none" hx-sync="this:queue last">
-        <wa-slider id="silence-slider-{{ silence['index'] }}" label="Added Silence (seconds)"
+    <div class="chapter-silence-control wa-cluster wa-align-items-end wa-gap-s">
+        <wa-slider class="silence" id="silence-slider-{{ silence['index'] }}" label="Added Silence (seconds)"
                    min="0" max="5" step="0.001" value="{{ silence['duration'] }}"
-                   oninput="this.closest('form').elements.duration.value = Number(this.value).toFixed(3)">
+                   oninput="this.parentElement.querySelector('input[name=duration]').value = Number(this.value).toFixed(3)"
+                   onchange="const form = this.parentElement.querySelector('form'); form.elements.duration.value = Number(this.value).toFixed(3); htmx.trigger(form, 'change')">
             {% for tick in range(11) %}<span slot="reference">{{ tick / 2 }}</span>{% endfor %}
         </wa-slider>
+        <form class="chapter-silence-duration" hx-post="{{ url_for('library.book.chapter.update_timeline_silence', silence_index=silence['index'], **chapter.kwargs) }}"
+              hx-trigger="change" hx-swap="none" hx-sync="this:queue last">
         <input aria-label="Silence duration in seconds" type="number" name="duration" min="0" max="5" step="0.001"
                value="{{ '%.3f'|format(silence['duration']|float) }}"
-               onchange="if (this.checkValidity()) { this.value = Number(this.value).toFixed(3); this.form.querySelector('wa-slider').value = Number(this.value); }">
-    </form>
+               onchange="if (this.checkValidity()) { this.value = Number(this.value).toFixed(3); this.form.parentElement.querySelector('wa-slider').value = Number(this.value); }">
+        </form>
+    </div>
 </div>

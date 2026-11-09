@@ -46,13 +46,19 @@ def chapter_image_snapshot(identity, library_dir=None):
         import const
         library_dir = const.LIBRARY_DIR
     root = Path(library_dir).resolve()
-    chapter_dir = root / identity["author"] / identity["title"] / "chapter" / f"{identity['chapter_number']:04}"
-    if not chapter_dir.resolve().is_relative_to(root):
+    book_dir = root / identity['author'] / identity['title']
+    allowed_root = root
+    if book_dir.is_symlink():
+        from artifact_editor.library.storage import is_shelf_link, location_roots
+        if root == location_roots()['active'].resolve() and is_shelf_link(book_dir, identity['author'], identity['title']):
+            allowed_root = book_dir.resolve()
+    chapter_dir = book_dir / "chapter" / f"{identity['chapter_number']:04}"
+    if not chapter_dir.resolve().is_relative_to(allowed_root):
         raise ValueError("Chapter is outside the library")
     xml_path = chapter_dir / identity["language"] / "chapter.xml"
     images = []
     for source_path in (xml_path, chapter_dir / "book.xml"):
-        if source_path.is_file() and not source_path.resolve().is_relative_to(root):
+        if source_path.is_file() and not source_path.resolve().is_relative_to(allowed_root):
             raise ValueError("Chapter source is outside the library")
     from artifact_editor.chapter_source import read_chapter_source
     soup = read_chapter_source(xml_path)
@@ -65,7 +71,7 @@ def chapter_image_snapshot(identity, library_dir=None):
                 image_path = (
                     chapter_dir / "paragraphs" / f"{int(paragraph['index']):06}" / image["src"]
                 ).resolve()
-                if not image_path.is_relative_to(root) or not image_path.is_file():
+                if not image_path.is_relative_to(allowed_root) or not image_path.is_file():
                     continue
                 images.append(completed_image(identity, image["index"], image["image_generation_id"]))
             except (KeyError, TypeError, ValueError):
@@ -88,6 +94,8 @@ def publish_image_completion(chapter, image, client=None):
             "state": "chapter_image_complete", **identity,
             "image": completed_image(identity, image["index"], image["image_generation_id"]),
         }
+        from artifact_editor.library.book_size import mark_dirty
+        mark_dirty(client, identity['author'], identity['title'])
         client.publish(CHAPTER_IMAGE_EVENTS, json.dumps(payload))
         return True
     except (RedisError, AttributeError, KeyError, TypeError, ValueError):

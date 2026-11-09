@@ -120,10 +120,22 @@ def upscale_animation(path, target_size):
     height -= height % 2
     if width < 2 or height < 2:
         raise ValueError("Animation target dimensions must be at least 2x2 pixels")
-    probe = subprocess.run([
+    # Generated clips live on shared storage and can briefly take much longer
+    # to read when other transfers are active. Keep the probe bounded, but do
+    # not fail an otherwise valid animation after a short I/O stall.
+    probe_command = [
         "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
         "stream=width,height", "-of", "json", str(video_path),
-    ], check=True, capture_output=True, text=True, timeout=30)
+    ]
+    for attempt in range(2):
+        try:
+            probe = subprocess.run(
+                probe_command, check=True, capture_output=True, text=True, timeout=120
+            )
+            break
+        except subprocess.TimeoutExpired:
+            if attempt == 1:
+                raise
     streams = json.loads(probe.stdout).get("streams", [])
     if streams and (streams[0].get("width"), streams[0].get("height")) == (width, height):
         return

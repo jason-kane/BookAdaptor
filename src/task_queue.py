@@ -26,6 +26,7 @@ owned by cpu_queue. Other dispatch and worker lifecycle remain with callers.
 """
 
 import json
+from artifact_editor.library.storage import protect_submission
 from typing import Any, Mapping
 
 from typing import TYPE_CHECKING
@@ -91,6 +92,7 @@ def with_task_provider(task: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+@protect_submission
 def enqueue_task(
     client: "Redis",
     queue: str,
@@ -173,6 +175,7 @@ def pop_gpu_service_switch(client: "Redis", queue: str, *, manual_only: bool = F
     return task if isinstance(task, dict) else None
 
 
+@protect_submission
 def enqueue_payload(
     client: "Redis",
     queue: str,

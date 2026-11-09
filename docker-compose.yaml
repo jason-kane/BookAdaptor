@@ -1,3 +1,23 @@
+x-book-shelf: &book-shelf
+  type: bind
+  source: /home/jkane/books
+  target: /home/jkane/books
+  bind:
+    create_host_path: false
+
+x-book-storage: &book-storage
+  type: bind
+  source: /media/jkane/External/BookAdaptor
+  target: /storage
+  read_only: true
+  bind:
+    create_host_path: false
+
+x-library-locks: &library-locks
+  type: volume
+  source: library_locks
+  target: /library-locks
+
 services:
   home:
     build:
@@ -9,6 +29,8 @@ services:
       - "8080:8080"
     volumes:
       - ./home:/app/home:ro
+      - ./active:/active:ro
+      - *book-shelf
       - ./src/redis:/app/src/redis:ro
       - ./src/postgres:/app/src/postgres:ro
       - ./src/todo:/data/todo
@@ -76,9 +98,14 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@bookadaptor.dev
       PGADMIN_DEFAULT_PASSWORD: bookadaptor
       PGADMIN_DISABLE_POSTFIX: "1"
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_DESKTOP_USER: "'admin@bookadaptor.dev'"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGPASS_FILE: /pgadmin4/bookadaptor.pgpass
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./src/postgres/servers.json:/pgadmin4/servers.json:ro
+      - ./src/postgres/pgpass:/pgadmin4/bookadaptor.pgpass:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -161,6 +188,9 @@ services:
       - ./src:/app
       - ./active:/active
       - ./active-test:/active-test
+      - *book-storage
+      - *book-shelf
+      - *library-locks
       - ./assets:/assets
       - ./comfy/ComfyUI/input:/input
       - ./comfy/ComfyUI/output:/output
@@ -182,6 +212,7 @@ services:
       - COMFYUI_API_URL=http://comfyui:8188/
       - COMFYUI_UI_URL=http://localhost:8188/
       - GPU_SERVICE_SWITCHING=1
+      - LIBRARY_LOCK_DIR=/library-locks
       - COMFYUI_CONTAINER_NAME=comfyui-megapak
       - LLAMA_CONTAINER_NAME=llama-vision
       - LLAMA_API_URL=http://llama:8080
@@ -221,7 +252,8 @@ services:
     environment:
       # Avoid dynamic allocator failures on tiny allocations with this image.
       # The entrypoint reads CLI_ARGS rather than forwarding command arguments.
-      - CLI_ARGS=--enable-cors-header "*" --disable-dynamic-vram --fp8_e4m3fn-text-enc
+      # Leave room for MiniMax sampling and runtime LoRA weight casts on the 12 GiB GPU.
+      - CLI_ARGS=--enable-cors-header "*" --disable-dynamic-vram --fp8_e4m3fn-text-enc --reserve-vram 2
     security_opt:
       # - "label=type:nvidia_container_t"
       - "label=disable"
@@ -292,12 +324,18 @@ services:
     volumes:
       - ./src/:/app
       - ./active:/active:ro
+      - *book-storage
+      - *book-shelf
+      - *library-locks
     environment:
+      - LIBRARY_LOCK_DIR=/library-locks
       - GPU_SERVICE_SWITCHING=1
       - NVIDIA_DRIVER_CAPABILITIES=utility
       - PGHOST=postgres
       - CHAPTER_STORAGE=postgres
-    entrypoint: [ "flask", "--app", "websocket.server", "run", "--host=0.0.0.0", "--port=5001" ]
+    # Flask's development server can append an HTTP response to a closed
+    # WebSocket stream. Flask-Sock handles Gunicorn's socket lifecycle directly.
+    entrypoint: [ "gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--threads", "128", "--timeout", "0", "--access-logfile", "-", "--error-logfile", "-", "websocket.server:app" ]
     deploy:
       resources:
         reservations:
@@ -321,6 +359,9 @@ services:
     volumes: &worker-volumes
       - ./src:/app
       - ./active:/active
+      - *book-storage
+      - *book-shelf
+      - *library-locks
       - ./assets:/assets
       - ./comfy/ComfyUI/input:/input
       - ./comfy/ComfyUI/output:/output
@@ -330,6 +371,7 @@ services:
       - ./configuration.toml:/app/configuration.toml
       - /var/run/docker.sock:/var/run/docker.sock
     environment: &worker-environment
+      - LIBRARY_LOCK_DIR=/library-locks
       - CONTAINER_MODE=1
       - COMFYUI_WORKFLOWS_DIR=/workflows
       - COMFYUI_WORKFLOW_TEMPLATES_DIR=/templates
@@ -381,9 +423,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
     entrypoint: ["python", "-m", "cpu_queue"]
-    volumes: *worker-volumes
+    volumes:
+      - ./src:/app
+      - ./active:/active
+      - *book-storage
+      - *book-shelf
+      - *library-locks
+      - type: bind
+        source: /media/jkane/External/BookAdaptor
+        target: /storage-transfer
+        bind:
+          create_host_path: false
+      - ./assets:/assets
+      - ./comfy/ComfyUI/input:/input
+      - ./comfy/ComfyUI/output:/output
+      - ./comfy/ComfyUI/user/default/workflows:/workflows
+      - ./templates:/templates
+      - ./comfy/ComfyUI/custom_nodes:/custom_nodes
+      - ./configuration.toml:/app/configuration.toml
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       CONTAINER_MODE: "1"
+      LIBRARY_LOCK_DIR: /library-locks
       PGHOST: postgres
       CHAPTER_STORAGE: postgres
       OMP_NUM_THREADS: "1"
@@ -428,16 +489,20 @@ services:
       args:
         AI_TOOLKIT_REF: ${AI_TOOLKIT_REF:-main}
     image: bookadaptor-ai-toolkit:local
-    restart: unless-stopped
+    restart: "no"
     volumes:
       - ./src:/app:ro
       - ./active:/active
+      - *book-storage
+      - *book-shelf
+      - *library-locks
       - ./configuration.toml:/app/configuration.toml:ro
       - ai_toolkit_cache:/root/.cache/huggingface
     environment:
       - PGHOST=postgres
       - CHAPTER_STORAGE=postgres
       - AITK_TEXT_EMBED_CACHE_BATCH=1
+      - LIBRARY_LOCK_DIR=/library-locks
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     depends_on:
       postgres:
@@ -453,6 +518,7 @@ services:
       - home-network
 
 volumes:
+  library_locks:
   ai_toolkit_cache:
   postgres_data:
   pgadmin_data:

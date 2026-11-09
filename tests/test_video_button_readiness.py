@@ -24,11 +24,11 @@ def test_missing_still_blocks_even_with_completed_milestones():
     assert module.video_prerequisite(chapter) == 'Must finish generating missing images first'
 
 
-@pytest.mark.parametrize('skip,count,expected', [(False,0,True), (False,10,True), (False,24,False), (True,0,False)])
-def test_video_requires_sufficient_animation_unless_image_opts_out(monkeypatch, tmp_path, skip, count, expected):
+@pytest.mark.parametrize('skip_value,count,expected', [(None,0,True), (None,10,True), (None,24,False), ('1',0,False), ('true',0,False), ('yes',0,False)])
+def test_video_requires_sufficient_animation_unless_image_opts_out(monkeypatch, tmp_path, skip_value, count, expected):
     image = BeautifulSoup('<paragraph index="0"><image index="0" frames="24"/></paragraph>', 'xml').image
-    if skip:
-        image['do_not_animate'] = '1'
+    if skip_value:
+        image['do_not_animate'] = skip_value
     still = tmp_path / 'still.png'
     still.touch()
     monkeypatch.setitem(sys.modules, 'const', SimpleNamespace(LIBRARY_DIR=str(tmp_path), FPS=24))

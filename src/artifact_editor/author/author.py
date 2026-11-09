@@ -14,7 +14,7 @@ class Author:
 
     def inventory_books(self):
         for title in sorted(os.listdir(self.authordir)):
-            if title in ['__pycache__', ]:
+            if title.startswith('.') or title == '__pycache__':
                 continue
             
             if not os.path.isdir(os.path.join(self.authordir, title)):

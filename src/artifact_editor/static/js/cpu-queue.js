@@ -2,13 +2,6 @@
     const panel = document.getElementById('cpu-job-queue');
     if (!panel) return;
     const toggle = document.getElementById('cpu-queue-toggle');
-    toggle.addEventListener('click', () => {
-        const minimized = panel.classList.toggle('is-minimized');
-        const label = `${minimized ? 'Expand' : 'Minimize'} CPU queue`;
-        toggle.setAttribute('aria-expanded', String(!minimized));
-        toggle.setAttribute('aria-label', label);
-        toggle.title = label;
-    });
     function animationThumbnail(task, message = task.message || '') {
         if (!['chapter_missing_animations', 'textoviva_regenerate_animation',
               'textoviva_missing_animation'].includes(task.action)) return '';
@@ -24,6 +17,14 @@
         const language = task.language || chapter.language;
         if (!author || !title || !number || !language) return '';
         return `/library/${encodeURIComponent(author)}/${encodeURIComponent(title)}/${encodeURIComponent(number)}/${encodeURIComponent(language)}/images/128/${index}.png`;
+    }
+    function taskLabel(task) {
+        const label = task.action === 'textoviva_one_shot'
+            ? `One Shot · ${task.title} · Chapter ${task.chapter_number}`
+            : task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`].filter(Boolean).join(' · ') || 'Chapter render';
+        const pid = Number(task.pid);
+        return task.state === 'running' && Number.isSafeInteger(pid) && pid > 0
+            ? `${label} · PID ${pid} (container)` : label;
     }
     function row(task, state) {
         const item = document.createElement('div');
@@ -44,7 +45,7 @@
         }
         const label = document.createElement('p');
         label.className = 'cpu-queue-label';
-        label.textContent = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`].filter(Boolean).join(' · ') || 'Chapter render';
+        label.textContent = taskLabel(task);
         label.title = label.textContent;
         item.append(label);
         const message = document.createElement('p');
@@ -97,6 +98,7 @@
                     ['Batch ID', task.batch_id],
                     ['Parent Job ID', task.parent_job_id],
                     ['Worker ID', task.worker_id],
+                    ['PID (container)', task.pid],
                     ['Chapter', chapterLabel || undefined],
                     ['Started at', task.started_at ? new Date(Number(task.started_at) * 1000).toISOString() : undefined],
                     ['Duration seconds', task.duration_seconds],
@@ -135,9 +137,10 @@
             retry.setAttribute('appearance', 'plain');
             retry.className = 'cpu-queue-retry';
             retry.dataset.cpuRetry = '';
-            retry.setAttribute('aria-label', `Retry ${label.textContent}`);
+            const retryLabel = item.dataset.state === 'complete' ? 'Run again' : 'Retry';
+            retry.setAttribute('aria-label', `${retryLabel} ${label.textContent}`);
             retry.title = 'Run this task again with the same inputs';
-            retry.textContent = 'Retry';
+            retry.textContent = retryLabel;
             retry.addEventListener('click', () => {
                 if (retry.disabled) return;
                 retry.disabled = true;
@@ -168,8 +171,7 @@
                 || existing.dataset.cancellable !== String(Boolean(task.cancellable))) {
             return row(task, state);
         }
-        const label = task.label || [task.title, task.chapter_number && `Chapter ${task.chapter_number}`]
-            .filter(Boolean).join(' · ') || 'Chapter render';
+        const label = taskLabel(task);
         const message = window.TaskTiming?.cleanMessage(task.message)
             || task.message || (task.worker_id ? `Worker ${task.worker_id}` : state);
         const labelElement = existing.querySelector('.cpu-queue-label');
@@ -313,28 +315,20 @@
                 return existing && !existing.classList.contains('cpu-queue-row-fading')
                     ? updateRow(existing, task, state) : row(task, state);
             });
-            if (name === 'failed') {
-                for (const [jobId, existing] of previous) {
-                    if (currentIds.has(jobId)) continue;
-                    rows.push(existing);
-                    if (existing.classList.contains('cpu-queue-row-fading')) continue;
-                    existing.classList.add('cpu-queue-row-fading');
-                    existing.setAttribute('aria-label', `${existing.getAttribute('aria-label') || 'Failed task'} — dismissed`);
-                    setTimeout(() => existing.remove(), 1200);
-                }
-            }
             container.replaceChildren(...rows);
         }
     }
     document.addEventListener('cpu:queue-plan', ({detail: plan}) => renderPlan(plan));
     document.addEventListener('htmx:wsAfterSend', event => {
         const button = event.detail.elt;
-        const group = button?.closest('[data-chapter-assets]');
+        const group = button?.closest('[data-chapter-assets], #textoviva-one-shot');
         if (!group) return;
         let task;
         try { task = JSON.parse(event.detail.message); } catch (_) { return; }
-        if (!task?.job_id || !task.action?.startsWith('chapter_')) return;
-        submitted.set(task.job_id, {...task, state: 'submitting', message: 'Submitting…'});
+        if (!task?.job_id || !(task.action?.startsWith('chapter_') || task.action === 'textoviva_one_shot')) return;
+        submitted.set(task.job_id, {...task,
+            label: task.action === 'textoviva_one_shot' ? `One Shot · ${task.title} · Chapter ${task.chapter_number}` : task.label,
+            state: 'submitting', message: 'Submitting…'});
         renderPlan(lastPlan);
         panel.classList.remove('is-minimized');
         toggle.setAttribute('aria-expanded', 'true');
