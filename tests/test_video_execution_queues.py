@@ -33,9 +33,13 @@ ROOT = Path(__file__).parents[1]
 @pytest.fixture(autouse=True)
 def isolated_library(tmp_path, monkeypatch):
     from artifact_editor.library import storage
-    active, stored = tmp_path / 'active', tmp_path / 'storage'
+    active, stored, shelf = tmp_path / 'active', tmp_path / 'storage', tmp_path / 'shelf'
     active.mkdir()
     stored.mkdir()
+    shelf.mkdir()
+    for author, title in [("Author", "Title"), ("Aesop", "Fables")]:
+        (active / author / title).mkdir(parents=True)
+    monkeypatch.setattr(storage, "location_roots", lambda: {"active": active, "storage": stored, "shelf": shelf})
     monkeypatch.setattr(storage, 'roots', lambda: (active, stored))
     monkeypatch.delenv('LIBRARY_LOCK_DIR', raising=False)
 
@@ -62,6 +66,16 @@ def audio_helpers():
     return load_functions('src/artifact_editor/phrases/phrases.py',
                           {'assemble', 'get_first_file', 'get_wav_duration'},
                           dict(os=os, wave=wave, contextlib=contextlib, decimal=__import__('decimal'), log=Mock()))
+
+
+@pytest.fixture
+def isolated_segment_helpers(monkeypatch):
+    # Load geometry without importing application/GPU dependencies.
+    import sys
+    functions = load_functions('src/artifact_editor/typography/page_segment.py',
+                               {'segment_tops'}, {'SEGMENT_HEIGHT': 2048})
+    monkeypatch.setitem(sys.modules, 'artifact_editor.typography.page_segment',
+                        SimpleNamespace(segment_tops=functions['segment_tops']))
 
 
 def test_render_commands_leave_gpu_worker_available_for_dependencies():
@@ -111,6 +125,7 @@ def test_render_is_durable_before_worker_startup_can_disconnect_request(monkeypa
     from task_queue import VIDEO_EVENTS
     from uuid import UUID
     client, socket = MagicMock(), Mock()
+    client.eval.return_value = 1
     task = dict(job_id='b' * 32, action='textoviva_rerender', author='Aesop',
                 title='Fables', chapter_number=25, language='english')
     socket.receive.return_value = json.dumps(task)
@@ -118,14 +133,14 @@ def test_render_is_durable_before_worker_startup_can_disconnect_request(monkeypa
                         Mock(side_effect=SystemExit('startup replaced caller')))
     namespace = dict(json=json, uuid=SimpleNamespace(UUID=UUID), VIDEO_QUEUE=VIDEO_QUEUE,
                      VIDEO_EVENTS=VIDEO_EVENTS, enqueue_task=enqueue_task,
-                     redis_connection=lambda: client)
+                     redis_connection=lambda: client, progress_html=lambda status: "queued")
     load_functions('src/websocket/server.py', {'handle_websocket'}, namespace)
     with pytest.raises(SystemExit, match='replaced caller'):
         namespace['handle_websocket'](socket)
-    queue, payload = client.lpush.call_args.args
-    assert queue == RENDER_QUEUE
-    assert json.loads(payload)['title'] == 'Fables'
-    status = client.hset.call_args.kwargs['mapping']
+    args = client.eval.call_args.args
+    assert args[3] == RENDER_QUEUE
+    assert json.loads(args[5])['title'] == 'Fables'
+    status = json.loads(args[6])
     assert status['state'] == 'queued'
     assert status['chapter_number'] == 25
     assert status['author'] == 'Aesop'
@@ -144,6 +159,22 @@ def test_queued_video_is_visible_before_any_frame_task_exists():
     assert plan['render_count'] == 1
     assert plan['queued_count'] == 0
     assert plan['renders'][0]['state'] == 'queued'
+
+
+def test_failed_render_queue_snapshot_keeps_traceback():
+    client = Mock()
+    task = dict(job_id='failed-render', action='textoviva_one_shot',
+                state='failed', message='Animation failed',
+                debug_details='Traceback (most recent call last): animation error')
+    client.get.side_effect = lambda key: json.dumps({'workers': 24}) if key == cpu_queue.POOL else None
+    client.hvals.side_effect = lambda key: [json.dumps(task)] if key == cpu_queue.FAILED_TASKS else []
+    client.hgetall.return_value = {}
+    client.llen.return_value = 0
+    client.lrange.side_effect = lambda key, *_: [json.dumps(task)] if key == 'chapter_render:recent' else []
+    plan = cpu_queue.snapshot(client)
+    assert plan['renders'] == []
+    assert plan['failed'][0]['state'] == 'failed'
+    assert plan['failed'][0]['debug_details'].startswith('Traceback')
 
 
 def test_gpu_queue_exposes_parent_identity_for_dependency_connectors():
@@ -190,16 +221,16 @@ def test_xml_image_starts_after_preceding_narration(tmp_path):
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='ffmpeg required')
-def test_cpu_frames_encode_all_phrases_and_change_images_at_xml_boundary(tmp_path, monkeypatch):
+def test_cpu_frames_encode_all_phrases_and_change_images_at_xml_boundary(tmp_path, monkeypatch, isolated_segment_helpers):
     geometry = {'SIZE': (32, 32), 'HSIZE': 32, 'VSIZE': 32}
     const = SimpleNamespace(LIBRARY_DIR=str(tmp_path), FPS=4, GEOMETRY={'widescreen': geometry})
     audio = audio_helpers()
-    ns = dict(os=os, json=json, subprocess=subprocess, log=Mock())
+    ns = dict(os=os, json=json, subprocess=subprocess, Path=Path, log=Mock())
     encode = load_functions('src/artifact_editor/tools.py', {'assemble_mp4'}, ns)['assemble_mp4']
     frame_ns = dict(os=os, glob=glob, itertools=itertools, traceback=traceback, Image=Image,
                     const=const, log=Mock(), frame_is_current=lambda *args: False,
                     tools=SimpleNamespace(expand_dir=lambda pattern, reverse=False: sorted(glob(pattern), reverse=reverse)),
-                    invalidate_frame_metadata=Mock(), save_frame_metadata=Mock())
+                    invalidate_frame_metadata=Mock(), save_frame_metadata=Mock(), publish_frame_completion=Mock())
     draw = load_functions('src/artifact_editor/frames/frames.py', {'draw_frame'}, frame_ns)['draw_frame']
     tracks = []
     for index, value in enumerate((1000, 2000, 3000)):
@@ -219,7 +250,7 @@ def test_cpu_frames_encode_all_phrases_and_change_images_at_xml_boundary(tmp_pat
     chapter = SimpleNamespace(chapterdir='chapter', author=SimpleNamespace(name='Author'), title='Title',
                               number=1, language='english', get_aspect=lambda: 'widescreen',
                               get_masterplan=lambda **_: plan, get_all_audio_tracks=lambda: tracks,
-                              build_frame_to_camera=Mock(), get_video_filename=lambda: output)
+                              build_frame_to_camera=Mock(), get_video_filename=lambda: output, safe_title=lambda: "video")
     submitted = []
     class LocalBatch:
         def __init__(self, **kwargs):
@@ -379,12 +410,18 @@ def test_generate_video_accepts_stills_and_reuses_existing_animation(tmp_path, m
     assert (paragraph_dir / 'still.png').is_file()
 
 
-def test_selected_animation_does_not_require_or_prompt_unselected_stills(tmp_path):
+def test_selected_animation_does_not_require_or_prompt_unselected_stills(tmp_path, monkeypatch):
+    import sys
+    timeline = load_functions(
+        "src/artifact_editor/chapter/timeline.py", {"phrase_timings", "image_timings"},
+        {"Decimal": Decimal, "MAX_ANIMATION_DURATION_SECONDS": Decimal("8")})
+    monkeypatch.setitem(sys.modules, "artifact_editor.chapter.timeline",
+                        SimpleNamespace(image_timings=timeline["image_timings"]))
     soup = BeautifulSoup('<chapter><paragraph index="0"><image index="0"/>'
                          '<image index="1"/></paragraph></chapter>', 'xml')
     still = tmp_path / 'selected.png'
     still.touch()
-    chapter = SimpleNamespace(images=lambda: iter(soup.find_all('image')),
+    chapter = SimpleNamespace(get_xml=lambda: soup, images=lambda: iter(soup.find_all('image')),
         get_image_filename=lambda image: str(still) if image['index'] == '1' else None,
         get_paragraph_dir=lambda _: '',
         get_video_filename=lambda: str(tmp_path / 'output.mp4'), save_timing=Mock(), save_phrase=Mock(), save_images=Mock(), save_timeline=Mock(), save_image=Mock())
@@ -430,3 +467,68 @@ def test_cpu_panel_only_offers_supported_retries(action, retryable):
     client.exists.return_value = True
     client.lrange.side_effect = lambda key, *_: [json.dumps(task)] if key == cpu_queue.RECENT else []
     assert cpu_queue.snapshot(client)['completed'][0]['retryable'] is retryable
+
+
+@pytest.mark.parametrize('preparation_fails', [False, True])
+def test_segments_are_unique_and_all_finish_before_frames(tmp_path, monkeypatch, preparation_fails, isolated_segment_helpers):
+    words = [SimpleNamespace(id='phrase', index=0, paragraph_index=0, start_frame=0,
+                             end_frame=2, fullscreen=False, paragraph_tags={})]
+    chapter = SimpleNamespace(chapterdir='chapter', author=SimpleNamespace(name='Author'),
+                              title='Title', number=1, language='english',
+                              get_aspect=lambda: 'widescreen',
+                              get_masterplan=lambda **_: SimpleNamespace(words=words, images=[]),
+                              get_all_audio_tracks=lambda: [], build_frame_to_camera=Mock(),
+                              get_video_filename=lambda: str(tmp_path / 'video.mp4'), safe_title=lambda: 'video')
+    events = []
+    class LocalBatch:
+        def __init__(self, **kwargs):
+            self.tasks = []
+            self.client = Mock()
+            self.key = 'batch'
+        def submit(self, action, args, label):
+            self.tasks.append((action, args))
+            events.append(('submit', action, args))
+        def wait(self, progress=None):
+            events.append(('wait', [action for action, _ in self.tasks]))
+            if self.tasks and self.tasks[0][0] == 'prepare_text_segment' and preparation_fails:
+                raise RuntimeError('preparation failed')
+            for action, args in self.tasks:
+                if action == 'draw_frame':
+                    Path(args['frame_fn']).touch()
+    monkeypatch.setattr(cpu_queue, 'Batch', LocalBatch)
+    offsets = [0, 1500, 1600]
+    ns = dict(os=os, const=SimpleNamespace(LIBRARY_DIR=str(tmp_path), FPS=1,
+              GEOMETRY={'widescreen': {'SIZE': (8, 8), 'TEXT_HEIGHT': 1080}}),
+              camera=SimpleNamespace(frame_to_camera=lambda i: offsets[i]),
+              phrases=SimpleNamespace(assemble=Mock(), get_wav_duration=lambda _: 3))
+    render = load_functions('src/artifact_editor/video/video.py', {'book_to_video'}, ns)['book_to_video']
+    if preparation_fails:
+        with pytest.raises(RuntimeError, match='preparation failed'):
+            render(chapter)
+        assert not any(e[0] == 'submit' and e[1] == 'draw_frame' for e in events)
+        return
+    render(chapter, force=True)
+    prepared = [e[2] for e in events if e[:2] == ('submit', 'prepare_text_segment')]
+    assert prepared == [dict(phrase_id='phrase', segment_top=0, force=True),
+                        dict(phrase_id='phrase', segment_top=2048, force=True)]
+    wait_index = next(i for i, e in enumerate(events) if e == ('wait', ['prepare_text_segment'] * 2))
+    frame_index = next(i for i, e in enumerate(events) if e[:2] == ('submit', 'draw_frame'))
+    assert wait_index < frame_index
+
+
+def test_frame_segment_reads_never_generate_even_when_forced():
+    client = Mock()
+    generate = Mock(return_value=b'png')
+    ns = dict(redis=SimpleNamespace(Redis=lambda **_: client),
+              segment_cache_key=lambda *args: 'segment:test',
+              retrieve_segment_from_book=generate, SEGMENT_HEIGHT=2048, log=Mock())
+    read = load_functions('src/artifact_editor/typography/page_segment.py', {'get_segment'}, ns)['get_segment']
+    client.get.return_value = b'cached'
+    assert read(None, None, 0, force=True, cache_only=True) == b'cached'
+    client.get.return_value = None
+    with pytest.raises(RuntimeError, match='Prepare segments'):
+        read(None, None, 0, force=True, cache_only=True)
+    generate.assert_not_called()
+    client.set.assert_not_called()
+    assert read(None, None, 0) == b'png'
+    client.set.assert_called_once_with('segment:test', b'png', ex=21600)

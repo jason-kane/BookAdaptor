@@ -143,6 +143,7 @@ services:
     entrypoint: [ "pytest", "--cov=artifact_editor", "--cov-report=html", "--maxfail=1", "-q" ]
     volumes:
       - /home/jkane/BookAdaptor/src/:/app/
+      - /home/jkane/BookAdaptor/tests/:/app/tests/
       - /home/jkane/BookAdaptor/configuration.toml:/app/configuration.toml
       - /home/jkane/BookAdaptor/htmlcov:/app/htmlcov
       - /home/jkane/BookAdaptor/active-test:/active
