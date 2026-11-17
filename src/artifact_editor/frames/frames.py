@@ -473,7 +473,8 @@ def draw_frame(
                 text_image = chapter.get_highlighted_text_image(
                     phrase_xml=phrase_xml,
                     scroll_lock=scroll_lock,
-                    force=force
+                    force=force,
+                    cache_only=True,
                 )
 
                 if text_image is None:

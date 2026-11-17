@@ -222,7 +222,7 @@ def execute(task, chapters):
     elif task["action"] == "assemble_book":
         from artifact_editor.book.textoviva import execute as assemble_book
         assemble_book(task)
-    elif task["action"] == "draw_frame":
+    elif task["action"] in ("draw_frame", "prepare_text_segment"):
         from artifact_editor.author.author import Author
         from artifact_editor.chapter.chapter import Chapter
         from artifact_editor.frames.frames import draw_frame
@@ -233,7 +233,16 @@ def execute(task, chapters):
             identity = task["chapter"]
             chapters[batch_id] = Chapter(Author(identity["author"]), identity["title"],
                                           identity["chapter_number"], identity["language"])
-        draw_frame(chapters[batch_id], animate_lock=None, **arguments)
+        chapter = chapters[batch_id]
+        chapter.aspect = task["chapter"].get("aspect") or chapter.get_aspect()
+        if task["action"] == "prepare_text_segment":
+            from artifact_editor.typography.page_segment import get_segment
+            phrase = chapter.get_phrase(arguments["phrase_id"])
+            if phrase is None:
+                raise ValueError(f"Missing phrase {arguments['phrase_id']}")
+            get_segment(chapter, phrase, arguments["segment_top"], force=arguments.get("force", False))
+        else:
+            draw_frame(chapter, animate_lock=None, **arguments)
     elif task["action"] == "encode_video":
         from artifact_editor.tools import assemble_mp4
         assemble_mp4(**arguments)

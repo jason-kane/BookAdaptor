@@ -840,12 +840,85 @@ def retrieve_segment_from_book(
 
 
 
+def segment_tops(top_index: int, text_height: int):
+    """Aligned segments needed for a scrolling text viewport."""
+    top_index = int(top_index)
+    return range((top_index // SEGMENT_HEIGHT) * SEGMENT_HEIGHT,
+                 ((top_index + text_height) // SEGMENT_HEIGHT + 1) * SEGMENT_HEIGHT,
+                 SEGMENT_HEIGHT)
+
+
+def segment_cache_key(chapter, phrase_xml, segment_top):
+    G = const.GEOMETRY[chapter.aspect]
+    text_revision = os.stat(os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
+    )).st_mtime_ns
+    rainbow_revision = os.stat(os.path.join(
+        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter.rainbow-1.png"
+    )).st_mtime_ns
+    return f"segment:chapter-png-native-v1:{text_revision}:{rainbow_revision}:{G['TEXT_WIDTH']}:{chapter.language}:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
+
+
+def get_segment(chapter, phrase_xml, segment_top, *, force=False, cache_only=False):
+    redis_cache = redis.Redis(host="redis")
+    cache_key = segment_cache_key(chapter, phrase_xml, segment_top)
+    image_segment = redis_cache.get(cache_key)
+    if force and not cache_only:
+        #bypass cache
+        image_segment = None
+
+    if image_segment is None:
+        if cache_only:
+            raise RuntimeError(f'Required text segment is missing: {cache_key}. Prepare segments before rendering frames.')
+        log.info('Cache miss. Segment not found in cache with key', cache_key=cache_key, force=force)
+
+        try:
+            image_segment = retrieve_segment_from_book(
+                chapter,
+                phrase_xml,
+                segment_top,
+                segment_top + SEGMENT_HEIGHT,
+                force=force
+            )
+        except OSError as e:
+            log.error(f'Error retrieving segment from book: {e}')
+            # say please.
+            image_segment = retrieve_segment_from_book(
+                chapter,
+                phrase_xml,
+                segment_top,
+                segment_top + SEGMENT_HEIGHT,
+                force=True
+            )
+
+        try:
+            log.info('Saving segment %s to cache', cache_key)
+            redis_cache.set(cache_key, image_segment, ex=6 * 60 * 60)
+        except Exception as e:
+            log.error(f'Error saving segment {image_segment} to cache: %s', e)
+            log.error('Segment key was: %s', cache_key)
+
+            try:
+                pil_segment = Image.open(io.BytesIO(image_segment))
+                pil_segment.verify()
+            except Exception as verif_error:
+                log.error('Segment image verification failed: %s', verif_error)
+
+            redis_cache.delete(cache_key)  # don't keep bad data
+            raise
+    else:
+        log.info('Cache hit. Found segment in cache with key', cache_key=cache_key, force=force)
+
+    return image_segment
+
+
 def from_offset(
     chapter: Chapter,
     phrase_xml: Tag,
     top_index: int,   # scroll_lock
     force: bool = False,
     no_background: bool = False,
+    cache_only: bool = False,
 ) -> Image.Image:
     """
     retrieve a finished page segment.  A page segment is a black on transparent
@@ -857,11 +930,6 @@ def from_offset(
     return value is a PIL Image object.
     """
     log.info(f'from_offset({chapter=}, {phrase_xml=}, {top_index=}, {chapter.aspect=})')
-
-    # Connect to local Redis.  It holds SEGMENT_HEIGHT tall PNG image segments for the 
-    # text side of the screen.  get_segment abstracts that and lets you
-    # get a TEXT_HEIGHT tall image at any pixel offset (top_index).
-    redis_cache = redis.Redis(host="redis")
 
     # The cache holds SEGMENT_HEIGHT tall segments.
     # so we're going to get more than we need, then use
@@ -886,59 +954,9 @@ def from_offset(
 
     # log.info(f'To build image at offset {top_index} we are pasting segments from {adjusted_top} to {adjusted_bottom}')
 
-    text_revision = os.stat(os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter-1.png"
-    )).st_mtime_ns
-    rainbow_revision = os.stat(os.path.join(
-        const.LIBRARY_DIR, chapter.chapterdir, chapter.language, "chapter.rainbow-1.png"
-    )).st_mtime_ns
-    for segment_top in range(adjusted_top, adjusted_bottom, SEGMENT_HEIGHT):
-        cache_key = f"segment:chapter-png-native-v1:{text_revision}:{rainbow_revision}:{G['TEXT_WIDTH']}:{chapter.language}:{chapter.key}:{phrase_xml.attrs['index']}:{segment_top}:{segment_top + SEGMENT_HEIGHT}"
-
-        image_segment = redis_cache.get(cache_key)
-        if force:
-            #bypass cache
-            image_segment = None
-
-        if image_segment is None:
-            log.info('Cache miss. Segment not found in cache with key', cache_key=cache_key, force=force)
-
-            try:
-                image_segment = retrieve_segment_from_book(
-                    chapter,
-                    phrase_xml,
-                    segment_top,
-                    segment_top + SEGMENT_HEIGHT,
-                    force=force
-                )
-            except OSError as e:
-                log.error(f'Error retrieving segment from book: {e}')
-                # say please.
-                image_segment = retrieve_segment_from_book(
-                    chapter,
-                    phrase_xml,
-                    segment_top,
-                    segment_top + SEGMENT_HEIGHT,
-                    force=True
-                )
-
-            try:
-                log.info('Saving segment %s to cache', cache_key)
-                redis_cache.set(cache_key, image_segment)
-            except Exception as e:
-                log.error(f'Error saving segment {image_segment} to cache: %s', e)
-                log.error('Segment key was: %s', cache_key)
-        
-                try:
-                    pil_segment = Image.open(io.BytesIO(image_segment))
-                    pil_segment.verify()
-                except Exception as verif_error:
-                    log.error('Segment image verification failed: %s', verif_error)
-
-                redis_cache.delete(cache_key)  # don't keep bad data
-                raise
-        else:
-            log.info('Cache hit. Found segment in cache with key', cache_key=cache_key, force=force)
+    for segment_top in segment_tops(top_index, G['TEXT_HEIGHT']):
+        image_segment = get_segment(chapter, phrase_xml, segment_top,
+                                    force=force, cache_only=cache_only)
 
         pil_segment = Image.open(io.BytesIO(image_segment))
 

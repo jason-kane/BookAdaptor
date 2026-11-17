@@ -13,7 +13,13 @@ GPU workflows, including LLM metadata requests, go through the existing serial
 GPU worker and appear individually in **GPU Queue**. The underlying
 `video_render_jobs` Redis name remains for compatibility with existing producers.
 
-Frame composition, MP4 encoding, and LaTeX typesetting go to `cpu_jobs`. The `cpu_worker` service
+Text segment preparation, frame composition, MP4 encoding, and LaTeX typesetting go to `cpu_jobs`.
+Video rendering first submits one task per required phrase and 2,048-pixel text
+segment, deduplicated across the complete frame timeline. These tasks run in
+parallel; the coordinator waits for all of them before submitting any frames.
+Frames only read prepared segments and fail if one is missing. They never
+regenerate missing segments, including during a forced redraw. Segment writes
+retain a six-hour Redis TTL. The `cpu_worker` service
 starts one worker process per CPU core available to the container. Claimed tasks
 are retained in per-worker Redis lists; the supervisor recovers claims after a
 process or service restart. **CPU Queue** shows active workers, pending tasks,

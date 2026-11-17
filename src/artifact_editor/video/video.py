@@ -46,13 +46,12 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
     identity = {"author": chapter.author.name, "title": chapter.title,
                 "chapter_number": chapter.number, "language": chapter.language, "aspect": aspect}
     parent_id = render_context.get().get("parent_job_id")
-    batch = Batch(parent_job_id=parent_id, chapter=identity)
-    previous_image = None
     fallback = framedir / "blank.png"
     Image.new("RGB", const.GEOMETRY[aspect]["SIZE"], "black").save(fallback)
-    image_cursor = -1
-    word_cursor = 0
-    try:
+    def frame_timeline():
+        previous_image = None
+        image_cursor = -1
+        word_cursor = 0
         for frame_index in range(total_frames):
             while (image_cursor + 1 < len(mplan.images)
                    and mplan.images[image_cursor + 1].start_frame <= frame_index):
@@ -79,7 +78,7 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                               "fullscreen": False, "mode": "scale"}
             image_dict["fullscreen"] = bool(image_dict.get("fullscreen") or word.fullscreen)
             image_dict["paragraph_tags"] = word.paragraph_tags
-            batch.submit("draw_frame", {
+            yield {
                 "chapterdir": chapter.chapterdir, "aspect": aspect,
                 "frame_fn": str(framedir / f"frame_{frame_index:06}.png"),
                 "scroll_lock": camera.frame_to_camera(frame_index),
@@ -92,11 +91,45 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
                 "paragraph_index": paragraph_index,
                 "phrase_id": word.id if word.id is not None else word.index,
                 "force": force,
-            }, f"Frame {frame_index + 1} of {total_frames}")
+            }
             previous_image = image_dict
 
+
+    # Submit each phrase/vertical-range pair once, regardless of frame count.
+    # Frames are not visible to CPU workers until every segment is ready.
+    from artifact_editor.typography.page_segment import segment_tops
+    segments = set()
+    for arguments in frame_timeline():
+        if arguments["image_dict"]["fullscreen"]:
+            continue
+        if arguments["scroll_lock"] is None:
+            raise ValueError("No scroll position for a frame requiring text")
+        for top in segment_tops(arguments["scroll_lock"], const.GEOMETRY[aspect]["TEXT_HEIGHT"]):
+            segments.add((arguments["phrase_id"], top))
+    preparation = Batch(parent_job_id=parent_id, chapter=identity)
+    try:
+        if progress:
+            progress(5, f"Preparing text segments (0/{len(segments)})")
+        for phrase_id, top in sorted(segments, key=lambda item: (str(item[0]), item[1])):
+            preparation.submit("prepare_text_segment", {
+                "phrase_id": phrase_id, "segment_top": top, "force": force,
+            }, f"Text segment for phrase {phrase_id} at {top}px")
+        preparation.wait(progress=(lambda completed: progress(
+            5 + int(15 * completed / max(1, len(segments))),
+            f"Preparing text segments ({completed}/{len(segments)})")) if progress else None)
+    except Exception:
+        preparation.client.hset(preparation.key, "cancelled", "1")
+        raise
+    finally:
+        preparation.client.close()
+
+    batch = Batch(parent_job_id=parent_id, chapter=identity)
+    try:
+        for frame_index, arguments in enumerate(frame_timeline()):
+            batch.submit("draw_frame", arguments, f"Frame {frame_index + 1} of {total_frames}")
+
         batch.wait(progress=(lambda completed: progress(
-            10 + int(65 * completed / total_frames),
+            20 + int(55 * completed / total_frames),
             f"Rendering frames ({completed}/{total_frames})")) if progress else None)
     except Exception:
         batch.client.hset(batch.key, "cancelled", "1")

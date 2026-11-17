@@ -538,7 +538,9 @@ class Chapter:
             (self.author.name + self.title + str(self.number) + self.language).encode()
         ).digest()
         # base64 gives us a lot more bits of uniqueness than hex would.
-        unique = base64.b64encode(unique).decode()[:4]
+        # Standard Base64 can contain '/', which creates unintended directories
+        # when this identity is used as a workflow or audio filename prefix.
+        unique = base64.b64encode(unique).decode()[:4].replace('/', '_')
         nice.append(unique)
 
         return "-".join(nice).replace(" ", "_").lower()
@@ -752,7 +754,7 @@ class Chapter:
         return r, g, b
 
     def get_highlighted_text_image(
-        self, phrase_xml: Tag, scroll_lock: int, force: bool = False
+        self, phrase_xml: Tag, scroll_lock: int, force: bool = False, cache_only: bool = False
     ):
         """
         Not the snippet, the real-deal.  That means we need to obey scroll_lock.
@@ -760,7 +762,8 @@ class Chapter:
         moment in the text.  We are told the answer, we just need to do it.
         """
         return page_segment.from_offset(
-            chapter=self, phrase_xml=phrase_xml, top_index=scroll_lock, force=force
+            chapter=self, phrase_xml=phrase_xml, top_index=scroll_lock, force=force,
+            cache_only=cache_only
         )
 
     def get_highlighted_text_snippet(self, phrase_xml: Tag, force: bool = False):
@@ -2970,8 +2973,6 @@ class Chapter:
         else:
             log.info("Chapter config not found", chapterdir=self.chapterdir)
             chapter_configdict = {}
-
-        log.debug("Got chapter configdict", chapter_configdict=chapter_configdict)
 
         # ultimate default with the path values
         unified_config.update(chapter_configdict)
