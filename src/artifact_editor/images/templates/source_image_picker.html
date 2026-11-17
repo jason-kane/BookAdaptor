@@ -16,6 +16,12 @@
         </figure>
         <small>Drag a frame region to position it. Both regions keep the {{ target_size[0] }} × {{ target_size[1] }} output ratio. Use zoom to change how much of the illustration is visible.</small>
         <div class="source-crop-actions">
+            <wa-button type="button" data-source-auto-pan
+                hx-post="{{ url_for('library.book.chapter.images.auto_pan_source_image', image_index=image['index'], **chapter.kwargs) }}"
+                hx-include="closest .source-image-picker"
+                hx-target="closest .source-image-picker" hx-swap="outerHTML"
+                hx-disabled-elt="this"
+                title="Use a square crop when it preserves the artwork, otherwise set a pan and skip AI animation.">Auto Pan</wa-button>
             <wa-button type="button" data-source-crop-start>Crop image</wa-button>
             <wa-button type="button" data-source-crop-cancel hidden>Cancel crop</wa-button>
             <wa-button type="button" data-source-crop-save hidden
@@ -56,6 +62,8 @@
             Choose this Image
         </wa-button>
         <small>Saves the illustration and both frame regions. The pan/zoom is applied when you rebuild the chapter video.</small>
+        {% if layout_mode == 'square' %}<small role="status">Square crop saved. AI animation is enabled for this image.</small>
+        {% elif layout_mode == 'pan' %}<small role="status">Auto pan saved. AI animation is disabled for this image.</small>{% endif %}
         {% if motion_active %}<small role="status">First and last frame regions saved.</small>{% endif %}
         <wa-button type="button"
             hx-get="{{ url_for('library.book.chapter.images.refresh_source_picker', image_index=image['index'], **chapter.kwargs) }}"

@@ -1,16 +1,48 @@
 """Recognize standalone source illustration cues across Quill formatting runs."""
 import re
 from pathlib import PurePosixPath
+from urllib.parse import unquote, urlsplit
+
+from bs4 import BeautifulSoup
 
 # An illustration block includes the empty lines after its marker. Removing
 # only the marker line leaves those lines as visible blank rows in LaTeX.
 MARKER = re.compile(r"^[^\S\n]*\[Illustration:\s*([^\]\n]+?)\s*\][^\S\n]*(?:\n|$)(?:[^\S\n]*\n)*", re.MULTILINE | re.IGNORECASE)
 
 
+def source_illustration_aliases(chapter, available):
+    """Map source HTML image labels to existing, book-local image files."""
+    from artifact_editor.images.source import source_directory
+
+    if not getattr(chapter, 'bookdir', None):
+        return {}
+    root = source_directory(chapter).resolve()
+    aliases = {}
+    for document in root.rglob('*'):
+        if document.suffix.lower() not in {'.htm', '.html'} or not document.is_file():
+            continue
+        html = BeautifulSoup(document.read_text(encoding='utf-8', errors='replace'), 'html.parser')
+        for image in html.find_all('img', src=True):
+            source = urlsplit(image['src'])
+            if source.scheme or source.netloc:
+                continue
+            try:
+                filename = (document.parent / unquote(source.path)).resolve().relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if filename not in available:
+                continue
+            for label in (image.get('alt'), image.get('id')):
+                if isinstance(label, str) and label.strip():
+                    aliases.setdefault(label.strip().casefold(), set()).add(filename)
+    return aliases
+
+
 def extract_illustrations(sections, chapter):
     from artifact_editor.images.source import source_images
 
     available = None
+    aliases = None
     cleaned, operations = [], []
     for section_index, section in enumerate(sections):
         attributes = {'_typesetting_method': section['typesetting_method'],
@@ -30,6 +62,10 @@ def extract_illustrations(sections, chapter):
                 candidates = [name for name in available if
                               PurePosixPath(name).name.casefold() == reference.casefold()
                               or PurePosixPath(name).stem.casefold() == reference.casefold()]
+            if not candidates:
+                if aliases is None:
+                    aliases = source_illustration_aliases(chapter, available)
+                candidates = sorted(aliases.get(reference.casefold(), ()))
             if len(candidates) != 1:
                 raise ValueError(f'Illustration {reference!r} must match exactly one source image (found {len(candidates)})')
             cues[match.start()] = candidates[0]

@@ -1039,7 +1039,10 @@ class Chapter:
                 if animation_filename(image_xml, paragraph_dir):
                     motion = None
             if motion:
-                source_filename = self.get_image_filename(image_xml)
+                from artifact_editor.images.source import source_image_path
+
+                source_filename = (str(source_image_path(self, image_xml['source_image']))
+                                   if image_xml.get('source_image') else self.get_image_filename(image_xml))
                 if source_filename and os.path.isfile(source_filename):
                     source_stat = os.stat(source_filename)
                     target_size = output_size(self, image_xml)

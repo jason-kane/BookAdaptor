@@ -8,8 +8,13 @@ def animation_filename(image, paragraph_dir):
     from artifact_editor.images.source_motion import active_motion
 
     paragraph_dir = Path(paragraph_dir)
+    if (image.get('auto_chapter_title_pan') or image.get('auto_source_layout')) and active_motion(image):
+        return None
+    minimum_mtime = int(image.get('source_layout_updated_ns', '0'))
+    def current(path):
+        return path.is_file() and path.stat().st_mtime_ns >= minimum_mtime
     explicit = image.get('animated_src')
-    if explicit and (paragraph_dir / Path(explicit).name).is_file():
+    if explicit and current(paragraph_dir / Path(explicit).name):
         return Path(explicit).name
     source = image.get('src')
     if not source:
@@ -18,7 +23,7 @@ def animation_filename(image, paragraph_dir):
     # Workflow output names differ from the still image's name. Prefer the
     # generated output over the compatibility copy named after the still.
     candidates = [path for path in paragraph_dir.glob(f"img_{int(image['index'])}_*.mp4")
-                  if path.is_file() and path.name != companion]
+                  if current(path) and path.name != companion]
     if candidates:
         return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name)).name
     # A source-selected image may have a camera.mp4 or companion file used
@@ -26,7 +31,7 @@ def animation_filename(image, paragraph_dir):
     if active_motion(image):
         return None
     for filename in (companion, 'camera.mp4'):
-        if (paragraph_dir / filename).is_file():
+        if current(paragraph_dir / filename):
             return filename
     return None
 
@@ -44,7 +49,7 @@ def animation_frame_count(image, paragraph_dir, fps=None):
             import const
             fps = const.FPS
         return _video_frame_count(str(path), stat.st_mtime_ns, stat.st_size, fps)
-    if active_motion(image):
+    if active_motion(image) or image.get('auto_source_layout'):
         return 0
     directories = list((paragraph_dir / "animation").glob(f"image_{int(image['index']):06d}_*"))
     count = sum(1 for directory in directories if directory.is_dir()

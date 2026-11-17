@@ -2034,6 +2034,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         and import_state.get("version") == 2
         and import_state.get("sections_sha256") == sections_fingerprint
     ):
+        from artifact_editor.images.source_layout import prepare_chapter_sources
+        prepare_chapter_sources(chapter)
         progress(100, "Chapter sections are unchanged; import skipped")
         return False
 
@@ -2529,8 +2531,6 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     for image in chapter.get_xml().find_all("image"):
         if image.get("source_image"):
             choose_source_image(chapter, image, image["source_image"])
-
-
     cwd = os.path.join(
         const.LIBRARY_DIR,
         chapter.get_chapterdir(),
@@ -2552,6 +2552,8 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
             state_file,
         )
     os.replace(temporary_import_state, import_state_fn)
+    from artifact_editor.images.source_layout import prepare_chapter_sources
+    prepare_chapter_sources(chapter)
     progress(100, "Chapter import complete")
     return True
 

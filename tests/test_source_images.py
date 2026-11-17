@@ -92,6 +92,9 @@ def picker_app():
     for endpoint, rule in (
         ("chapter_source_image", "/images/<int:image_index>/source_image/<path:filename>"),
         ("choose_chapter_source", "/images/<int:image_index>/source_choose"),
+        ("refresh_source_picker", "/images/<int:image_index>/source_picker/refresh"),
+        ("crop_source_picker_image", "/images/<int:image_index>/source_picker/crop"),
+        ("auto_pan_source_image", "/images/<int:image_index>/source_picker/auto_pan"),
     ):
         app.add_url_rule(rule, endpoint="library.book.chapter.images." + endpoint, view_func=lambda **_: "")
     return app
@@ -126,4 +129,5 @@ def test_legacy_source_copy_is_preselected_and_empty_books_have_no_choose_button
         monkeypatch.setattr(source, "source_directory", lambda *_: root / "missing")
         parsed = BeautifulSoup(source.source_picker(chapter, image), "html.parser")
         assert "No source images" in parsed.text
-        assert parsed.find("wa-button") is None
+        assert parsed.select_one('[data-source-auto-pan]') is None
+        assert parsed.find('wa-button').text.strip() == 'Refresh images'

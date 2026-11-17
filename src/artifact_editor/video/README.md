@@ -42,3 +42,14 @@ Queue estimates account for preceding GPU tasks and parallel CPU worker slots.
 The UI shows min/avg/max in tooltips (also directly on CPU rows). A new profile
 shows “Learning duration”; work exceeding all observed durations shows “Longer
 than observed”. Completion is only shown after a terminal worker result.
+
+Source illustrations are prepared by both chapter import and One Shot, including
+imports whose text fingerprint is unchanged. Uniform paper margins may be trimmed
+into a square; a paper extension is allowed only when it occupies at most 10% of
+the square. Those stills remain eligible for AI animation. Other source aspects
+use editable camera motion along the longer dimension and skip AI animation.
+The book's opening-illustration option runs first to separate its decorative
+heading from body text. Existing manual motion is preserved. **Auto Pan** in
+**Choose from Source** applies the same square-or-pan decision to the selected
+source image. Originals are retained, and animations predating a new crop are
+excluded from reuse.

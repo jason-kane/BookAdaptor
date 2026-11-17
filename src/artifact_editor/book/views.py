@@ -102,6 +102,10 @@ def set_book_metadata(author, title):
         if request.form['default_image_template'] not in dict(image_engine_choices()):
             return "Invalid image generation engine", 400
 
+    if 'auto_chapter_title_pan' in request.form:
+        if request.form['auto_chapter_title_pan'] not in {'true', 'false'}:
+            return "Invalid chapter opening illustration setting", 400
+
     if "default_loras" in request.form:
         try:
             selected = loras.normalize(json.loads(request.form["default_loras"]))
@@ -116,6 +120,8 @@ def set_book_metadata(author, title):
         if name == "default_loras":
             continue
         match name:
+            case "auto_chapter_title_pan":
+                book.config[name] = value == 'true'
             case "style":
                 log.info('Setting book config "default_style" to "%s"', value)
                 book.config["default_style"] = value
@@ -448,6 +454,14 @@ def get_book_metadata(book):
                 "Body font size:", "default_body_font_size",
                 book.config.get("default_body_font_size", "16px"), body_size_choices,
             ),
+            f'''<wa-checkbox name="auto_chapter_title_pan"
+                {'checked' if book.config.get('auto_chapter_title_pan') is True else ''}
+                hint="Keep the opening artwork and decorative title, remove body text, and pan left to right. Existing manual framing is preserved."
+                hx-put="{book.set_book_metadata_url}" hx-trigger="change"
+                hx-target="#book_metadata" hx-swap="outerHTML"
+                hx-vals='js:{{auto_chapter_title_pan: this.checked ? "true" : "false"}}'>
+                Automatically pan chapter opening illustrations
+            </wa-checkbox>''',
         ]
     )
     return f"""<div id="book_metadata">

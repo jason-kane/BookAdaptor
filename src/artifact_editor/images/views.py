@@ -258,6 +258,33 @@ def crop_source_picker_image(image_index):
     return response
 
 
+@bp.post("/<int:image_index>/source_picker/auto_pan")
+def auto_pan_source_image(image_index):
+    image = g.chapter.get_image(image_index)
+    if image is None:
+        abort(404)
+    from .source_layout import apply_source_layout
+    from .source import source_picker
+
+    try:
+        mode = apply_source_layout(g.chapter, image, request.form.get('image_source', ''))
+    except (ValueError, FileNotFoundError, OSError) as error:
+        return f'Could not prepare source image: {error}', 400
+    cache.clear()
+    from .completions import publish_image_completion
+    publish_image_completion(g.chapter, image)
+    response = make_response(source_picker(g.chapter, image, selected=image['source_image'], expanded=True), 200)
+    response.headers['HX-Trigger'] = json.dumps({'chapter-image-selected': {
+        'image_index': image_index,
+        'preview_url': url_for('library.book.chapter.images.show_image_by_index', height=360,
+                               image_index=image_index, v=image.get('image_generation_id'), **g.chapter.kwargs),
+        'full_image_url': url_for('library.book.chapter.images.show_image_by_index', height=0,
+                                  image_index=image_index, v=image.get('image_generation_id'), **g.chapter.kwargs),
+        'alt': image.get('alt') or 'Source illustration', 'source_layout': mode,
+    }})
+    return response
+
+
 @bp.post("/<int:image_index>/source_choose")
 def choose_chapter_source(image_index):
     image = g.chapter.get_image(image_index)

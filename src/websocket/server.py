@@ -207,6 +207,9 @@ def run_chapter_add_all(chapter, progress, *, step_offset=0, total_steps=None):
     from artifact_editor.chapter.timeline import place_image_slots
     from gpu_tasks import task_label
     from artifact_editor.chapter.workflow import complete_step
+    from artifact_editor.images.source_layout import prepare_chapter_sources
+
+    prepare_chapter_sources(chapter)
 
     def process_appearances(report):
         result = extract_all_description_timelines(chapter, progress=report)

@@ -695,11 +695,14 @@ class Textoviva:
                     if os.path.isabs(animated_src)
                     else os.path.join(const.LIBRARY_DIR, animated_src.lstrip("/"))
                 )
-                if os.path.isfile(animated_path):
+                minimum_mtime = int(image_xml.get('source_layout_updated_ns', '0'))
+                if os.path.isfile(animated_path) and os.stat(animated_path).st_mtime_ns >= minimum_mtime:
                     continue
                 cached_videos = selector_htmx.gather_candidate_videos(
                     image_xml, self.chapter
                 )
+                cached_videos = [path for path in cached_videos
+                                 if os.stat(path).st_mtime_ns >= minimum_mtime]
                 if cached_videos:
                     os.makedirs(os.path.dirname(animated_path), exist_ok=True)
                     shutil.copy2(max(cached_videos, key=os.path.getmtime), animated_path)

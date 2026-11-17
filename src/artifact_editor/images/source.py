@@ -171,11 +171,15 @@ def source_picker(chapter, image, selected=None, motion=None, expanded=False):
     else:
         motion = default_motion()
     target_size = output_size(chapter, image)
+    try:
+        layout_mode = json.loads(image.get('auto_source_layout', '{}')).get('mode')
+    except (TypeError, ValueError):
+        layout_mode = None
     return render_template(
         "source_image_picker.html", chapter=chapter, image=image,
         filenames=filenames, selected=selected, motion=motion,
         target_size=target_size, motion_active=bool(active_motion(image)),
-        expanded=expanded,
+        expanded=expanded, layout_mode=layout_mode,
     )
 
 
