@@ -317,10 +317,19 @@
         if (spinner) spinner.hidden = false;
     }
 
+    // Describe worker operations by the work users see in their chapter.
+    function workerOperationLabel(job) {
+        if (job.action !== 'worker_rpc' || job.operation !== 'sentences') return null;
+        const chapter = job.chapter_number != null ? `chapter ${job.chapter_number}` : 'chapter text';
+        const progress = job.text_block != null && job.text_blocks != null
+            ? ` · block ${job.text_block} of ${job.text_blocks}` : '';
+        return `Splitting ${chapter} into sentences${progress}`;
+    }
+
     // Build a readable label for an incoming job event.
     function jobLabel(event) {
         // TODO(MONITOR): count distinct action, job_type, and engine categories; avoid filenames and tags.
-        const type = event.label || event.job_type || (event.action === 'styler_tag_sample' ? 'Image tags'
+        const type = workerOperationLabel(event) || event.label || event.job_type || (event.action === 'styler_tag_sample' ? 'Image tags'
             : event.action === 'styler_sample' ? 'Sample image'
             : event.action === 'styler_scan_image_tags' ? 'Tag normalization'
             : event.action === 'styler_style_description' ? 'Historical description'
@@ -334,7 +343,7 @@
 
     // Resolve the human-readable type of a queue task.
     function queueTaskType(job) {
-        return job.job_type || ({
+        return workerOperationLabel(job) || job.job_type || ({
             styler_tag_sample: 'Image tags',
             styler_sample: 'Sample image',
             styler_scan_image_tags: 'Tag normalization',
@@ -405,6 +414,7 @@
 
     // Build the concise subject and engine name shown in a queue row.
     function queueTaskName(job) {
+        if (workerOperationLabel(job)) return workerOperationLabel(job);
         const subject = job.style_tag?.replaceAll('_', ' ') || job.filename?.split('/').pop();
         const engine = job.action === 'styler_tag_group' ? null
             : ({zit: 'Z-Image', krea2: 'Krea 2', qwen: 'Qwen 2.1'})[job.engine];
@@ -824,6 +834,8 @@
 
     // Synchronize a queue row’s content and controls with its job.
     function updateQueueRow(row, job) {
+        const operationLabel = workerOperationLabel(job);
+        if (operationLabel) job = {...job, label: operationLabel, job_type: operationLabel};
         if (job.parent_job_id) row.dataset.parentJobId = job.parent_job_id;
         else delete row.dataset.parentJobId;
         row.dataset.state = job.state;

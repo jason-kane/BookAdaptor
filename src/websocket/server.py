@@ -1787,6 +1787,7 @@ def worker_rpc(ws):
 
 def handle_worker_rpc(ws):
     from worker_operations import OPERATIONS
+    from worker_client import sentence_task_label
 
     client = redis_connection()
     result_key = None
@@ -1800,13 +1801,25 @@ def handle_worker_rpc(ws):
             task["arguments"], dict
         ):
             raise ValueError("Unsupported worker request")
+        context = task.get('context', {})
+        if not isinstance(context, dict):
+            raise ValueError('Invalid worker progress context')
+        context = {key: context[key] for key in ('chapter_number', 'text_block', 'text_blocks')
+                   if context.get(key) is not None}
+        if any(type(value) is not int or value < 1 for value in context.values()):
+            raise ValueError('Invalid worker progress counts')
+        if ('text_block' in context) != ('text_blocks' in context) or context.get('text_block', 0) > context.get('text_blocks', 0):
+            raise ValueError('Invalid worker progress counts')
         task = {
             "job_id": job_id,
             "action": "worker_rpc",
             "operation": task["operation"],
             "arguments": task["arguments"],
             "deadline": time.time() + 590,
+            **context,
         }
+        if task['operation'] == 'sentences':
+            task['job_type'] = sentence_task_label(**context)
         result_key = f"worker_result:{job_id}"
         enqueue_task(client, VIDEO_QUEUE, task)
         deadline = task["deadline"]
@@ -2728,7 +2741,7 @@ def styler_queue_entry(task, priority=False):
         action, action.replace("_", " ").strip().title() or "GPU task"
     )
     if action == "worker_rpc":
-        job_type = task.get("operation", "Worker task").replace("_", " ").title()
+        job_type = task.get('job_type') or task.get("operation", "Worker task").replace("_", " ").title()
     item = {
         key: task[key]
         for key in (
@@ -2742,6 +2755,9 @@ def styler_queue_entry(task, priority=False):
             "filename",
             "background_category",
             "operation",
+            "chapter_number",
+            "text_block",
+            "text_blocks",
             "promoted",
             "priority_removed",
             "idle_maintenance",

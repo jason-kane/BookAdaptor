@@ -2050,8 +2050,13 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
     delta["ops"] = apply_paragraph_alignment(compress_ops(delta["ops"]))
 
     from .speech import speech_runs
+    from worker_client import worker_task_context, sentence_task_label
 
-    for ops in speech_runs(delta["ops"]):
+    sentence_runs = list(speech_runs(delta["ops"]))
+    text_blocks = sum(len(re.split(r"(\n\n+)", op.get('insert', '')))
+                      for op in sentence_runs if 'illustration' not in op)
+    text_block = 0
+    for ops in sentence_runs:
         if "illustration" in ops:
             out_ops.append(dict(ops, type="illustration"))
             continue
@@ -2064,7 +2069,13 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
 
             for start_idx, end_idx in broken:
                 log.info("Broken span: start=%s, end=%s", start_idx, end_idx)
-                doc = nlp(major_break[start_idx:end_idx])
+                text_block += 1
+                context = dict(chapter_number=getattr(chapter, 'number', None),
+                               text_block=text_block, text_blocks=text_blocks)
+                progress(5 + 9 * (text_block - 1) / max(1, text_blocks),
+                         sentence_task_label(**context))
+                with worker_task_context(**context):
+                    doc = nlp(major_break[start_idx:end_idx])
 
                 sentence_spans = list(doc.sents)
                 sentence_count = len(sentence_spans)
