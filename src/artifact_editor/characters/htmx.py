@@ -750,7 +750,7 @@ def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
         data-character-panel
         class="wa-stack"
     >
-        <wa-button type="button" size="small" variant="danger" appearance="plain"
+        <wa-button class="trashcan" type="button" size="small" variant="danger" appearance="plain" pill
             aria-label="Delete character" title="Delete character"
             style="position: absolute; top: 8px; right: 8px; z-index: 1"
             hx-delete="{url_for('library.book.chapter.characters.delete_character', **chapter.kwargs, character_tag=tag)}"

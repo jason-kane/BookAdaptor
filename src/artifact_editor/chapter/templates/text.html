@@ -548,6 +548,10 @@
         margin-bottom: 0.5em;
         margin-top: 0.5em;
     }
+    .trashcan::part(base) {
+        color: rgb(170 48 61);
+        background: #63636359;
+    }
     .chapter-silence-control {
         display: flex;
         align-items: end;
@@ -566,6 +570,19 @@
     .chapter-silence-duration input {
         box-sizing: border-box;
         width: 100%;
+    }
+    .chapter-timeline-insert {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        width: 100%;
+    }
+    .chapter-timeline-insert > wa-select {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    .chapter-timeline-insert > wa-button {
+        flex: 0 0 auto;
     }
     fieldset.phrase-container[data-timeline-type="phrase"] {
         min-width: 0;
@@ -1420,11 +1437,11 @@
             <wa-tab panel="pronunciation">Pronunciation</wa-tab>
             <wa-tab-panel name="timeline"
                 hx-get="{{ url_for('library.book.chapter.timeline_panel', **chapter.kwargs) }}"
-                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace">
+                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:drop">
             </wa-tab-panel>
             <wa-tab-panel name="characters" data-scrollbar-panel data-scrollbar-label="Scroll character changes"
                 hx-get="{{ url_for('library.book.chapter.characters.base', panel=1, **chapter.kwargs) }}"
-                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:replace"
+                hx-trigger="load, load-column" hx-swap="innerHTML" hx-sync="this:drop"
                 hx-on::response-error="if (event.detail.elt === this) this.textContent = 'Could not load character changes. Reload the page to retry.'">
                 <p role="status">Loading character changes…</p>
             </wa-tab-panel>
@@ -1541,7 +1558,7 @@
                 onclick="document.getElementById('chapter-insert-dialog').open=true">
                 <wa-icon name="plus" aria-hidden="true"></wa-icon>
             </wa-button>
-            <wa-button class="chapter-delete-trigger" size="small" appearance="plain" variant="danger"
+            <wa-button class="chapter-delete-trigger trashcan" size="small" appearance="plain" variant="danger" pill
                 aria-label="Delete chapter {{ chapter.number }}" title="Delete chapter {{ chapter.number }}"
                 onclick="document.getElementById('chapter-delete-dialog').open=true">
                 <wa-icon name="trash" aria-hidden="true"></wa-icon>

@@ -202,6 +202,9 @@ def chapter_list(author, title):
             if chapter.config.get("youtube", False):
                 published = """<wa-badge class="youtube-badge" appearance="outlined" variant="success">YouTube</wa-badge>"""
 
+            video_finished = os.path.isfile(chapter.get_video_filename())
+            finished_class = " chapter-finished" if video_finished else ""
+
             url_for_text = url_for(
                 "library.book.chapter.chapter_base",
                 **chapter.kwargs
@@ -209,7 +212,7 @@ def chapter_list(author, title):
             if True:
                 out.append(f"""
                     <a href="{url_for_text}">
-                        <wa-card class="chapter-container">
+                        <wa-card class="chapter-container{finished_class}">
                             {published}
                             <img slot="media" src="{chapter.cover_url}" alt="Cover of {title}" />
                             {chapter.number}: {chapter_title}

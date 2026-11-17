@@ -10,7 +10,7 @@
     {% for tag, prop in props.items() %}
     <wa-tab-panel name="prop-{{ tag }}" style="max-height: min(70vh, 42rem); overflow-y: auto; overscroll-behavior: contain;">
     <div class="wa-stack" style="position:relative;padding-top:40px">
-        <wa-button type="button" size="small" variant="danger" appearance="plain"
+        <wa-button class="trashcan" type="button" size="small" variant="danger" appearance="plain" pill
             aria-label="Delete prop" title="Delete prop"
             style="position:absolute;top:0;right:0"
             hx-delete="{{ url_for('library.book.chapter.props.delete', tag=tag, **chapter.kwargs) }}"

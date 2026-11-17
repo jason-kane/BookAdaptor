@@ -337,20 +337,9 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
     """Audio and pronunciation controls for a phrase in the chapter text view."""
     timing_updates = chapter_timing_updates(chapter)
     target = f"#chapter-audio-controls-{phrase_xml['index']}"
-    add_image_url = url_for(
-        "library.book.chapter.add_timeline_image_below",
+    insert_item_url = url_for(
+        "library.book.chapter.insert_timeline_item",
         phrase_index=phrase_xml['index'],
-        **chapter.kwargs,
-    )
-    add_phrase_url = url_for(
-        "library.book.chapter.add_timeline_phrase_below",
-        phrase_index=phrase_xml['index'],
-        **chapter.kwargs,
-    )
-    add_silence_url = url_for(
-        "library.book.chapter.add_timeline_silence",
-        target_type="phrase",
-        target_index=phrase_xml['index'],
         **chapter.kwargs,
     )
     oob_attribute = ' hx-swap-oob="true"' if oob else ""
@@ -364,26 +353,26 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
         {audio_player(chapter, phrase_xml)}
         <div class="wa-cluster">
             {generate_audio_button(chapter, phrase_xml, target=target)}
-            <wa-button
-                hx-post="{add_image_url}"
-                hx-target="#phrase_{phrase_xml['index']}"
-                hx-swap="afterend"
-                hx-disabled-elt="this"
-            >Add Image Below</wa-button>
-            <wa-button
-                hx-post="{add_silence_url}"
-                hx-target="#phrase_{phrase_xml['index']}"
-                hx-swap="afterend"
-                hx-disabled-elt="this"
-            >Add Silence Below</wa-button>
-            <wa-button
-                hx-post="{add_phrase_url}"
-                data-preserve-timeline-position
-                hx-target="#chapter-phrase-list"
-                hx-swap="innerHTML"
-                hx-disabled-elt="this"
-                hx-on::after-request="if (event.detail.successful) window.previous_phrase_index = -1"
-            >Add Phrase Below</wa-button>
+            <form class="chapter-timeline-insert wa-cluster wa-gap-s">
+                <wa-select name="item_type" aria-label="Type" size="small" value="phrase">
+                    <wa-option value="silence">Silence</wa-option>
+                    <wa-option value="phrase">Phrase</wa-option>
+                    <wa-option value="image">Image</wa-option>
+                </wa-select>
+                <wa-select name="location" aria-label="Location" size="small" value="below">
+                    <wa-option value="above">Above</wa-option>
+                    <wa-option value="below">Below</wa-option>
+                </wa-select>
+                <wa-button type="button" size="small"
+                    hx-post="{insert_item_url}"
+                    hx-include="closest form"
+                    data-preserve-timeline-position
+                    hx-target="#chapter-phrase-list"
+                    hx-swap="innerHTML"
+                    hx-disabled-elt="this"
+                    hx-on::after-request="if (event.detail.successful && this.closest('form')?.querySelector('[name=item_type]')?.value === 'phrase') window.previous_phrase_index = -1"
+                >Add</wa-button>
+            </form>
             {chapter_merge_with_previous_button(chapter, phrase_xml)}
         </div>
     </div>{timing_updates}"""

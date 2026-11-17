@@ -552,6 +552,54 @@ def add_timeline_phrase_below(phrase_index):
     )
 
 
+@bp.post("/timeline/insert/<int:phrase_index>")
+def insert_timeline_item(phrase_index):
+    from .timeline import add_image_below, add_phrase_below, add_silence, image_timings, phrase_timings
+    from artifact_editor.phrases.htmx import chapter_timing_updates
+
+    item_type = request.form.get("item_type")
+    location = request.form.get("location")
+    if item_type not in {"silence", "phrase", "image"}:
+        return "Invalid timeline item type", 400
+    if location not in {"above", "below"}:
+        return "Invalid timeline insertion location", 400
+
+    try:
+        if item_type == "phrase":
+            add_phrase_below(g.chapter, phrase_index, position=location)
+            return render_template(
+                "chapter_phrase_list.html",
+                chapter=g.chapter,
+                speakers=g.chapter.speakers(),
+            )
+
+        if item_type == "image":
+            image = add_image_below(g.chapter, phrase_index, position=location)
+            timing = image_timings(g.chapter.get_xml()).get(str(image["index"]))
+            fragment = render_template(
+                "chapter_timeline_image.html", chapter=g.chapter, image=image,
+                timing=timing,
+            ) + chapter_timing_updates(g.chapter)
+        else:
+            silence = add_silence(
+                g.chapter, "phrase", phrase_index, const.FPS, position=location
+            )
+            timing = phrase_timings(g.chapter.get_xml(), item_type="silence").get(
+                str(silence["index"])
+            )
+            fragment = render_template(
+                "chapter_timeline_silence.html", chapter=g.chapter, silence=silence,
+                timing=timing,
+            ) + chapter_timing_updates(g.chapter)
+    except ValueError as error:
+        return str(error), 400
+
+    response = flask.make_response(fragment)
+    response.headers["HX-Retarget"] = f"#phrase_{phrase_index}"
+    response.headers["HX-Reswap"] = "beforebegin" if location == "above" else "afterend"
+    return response
+
+
 @bp.post("/timeline/phrase/<int:phrase_index>/typesetting")
 def update_phrase_typesetting(phrase_index):
     phrase_xml = g.chapter.get_phrase(phrase_index)

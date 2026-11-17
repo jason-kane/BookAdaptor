@@ -235,6 +235,20 @@ class TimelineTests(unittest.TestCase):
         module.add_import_silences(empty, 8)
         self.assertEqual(empty.find_all('silence'), [])
 
+    def test_import_adds_final_silence_after_trailing_image(self):
+        soup = BeautifulSoup(
+            '<chapter><paragraph index="0"><phrase index="0">The end.</phrase>'
+            '<silence index="0" duration="2.000" frames="48"/>'
+            '<image index="4"/></paragraph></chapter>', 'xml')
+
+        module.add_import_silences(soup, 24)
+
+        image = soup.find('image', index='4')
+        silence = image.find_next_sibling('silence')
+        self.assertIsNotNone(silence)
+        self.assertEqual((silence['duration'], silence['frames']), ('2.000', '48'))
+        self.assertEqual(image['frames'], '48')
+
     def test_audio_badge_checks_file_and_renders_without_timings(self):
         from jinja2 import Environment, FileSystemLoader
 

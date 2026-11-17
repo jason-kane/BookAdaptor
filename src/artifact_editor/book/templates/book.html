@@ -32,6 +32,13 @@
         height: 21em;
         width: 13.5em;
     }
+    .chapter-container.chapter-finished {
+        border: 4px solid transparent;
+        border-radius: var(--wa-border-radius-m, 0.5rem);
+        background: linear-gradient(var(--wa-color-surface-default, #fff), var(--wa-color-surface-default, #fff)) padding-box,
+                    linear-gradient(135deg, #f8f8f8 0%, #aeb4ba 18%, #fff 32%, #858b92 52%, #e9ecef 72%, #9da3aa 88%, #fafafa 100%) border-box;
+        box-shadow: 0 0 8px rgb(210 215 220 / 55%), inset 0 0 0 1px rgb(255 255 255 / 70%);
+    }
     .label {
         font-weight: bold;
         width: 5em;
@@ -39,6 +46,10 @@
     .chapter-container:hover {
         background-color: #333333;
         border-color: white;
+    }
+    .chapter-container.chapter-finished:hover {
+        border-color: transparent;
+        filter: brightness(1.05);
     }
     .book-page-editor .ql-editor { min-height: 18rem; }
     .book-page-template { width: 100%; max-width: 60rem; min-width: 0; }

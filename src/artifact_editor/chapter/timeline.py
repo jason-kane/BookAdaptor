@@ -87,14 +87,16 @@ def image_timings(soup):
     return timings if phrases else {}
 
 
-def add_image_below(chapter, phrase_index):
+def add_image_below(chapter, phrase_index, position="below"):
+    if position not in ("above", "below"):
+        raise ValueError("Invalid timeline insertion position")
     soup = chapter.get_xml()
     phrase = soup.find("phrase", attrs={"index": str(phrase_index)})
     if phrase is None:
         raise ValueError("Phrase no longer exists; reload the chapter")
     image_index = max((int(image["index"]) for image in soup.find_all("image")), default=-1) + 1
     image = soup.new_tag("image", attrs={"index": str(image_index)})
-    phrase.insert_after(image)
+    (phrase.insert_before if position == "above" else phrase.insert_after)(image)
     update_image_frames(soup)
     chapter.save_timeline()
     return image
@@ -183,9 +185,11 @@ def save_silence(chapter, silence, value, fps):
     chapter.save_timing()
 
 
-def add_silence(chapter, target_type, target_index, fps):
+def add_silence(chapter, target_type, target_index, fps, position="below"):
     if target_type not in ("phrase", "image", "silence", "scene"):
         raise ValueError("Invalid timeline item")
+    if position not in ("above", "below"):
+        raise ValueError("Invalid timeline insertion position")
     soup = chapter.get_xml()
     target = soup.find(target_type, index=str(target_index))
     if target is None:
@@ -196,21 +200,23 @@ def add_silence(chapter, target_type, target_index, fps):
         "index": str(index), "duration": format(duration, ".3f"),
         "frames": str(round(duration * fps)),
     })
-    target.insert_after(silence)
+    (target.insert_before if position == "above" else target.insert_after)(silence)
     update_image_frames(soup)
     # New entries need a structural save before timing-only updates can use them.
     chapter.save_timeline()
     return silence
 
 
-def add_phrase_below(chapter, phrase_index):
+def add_phrase_below(chapter, phrase_index, position="below"):
     """Insert an empty phrase with its predecessor's speaker, then renumber."""
+    if position not in ("above", "below"):
+        raise ValueError("Invalid timeline insertion position")
     soup = chapter.get_xml()
     target = soup.find("phrase", index=str(phrase_index))
     if target is None:
         raise ValueError("Phrase no longer exists; reload the chapter")
     phrase = soup.new_tag("phrase", attrs={"speaker": target.get("speaker", "Narrator")})
-    target.insert_after(phrase)
+    (target.insert_before if position == "above" else target.insert_after)(phrase)
     for index, tag in enumerate(soup.find_all("phrase")):
         tag["index"] = str(index)
     chapter.save_timeline()
@@ -292,6 +298,13 @@ def add_import_silences(soup, fps):
     for previous, following in zip(items, items[1:]):
         if previous.name == following.name == "image":
             append_pause(previous, 5.0)
+
+    # Import can place a source illustration after the final narration phrase.
+    # The chapter-ending pause belongs after that last image so it receives
+    # frames; a pause before the image leaves the final shot with zero duration.
+    last_item = items[-1] if items else None
+    if last_item is not None and last_item.name == "image":
+        append_pause(last_item, 2.0)
     update_image_frames(soup)
 
 

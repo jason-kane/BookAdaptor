@@ -340,6 +340,51 @@ document.addEventListener('chapter-image-selected', event => {
     }
 });
 
+document.addEventListener('chapter:image-event', ({detail: event}) => {
+    if (event?.state !== 'chapter_image_complete' || !event.image?.url) return;
+    const stage = document.querySelector('[data-library-image-leaves]');
+    const identity = stage?.dataset.chapterIdentity;
+    if (!identity) return;
+    let chapter;
+    try { chapter = JSON.parse(identity); } catch (_) { return; }
+    if (!Object.keys(chapter).every(key => String(event[key]) === String(chapter[key]))) return;
+
+    const imageIndex = Number(event.image.index);
+    if (!Number.isInteger(imageIndex)) return;
+    const panel = document.getElementById(`timeline-image-${imageIndex}`);
+    const marker = document.getElementById(`timeline-image-background-${imageIndex}`);
+    if (!panel || !marker) return;
+
+    const previewUrl = new URL(event.image.url, window.location.href);
+    const fullUrl = new URL(previewUrl.href);
+    fullUrl.pathname = fullUrl.pathname.replace(/\/640\//, '/0/');
+    const thumbUrl = new URL(previewUrl.href);
+    thumbUrl.pathname = thumbUrl.pathname.replace(/\/640\//, '/96/');
+    const alt = panel.dataset.imageAlt || 'Chapter image';
+    panel.dataset.timelineThumbnailUrl = thumbUrl.href;
+    panel.dataset.timelineBackgroundUrl = fullUrl.href;
+    panel.dataset.fullImageUrl = fullUrl.href;
+    marker.dataset.backgroundUrl = fullUrl.href;
+    marker.dataset.fullImageUrl = fullUrl.href;
+    marker.dataset.imageAlt = alt;
+
+    const timing = panel.querySelector('.chapter-timeline-timing');
+    if (timing) timing.dataset.missingImage = 'false';
+    panel.querySelectorAll('.chapter-image-warning-badges wa-badge').forEach(badge => {
+        if (badge.textContent.trim() === 'Image') badge.remove();
+    });
+    const label = panel.querySelector(`#timeline-image-label-${imageIndex}`);
+    if (label) label.textContent = `Image ${imageIndex}`;
+    panel.parentElement?._timelineBackgroundUpdate?.();
+
+    // An already opened image editor contains the visible preview; update it
+    // in place while preserving the current prompt and controls.
+    const editor = document.getElementById(`timeline-image-editor-${imageIndex}`);
+    const preview = editor?.querySelector('.chapter-mini-image-preview');
+    if (preview) preview.src = previewUrl.href.replace(/\/640\//, '/360/');
+    editor?.querySelector('.chapter-image-viewer-open')?.removeAttribute('disabled');
+});
+
 function initializeTimelineImageBackgrounds(list) {
     const syncBackgroundMarkers = () => {
         list.querySelectorAll(':scope > details[data-timeline-type="image"]').forEach(panel => {
