@@ -13,6 +13,13 @@
                 <div id="speaker-choice-{{phrase_xml['index']}}">
                     {{speaker_selector(chapter, phrase_xml)|safe}}
                 </div>
+                <wa-button size="small" variant="brand" appearance="accent" pill type="button"
+                    aria-label="Re-attribute speaker" title="Re-attribute speaker"
+                    hx-post="{{ url_for('library.book.chapter.phrases.reattribute_phrase_speaker', phrase_index=phrase_xml['index'], **chapter.kwargs) }}"
+                    hx-target="#speaker-choice-{{phrase_xml['index']}}" hx-swap="innerHTML"
+                    hx-disabled-elt="this">
+                    <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+                </wa-button>
                 <div>
                     {{pronunciation_textarea(chapter, phrase_xml)|safe}}
                 </div>

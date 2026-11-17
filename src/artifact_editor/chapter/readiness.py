@@ -21,12 +21,14 @@ def has_missing_images(chapter):
     return False
 
 
-def video_prerequisite(chapter):
+def video_prerequisite(chapter, *, require_verified_speakers=True):
     import const
     from artifact_editor.chapter.timeline import phrase_audio_missing
     xml = chapter.get_xml()
     if not xml.find('phrase'):
         return 'Must import chapter first'
+    if require_verified_speakers and not chapter.config.get('character_attributions_verified', False):
+        return 'Must verify all character attributions first'
     if any(phrase_audio_missing(chapter, phrase, const.LIBRARY_DIR)
            for phrase in xml.find_all('phrase')):
         return 'Must finish generating missing audio first'

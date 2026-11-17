@@ -634,10 +634,15 @@ class Chapter:
         Offer every book character, including those not yet extracted here.
         """
         all_characters = characters.get_all_characters(self, is_global=True)
-
+        appearance_counts = characters.book_audio_appearance_counts(self)
         speakers = []
-        for character in all_characters:
-            speakers.append(Speaker(**all_characters[character]))
+        ordered_characters = sorted(
+            all_characters.items(),
+            key=lambda item: (-appearance_counts.get(item[0], 0),
+                              item[1].get("name", item[0]).casefold(), item[0]),
+        )
+        for _, character in ordered_characters:
+            speakers.append(Speaker(**character))
         return speakers
 
     def paragraphs(self) -> Iterable[Tag]:

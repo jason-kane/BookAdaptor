@@ -4,11 +4,12 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from flask import Flask, render_template
 from markupsafe import escape
 
@@ -18,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def functions(path, names, **scope):
     tree = ast.parse((ROOT / path).read_text())
     tree.body = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    scope.setdefault('__package__', 'artifact_editor.characters')
+    scope.setdefault('Callable', Callable)
+    scope.setdefault('Tag', Tag)
     exec(compile(tree, path, 'exec'), scope)
     return scope
 
@@ -35,7 +39,7 @@ def test_assign_reviews_every_phrase_and_invalidates_changed_audio(tmp_path, mon
                         SimpleNamespace(get_wavfile_filename=lambda *a: str(audio)))
     review = [{'index': '1', 'speaker': 'Jack Pumpkinhead', 'evidence': 'Hello'},
               {'index': '2', 'speaker': 'Narrator', 'evidence': 'Jack said hello.'}]
-    llm = SimpleNamespace(json_prompt=Mock(return_value=review))
+    llm = SimpleNamespace(configure_character_voice=Mock(), json_prompt=Mock(return_value=review))
     catalog = Mock(return_value={'Jack_Pumpkinhead': {
         'name': 'Jack Pumpkinhead', 'tag': 'Jack_Pumpkinhead', 'alias': ['Jack']}})
     chapter = SimpleNamespace(get_xml=lambda: xml, save_phrases=Mock())
@@ -52,12 +56,15 @@ def test_assign_reviews_every_phrase_and_invalidates_changed_audio(tmp_path, mon
     assert xml.phrase['speaker'] == 'Jack_Pumpkinhead'
     assert all(phrase['speaker_source'] == 'llm' for phrase in xml.find_all('phrase'))
     assert all(not path.exists() for path in stale)
-    chapter.save_phrases.assert_called_once()
+    assert chapter.save_phrases.called
 
 
-def test_timeline_assignment_button_sends_chapter_identity_before_audio():
+def test_timeline_assignment_button_sends_chapter_identity_before_audio(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'artifact_editor.chapter.workflow',
+                        SimpleNamespace(prerequisite_message=lambda *a, **kw: None))
     scope = functions('src/artifact_editor/chapter/htmx.py',
-        {'assign_characters_button', 'missing_asset_button'}, escape=escape, websocket_url=lambda: '/ws')
+        {'assign_characters_button', 'missing_asset_button'}, escape=escape, websocket_url=lambda: '/ws',
+        __package__='artifact_editor.chapter')
     chapter = SimpleNamespace(author=SimpleNamespace(name='Writer'), title='Book', number=2,
                               language='english', kwargs={})
     button = scope['assign_characters_button'](chapter)
@@ -84,7 +91,7 @@ def test_assignment_worker_reviews_all_phrases_and_reports_unresolved(monkeypatc
     # Isolate the job branch from deployment imports while executing its real code.
     wrapper = ast.parse('def run(chapter, client, task):\n    job_id = task["job_id"]\n').body[0]
     wrapper.body.append(branch)
-    scope = {'publish_progress': Mock()}
+    scope = {'report_progress': Mock()}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[])), '<worker>', 'exec'), scope)
     assign = Mock(return_value=2)
     monkeypatch.setitem(sys.modules, 'artifact_editor.characters.characters',
@@ -96,8 +103,8 @@ def test_assignment_worker_reviews_all_phrases_and_reports_unresolved(monkeypatc
     assert assign.call_args.args == (chapter,)
     assert assign.call_args.kwargs['reassign_all'] is True
     assign.call_args.kwargs['progress'](50, 'Reviewing phrases')
-    assert scope['publish_progress'].call_args.args == ('client', 'assignment', 50, 'Reviewing phrases')
-    completion = scope['publish_progress'].call_args_list[0].args
+    assert scope['report_progress'].call_args.args == ('client', 'assignment', 50, 'Reviewing phrases')
+    completion = scope['report_progress'].call_args_list[0].args
     assert completion[4:] == ('complete', 'chapter_assign_characters')
     assert '1 phrases need speaker review' in completion[3]
 
@@ -126,7 +133,7 @@ def test_interrupted_dialogue_keeps_attribution_in_narrator_voice(tmp_path, monk
         def review(prompt, **kwargs):
             targets = json.loads(prompt.rsplit('Target phrases: ', 1)[1].split('\n')[0])
             return [{'index': t['index'], 'speaker': 'John', 'evidence': t['text']} for t in targets]
-        llm = SimpleNamespace(json_prompt=Mock(side_effect=review))
+        llm = SimpleNamespace(configure_character_voice=Mock(), json_prompt=Mock(side_effect=review))
         chapter = SimpleNamespace(get_xml=lambda: xml, save_phrases=Mock())
         scope = functions('src/artifact_editor/characters/characters.py',
             {'assign_phrase_speakers', 'name_to_tag', 'character_names'},
@@ -134,4 +141,5 @@ def test_interrupted_dialogue_keeps_attribution_in_narrator_voice(tmp_path, monk
             get_all_characters=lambda *a, **kw: {'John': {'name': 'John'}})
         assert scope['assign_phrase_speakers'](chapter, batch_size=1, reassign_all=True) == 1
         assert [p['speaker'] for p in xml.find_all('phrase')] == ['John', 'Narrator', 'John']
-        assert all(p['speaker_source'] == 'llm' for p in xml.find_all('phrase'))
+        assert [p['speaker_source'] for p in xml.find_all('phrase')] == ['quote_rule', 'narration_rule', 'quote_rule']
+        llm.json_prompt.assert_not_called()

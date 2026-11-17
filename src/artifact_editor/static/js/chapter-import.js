@@ -55,6 +55,23 @@
         });
     }
 
+    document.addEventListener('htmx:afterRequest', async event => {
+        const checkbox = event.detail.elt;
+        if (checkbox?.id !== 'chapter-character-attributions-verified' ||
+            !event.detail.successful) return;
+        try {
+            const response = await fetch(checkbox.dataset.prerequisitesUrl, {
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) throw new Error(`Prerequisite refresh failed (${response.status})`);
+            const data = await response.json();
+            applyPrerequisites(data.prerequisites || {});
+        } catch (error) {
+            console.error('Unable to refresh chapter workflow prerequisites', error);
+        }
+    });
+
     function connectWorkflowSocket() {
         if (workflowSocketClosed || !workflowSocketUrl) return;
         workflowSocket = new WebSocket(workflowSocketUrl);

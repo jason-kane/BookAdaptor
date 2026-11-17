@@ -533,7 +533,9 @@ def run_video_job(client, task):
                 ), step_offset=1, total_steps=12,
             )
 
-            begin_step(chapter, "textoviva_rerender")
+            # One Shot uses the automatic assignments already used for audio;
+            # it does not require the separate human-review checkbox.
+            begin_step(chapter, "textoviva_rerender", require_verified_speakers=False)
             report_progress(client, job_id, 80, "Step 12/12: Generating chapter video", action="textoviva_one_shot")
             rerender_chapter(
                 chapter,

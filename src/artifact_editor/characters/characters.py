@@ -7,8 +7,13 @@ import tempfile
 import textwrap
 import time
 from collections import defaultdict
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+
+if TYPE_CHECKING:
+    from artifact_editor.chapter.chapter import Chapter
 
 import const
 import logger
@@ -129,8 +134,27 @@ def get_character(chapter, character_name) -> dict:
     character = None
 
     characters = get_all_characters(chapter)
-    character_tag = resolve_character_tag(characters, character_name)
+    # Phrase speakers may already be canonical book tags while the chapter
+    # catalog contains only aliases or references. Prefer that stable identity
+    # before attempting display-name resolution, which can be ambiguous after
+    # character merges.
+    global_characters = {}
+    if character_name in characters:
+        character_tag = character_name
+    else:
+        global_characters = get_all_characters(chapter, is_global=True)
+        if character_name in global_characters:
+            character_tag = character_name
+        else:
+            try:
+                character_tag = resolve_character_tag(characters, character_name)
+            except ValueError:
+                character_tag = resolve_character_tag(global_characters, character_name)
+            if character_tag is None:
+                character_tag = resolve_character_tag(global_characters, character_name)
     character = characters.get(character_tag)
+    if character is None and character_tag in global_characters:
+        character = global_characters[character_tag]
 
     if character and character.get('is_global', False):
         global_character = get_all_characters(chapter, is_global=True).get(character_tag)
@@ -153,7 +177,9 @@ def get_character(chapter, character_name) -> dict:
         # no no, well, not quite.  we don't want to reset this
         # we want to recalculate it.  This thing takes care of itself.
         characters = number_of_appearances(chapter, characters)
-        character = characters.get(character_tag)
+        # A canonical book speaker may have no chapter reference yet. Keep
+        # its voice/identity when the chapter-only count refresh omits it.
+        character = characters.get(character_tag, character)
         if was_global:
             global_character = get_all_characters(chapter, is_global=True).get(character_tag)
             if global_character:
@@ -489,6 +515,29 @@ def number_of_appearances(chapter, characters: dict | None=None):
 
     save_characters(chapter, characters)
     return characters
+
+
+def book_audio_appearance_counts(chapter):
+    """Count attributed phrases for each character across the whole book."""
+    cached = getattr(chapter, '_book_audio_appearance_counts', None)
+    if cached is not None:
+        return cached
+    from artifact_editor.chapter.chapter import Chapter
+
+    counts = defaultdict(int)
+    chapter_root = os.path.join(const.LIBRARY_DIR, chapter.bookdir, 'chapter')
+    chapter_numbers = sorted(
+        int(entry) for entry in os.listdir(chapter_root)
+        if entry.isdigit()
+    ) if os.path.isdir(chapter_root) else [chapter.number]
+    for number in chapter_numbers:
+        local_chapter = chapter if number == chapter.number else Chapter(
+            chapter.author, chapter.title, number, language=chapter.language
+        )
+        for phrase in local_chapter.get_xml().find_all('phrase'):
+            counts[phrase.get('speaker', 'Narrator')] += 1
+    chapter._book_audio_appearance_counts = dict(counts)
+    return chapter._book_audio_appearance_counts
 
 
 def get_all_characters(chapter, is_global: bool = False) -> dict:
@@ -1317,165 +1366,28 @@ def extract_characters(chapter):
     return count
 
 
-def assign_phrase_speakers(chapter, progress=None, batch_size=16, reassign_all=False):
-    """Assign speakers after two grounded reviews; optionally review every phrase."""
-    progress = progress or (lambda percent, message: None)
-    soup = chapter.get_xml()
-    phrases = list(soup.find_all('phrase'))
-    if not phrases:
-        progress(100, 'No phrases need speaker attribution')
+def assign_phrase_speakers(chapter: 'Chapter', progress: Callable[[float, str], None] | None = None,
+                          batch_size: int = 16, reassign_all: bool = False,
+                          target_phrase_index: int | str | None = None) -> int:
+    """Assign complete dialogue turns, then apply their voices to audio phrases."""
+    from .speaker_assignment import assign_speakers
+
+    if not chapter.get_xml().find('phrase'):
+        if progress:
+            progress(100, 'No phrases need speaker attribution')
         return 0
 
-    records = get_all_characters(chapter, is_global=True)
-    allowed = {'Narrator': 'Narrator'}
-    names = []
-    for tag, character in records.items():
-        if tag == 'Narrator' or character.get('name', tag) == 'Narrator':
-            continue
-        canonical = character.get('tag', tag)
-        names.append({'tag': canonical, 'name': character.get('name', tag),
-                      'aliases': character.get('alias', [])})
-        for name in character_names(tag, character):
-            allowed[name_to_tag(name).casefold()] = canonical
+    def audio_filename(phrase: Tag) -> str:
+        """Resolve old audio lazily so attribution has no TTS import dependency."""
+        from artifact_editor.phrases.phrases import get_wavfile_filename
+        return get_wavfile_filename(phrase, chapter)
 
-    eligible = []
-    for phrase in phrases:
-        current = phrase.get('speaker', '')
-        if not reassign_all and phrase.get('speaker_source') == 'manual':
-            continue
-        if not reassign_all and current and current != 'Narrator' and phrase.get('speaker_source') != 'llm':
-            continue
-        eligible.append(phrase)
-    if not eligible:
-        progress(100, 'All phrase speakers are already assigned')
-        return 0
-
-    paragraphs = list(soup.find_all('paragraph'))
-    paragraph_index = {id(paragraph): position for position, paragraph in enumerate(paragraphs)}
-    # Enforce clear quotation boundaries even if both reviews confuse a
-    # speech attribution with the words spoken aloud.
-    narration_ids = set()
-    for paragraph in paragraphs:
-        paragraph_phrases = list(paragraph.find_all('phrase'))
-        text = ' '.join(phrase.get_text(' ', strip=True) for phrase in paragraph_phrases)
-        quotes = list(re.finditer(r'["“”]', text))
-        # Leave unbalanced/multi-paragraph quotations to contextual review.
-        if not quotes or len(quotes) % 2:
-            continue
-        pairs = list(zip(quotes[::2], quotes[1::2]))
-        if any(left.group() not in ('"', '“') or right.group() not in ('"', '”')
-               or (left.group() == '"') != (right.group() == '"')
-               for left, right in pairs):
-            continue
-        offset = 0
-        for phrase in paragraph_phrases:
-            phrase_text = phrase.get_text(' ', strip=True)
-            end = offset + len(phrase_text)
-            if phrase_text and not any(offset < right.end() and end > left.start()
-                                       for left, right in pairs):
-                narration_ids.add(id(phrase))
-            offset = end + 1
-
-    changed = 0
-    batches = [eligible[start:start + max(1, int(batch_size))]
-               for start in range(0, len(eligible), max(1, int(batch_size)))]
-    normalize_text = lambda value: ' '.join(value.casefold().split())
-    unresolved = 0
-
-    for batch_number, batch in enumerate(batches, start=1):
-        target_ids = {str(phrase.get('index', '')) for phrase in batch}
-        positions = [paragraph_index[id(phrase.find_parent('paragraph'))]
-                     for phrase in batch if phrase.find_parent('paragraph') is not None]
-        if not positions:
-            continue
-        first, last = max(0, min(positions) - 1), min(len(paragraphs), max(positions) + 2)
-        source_context = '\n\n'.join(
-            f"Paragraph {paragraph.get('index', i)}: " + ' '.join(
-                phrase.get_text(' ', strip=True) for phrase in paragraph.find_all('phrase'))
-            for i, paragraph in enumerate(paragraphs[first:last], start=first)
-        )
-        targets = [{'index': str(phrase.get('index', '')),
-                    'text': phrase.get_text(' ', strip=True),
-                    'paragraph': str(phrase.find_parent('paragraph').get('index', ''))}
-                   for phrase in batch]
-        prompt = (
-            'Identify who speaks each target phrase. Use the surrounding passage to resolve '
-            'dialogue attribution and pronouns. Ordinary narration, unattributed quotations, '
-            'and uncertain cases belong to Narrator. Select only a listed character tag or '
-            'Narrator. Do not infer a speaker merely because the phrase mentions them. '
-            'Attribute only words spoken aloud to the character. Speech tags and action or emotion '
-            'descriptions outside quotation marks are Narrator, including between two parts of '
-            'the same speech. In the example “Alpha,” John said, voice full of emotion, “Beta too.” '
-            'Alpha and Beta too belong to John; John said, voice full of emotion belongs to Narrator. '
-            'Decide each target separately; never copy a speaker across an entire paragraph. '
-            'Return a JSON list with one object per target, fields index, speaker, evidence. '
-            'Evidence must be an exact quote from the supplied context that supports the '
-            'speaker decision; for Narrator, use the exact target phrase. Do not omit targets.\n\n'
-            f'Allowed characters: {json.dumps(names, ensure_ascii=False)}\n'
-            f'Target phrases: {json.dumps(targets, ensure_ascii=False)}\n'
-            f'BEGIN SOURCE CONTEXT\n{source_context}\nEND SOURCE CONTEXT'
-        )
-
-        def request_review(review_prompt, stage):
-            progress(int((batch_number - 1) * 100 / len(batches)),
-                     f"{stage} · batch {batch_number}/{len(batches)}")
-            response = llm.json_prompt(
-                review_prompt, label=f"Assign Characters · {stage} · batch {batch_number}/{len(batches)}"
-            )
-            if not isinstance(response, list):
-                raise ValueError('Phrase speaker attribution returned an invalid list.')
-            result = {}
-            for item in response:
-                if not isinstance(item, dict):
-                    continue
-                index, speaker, evidence = item.get('index'), item.get('speaker'), item.get('evidence')
-                if not all(isinstance(value, str) and value.strip()
-                           for value in (index, speaker, evidence)):
-                    continue
-                if index not in target_ids or normalize_text(evidence) not in normalize_text(source_context):
-                    continue
-                if speaker.casefold() == 'narrator':
-                    result[index] = ('Narrator', evidence)
-                    continue
-                tag = allowed.get(name_to_tag(speaker.strip()).casefold())
-                if tag:
-                    result[index] = (tag, evidence)
-            return result
-
-        first_review = request_review(prompt, "Identify speakers")
-        second_review = request_review(
-            'Independently audit the proposed phrase speakers against the source. Correct '
-            'unsupported attributions; use Narrator when evidence is ambiguous. Return the '
-            'complete JSON list with index, speaker, evidence, and use only the supplied '
-            'character tags or Narrator. Evidence must be an exact quote from the source.\n\n'
-            f'Proposed assignments: {json.dumps([{"index": index, "speaker": speaker, "evidence": evidence}
-                for index, (speaker, evidence) in first_review.items()], ensure_ascii=False)}\n'
-            + prompt, "Verify speakers"
-        )
-        for phrase in batch:
-            index = str(phrase.get('index', ''))
-            first_assignment = first_review.get(index)
-            if id(phrase) in narration_ids:
-                first_assignment = ('Narrator', phrase.get_text(' ', strip=True))
-            elif not first_assignment or second_review.get(index, (None,))[0] != first_assignment[0]:
-                phrase['speaker_source'] = 'llm_unresolved'
-                unresolved += 1
-                continue
-            new_speaker = first_assignment[0]
-            if phrase.get('speaker') != new_speaker:
-                from artifact_editor.phrases.phrases import get_wavfile_filename
-                wavfile = get_wavfile_filename(phrase, chapter)
-                for stale in (wavfile, wavfile + '.pronunciation', wavfile + '.pronunciation.txt'):
-                    if os.path.isfile(stale):
-                        os.remove(stale)
-                phrase['speaker'] = new_speaker
-                changed += 1
-            phrase['speaker_source'] = 'llm'
-        chapter.save_phrases()
-        progress(int(batch_number * 100 / len(batches)),
-                 f'Assign Characters · batch {batch_number}/{len(batches)} · '
-                 f'{changed} updated, {unresolved} unresolved')
-    return changed
+    assigned = assign_speakers(
+        chapter, get_all_characters(chapter, is_global=True), llm.json_prompt,
+        audio_filename, name_to_tag, progress=progress, batch_size=batch_size,
+        reassign_all=reassign_all, target_phrase_index=target_phrase_index,
+    )
+    return assigned
 
 
 def character_names(tag, character):
@@ -1487,6 +1399,14 @@ def character_names(tag, character):
 
 def resolve_character_tag(records, name):
     """Match known names exactly after case and punctuation normalization."""
+    # Stable tags are identities. Resolve them before the normalized display
+    # name lookup, since distinct tags can intentionally share a display name.
+    if name in records:
+        return name
+    exact_tags = {tag for tag, character in records.items()
+                  if character.get('tag') == name}
+    if len(exact_tags) == 1:
+        return next(iter(exact_tags))
     key = name_to_tag(name.strip()).casefold()
     matches = {tag for tag, character in records.items()
                if any(name_to_tag(value.strip()).casefold() == key
@@ -1523,8 +1443,8 @@ def rewrite_character_references(chapter, records, target_tag):
     chapter.save_images()
 
 
-def set_aliases(chapter, tag, aliases):
-    records = get_all_characters(chapter)
+def set_aliases(chapter, tag, aliases, book_scope=False):
+    records = get_all_characters(chapter, is_global=book_scope)
     if tag not in records:
         raise ValueError('Unknown character')
     cleaned = []
@@ -1538,8 +1458,40 @@ def set_aliases(chapter, tag, aliases):
         if name_to_tag(alias).casefold() not in {name_to_tag(v).casefold() for v in cleaned}:
             cleaned.append(alias)
     records[tag]['alias'] = cleaned
-    save_characters(chapter, records)
+    save_characters(chapter, records, is_global=book_scope)
     rewrite_character_references(chapter, records, tag)
+
+
+def rename_book_character(chapter, tag, name):
+    """Rename a canonical book character while keeping its stable tag and references."""
+    name = name.strip()
+    if not name:
+        raise ValueError('Enter a character name.')
+    records = get_all_characters(chapter, is_global=True)
+    if tag not in records:
+        raise ValueError('Unknown book character.')
+    owner = resolve_character_tag(records, name)
+    if owner and owner != tag:
+        raise ValueError('That name already belongs to another character.')
+    character = records[tag]
+    old_name = character.get('name', tag)
+    aliases = character.get('alias', [])
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    if old_name.strip() and name_to_tag(old_name).casefold() != name_to_tag(name).casefold():
+        aliases = [*aliases, old_name]
+    character['name'] = name
+    character['tag'] = tag
+    character['is_global'] = True
+    character['alias'] = list(dict.fromkeys(
+        alias.strip() for alias in aliases
+        if isinstance(alias, str) and alias.strip()
+        and name_to_tag(alias).casefold() != name_to_tag(name).casefold()
+    ))
+    save_characters(chapter, records, is_global=True)
+    # Refresh existing chapter references from the canonical book records.
+    get_all_characters(chapter, is_global=True)
+    return records[tag]
 
 
 def merge_characters(chapter, source_tag, target_tag, book_scope=False):
@@ -1550,12 +1502,39 @@ def merge_characters(chapter, source_tag, target_tag, book_scope=False):
         raise ValueError('The narrator cannot be merged.')
     source, target = records[source_tag], records[target_tag]
     aliases = list(dict.fromkeys(character_names(target_tag, target) + character_names(source_tag, source)))
+    target_primary = name_to_tag(target.get('name', target_tag)).casefold()
     for alias in aliases:
-        owner = resolve_character_tag({k: v for k, v in records.items() if k not in (source_tag, target_tag)}, alias)
+        try:
+            owner = resolve_character_tag(
+                {k: v for k, v in records.items() if k not in (source_tag, target_tag)}, alias
+            )
+        except ValueError as exc:
+            # An ambiguous spelling among the two records being merged is
+            # already covered by this merge; ambiguity among other records
+            # still needs to block it, except duplicate records with the
+            # same primary name as the selected target.
+            duplicate_target_records = {
+                k for k, v in records.items()
+                if k not in (source_tag, target_tag)
+                and name_to_tag(v.get('name', k)).casefold() == target_primary
+            }
+            ignored_records = {source_tag, target_tag} | duplicate_target_records
+            remaining = {k: v for k, v in records.items()
+                         if k not in ignored_records}
+            try:
+                owner = resolve_character_tag(remaining, alias)
+            except ValueError:
+                raise ValueError(f'Alias {alias} already belongs to another character.') from exc
         if owner:
-            raise ValueError(f'Alias {alias} already belongs to another character.')
+            owner_name = name_to_tag(records[owner].get('name', owner)).casefold()
+            if owner_name != target_primary:
+                raise ValueError(f'Alias {alias} already belongs to another character.')
     # The selected target wins; fill missing values only. Keep the source record for review.
     target.setdefault('merged_characters', []).append(source.copy())
+    # Voice configuration belongs to the primary character. A configured
+    # source fills an empty target, while an already configured target wins.
+    if not target.get('voices') and source.get('voices'):
+        target['voices'] = source['voices']
     for key, value in source.items():
         if key not in ('name', 'tag', 'alias', 'is_global', 'merged_characters') and not target.get(key):
             target[key] = value

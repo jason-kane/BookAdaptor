@@ -16,4 +16,11 @@
         <wa-option value="{{ speaker.tag }}"{% if speaker_tag == speaker.tag %} selected{% endif %}>{{ speaker.name }}</wa-option>
         {% endfor %}
     </wa-select>
+    <wa-button size="small" variant="brand" appearance="accent" pill type="button"
+        aria-label="Re-attribute speaker" title="Re-attribute speaker"
+        hx-post="{{ url_for('library.book.chapter.phrases.reattribute_phrase_speaker', phrase_index=phrase_xml['index'], **chapter.kwargs) }}"
+        hx-target="closest .chapter-phrase-speaker" hx-swap="outerHTML"
+        hx-disabled-elt="this">
+        <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+    </wa-button>
 </div>

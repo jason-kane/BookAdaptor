@@ -363,6 +363,24 @@ def assign_phrase_speaker(phrase_index: int):
     )
 
 
+@bp.route("/actions/reattribute/<int:phrase_index>", methods=["POST"])
+def reattribute_phrase_speaker(phrase_index: int):
+    """Re-run speaker attribution for this phrase using its surrounding text."""
+    chapter = g.chapter
+    phrase_xml = chapter.get_phrase(phrase_index)
+    if phrase_xml is None:
+        return "Phrase not found", 404
+
+    from artifact_editor.characters.characters import assign_phrase_speakers
+    assign_phrase_speakers(chapter, target_phrase_index=phrase_index)
+    return render_template(
+        "chapter_phrase_speaker.html",
+        chapter=chapter,
+        phrase_xml=chapter.get_phrase(phrase_index),
+        speakers=chapter.speakers(),
+    )
+
+
 @bp.route("/actions/set_latex/<int:phrase_index>", methods=["PUT"])
 def set_latex(phrase_index: int):
     phrase_index = int(phrase_index)

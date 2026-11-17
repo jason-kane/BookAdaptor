@@ -37,10 +37,10 @@ def completed_steps(chapter):
     return {'chapter_import'} if chapter.get_xml().find('phrase') else set()
 
 
-def prerequisite_message(chapter, action, *, completed=None):
+def prerequisite_message(chapter, action, *, completed=None, require_verified_speakers=True):
     if action == 'textoviva_rerender':
         from .readiness import video_prerequisite
-        return video_prerequisite(chapter)
+        return video_prerequisite(chapter, require_verified_speakers=require_verified_speakers)
     if action == 'chapter_missing_animations':
         from .readiness import has_missing_images
         return 'Must finish generating missing images first' if has_missing_images(chapter) else None
@@ -79,7 +79,7 @@ def _save(path, completed):
         temporary.unlink(missing_ok=True)
 
 
-def begin_step(chapter, action, *, force=False):
+def begin_step(chapter, action, *, force=False, require_verified_speakers=True):
     if action not in ACTIONS and action != 'chapter_add_all':
         return
     # Import determines whether source sections changed before it should
@@ -91,7 +91,7 @@ def begin_step(chapter, action, *, force=False):
     path = _path(chapter)
     path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(path) + '.lock'):
-        reason = prerequisite_message(chapter, action)
+        reason = prerequisite_message(chapter, action, require_verified_speakers=require_verified_speakers)
         if reason:
             raise ValueError(reason)
         done = completed_steps(chapter)

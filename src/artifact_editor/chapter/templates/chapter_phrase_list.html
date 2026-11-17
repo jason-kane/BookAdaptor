@@ -41,3 +41,11 @@
 </fieldset>
 {% endif %}
 {% endfor %}
+<wa-checkbox id="chapter-character-attributions-verified"
+    {% if chapter.config.get('character_attributions_verified', false) %}checked{% endif %}
+    hx-post="{{ url_for('library.book.chapter.set_character_attributions_verified', **chapter.kwargs) }}"
+    data-prerequisites-url="{{ url_for('library.book.chapter.chapter_workflow_status', **chapter.kwargs) }}"
+    hx-vals='js:{verified: this.checked ? "1" : "0"}'
+    hx-trigger="change" hx-swap="none">
+    All character attributions have been manually verified and corrected
+</wa-checkbox>

@@ -3,7 +3,7 @@
     <form class="wa-stack">
         <wa-textarea name="aliases" label="Aliases (one per line)" value="{{ character.get('alias', [])|join('\n') }}"
             hint="Other names for this character, such as Roger, Mr. Stone, or Mr. S."
-            hx-post="{{ url_for('library.book.chapter.characters.aliases', character_tag=tag, **chapter.kwargs) }}"
+            hx-post="{{ url_for('library.book.set_book_character_aliases', author=chapter.author.name, title=chapter.title, character_tag=tag) if book_scope else url_for('library.book.chapter.characters.aliases', character_tag=tag, **chapter.kwargs) }}"
             hx-target="next" hx-swap="innerHTML"
             hx-trigger="change delay:500ms" hx-include="closest form"
             hx-sync="closest form:queue last"></wa-textarea>

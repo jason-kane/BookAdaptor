@@ -855,6 +855,16 @@ def timeline_panel():
     )
 
 
+@bp.post("/timeline/character-attributions-verified")
+def set_character_attributions_verified():
+    value = request.form.get("verified")
+    if value not in {"0", "1"}:
+        return "Invalid verification value", 400
+    g.chapter.config["character_attributions_verified"] = value == "1"
+    g.chapter.save_config()
+    return "", 204
+
+
 @bp.get("/workflow-status")
 def chapter_workflow_status():
     from .workflow import ACTIONS, completed_steps, prerequisite_message

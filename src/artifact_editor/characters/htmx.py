@@ -691,9 +691,10 @@ def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
                     label="Character Name" 
                     name="name" 
                     value="{name}"
-                    hx-post="{ url_for('library.book.chapter.characters.set_name', **chapter.kwargs, character_tag=tag) }"
+                    hx-post="{url_for('library.book.rename_book_character', author=chapter.author.name, title=chapter.title, character_tag=tag) if book_scope else url_for('library.book.chapter.characters.set_name', **chapter.kwargs, character_tag=tag)}"
                     hx-trigger="change delay:500ms"
-                    hx-target="#{tag}_scope">
+                    hx-target="{'#character_' + tag if book_scope else '#' + tag + '_scope'}"
+                    hx-swap="{'outerHTML' if book_scope else 'innerHTML'}">
                 </wa-input>
 
                 {render_template('character_aliases.html', chapter=chapter, character=character_dict, tag=tag, catalog=get_all_characters(chapter, is_global=book_scope), book_scope=book_scope)}

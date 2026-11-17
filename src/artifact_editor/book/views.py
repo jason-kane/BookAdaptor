@@ -517,6 +517,12 @@ def characters_panel(author, title, message=""):
     author_obj = Author(author)
     chapter = Chapter(author_obj, title, 1, language="english")
     catalog = character_store.get_all_characters(chapter, is_global=True)
+    appearance_counts = character_store.book_audio_appearance_counts(chapter)
+    catalog = dict(sorted(
+        catalog.items(),
+        key=lambda item: (-appearance_counts.get(item[0], 0),
+                          item[1].get("name", item[0]).casefold(), item[0]),
+    ))
     character_cards = {
         tag: character_htmx.character_data(chapter, character, True)
         for tag, character in catalog.items()
@@ -530,6 +536,18 @@ def characters_panel(author, title, message=""):
         character_cards=character_cards,
         message=message,
     )
+
+
+@bp.route("/characters/<character_tag>/aliases", methods=["POST"])
+def set_book_character_aliases(author, title, character_tag):
+    chapter = Chapter(Author(author), title, 1, language="english")
+    try:
+        character_store.set_aliases(
+            chapter, character_tag, request.form.get("aliases", "").splitlines(), book_scope=True
+        )
+    except ValueError as error:
+        return str(error), 400
+    return "Aliases saved."
 
 
 @bp.route("/characters", methods=["POST"])
@@ -554,6 +572,18 @@ def add_book_character(author, title):
     }
     character_store.save_characters(chapter, catalog, is_global=True)
     return characters_panel(author, title)
+
+
+@bp.route("/characters/<character_tag>/rename", methods=["POST"])
+def rename_book_character(author, title, character_tag):
+    chapter = Chapter(Author(author), title, 1, language="english")
+    try:
+        character = character_store.rename_book_character(
+            chapter, character_tag, request.form.get("name", "")
+        )
+    except ValueError as error:
+        return str(error), 400
+    return character_htmx.character_data(chapter, character, True)
 
 
 def ireplace(old, new, text):

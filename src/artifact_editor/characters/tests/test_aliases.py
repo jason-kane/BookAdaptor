@@ -53,6 +53,20 @@ class AliasTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ns['resolve_character_tag'](self.records, 'Stone')
 
+    def test_merge_allows_duplicate_names_between_selected_characters(self):
+        self.records['Rob']['alias'] = ['Mr. Stone']
+        self.ns['merge_characters'](self.chapter, 'Rob', 'Mr_Stone')
+        self.assertNotIn('Rob', self.records)
+        self.assertEqual(self.ns['resolve_character_tag'](self.records, 'Mr. Stone'), 'Mr_Stone')
+
+    def test_merge_allows_duplicate_record_of_target_primary_name(self):
+        self.records['Mr_Stone_2'] = {
+            'tag': 'Mr_Stone_2', 'name': 'Mr. Stone', 'description': 'Duplicate record'
+        }
+        self.ns['merge_characters'](self.chapter, 'Rob', 'Mr_Stone')
+        self.assertNotIn('Rob', self.records)
+        self.assertIn('Mr_Stone_2', self.records)
+
     def test_book_merge_updates_all_chapters_and_canonical_catalog(self):
         import os
         import sys

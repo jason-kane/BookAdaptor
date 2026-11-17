@@ -21,7 +21,6 @@ import logger
 from artifact_editor import (
     config,
     llm,
-    tools,
 )
 from artifact_editor.author.author import Author
 from artifact_editor.chapter.chapter import (
@@ -120,10 +119,12 @@ def base(embedded=False, extraction_message=""):
         if character_name and character_name not in all_characters:
             unattached_speakers.add(character_name)
 
-    # sorted by how often they are visually present in the story
-    # use whenever we are presenting a list of characters in the UI.
-    # instead of alphabetical.
-    all_characters = tools.cast_bestsort(all_characters)
+    appearance_counts = characters.book_audio_appearance_counts(g.chapter)
+    all_characters = dict(sorted(
+        all_characters.items(),
+        key=lambda item: (-appearance_counts.get(item[0], 0),
+                          item[1].get("name", item[0]).casefold(), item[0]),
+    ))
 
     # we want the characters from the previous chapter.
     previous_chapter = g.chapter.previous()

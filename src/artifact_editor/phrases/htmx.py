@@ -944,11 +944,16 @@ def split_phrase_text(chapter, phrase_xml: Tag, split, page) -> str:
 
 def speaker_selector(chapter, phrase_xml):
     all_characters = characters.get_all_characters(chapter, is_global=True)
-    speakers = all_characters.keys()
+    appearance_counts = characters.book_audio_appearance_counts(chapter)
+    speakers = sorted(
+        all_characters,
+        key=lambda tag: (-appearance_counts.get(tag, 0),
+                         all_characters[tag].get("name", tag).casefold(), tag),
+    )
 
     speaker_options = ""
     # log.info("Speakers: %s", speakers)
-    for speaker_id in sorted(speakers):
+    for speaker_id in speakers:
         speaker_tag = all_characters[speaker_id]["tag"]
         speaker_name = all_characters[speaker_id]["name"]
 

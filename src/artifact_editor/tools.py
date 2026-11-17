@@ -41,8 +41,8 @@ def cast_bestsort(char_dict):
     return dict(
         sorted(
             char_dict.items(),
-            key=lambda item: item[1]["visual_appearances"]
-            + item[1]["audio_appearances"] * 0.1,
+            key=lambda item: item[1].get("visual_appearances", 0)
+            + item[1].get("audio_appearances", 0) * 0.1,
             reverse=True,
         )
     )
