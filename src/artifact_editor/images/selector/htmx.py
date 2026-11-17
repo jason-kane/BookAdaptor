@@ -113,12 +113,10 @@ def gather_candidate_videos(image_xml: Tag, chapter: Chapter):
     #         image_paths.add(image_path)
    
     # log.info(f"Candidate images: {sorted(list(image_paths))}")
-    return sorted(
-        images.all_videos_by_image_index(
-            paragraph_dir,
-            image_index
-        )
-    )
+    minimum_mtime = max(int(image_xml.get('source_layout_updated_ns', '0')),
+                        int(image_xml.get('animation_invalidated_ns', '0')))
+    return sorted(path for path in images.all_videos_by_image_index(paragraph_dir, image_index)
+                  if os.stat(path).st_mtime_ns >= minimum_mtime)
     
 
 def get_mode_selector(src, aspect, image_xml):

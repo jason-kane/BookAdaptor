@@ -10,7 +10,8 @@ def animation_filename(image, paragraph_dir):
     paragraph_dir = Path(paragraph_dir)
     if (image.get('auto_chapter_title_pan') or image.get('auto_source_layout')) and active_motion(image):
         return None
-    minimum_mtime = int(image.get('source_layout_updated_ns', '0'))
+    minimum_mtime = max(int(image.get('source_layout_updated_ns', '0')),
+                        int(image.get('animation_invalidated_ns', '0')))
     def current(path):
         return path.is_file() and path.stat().st_mtime_ns >= minimum_mtime
     explicit = image.get('animated_src')
@@ -52,8 +53,11 @@ def animation_frame_count(image, paragraph_dir, fps=None):
     if active_motion(image) or image.get('auto_source_layout'):
         return 0
     directories = list((paragraph_dir / "animation").glob(f"image_{int(image['index']):06d}_*"))
+    minimum_mtime = max(int(image.get("source_layout_updated_ns", "0")),
+                        int(image.get("animation_invalidated_ns", "0")))
     count = sum(1 for directory in directories if directory.is_dir()
-                for path in directory.glob("*.png") if path.is_file())
+                for path in directory.glob("*.png")
+                if path.is_file() and path.stat().st_mtime_ns >= minimum_mtime)
     return count
 
 

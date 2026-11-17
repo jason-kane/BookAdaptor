@@ -1471,15 +1471,11 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False, speaker_
             for index, result in enumerate(results)
             if isinstance(result, Exception)
         ]
-        if errors:
-            phrase_index, error = errors[0]
-            raise RuntimeError(
-                f"Could not create audio for phrase {phrase_index}: {error}"
-            ) from error
-
         # Apply the same pronunciation, padding, and timing updates as the
         # sequential path after every Comfy workflow has completed.
-        for phrase_index, _, wavfile, _ in pending:
+        for position, (phrase_index, _, wavfile, _) in enumerate(pending):
+            if isinstance(results[position], Exception):
+                continue
             phrase_xml = chapter.get_phrase(phrase_index)
             pronunciation_file = wavfile.replace(".wav", ".pronunciation.txt")
             if os.path.exists(pronunciation_file):
@@ -1505,6 +1501,16 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False, speaker_
             if new_pronunciation:
                 phrase_xml.attrs["pronunciation"] = new_pronunciation
             chapter.save_phrase(phrase_xml)
+
+        if errors:
+            # Successful replacements are real even when another track failed.
+            # Persist their new timing before callers invalidate dependent media.
+            recalculate_image_frames(chapter)
+            chapter.save_timing()
+            phrase_index, error = errors[0]
+            raise RuntimeError(
+                f"Could not create audio for phrase {phrase_index}: {error}"
+            ) from error
 
     if speaker_tags is None:
         generate_audio(chapter)

@@ -647,7 +647,7 @@ class Textoviva:
         if missing and not prepare_prompts_only:
             raise ValueError("Generate missing images before generating animations")
         from artifact_editor.chapter.timeline import image_timings
-        from artifact_editor.images.animation_source import animation_frame_count
+        from artifact_editor.images.animation_source import animation_frame_count, animation_filename
 
         required_frames_by_image = image_timings(self.chapter.get_xml())
         # Build the actual work list up front so progress is divided only
@@ -662,6 +662,8 @@ class Textoviva:
                 const.LIBRARY_DIR,
                 self.chapter.get_paragraph_dir(int(paragraph["index"])),
             )
+            if image_xml.get("animation_invalidated_ns") and not animation_filename(image_xml, paragraph_dir):
+                image_force = True
             required = int(
                 required_frames_by_image.get(str(image_index), {}).get(
                     "frames", image_xml.attrs.get("frames", 0)
@@ -695,7 +697,8 @@ class Textoviva:
                     if os.path.isabs(animated_src)
                     else os.path.join(const.LIBRARY_DIR, animated_src.lstrip("/"))
                 )
-                minimum_mtime = int(image_xml.get('source_layout_updated_ns', '0'))
+                minimum_mtime = max(int(image_xml.get('source_layout_updated_ns', '0')),
+                                    int(image_xml.get('animation_invalidated_ns', '0')))
                 if os.path.isfile(animated_path) and os.stat(animated_path).st_mtime_ns >= minimum_mtime:
                     continue
                 cached_videos = selector_htmx.gather_candidate_videos(

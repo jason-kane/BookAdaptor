@@ -84,7 +84,8 @@ def test_filtered_generation_does_not_speak_other_characters(tmp_path):
     chapter.save_timing.assert_called_once()
 
 
-def test_book_regeneration_visits_only_matching_chapters(tmp_path, monkeypatch):
+@pytest.mark.parametrize("generation_fails", [False, True])
+def test_book_regeneration_visits_only_matching_chapters(tmp_path, monkeypatch, generation_fails):
     root = tmp_path / 'Book/chapter'
     for number in [1, 2, 3]:
         (root / f'{number:04}').mkdir(parents=True)
@@ -95,19 +96,29 @@ def test_book_regeneration_visits_only_matching_chapters(tmp_path, monkeypatch):
     chapters = {n: SimpleNamespace(number=n, author='Author', title='Book', language='english',
                     bookdir='Book', chapterdir=f'Book/chapter/{n:04}', load_xml=Mock(),
                     get_xml=lambda n=n: BeautifulSoup(xmls[n], 'xml')) for n in xmls}
-    generate = Mock()
+    generate = Mock(side_effect=RuntimeError("audio failed") if generation_fails else None)
     monkeypatch.setitem(sys.modules, 'artifact_editor.chapter.chapter',
                         SimpleNamespace(Chapter=lambda a, t, n, language: chapters[n]))
     monkeypatch.setitem(sys.modules, 'artifact_editor.phrases.phrases', SimpleNamespace(generate_all_audio=generate))
     monkeypatch.setitem(sys.modules, 'artifact_editor.llm', SimpleNamespace(configure_character_voice=lambda *a, **k: record))
+    invalidation_events = []
+    monkeypatch.setitem(sys.modules, 'artifact_editor.chapter.media_invalidation', SimpleNamespace(
+        invalidate_chapter_video=lambda chapter: invalidation_events.append(('video', chapter.number)),
+        invalidate_insufficient_animations=lambda chapter: invalidation_events.append(('animations', chapter.number))))
     chars = SimpleNamespace(get_all_characters=lambda *a, **k: {'Sad_man':record},
         character_names=lambda *a: ['Sad_man','Sad man','Stranger'],
         resolve_character_tag=lambda records, name: 'Sad_man', name_to_tag=lambda s:s.replace(' ','_'))
     run = helpers.function('src/artifact_editor/characters/audio.py', 'regenerate_character_audio',
                            characters=chars, const=SimpleNamespace(LIBRARY_DIR=str(tmp_path)),
                            Path=Path, nullcontext=nullcontext, FileLock=lambda path:nullcontext())
-    assert run(chapters[1], 'Sad_man') == 2
-    assert [call.args[0].number for call in generate.call_args_list] == [1,3]
+    if generation_fails:
+        with pytest.raises(RuntimeError, match='audio failed'):
+            run(chapters[1], 'Sad_man')
+        assert invalidation_events == [('video',1),('animations',1)]
+    else:
+        assert run(chapters[1], 'Sad_man') == 2
+        assert [call.args[0].number for call in generate.call_args_list] == [1,3]
+        assert invalidation_events == [('video',1),('animations',1),('video',3),('animations',3)]
     for call in generate.call_args_list:
         assert call.kwargs['force'] is True
         assert call.kwargs['batch'] is True

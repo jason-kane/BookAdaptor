@@ -12,6 +12,9 @@ def regenerate_character_audio(chapter, character_tag, progress=None):
     from artifact_editor.chapter.chapter import Chapter
     from artifact_editor.phrases.phrases import generate_all_audio
     from artifact_editor.llm import configure_character_voice
+    from artifact_editor.chapter.media_invalidation import (
+        invalidate_chapter_video, invalidate_insufficient_animations,
+    )
 
     record = configure_character_voice(chapter, character_tag, infer_demographics=False)
     tag = record['tag']
@@ -45,7 +48,13 @@ def regenerate_character_audio(chapter, character_tag, progress=None):
                 if progress:
                     progress((position + percent / 100) / max(1, len(numbers)) * 100,
                              f'Chapter {number}: {message}')
-            generate_all_audio(local, force=True, batch=True, progress=report,
-                               speaker_tags=speaker_tags)
+            # Invalidate before the first audio replacement, including when
+            # generation later fails after producing only some of the tracks.
+            invalidate_chapter_video(local)
+            try:
+                generate_all_audio(local, force=True, batch=True, progress=report,
+                                   speaker_tags=speaker_tags)
+            finally:
+                invalidate_insufficient_animations(local)
             count += len(matches)
     return count
