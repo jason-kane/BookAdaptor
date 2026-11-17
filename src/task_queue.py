@@ -45,7 +45,7 @@ RENDER_ACTIONS = frozenset({
     "chapter_missing_metadata", "chapter_place_image_slots", "chapter_missing_audio",
     "chapter_missing_images", "chapter_missing_animations",
     "chapter_missing_characters", "chapter_missing_props", "chapter_add_all",
-    "chapter_character_appearances", "chapter_assign_characters",
+    "chapter_character_appearances", "chapter_assign_characters", "character_regenerate_audio",
     "textoviva_one_shot",
 })
 TAG_QUEUE = "styler_image_tag_jobs"
@@ -105,8 +105,9 @@ def enqueue_task(
     event: Mapping[str, Any] | None = None,
     front: bool = True,
     ensure_ascii: bool = True,
-) -> None:
-    """Persist optional status, enqueue one JSON task, and optionally publish it."""
+    submission_nonce: str | None = None,
+) -> bool:
+    """Enqueue a task; a repeated submission nonce returns False without writes."""
     if status is not None and status_key is None:
         raise ValueError("status_key is required when initializing task status")
     if event is not None and event_channel is None:
@@ -131,21 +132,47 @@ def enqueue_task(
                          **{key: task[key] for key in ("theater_project_id", "theater_stage") if key in task},
                          **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')},
                          "execution_queue": "render", "action": task["action"]}
-        client.hset(f"video_job:{task['job_id']}", mapping=render_status)
-        client.expire(f"video_job:{task['job_id']}", status_ttl)
+        status_key = f"video_job:{task['job_id']}"
+        status = render_status
         if event is not None:
             event = {**event, "execution_queue": "render"}
     elif status is not None:
         status = {**status, **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')}}
-        client.hset(status_key, mapping=dict(status))
-        client.expire(status_key, status_ttl)
     payload = json.dumps(with_task_provider(task), ensure_ascii=ensure_ascii)
-    enqueue_payload(client, queue, payload, front=front)
     if event is not None:
         event = {**event, **{key: task[key] for key in ('timing_key', 'timing_units', 'timing_unit')}}
+    if submission_nonce is not None:
+        # Claim the nonce, initialize status, enqueue, and publish together.
+        # A reconnect must neither enqueue twice nor reset running progress.
+        return bool(client.eval(
+            """
+            if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+            local status = cjson.decode(ARGV[2])
+            if ARGV[2] ~= 'null' then
+                for key, value in pairs(status) do
+                    redis.call('HSET', KEYS[3], key, tostring(value))
+                end
+                redis.call('EXPIRE', KEYS[3], ARGV[3])
+            end
+            redis.call(ARGV[4], KEYS[2], ARGV[1])
+            redis.call('SET', KEYS[1], '1', 'EX', ARGV[3])
+            if ARGV[5] ~= '' then redis.call('PUBLISH', ARGV[5], ARGV[6]) end
+            return 1
+            """,
+            3, f"task_submission:{submission_nonce}", queue, status_key or "",
+            payload, json.dumps(dict(status) if status is not None else None),
+            status_ttl, "LPUSH" if front else "RPUSH", event_channel if event is not None else "",
+            json.dumps(dict(event), ensure_ascii=ensure_ascii) if event is not None else "",
+        ))
+    if status is not None:
+        client.hset(status_key, mapping=dict(status))
+        client.expire(status_key, status_ttl)
+    enqueue_payload(client, queue, payload, front=front)
+    if event is not None:
         client.publish(
             event_channel, json.dumps(dict(event), ensure_ascii=ensure_ascii)
         )
+    return True
 
 
 def pop_gpu_service_switch(client: "Redis", queue: str, *, manual_only: bool = False) -> dict[str, Any] | None:
@@ -173,6 +200,80 @@ def pop_gpu_service_switch(client: "Redis", queue: str, *, manual_only: bool = F
         payload = payload.decode()
     task = json.loads(payload)
     return task if isinstance(task, dict) else None
+
+
+@protect_submission
+def enqueue_gpu_service_switch(
+    client: "Redis",
+    queue: str,
+    task: Mapping[str, Any],
+    *,
+    request_key: str | None = None,
+    status_key: str | None = None,
+    status: Mapping[str, Any] | None = None,
+    status_ttl: int = DEFAULT_STATUS_TTL_SECONDS,
+    event_channel: str | None = None,
+    event: Mapping[str, Any] | None = None,
+    front: bool = True,
+    ensure_ascii: bool = True,
+) -> dict[str, Any]:
+    """Queue a service transition once per destination provider.
+
+    Redis serializes the destination check and insertion, so concurrent manual
+    and automatic producers share one queued transition.
+    """
+    if task.get("action") != "gpu_service_switch":
+        raise ValueError("task must be a GPU service switch")
+    if status is not None and status_key is None:
+        raise ValueError("status_key is required when initializing task status")
+    if event is not None and event_channel is None:
+        raise ValueError("event_channel is required when publishing a queue event")
+
+    destination = task_provider(task)
+    incoming = dict(task)
+    incoming["target_provider"] = destination
+    incoming["provider"] = destination
+    payload = json.dumps(with_task_provider(incoming), ensure_ascii=ensure_ascii)
+    if status is not None:
+        client.hset(status_key, mapping=dict(status))
+        client.expire(status_key, status_ttl)
+    result = client.eval(
+        """
+        local incoming = cjson.decode(ARGV[1])
+        local queues = {KEYS[1]}
+        for _, payload in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
+            local ok, queued = pcall(cjson.decode, payload)
+            if ok and type(queued) == 'table'
+                and queued.action == 'gpu_service_switch'
+                and (queued.target_provider or queued.provider) == incoming.target_provider then
+                return cjson.encode({job_id=queued.job_id, task=queued, already_queued=true})
+            end
+        end
+        local transition = redis.call('GET', 'gpu:service-transition')
+        if transition then
+            local ok, running = pcall(cjson.decode, transition)
+            if ok and type(running) == 'table'
+                and running.action == 'gpu_service_switch'
+                and (running.target_provider or running.provider) == incoming.target_provider then
+                return cjson.encode({job_id=running.job_id, task=running, already_queued=true})
+            end
+        end
+        redis.call(ARGV[2], KEYS[1], ARGV[1])
+        if ARGV[3] ~= '' then redis.call('SET', ARGV[3], incoming.job_id, 'EX', 7200) end
+        return cjson.encode({job_id=incoming.job_id, task=incoming, already_queued=false})
+        """,
+        1,
+        queue,
+        payload,
+        'LPUSH' if front else 'RPUSH',
+        request_key or '',
+    )
+    if isinstance(result, bytes):
+        result = result.decode()
+    result = json.loads(result)
+    if not result["already_queued"] and event is not None:
+        client.publish(event_channel, json.dumps(dict(event), ensure_ascii=ensure_ascii))
+    return result
 
 
 @protect_submission

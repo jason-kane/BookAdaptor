@@ -167,3 +167,50 @@ emit('cpu:queue-plan', {workers: 2, running_count: 0, queued_count: 0, renders: 
     completed: [{job_id: 'frame', action: 'draw_frame', state: 'complete', retryable: true}]});
 assert.equal(elements['cpu-queue-completed'].children[0].querySelector('[data-cpu-retry]').textContent, 'Run again');
 console.log('Successful moves have no retry button; supported reruns have an accurate label');
+
+// Failed rows expose dismissal independently of cancellation/retry.
+let dismissals = [];
+(events['cpu:dismiss-send'] ||= []).push(event => dismissals.push(event.detail));
+emit('cpu:queue-plan', {workers: 2, running_count: 0, queued_count: 0, renders: [],
+    failed: [{job_id: 'failed-shot', state: 'failed', action: 'textoviva_one_shot',
+              title: 'Oz', chapter_number: 14, message: 'Import failed'}]});
+const failed = elements['cpu-queue-failed'].children[0];
+assert.equal(failed.querySelector('[data-cpu-cancel]'), undefined);
+assert.ok(failed.querySelector('[data-cpu-dismiss]'));
+failed.querySelector('[data-cpu-dismiss]').events.click();
+assert.equal(dismissals.length, 1);
+assert.equal(dismissals[0].job_id, 'failed-shot');
+emit('cpu:dismiss-result', {state:'cpu_dismiss_rejected', job_id:'failed-shot', message:'Disconnected'});
+assert.equal(failed.querySelector('[data-cpu-dismiss]').disabled, false);
+let removed = false;
+failed.remove = () => {removed = true;};
+emit('cpu:dismiss-result', {state:'cpu_failure_dismissed', job_id:'failed-shot'});
+assert.equal(removed, true);
+console.log('Failed task trash control and acknowledgment passed');
+
+// Only queued tasks are draggable, and their drop submits a relative move.
+const reorderMessages = [];
+(events['cpu:reorder-send'] ||= []).push(event => reorderMessages.push(event.detail));
+emit('cpu:queue-plan', {workers:2,running_count:1,queued_count:2,renders:[],
+    running:[{job_id:'fixed',state:'running',cancellable:true}],
+    jobs:[{job_id:'a',state:'queued',cancellable:true},{job_id:'b',state:'queued',cancellable:true}],
+    failed:[{job_id:'history',state:'failed'}]});
+const pendingContainer=elements['cpu-queue-pending'];
+const [firstQueued,secondQueued]=pendingContainer.children;
+firstQueued.parentElement=secondQueued.parentElement=pendingContainer;
+assert.equal(firstQueued.draggable,true);
+assert.equal(elements['cpu-queue-running'].children[0].draggable,false);
+assert.equal(elements['cpu-queue-failed'].children[0].draggable,false);
+firstQueued.getBoundingClientRect=()=>({top:0,height:100});
+const dragEvent={target:{closest:()=>null},dataTransfer:{setData:()=>{}},preventDefault:()=>{},stopPropagation:()=>{}};
+secondQueued.events.dragstart(dragEvent);
+emit('cpu:queue-plan',{workers:2,running_count:0,queued_count:0,renders:[],jobs:[]});
+assert.equal(pendingContainer.children.length,2,'Polling must not detach a task during dragging');
+firstQueued.events.dragover({...dragEvent,clientY:20});
+firstQueued.events.drop(dragEvent);
+assert.equal(reorderMessages.length,1);
+assert.equal(reorderMessages[0].job_id,'b');
+assert.equal(reorderMessages[0].target_job_id,'a');
+assert.equal(reorderMessages[0].position,'before');
+assert.equal(pendingContainer.children.length,0,'The deferred queue snapshot applies after dropping');
+console.log('Queued task dragging, fixed running rows, and polling during drag passed');

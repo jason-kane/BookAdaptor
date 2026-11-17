@@ -2088,6 +2088,14 @@
             return;
         }
         event = window.TaskTiming?.enrich(event) || event;
+        if (['cpu_job_reordered', 'cpu_reorder_rejected'].includes(event.state)) {
+            document.dispatchEvent(new CustomEvent('cpu:reorder-result', {detail: event}));
+            return;
+        }
+        if (['cpu_failure_dismissed', 'cpu_dismiss_rejected'].includes(event.state)) {
+            document.dispatchEvent(new CustomEvent('cpu:dismiss-result', {detail: event}));
+            return;
+        }
         if (event.state === 'cpu_retry_queued' || event.state === 'cpu_retry_rejected') {
             document.dispatchEvent(new CustomEvent('cpu:retry-result', {detail: event}));
             return;
@@ -2107,6 +2115,28 @@
         if (handleOperationsEvent(event)) return;
         handleSampleEvent(event);
     }
+
+    document.addEventListener('cpu:reorder-send', ({detail}) => {
+        if (socket?.readyState !== WebSocket.OPEN) {
+            document.dispatchEvent(new CustomEvent('cpu:reorder-result', {detail: {
+                state: 'cpu_reorder_rejected', job_id: detail?.job_id,
+                message: 'Queue connection is unavailable',
+            }}));
+            return;
+        }
+        socket.send(JSON.stringify({action: 'reorder_cpu_job', ...detail}));
+    });
+
+    document.addEventListener('cpu:dismiss-send', ({detail}) => {
+        if (socket?.readyState !== WebSocket.OPEN) {
+            document.dispatchEvent(new CustomEvent('cpu:dismiss-result', {detail: {
+                state: 'cpu_dismiss_rejected', job_id: detail?.job_id,
+                message: 'Queue connection is unavailable',
+            }}));
+            return;
+        }
+        socket.send(JSON.stringify({action: 'dismiss_failed_task', job_id: detail?.job_id}));
+    });
 
     document.addEventListener('cpu:retry-send', ({detail}) => {
         if (socket?.readyState !== WebSocket.OPEN) {

@@ -10,7 +10,10 @@ import uuid
 import redis
 from redis.maint_notifications import MaintNotificationsConfig
 
-from task_queue import PRIORITY_QUEUE, VIDEO_QUEUE, STYLER_EVENTS, enqueue_task
+from task_queue import (
+    PRIORITY_QUEUE, VIDEO_QUEUE, STYLER_EVENTS, enqueue_gpu_service_switch,
+    enqueue_task,
+)
 
 render_context = ContextVar("render_context", default={})
 gpu_label = ContextVar("gpu_label", default="Video generation")
@@ -94,7 +97,7 @@ def enqueue(action, arguments, *, provider="comfyui", label=None, timeout=3600,
                         "priority": True,
                         "trigger_job_id": job_id,
                     }
-                    enqueue_task(
+                    enqueue_gpu_service_switch(
                         client, PRIORITY_QUEUE, switch_task,
                         event_channel=STYLER_EVENTS,
                         event={**switch_task, "state": "job_queued"},

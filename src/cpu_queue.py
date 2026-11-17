@@ -27,6 +27,7 @@ PROCESSING = "cpu_jobs:processing"
 RUNNING = "cpu_jobs:running"
 POOL = "cpu_jobs:pool"
 FAILURES = "cpu_jobs:failures"
+FAILED_TASKS = "task_queue:failures"
 RECENT = "cpu_jobs:recent"
 FAILURE_RETENTION_SECONDS = 7 * 24 * 60 * 60
 RENDER_RUNNING = "chapter_render:running"
@@ -37,6 +38,78 @@ RENDER_PROCESSING = "chapter_render_jobs:processing"
 
 class TaskCancelled(Exception):
     pass
+
+
+def reorder_task(client, job_id, target_job_id, position='before'):
+    """Move pending work atomically in its own FIFO queue, never a claim."""
+    from task_queue import RENDER_QUEUE
+    rejected = {'state': 'cpu_reorder_rejected', 'job_id': job_id}
+    if (any(not isinstance(value, str) or not value or len(value) > 256
+            for value in (job_id, target_job_id)) or position not in ('before', 'after')):
+        return {**rejected, 'message': 'Invalid queue move'}
+    result = client.eval(
+        """
+        local function reject(message)
+            return cjson.encode({state='cpu_reorder_rejected',job_id=ARGV[1],message=message})
+        end
+        local function is_active(raw)
+            local ok,t=pcall(cjson.decode,raw or '')
+            return ok and type(t)=='table' and (t.job_id==ARGV[1] or t.job_id==ARGV[2])
+        end
+        if is_active(redis.call('GET',KEYS[3])) then return reject('Running tasks cannot be moved') end
+        for _,raw in ipairs(redis.call('HVALS',KEYS[4])) do
+            if is_active(raw) then return reject('Running tasks cannot be moved') end
+        end
+        for i=1,2 do
+            local queue=KEYS[i]
+            local size=redis.call('LLEN',queue)
+            local moving,anchor
+            -- Visible tasks are at the FIFO tail. Search it first and bound
+            -- memory independently of a potentially large frame queue.
+            for offset=0,size-1,128 do
+                for _,raw in ipairs(redis.call('LRANGE',queue,math.max(0,size-offset-128),size-offset-1)) do
+                    local ok,t=pcall(cjson.decode,raw)
+                    if ok and type(t)=='table' then
+                        if t.job_id==ARGV[1] then moving=raw end
+                        if t.job_id==ARGV[2] then anchor=raw end
+                    end
+                end
+                if moving and anchor then break end
+            end
+            if moving and anchor then
+                if ARGV[1]~=ARGV[2] then
+                    redis.call('LREM',queue,1,moving)
+                    -- Workers pop from the right; screen order is reversed.
+                    redis.call('LINSERT',queue,ARGV[3]=='before' and 'AFTER' or 'BEFORE',anchor,moving)
+                end
+                return cjson.encode({state='cpu_job_reordered',job_id=ARGV[1]})
+            end
+        end
+        return reject('Tasks must still be queued in the same queue; one may have started')
+        """, 4, CPU_QUEUE, RENDER_QUEUE, RENDER_RUNNING, RUNNING,
+        job_id, target_job_id, position)
+    return json.loads(result)
+
+
+def dismiss_failure(client, job_id):
+    """Dismiss a failure record without touching queued work or output files."""
+    if not isinstance(job_id, str) or not job_id or len(job_id) > 256:
+        return {"state": "cpu_dismiss_rejected", "job_id": job_id,
+                "message": "Invalid task ID"}
+    client.eval(
+        """
+        redis.call('HDEL', KEYS[1], ARGV[1])
+        for i=2,#KEYS do
+            for _,raw in ipairs(redis.call('LRANGE', KEYS[i], 0, -1)) do
+                local ok,task=pcall(cjson.decode,raw)
+                if ok and task.job_id==ARGV[1] and task.state=='failed' then
+                    redis.call('LREM', KEYS[i], 0, raw)
+                end
+            end
+        end
+        return 1
+        """, 3, FAILED_TASKS, FAILURES, "chapter_render:recent", job_id)
+    return {"state": "cpu_failure_dismissed", "job_id": job_id}
 
 
 def cancellation_requested(client, task):
@@ -301,9 +374,7 @@ def run_task(client, payload, worker_id, chapters, processing_key=PROCESSING):
                 pipe.hincrby(key, "failed" if error else "completed", 1)
                 if error:
                     pipe.hset(key, "error", error)
-                    pipe.lpush(FAILURES, json.dumps(public))
-                    pipe.ltrim(FAILURES, 0, 49)
-                    pipe.expire(FAILURES, FAILURE_RETENTION_SECONDS)
+                    pipe.hset(FAILED_TASKS, task['job_id'], json.dumps(public))
                 pipe.expire(key, 86400)
                 pipe.hdel(RUNNING, worker_id)
                 pipe.lrem(processing_key, 1, payload)
@@ -457,8 +528,11 @@ def retry_task(client, job_id):
     """Queue a fresh CPU task with the original action and arguments."""
     if not isinstance(job_id, str) or not job_id or len(job_id) > 256:
         return {"state": "cpu_retry_rejected", "job_id": job_id, "message": "Invalid task ID"}
-    outcome = None
+    raw_outcome = client.hget(FAILED_TASKS, job_id)
+    outcome = json.loads(raw_outcome) if raw_outcome else None
     for key in (FAILURES, RECENT):
+        if outcome:
+            break
         for raw in client.lrange(key, 0, 49):
             try:
                 candidate = json.loads(raw)
@@ -546,7 +620,8 @@ def snapshot(client, capacity=12):
     for task in renders:
         task.setdefault("state", "queued")
         task.update(client.hgetall(f"video_job:{task['job_id']}"))
-    renders.extend(json.loads(raw) for raw in client.lrange("chapter_render:recent", 0, 2))
+    renders.extend(task for raw in client.lrange("chapter_render:recent", 0, 2)
+                   if (task := json.loads(raw)).get('state') != 'failed')
     from task_timing import Estimator
     estimator = Estimator(client)
     active, queued = estimator.parallel(active, queued, pool.get('workers', 0))
@@ -609,6 +684,9 @@ def snapshot(client, capacity=12):
             and client.exists(f"{PAYLOAD_PREFIX}{task.get('job_id', '')}")
         )
         return item
+    failures = {task['job_id']: task
+                for raw in [*client.lrange(FAILURES, 0, -1), *client.hvals(FAILED_TASKS)]
+                if (task := json.loads(raw)).get('state') == 'failed'}
     return {"state": "cpu_queue_plan", "hardware": cpu_hardware(), "metrics": get_cpu_metrics(), "workers": pool.get("workers", 0),
             "render_count": render_count,
             "running": [public(task) for task in active[:capacity]],
@@ -617,8 +695,7 @@ def snapshot(client, capacity=12):
             "renders": [public(task) for task in renders],
             "completed": [with_retry(estimator.attach(task)) for raw in client.lrange(RECENT, 0, 9)
                           if (task := json.loads(raw)).get('completed_at', 0) >= time.time() - 90],
-            "failed": [with_retry(estimator.attach(task)) for raw in client.lrange(FAILURES, 0, 9)
-                       if (task := json.loads(raw)).get('completed_at', 0) >= time.time() - FAILURE_RETENTION_SECONDS]}
+            "failed": [with_retry(estimator.attach(task)) for task in failures.values()]}
 
 
 if __name__ == "__main__":

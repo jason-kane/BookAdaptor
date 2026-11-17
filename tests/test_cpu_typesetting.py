@@ -14,9 +14,13 @@ import cpu_queue
 @pytest.fixture(autouse=True)
 def isolated_library(tmp_path, monkeypatch):
     from artifact_editor.library import storage
-    active, stored = tmp_path / 'active', tmp_path / 'storage'
+    active, stored, shelf = tmp_path / 'active', tmp_path / 'storage', tmp_path / 'shelf'
     active.mkdir()
     stored.mkdir()
+    shelf.mkdir()
+    for author, title in [("Author", "Title"), ("Aesop", "Fables")]:
+        (active / author / title).mkdir(parents=True)
+    monkeypatch.setattr(storage, "location_roots", lambda: {"active": active, "storage": stored, "shelf": shelf})
     monkeypatch.setattr(storage, 'roots', lambda: (active, stored))
     monkeypatch.delenv('LIBRARY_LOCK_DIR', raising=False)
 
@@ -72,7 +76,8 @@ def test_worker_retains_typesetting_outcome_and_records_timing(monkeypatch, erro
     assert 'arguments' not in status
     if error:
         assert status['message'] == str(error)
-        assert pipe.lpush.call_args.args[0] == cpu_queue.FAILURES
+        assert any(call.args[0] == cpu_queue.FAILED_TASKS
+                   for call in pipe.hset.call_args_list)
     else:
         assert pipe.lpush.call_args.args[0] == cpu_queue.RECENT
     client.eval.assert_called_once()  # durable timing record

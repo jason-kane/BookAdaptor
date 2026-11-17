@@ -9,9 +9,68 @@ from task_queue import (
     DEFAULT_STATUS_TTL_SECONDS,
     enqueue_payload,
     enqueue_task,
+    enqueue_gpu_service_switch,
     promote_job,
     remove_queued_job,
 )
+
+
+@pytest.mark.parametrize('action', ['textoviva_one_shot', 'character_regenerate_audio'])
+@pytest.mark.parametrize('accepted', [0, 1])
+def test_submission_nonce_uses_one_atomic_operation_without_separate_writes(accepted, action):
+    client = Mock()
+    client.eval.return_value = accepted
+    submitted = enqueue_task(
+        client, 'video_render_jobs',
+        {'job_id': 'nonce-job', 'action': action},
+        submission_nonce='nonce-job',
+        event_channel='video_render_events', event={'job_id': 'nonce-job'},
+    )
+    assert submitted is bool(accepted)
+    assert [call[0] for call in client.method_calls] == ['eval']
+    args = client.eval.call_args.args
+    assert args[1:5] == (3, 'task_submission:nonce-job',
+                         'chapter_render_jobs', 'video_job:nonce-job')
+    assert json.loads(args[5])['action'] == action
+    assert json.loads(args[6])['state'] == 'queued'
+
+
+def test_gpu_service_switch_enqueue_is_atomic_and_collapses_same_destination():
+    client = Mock()
+    client.eval.return_value = json.dumps({
+        "job_id": "existing", "task": {"job_id": "existing"}, "already_queued": True,
+    })
+    result = enqueue_gpu_service_switch(
+        client,
+        "priority",
+        {"job_id": "new", "action": "gpu_service_switch", "target_provider": "comfyui"},
+        request_key="gpu:manual-switch-request",
+        event_channel="events",
+        event={"state": "job_queued"},
+    )
+    assert result["job_id"] == "existing"
+    assert result["already_queued"] is True
+    client.eval.assert_called_once()
+    assert "target_provider" in client.eval.call_args.args[0]
+    client.publish.assert_not_called()
+
+
+def test_gpu_service_switch_enqueue_publishes_new_destination_task():
+    client = Mock()
+    client.eval.return_value = json.dumps({
+        "job_id": "new", "task": {"job_id": "new"}, "already_queued": False,
+    })
+    result = enqueue_gpu_service_switch(
+        client,
+        "priority",
+        {"job_id": "new", "action": "gpu_service_switch", "target_provider": "llama"},
+        event_channel="events",
+        event={"job_id": "new", "state": "job_queued"},
+    )
+    assert result["already_queued"] is False
+    client.publish.assert_called_once_with(
+        "events", json.dumps({"job_id": "new", "state": "job_queued"})
+    )
 
 
 def test_enqueue_task_initializes_status_then_fifo_queue_and_event():

@@ -20,6 +20,10 @@
 #cpu-queue-count, #cpu-queue-summary { color: var(--wa-color-text-quiet, #aaa); font-weight: 400; }
 #cpu-queue-summary { font-size: 0.78rem; margin-block: 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cpu-queue-row { padding: 0.35rem; border-bottom: 1px solid var(--wa-color-surface-border); font-size: 0.78rem; }
+.cpu-queue-row[draggable="true"] { cursor: grab; }
+.cpu-queue-row.is-task-dragging { opacity: .45; cursor: grabbing; }
+.cpu-queue-row[data-drop-position="before"] { box-shadow: inset 0 3px var(--wa-color-brand-fill-loud, #789cff); }
+.cpu-queue-row[data-drop-position="after"] { box-shadow: inset 0 -3px var(--wa-color-brand-fill-loud, #789cff); }
 .cpu-queue-row.has-animation-thumbnail {
     position: relative;
     min-height: 5rem;

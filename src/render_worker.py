@@ -95,9 +95,15 @@ def main():
                 continue
             exitcode = run_supervised_job(client, task)
             if exitcode and not cancellation_requested(client, task):
+                previous = client.hgetall(f"video_job:{task['job_id']}")
+                last_message = previous.get("message") or "No progress message was recorded"
                 publish_progress(client, task["job_id"], 0,
-                                 f"Chapter worker exited with code {exitcode}",
-                                 "failed", task.get("action"))
+                                 f"Chapter worker exited with code {exitcode} during: {last_message}",
+                                 "failed", task.get("action"),
+                                 debug_details=(
+                                     f"Render subprocess exited with code {exitcode}.\n"
+                                     f"Last persisted state: {previous!r}"
+                                 ))
                 client.delete(RENDER_RUNNING)
         except Exception as exc:
             publish_progress(client, task["job_id"], 0, str(exc), "failed", task.get("action"))

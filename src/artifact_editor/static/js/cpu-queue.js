@@ -2,6 +2,25 @@
     const panel = document.getElementById('cpu-job-queue');
     if (!panel) return;
     const toggle = document.getElementById('cpu-queue-toggle');
+    let dragging = null;
+    let deferredPlan = null;
+    function moveTask(item, target, position) {
+        if (!target || item === target || item.parentElement !== target.parentElement
+                || item.dataset.state !== 'queued' || target.dataset.state !== 'queued') return;
+        document.dispatchEvent(new CustomEvent('cpu:reorder-send', {detail: {
+            job_id: item.dataset.jobId, target_job_id: target.dataset.jobId, position,
+        }}));
+    }
+    function finishDrag() {
+        dragging?.classList.remove('is-task-dragging');
+        dragging = null;
+        panel.querySelectorAll('.cpu-queue-row').forEach(item => { delete item.dataset.dropPosition; });
+        if (deferredPlan) {
+            const plan = deferredPlan;
+            deferredPlan = null;
+            renderPlan(plan);
+        }
+    }
     function animationThumbnail(task, message = task.message || '') {
         if (!['chapter_missing_animations', 'textoviva_regenerate_animation',
               'textoviva_missing_animation'].includes(task.action)) return '';
@@ -33,6 +52,45 @@
         item.dataset.state = task.state || state;
         item.dataset.retryable = String(Boolean(task.retryable));
         item.dataset.cancellable = String(Boolean(task.cancellable));
+        item.draggable = item.dataset.state === 'queued';
+        if (item.draggable) {
+            item.setAttribute('tabindex', '0');
+            item.title = 'Drag to reorder queued tasks. Alt + Up/Down also moves this task.';
+            item.addEventListener('dragstart', event => {
+                if (event.target.closest?.('wa-button, button, a, input, textarea, select')) {
+                    event.preventDefault();
+                    return;
+                }
+                dragging = item;
+                item.classList.add('is-task-dragging');
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', item.dataset.jobId);
+                }
+            });
+            item.addEventListener('dragover', event => {
+                if (!dragging || dragging === item || dragging.parentElement !== item.parentElement) return;
+                event.preventDefault();
+                const bounds = item.getBoundingClientRect();
+                item.dataset.dropPosition = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after';
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            });
+            item.addEventListener('dragleave', () => { delete item.dataset.dropPosition; });
+            item.addEventListener('drop', event => {
+                if (!dragging || dragging.parentElement !== item.parentElement) return;
+                event.preventDefault();
+                event.stopPropagation();
+                moveTask(dragging, item, item.dataset.dropPosition || 'before');
+                finishDrag();
+            });
+            item.addEventListener('dragend', finishDrag);
+            item.addEventListener('keydown', event => {
+                if (event.target !== item || !event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                moveTask(item, event.key === 'ArrowUp' ? item.previousElementSibling : item.nextElementSibling,
+                    event.key === 'ArrowUp' ? 'before' : 'after');
+            });
+        }
         const thumbnailUrl = animationThumbnail(task);
         if (thumbnailUrl) {
             item.classList.add('has-animation-thumbnail');
@@ -78,6 +136,23 @@
             item.append(cancel);
         }
         if (item.dataset.state === 'failed') {
+            const dismiss = document.createElement('wa-button');
+            dismiss.setAttribute('size', 'small');
+            dismiss.setAttribute('appearance', 'plain');
+            dismiss.setAttribute('variant', 'danger');
+            dismiss.className = 'cpu-queue-cancel';
+            dismiss.dataset.cpuDismiss = '';
+            dismiss.innerHTML = '<wa-icon name="trash" aria-hidden="true"></wa-icon>';
+            dismiss.setAttribute('aria-label', `Remove failed task ${label.textContent}`);
+            dismiss.title = 'Remove this failed task';
+            dismiss.addEventListener('click', () => {
+                if (dismiss.disabled) return;
+                dismiss.disabled = true;
+                document.dispatchEvent(new CustomEvent('cpu:dismiss-send', {
+                    detail: {job_id: task.job_id},
+                }));
+            });
+            item.append(dismiss);
             const copy = document.createElement('wa-button');
             copy.setAttribute('size', 'small');
             copy.setAttribute('appearance', 'plain');
@@ -270,6 +345,8 @@
     const submitted = new Map();
     let lastPlan = {running_count: 0, queued_count: 0, render_count: 0, renders: []};
     function renderPlan(plan) {
+        // A periodic refresh must not detach the DOM node being dragged.
+        if (dragging) { deferredPlan = plan; return; }
         lastPlan = plan;
         const observed = new Set(['renders', 'running', 'jobs', 'failed', 'completed']
             .flatMap(key => (plan[key] || []).map(task => task.job_id)));
@@ -319,6 +396,13 @@
         }
     }
     document.addEventListener('cpu:queue-plan', ({detail: plan}) => renderPlan(plan));
+    document.addEventListener('cpu:reorder-result', ({detail: result}) => {
+        if (result.state !== 'cpu_reorder_rejected') return;
+        const item = [...panel.querySelectorAll('.cpu-queue-row[data-job-id]')]
+            .find(row => row.dataset.jobId === result.job_id);
+        const message = item?.querySelector('.cpu-queue-message');
+        if (message) message.textContent = result.message || 'Queue move failed';
+    });
     document.addEventListener('htmx:wsAfterSend', event => {
         const button = event.detail.elt;
         const group = button?.closest('[data-chapter-assets], #textoviva-one-shot');
@@ -375,6 +459,20 @@
             if (message) message.textContent = button.title;
         } else {
             button.title = result.state === 'cpu_cancelled' ? 'Task cancelled' : 'Cancelling task';
+        }
+    });
+    document.addEventListener('cpu:dismiss-result', ({detail: result}) => {
+        const item = [...panel.querySelectorAll('.cpu-queue-row[data-job-id]')]
+            .find(row => row.dataset.jobId === result.job_id);
+        if (!item) return;
+        if (result.state === 'cpu_failure_dismissed') {
+            item.remove();
+        } else {
+            const button = item.querySelector('[data-cpu-dismiss]');
+            if (button) {
+                button.disabled = false;
+                button.title = result.message || 'Removal failed';
+            }
         }
     });
 })();

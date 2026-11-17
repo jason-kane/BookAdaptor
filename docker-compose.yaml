@@ -339,7 +339,7 @@ services:
       - CHAPTER_STORAGE=postgres
     # Flask's development server can append an HTTP response to a closed
     # WebSocket stream. Flask-Sock handles Gunicorn's socket lifecycle directly.
-    entrypoint: [ "gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--threads", "128", "--timeout", "0", "--access-logfile", "-", "--error-logfile", "-", "websocket.server:app" ]
+    entrypoint: [ "gunicorn", "--no-control-socket", "--bind", "0.0.0.0:5001", "--workers", "1", "--threads", "128", "--timeout", "0", "--access-logfile", "-", "--error-logfile", "-", "websocket.server:app" ]
     deploy:
       resources:
         reservations:

@@ -2,11 +2,13 @@
 import http.client
 import json
 import logging
+import os
 import subprocess
 import socket
 import threading
 import time
 from urllib.parse import urlencode, quote
+from urllib.request import urlopen
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +96,21 @@ def start_services(service_names, allowed_services, *, recreate=True):
 
 
 def gpu_free_memory():
-    """Read device memory through the NVIDIA-enabled worker, independent of models."""
+    """Read free device memory from ComfyUI, falling back to the GPU worker."""
+    comfyui_url = os.environ.get("COMFYUI_API_URL", "http://comfyui:8188").rstrip("/")
+    try:
+        with urlopen(f"{comfyui_url}/system_stats", timeout=5) as response:
+            devices = json.load(response).get("devices", [])
+        free_values = [
+            device["vram_free"] for device in devices
+            if device.get("type") == "cuda"
+            and isinstance(device.get("vram_free"), (int, float))
+        ]
+        if free_values:
+            return min(free_values) / 1024**3
+    except (OSError, ValueError, TypeError, KeyError):
+        log.debug("Could not read GPU memory from ComfyUI; trying video_worker", exc_info=True)
+
     result = subprocess.run(
         compose_command() + ["exec", "-T", "video_worker", "nvidia-smi",
                              "--query-gpu=memory.free", "--format=csv,noheader,nounits"],

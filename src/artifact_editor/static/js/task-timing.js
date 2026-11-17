@@ -1,4 +1,22 @@
 (() => {
+    // Video progress is broadcast to every WebSocket page. Ignore a progress
+    // fragment when this page has no matching status node, rather than letting
+    // HTMX report an expected missing OOB target.
+    document.addEventListener('htmx:wsBeforeMessage', event => {
+        const message = event.detail?.message;
+        if (typeof message !== 'string') return;
+        const fragment = document.createElement('template');
+        fragment.innerHTML = message;
+        const elements = [...fragment.content.children];
+        const orphanedProgress = elements.filter(element =>
+            element.id?.startsWith('video-progress-')
+            && element.hasAttribute('hx-swap-oob')
+            && !document.getElementById(element.id));
+        if (orphanedProgress.length && orphanedProgress.length === elements.length) {
+            event.preventDefault();
+        }
+    });
+
     const jobs = new Map();
     const bindings = new Map();
     const terminal = new Set(['complete', 'loaded', 'failed', 'cancelled']);

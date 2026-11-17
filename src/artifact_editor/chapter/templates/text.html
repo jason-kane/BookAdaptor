@@ -949,19 +949,19 @@
 <script defer src="/static/js/library-image-leaves.js?v=2"></script>
 <script defer src="/static/js/frame-image-leaves.js?v=1"></script>
 <script src="https://vjs.zencdn.net/8.23.8/video.min.js" defer></script>
-<script src="{{ url_for('static', filename='js/textoviva-player.js', v='playback-timing-changes-3') }}" defer></script>
+<script src="{{ url_for('static', filename='js/textoviva-player.js', v='one-shot-import-timeline-1') }}" defer></script>
 {% if chapter.get_aspect() != 'portrait' %}
 <script src="{{ url_for('static', filename='js/chapter-thumbnail.js', v='2') }}" defer></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/chapter-columns.js', v='8') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-import.js', v='workflow-websocket-1') }}"
+<script src="{{ url_for('static', filename='js/chapter-import.js', v='workflow-attributions-2') }}"
     data-workflow-websocket="{{ websocket_url('/chapter-workflow-ws?' ~ {'author': chapter.author.name, 'title': chapter.title, 'chapter_number': chapter.number, 'language': chapter.language}|urlencode) }}" defer></script>
 <script src="{{ url_for('static', filename='js/custom-scrollbar.js', v='6') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chapter-image-delete.js', v='1') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='scene-completion-4') }}" defer></script>
-<script src="{{ url_for('static', filename='js/chapter-typesetting.js', v='2') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-timeline.js', v='live-image-completions-1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/chapter-typesetting.js', v='3') }}" defer></script>
 <script src="/static/js/chapter-preview-scroll.js?v=7" defer></script>
-<script defer src="/static/js/styler-samples.js?v=panel-state-3" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
+<script defer src="/static/js/styler-samples.js?v=cpu-reorder-7" data-styler-websocket="{{ websocket_url().replace('/ws', '/styler-ws') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
     // Quill's false option represents unformatted text and resets to CSS defaults.

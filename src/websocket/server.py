@@ -24,6 +24,7 @@ from task_queue import (
     VIDEO_EVENTS,
     VIDEO_QUEUE,
     enqueue_task,
+    enqueue_gpu_service_switch,
     enqueue_payload,
     pop_gpu_service_switch,
     promote_job,
@@ -125,6 +126,11 @@ def publish_progress(client, job_id, percent, message, state="running", action=N
         event["debug_details"] = debug_details
     client.hset(f"video_job:{job_id}", mapping=event)
     client.expire(f"video_job:{job_id}", 86400)
+    if state == "failed":
+        from cpu_queue import FAILED_TASKS
+        client.hset(FAILED_TASKS, job_id, json.dumps({
+            **previous, **event, "completed_at": time.time(),
+        }))
     from task_timing import enrich
     event = enrich(client, event)
     publish_queue_event(client, VIDEO_EVENTS, event)
@@ -2259,6 +2265,18 @@ def styler_websocket(ws):
                         response = retry_task(client, message.get("job_id"))
                         ws.send(json.dumps(response))
                         queue_dirty = True
+                    elif message.get("action") == "reorder_cpu_job":
+                        from cpu_queue import reorder_task, snapshot as cpu_snapshot
+
+                        ws.send(json.dumps(reorder_task(client, message.get('job_id'),
+                            message.get('target_job_id'), message.get('position', 'before'))))
+                        ws.send(json.dumps(cpu_snapshot(client)))
+                        last_cpu_signature = None
+                    elif message.get("action") == "dismiss_failed_task":
+                        from cpu_queue import dismiss_failure
+
+                        ws.send(json.dumps(dismiss_failure(client, message.get("job_id"))))
+                        last_cpu_signature = None
                     elif message.get("action") == "cancel_cpu_job":
                         from cpu_queue import cancel_task
 
@@ -2298,15 +2316,7 @@ def styler_websocket(ws):
                                     message="Wait for LoRA training to finish before leaving Training mode.",
                                 )
                             else:
-                                existing = _pending_gpu_switch_id(client)
-                                if existing:
-                                    response = dict(
-                                        state="gpu_service_switch_queued",
-                                        job_id=existing,
-                                        already_queued=True,
-                                    )
-                                else:
-                                    task = {
+                                task = {
                                         "job_id": uuid.uuid4().hex,
                                         "action": "gpu_service_switch",
                                         "job_type": "GPU service switch",
@@ -2316,49 +2326,28 @@ def styler_websocket(ws):
                                         "priority": True,
                                         "manual_override": True,
                                     }
-                                    if client.set(
-                                        GPU_SWITCH_REQUEST_KEY,
-                                        task["job_id"],
-                                        nx=True,
-                                        ex=7200,
-                                    ):
-                                        try:
-                                            enqueue_task(
-                                                client,
-                                                PRIORITY_QUEUE,
-                                                task,
-                                                front=True,
-                                                ensure_ascii=False,
-                                            )
-                                            client.publish(
-                                                EVENTS,
-                                                json.dumps(
-                                                    {
-                                                        "state": "job_queued",
-                                                        **task,
-                                                    },
-                                                    ensure_ascii=False,
-                                                ),
-                                            )
-                                            log.info(
-                                                "Queued GPU service switch %s targeting %s",
-                                                task["job_id"],
-                                                target_provider,
-                                            )
-                                        except Exception:
-                                            client.delete(GPU_SWITCH_REQUEST_KEY)
-                                            raise
-                                        response = dict(
-                                            state="gpu_service_switch_queued",
-                                            job_id=task["job_id"],
-                                            provider=target_provider,
-                                        )
-                                    else:
-                                        response = dict(
-                                            state="gpu_service_switch_queued",
-                                            job_id=client.get(GPU_SWITCH_REQUEST_KEY),
-                                            already_queued=True,
-                                        )
+                                queued = enqueue_gpu_service_switch(
+                                    client,
+                                    PRIORITY_QUEUE,
+                                    task,
+                                    request_key=GPU_SWITCH_REQUEST_KEY,
+                                    event_channel=EVENTS,
+                                    event={"state": "job_queued", **task},
+                                    front=True,
+                                    ensure_ascii=False,
+                                )
+                                if not queued["already_queued"]:
+                                    log.info(
+                                        "Queued GPU service switch %s targeting %s",
+                                        queued["job_id"],
+                                        target_provider,
+                                    )
+                                response = dict(
+                                    state="gpu_service_switch_queued",
+                                    job_id=queued["job_id"],
+                                    provider=target_provider,
+                                    already_queued=queued["already_queued"],
+                                )
                         ws.send(json.dumps(response))
                         queue_dirty = True
                     elif message.get("action") == "worker_reset":
@@ -3182,11 +3171,18 @@ def handle_websocket(ws):
                         }
                         if "image_index" in task:
                             queued_status["image_index"] = task["image_index"]
-                        enqueue_task(
+                        submitted = enqueue_task(
                             client, VIDEO_QUEUE, task,
                             status_key=f"video_job:{task['job_id']}", status=queued_status,
                             event_channel=VIDEO_EVENTS, event=queued_status,
+                            submission_nonce=task["job_id"],
                         )
+                        if not submitted:
+                            # Replay the acknowledgment for a repeated click;
+                            # preserve the original job's state and progress.
+                            existing = client.hgetall(f"video_job:{task['job_id']}")
+                            ws.send(progress_html(existing or queued_status))
+                            continue
                         # Worker startup can take a long time. Acknowledge the
                         # queued job on the initiating socket before waiting
                         # for Home to start the CPU coordinator.
