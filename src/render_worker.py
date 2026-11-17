@@ -79,6 +79,7 @@ def main():
     os.environ["RENDER_WORKER_PROCESS"] = "1"
     client = connection()
     from websocket.server import publish_progress
+    client.set("render_worker:character_audio_ready", "1")
 
     # Recover an interrupted coordinator before accepting another chapter.
     while client.rpoplpush(PROCESSING, RENDER_QUEUE):

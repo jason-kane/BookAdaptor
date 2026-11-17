@@ -1,7 +1,9 @@
 import glob
+import hashlib
 import json
 import os
 from pathlib import Path
+import random
 import re
 import tempfile
 import uuid
@@ -42,6 +44,10 @@ def _kokoro_language(character_dict: dict) -> str:
         "portuguese": "Brazilian Portuguese",
         "italian": "Italian",
     }
+    if character_dict.get("voice_language") == "all":
+        accent = character_dict.get("voice_accent")
+        if accent in {"british", "american"}:
+            return "English (British)" if accent == "british" else "English (American)"
     voices = character_dict.get("voices", [])
     active_voices = [
         voice for voice in voices if float(voice.get("strength", 0)) > 0
@@ -54,6 +60,61 @@ def _kokoro_language(character_dict: dict) -> str:
     if language == "english":
         return "English (British)" if accent == "british" else "English (American)"
     return voice_language.get(language, "All")
+
+
+def configure_character_voice(chapter, character_name: str, *, force: bool = False,
+                              used_signatures: set | None = None, infer_demographics: bool = True) -> dict:
+    """Create and persist a randomized Kokoro voice blend for a character."""
+    character = characters.get_character(chapter, character_name)
+    if not character:
+        raise ValueError(f"Character {character_name} could not be loaded")
+    if not force and any(
+        isinstance(voice, dict) and int(voice.get("strength", 0) or 0) > 0
+        for voice in character.get("voices", [])
+    ):
+        return character
+
+    if infer_demographics and character_name.casefold() != "narrator" and not character.get("gender"):
+        characters.generate_gender_and_age(chapter, character_name)
+        character = characters.get_character(chapter, character_name)
+
+    from artifact_editor.characters.voices import KOKORO_VOICES
+
+    gender = character.get("gender")
+    character["voice_gender"] = gender if gender in {"male", "female"} else "all"
+    character["voice_language"] = "all"
+    character["voice_accent"] = random.choice(("british", "american"))
+    matching = [
+        voice for voice in KOKORO_VOICES.values()
+        if (character["voice_gender"] == "all" or voice["gender"] == character["voice_gender"])
+        and (voice["accent"] == character["voice_accent"] or voice["accent"] is None)
+    ]
+    if not matching:
+        raise ValueError(f"No Kokoro voices match {character_name}'s voice filters")
+
+    while True:
+        raw = [random.random() for _ in matching]
+        total = sum(raw)
+        exact = [value * 100 / total for value in raw]
+        strengths = [int(value) for value in exact]
+        remainder = 100 - sum(strengths)
+        for index in sorted(
+            range(len(exact)), key=lambda position: exact[position] - strengths[position],
+            reverse=True,
+        )[:remainder]:
+            strengths[index] += 1
+        signature = tuple(strengths)
+        if used_signatures is None or signature not in used_signatures:
+            break
+    if used_signatures is not None:
+        used_signatures.add(signature)
+
+    character["voices"] = [
+        {"id": voice["id"], "name": voice["name"], "strength": strength}
+        for voice, strength in zip(matching, strengths)
+    ]
+    characters.save_character(chapter, character_name, character)
+    return character
 
 LLM_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "LLM_CACHE")
 os.makedirs(LLM_CACHE_DIR, exist_ok=True)
@@ -180,15 +241,20 @@ def text_2_audio(
 
     spoken_text = clean_latex(phrase_xml.get_text())
 
-    character_dict = characters.get_character(chapter, character_name)
-    if "voices" not in character_dict:
-        log.error(f"Character {character_name} has no voice defined")
-        raise ValueError(f"Character {character_name} has no voice defined")
+    # Ensure one persistent, randomized blend exists for the character.
+    character_dict = configure_character_voice(chapter, character_name)
 
     outputfile = os.path.join(
         const.COMFY_DIRS["artifactserver"]["OUTPUT_DIR"],
         os.path.basename(wavfile)
     )
+    # The same text can belong to different speakers or an edited voice.
+    # Never satisfy it from a previous speaker's/default voice cache.
+    voice_key = hashlib.sha256(json.dumps({
+        "voices": character_dict["voices"], "language": _kokoro_language(character_dict),
+    }, sort_keys=True).encode()).hexdigest()[:12]
+    stem, extension = os.path.splitext(outputfile)
+    outputfile = f"{stem}_{voice_key}{extension}"
     if force:
         stem, extension = os.path.splitext(outputfile)
         outputfile = f"{stem}_{uuid.uuid4().hex}{extension}"
@@ -227,12 +293,7 @@ def text_2_audio(
         if isinstance(voice, dict)
     )
     if not has_active_voice:
-        # Theater director scripts can introduce characters before the user
-        # configures character assets. Keep ComfyUI's Kokoro workflow valid
-        # with a neutral default voice instead of submitting zero active
-        # speaker layers (which makes SaveAudio receive no audio).
-        # Match the known-good voice configured in the bundled Kokoro template.
-        voices = [{"id": "am_adam", "strength": 95}]
+        raise ValueError(f"Character {character_name} has no active voice configured")
     log.info('Including %s layers of voice data', len(voices))
     for voice_index, voice_dict in enumerate(voices):
         template_environment[f"SPEAKER_{voice_index:02d}_NAME"] = voice_dict["id"]
@@ -278,7 +339,8 @@ def text_2_audio(
     )
     
     line_index = phrase_xml.attrs.get("index", "?")
-    label = f"Create dialogue audio · {chapter.title} · line {line_index} · {character_name}"
+    preview = " ".join(spoken_text.split()[:6])
+    label = f"[{character_name}] {line_index}: {preview}"
     request = {"ready": False, "wavfile": wavfile, "outputfile": outputfile,
                "workflow_fn": workflow_filename, "label": label,
                "prepare_vram": True,

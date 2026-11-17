@@ -1008,3 +1008,39 @@ def open_workflow(character_tag):
         return redirect(open_reference_workflow('characters', request.args.get('description', character.get('description', ''))))
     except ValueError as exc:
         return str(exc), 400
+
+
+@bp.route("<character_tag>/actions/regenerate_audio", methods=["POST"])
+def regenerate_audio(character_tag):
+    """Queue all of this book character's speech with the current voice."""
+    import uuid
+    import redis
+    from task_queue import VIDEO_QUEUE, enqueue_task
+    from worker_startup import ensure_worker_services
+
+    chapter = g.chapter
+    record = characters.get_character(chapter, character_tag)
+    if not record:
+        return "Character not found", 404
+    try:
+        nonce = uuid.UUID(request.form.get("nonce", "")).hex
+    except (ValueError, AttributeError):
+        return "Invalid submission nonce", 400
+    tag = record['tag']
+    task = {"action": "character_regenerate_audio", "job_id": nonce,
+            "author": chapter.author.name, "title": chapter.title,
+            "chapter_number": chapter.number, "language": chapter.language,
+            "character_tag": tag,
+            "label": f"Regenerate audio · {record.get('name', tag)} · whole book",
+            "job_type": f"Regenerate audio · {record.get('name', tag)} · whole book"}
+    client = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
+    try:
+        ensure_worker_services()
+        if client.get("render_worker:character_audio_ready") != "1":
+            return htmx.regenerate_audio_control(chapter, tag,
+                "Waiting for the current chapter to finish and workers to reload. Please try again when the queue is idle.")
+        enqueue_task(client, VIDEO_QUEUE, task, submission_nonce=nonce)
+    finally:
+        client.close()
+    return htmx.regenerate_audio_control(chapter, tag,
+        "Queued for all chapters. Progress appears in the CPU task queue. Rebuild videos when complete.")

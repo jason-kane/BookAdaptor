@@ -1311,12 +1311,16 @@ def generate_audio(chapter):
     return cache
 
 
-def generate_all_audio(chapter, force=True, progress=None, batch=False):
+def generate_all_audio(chapter, force=True, progress=None, batch=False, speaker_tags=None):
     log.info("[generate_all_audio] (%s, force=%s)", chapter, force)
 
     # we're essentially clicking 'regenerate' on everything
     # that doesn't have a wav file.
     phrase_list = chapter.get_xml().find_all("phrase")
+    if speaker_tags is not None:
+        phrase_list = [phrase for phrase in phrase_list
+                       if name_to_tag(phrase.get("speaker", "Narrator")) in speaker_tags
+                       and phrase.get("type") != "dinkus"]
     pending = []
     for position, phrase_xml in enumerate(phrase_list):
         if progress:
@@ -1374,7 +1378,7 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
                     request = llm.text_2_audio(
                         chapter, phrase_xml,
                         phrase_xml.attrs.get("speaker", "Narrator"),
-                        wavfile, force=False, queue_only=True,
+                        wavfile, force=force, queue_only=True,
                     )
                     if not request.get("ready"):
                         pending.append((phrase_index, phrase_xml, wavfile, request))
@@ -1384,7 +1388,7 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
                         phrase_xml,
                         phrase_xml.attrs.get("speaker", "Narrator"),
                         wavfile,
-                        force=False,
+                        force=force,
                     )
 
             if batch:
@@ -1502,7 +1506,8 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
                 phrase_xml.attrs["pronunciation"] = new_pronunciation
             chapter.save_phrase(phrase_xml)
 
-    generate_audio(chapter)
+    if speaker_tags is None:
+        generate_audio(chapter)
     recalculate_image_frames(chapter)
     chapter.save_timing()
 
@@ -1513,6 +1518,7 @@ def generate_all_audio(chapter, force=True, progress=None, batch=False):
 def save_speaker(chapter, phrase_index: int, speaker):
     phrase_xml = chapter.get_phrase(phrase_index)
     speaker_tag = name_to_tag(speaker)
+    llm.configure_character_voice(chapter, speaker_tag, infer_demographics=False)
     if phrase_xml.get("speaker") != speaker_tag:
         wavfile = get_wavfile_filename(phrase_xml, chapter)
         for stale in (wavfile, wavfile + ".pronunciation", wavfile + ".pronunciation.txt"):

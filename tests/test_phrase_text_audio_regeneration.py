@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import glob
+import hashlib
 import sys
 
 from bs4 import BeautifulSoup
@@ -61,7 +62,7 @@ def test_forced_generation_uses_unique_outputs_and_current_text(tmp_path, monkey
     chapter = SimpleNamespace(title='Book', get_pronunciation=lambda: {}, get_phrase_workflow=Mock(return_value='speech.json'))
     monkeypatch.setitem(sys.modules, 'artifact_editor.phrases.phrases', SimpleNamespace(clean_latex=lambda text: text))
     prepare = helpers.function('src/artifact_editor/llm.py', 'text_2_audio',
-        characters=SimpleNamespace(get_character=lambda *args: {'voices': [{'id': 'am_adam', 'strength': 95}]}),
+        hashlib=hashlib, configure_character_voice=lambda *args: {'voices': [{'id': 'am_adam', 'strength': 95}]},
         const=SimpleNamespace(COMFY_DIRS={'artifactserver': {'INPUT_DIR': str(incoming), 'OUTPUT_DIR': str(output)}, 'comfyui': {'OUTPUT_DIR': '/output'}}),
         _kokoro_language=lambda _: 'English (American)')
     first = prepare(chapter, phrase, 'Narrator', str(tmp_path / 'speech.wav'), force=True, queue_only=True)
@@ -71,3 +72,47 @@ def test_forced_generation_uses_unique_outputs_and_current_text(tmp_path, monkey
     assert environment['TEXT'] == 'Edited phrase.'
     assert environment['PRONUNCIATION'] == ''
     assert second['pronunciation_file'] == str(output / 'audio' / (environment['PRONUNCIATION_FILENAME'] + '.txt'))
+    assert second['label'] == '[Narrator] 2: Edited phrase.'
+
+
+def test_dialogue_audio_label_uses_speaker_line_number_and_first_six_words(tmp_path, monkeypatch):
+    incoming, output = tmp_path / 'input', tmp_path / 'output'
+    incoming.mkdir(); output.mkdir()
+    phrase = BeautifulSoup(
+        '<phrase index="17">A very short opening followed by more words in the sentence.</phrase>',
+        'xml',
+    ).phrase
+    chapter = SimpleNamespace(title='Book', get_pronunciation=lambda: {},
+                              get_phrase_workflow=Mock(return_value='speech.json'))
+    monkeypatch.setitem(sys.modules, 'artifact_editor.phrases.phrases',
+                        SimpleNamespace(clean_latex=lambda text: text))
+    prepare = helpers.function('src/artifact_editor/llm.py', 'text_2_audio',
+        hashlib=hashlib, configure_character_voice=lambda *args: {'voices': [{'id': 'am_adam', 'strength': 95}]},
+        const=SimpleNamespace(COMFY_DIRS={'artifactserver': {'INPUT_DIR': str(incoming), 'OUTPUT_DIR': str(output)}, 'comfyui': {'OUTPUT_DIR': '/output'}}),
+        _kokoro_language=lambda _: 'English (American)')
+    request = prepare(chapter, phrase, 'Dorothy', str(tmp_path / 'speech.wav'),
+                      force=True, queue_only=True)
+    assert request['label'] == '[Dorothy] 17: A very short opening followed by'
+
+
+def test_audio_cache_is_separated_by_voice_blend(tmp_path, monkeypatch):
+    incoming, output = tmp_path / 'input', tmp_path / 'output'
+    incoming.mkdir(); output.mkdir()
+    (output / 'speech.wav').write_bytes(b'old default voice')
+    phrase = BeautifulSoup('<phrase index="2">Hello there.</phrase>', 'xml').phrase
+    chapter = SimpleNamespace(title='Book', get_pronunciation=lambda: {},
+                              get_phrase_workflow=Mock(return_value='speech.json'))
+    monkeypatch.setitem(sys.modules, 'artifact_editor.phrases.phrases',
+                        SimpleNamespace(clean_latex=lambda text:text))
+    voice = {'voices':[{'id':'am_adam','strength':100}]}
+    prepare = helpers.function('src/artifact_editor/llm.py', 'text_2_audio',
+        hashlib=hashlib, configure_character_voice=lambda *args: voice,
+        const=SimpleNamespace(COMFY_DIRS={'artifactserver':{'INPUT_DIR':str(incoming),'OUTPUT_DIR':str(output)},
+                                         'comfyui':{'OUTPUT_DIR':'/output'}}),
+        _kokoro_language=lambda _: 'English (American)')
+    first = prepare(chapter,phrase,'Man',str(tmp_path/'speech.wav'),queue_only=True)
+    voice['voices'] = [{'id':'bm_george','strength':100}]
+    second = prepare(chapter,phrase,'Man',str(tmp_path/'speech.wav'),queue_only=True)
+    assert not first['ready'] and not second['ready']
+    assert first['outputfile'] != second['outputfile']
+    assert not (tmp_path/'speech.wav').exists()

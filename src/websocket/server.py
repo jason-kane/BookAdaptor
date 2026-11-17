@@ -302,6 +302,7 @@ def run_video_job(client, task):
         "chapter_assign_characters": "Assigning phrase speakers",
         "chapter_place_image_slots": "Placing image slots",
         "chapter_missing_audio": "Generating missing audio",
+        "character_regenerate_audio": "Regenerating character audio",
         "chapter_missing_props": "Finding missing props",
         "chapter_add_all": "Adding all missing chapter assets",
         "textoviva_one_shot": "Starting One Shot chapter workflow",
@@ -486,6 +487,13 @@ def run_video_job(client, task):
                 message += ". Failed: " + "; ".join(failures)
             report_progress(client, job_id, 100, message,
                              "failed" if failures else "complete", task["action"])
+            return
+        if task.get("action") == "character_regenerate_audio":
+            from artifact_editor.characters.audio import regenerate_character_audio
+
+            count = regenerate_character_audio(chapter, task["character_tag"],
+                progress=lambda percent, detail: report_progress(client, job_id, percent, detail))
+            report_progress(client, job_id, 100, f"Regenerated {count} character audio tracks", "complete")
             return
         if task.get("action") == "chapter_missing_audio":
             from artifact_editor.phrases.phrases import generate_all_audio

@@ -104,7 +104,10 @@ def get_all_character_names(chapter) -> list:
 def add_character(chapter, character_name, chardict=None):
     characters = get_all_characters(chapter)
     if chardict is None:
-        chardict = const.NARRATOR
+        chardict = dict(const.NARRATOR) if character_name == "Narrator" else {
+            "name": character_name, "tag": name_to_tag(character_name),
+            "tts_engine": "kokoro", "voices": [], "description": "",
+        }
     characters[character_name] = chardict
     save_characters(chapter, characters)
     return chardict
@@ -1387,6 +1390,10 @@ def assign_phrase_speakers(chapter: 'Chapter', progress: Callable[[float, str], 
         audio_filename, name_to_tag, progress=progress, batch_size=batch_size,
         reassign_all=reassign_all, target_phrase_index=target_phrase_index,
     )
+    for speaker in sorted({phrase.get("speaker", "Narrator")
+                           for phrase in chapter.get_xml().find_all("phrase")
+                           if phrase.get("type") != "dinkus"}):
+        llm.configure_character_voice(chapter, speaker, infer_demographics=False)
     return assigned
 
 

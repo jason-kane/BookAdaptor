@@ -530,6 +530,21 @@ def character_pronunciation_widget(chapter, tag, pronunciation):
     """
 
 
+def regenerate_audio_control(chapter, tag, message=""):
+    import uuid
+    from markupsafe import escape
+    endpoint = url_for('library.book.chapter.characters.regenerate_audio',
+                       **chapter.kwargs, character_tag=tag)
+    return f"""<div id="{escape(tag)}_regenerate_audio" class="wa-stack">
+        <wa-button hx-post="{endpoint}" hx-target="#{escape(tag)}_regenerate_audio"
+            hx-swap="outerHTML" hx-sync="this:drop" hx-disabled-elt="this"
+            hx-vals='{json.dumps({"nonce": uuid.uuid4().hex})}'
+            title="Regenerate this character's speech throughout the book using the current voice. Rebuild videos afterward.">
+            Regenerate Character Audio</wa-button>
+        <span role="status">{escape(message)}</span>
+    </div>"""
+
+
 def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
     """
     Full edit block for a single character.
@@ -649,6 +664,7 @@ def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
                 {character_pronunciation_widget_html}
     """ if has_voice else ""
     voice_buttons = f"""
+                {regenerate_audio_control(chapter, tag)}
                 <wa-button {'' if has_positive_voice_weights else 'disabled'}
                     id="{tag}_remove_voices"
                     hx-post="{ url_for('library.book.chapter.characters.remove_voice_weights', **chapter.kwargs, character_name=tag) }"
