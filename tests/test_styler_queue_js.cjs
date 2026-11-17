@@ -8,6 +8,8 @@ function setup(height = 400, reducedMotion = true, sampleMarkup = '') {
         <style>.styler-queue-task {margin-bottom: 4px;}</style><span id="styler-queue-count"></span><div class="styler-queue-body-inner">
         <div id="styler-queue-current"></div><div id="styler-queue-near"></div><div id="styler-queue-overflow" hidden></div></div>${sampleMarkup}`, {runScripts: 'outside-only'});
     const {window} = dom;
+    window.setInterval = () => 1;
+    window.eval(fs.readFileSync("src/artifact_editor/static/js/task-timing.js", "utf8"));
     Object.defineProperty(window.document, 'currentScript', {value: window.document.querySelector('script')});
     window.matchMedia = () => ({matches: reducedMotion});
     let now = 1000000;
@@ -46,7 +48,7 @@ function setup(height = 400, reducedMotion = true, sampleMarkup = '') {
     const socket = Socket.instance;
     const emit = event => socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify(event)}));
     const job = id => ({job_id: id, label: id, action: 'styler_sample'});
-    const plan = (running, jobs, extra = {}) => emit({state: 'queue_plan', running: running && job(running), jobs: jobs.map(job), queue_count: jobs.length + Boolean(running), overflow_count: 0, ...extra});
+    const plan = (running, jobs, extra = {}) => emit({state: 'queue_plan', running: running && job(running), jobs: jobs.map((id,index) => ({...job(id), isNext: index === 0})), queue_count: jobs.length + Boolean(running), overflow_count: 0, ...extra});
     const complete = (id, completedAt = now / 1000) => emit({...job(id), state: 'complete', queue_completed: true, completed_at: completedAt});
     const rows = selector => [...window.document.querySelectorAll(selector || '.styler-queue-task[data-job-id]')];
     const ids = selector => rows(selector).map(row => row.dataset.jobId);
@@ -96,12 +98,12 @@ const pending = count => Array.from({length: count}, (_, index) => `p${index}`);
     assert.equal(h.rows('[data-next="true"]')[0].dataset.jobId, 'priority', 'Priority insertion is immediate during animation');
     assert.equal(h.rows('[data-job-id="b"]')[0], running);
     assert.equal(running.querySelector('wa-progress-bar'), runningProgress);
-    h.plan('b', ['priority', 'c'], {running: {...h.job('b'), percent: 61}});
+    h.plan('b', ['priority', 'c'], {running: {...h.job('b'), percent: 61, timing: {count: 2, avg_seconds: 100, elapsed_seconds: 61, as_of: 1000}}});
     assert.equal(runningProgress.getAttribute('value'), '61');
-    h.plan('b', ['priority', 'c'], {running: {...h.job('b'), percent: 40}});
-    assert.equal(runningProgress.getAttribute('value'), '61', 'Progress never moves backward');
+    h.plan('b', ['priority', 'c'], {running: {...h.job('b'), percent: 40, timing: {count: 2, avg_seconds: 100, elapsed_seconds: 61, as_of: 1000}}});
+    assert.equal(runningProgress.getAttribute('value'), '61', 'A stale raw model percentage cannot replace historical task timing');
     assert.ok(h.animations.every(animation => animation.frames.every(frame => !('height' in frame))), 'Animations never change row height');
-    h.advance(30000);
+    h.advance(90000);
     assert.equal(h.rows('[data-job-id="a"]').length, 0);
     const expiringRow = h.window.document.querySelector('.styler-queue-task-expiring');
     assert.ok(expiringRow, 'Expired completions get a separate dissolve element');
@@ -111,9 +113,9 @@ const pending = count => Array.from({length: count}, (_, index) => `p${index}`);
 {
     const h = setup(800);
     for (let index = 0; index < 20; index++) h.complete(`batch-${index}`, 995 + index / 100);
-    assert.deepEqual(h.ids(), ['batch-15', 'batch-16', 'batch-17', 'batch-18', 'batch-19']);
+    assert.deepEqual(h.ids(), Array.from({length: 15}, (_, index) => `batch-${index + 5}`));
     h.complete('batch-19', 995.19);
-    assert.equal(h.rows().length, 5, 'Repeated history snapshots do not duplicate entries');
+    assert.equal(h.rows().length, 15, 'Repeated history snapshots do not duplicate retained completions');
     h.emit({...h.job('cached'), state: 'loaded', filename: '/cached.png'});
     assert.equal(h.rows('[data-job-id="cached"]').length, 0, 'Loaded samples do not enter queue history');
     h.close();
@@ -122,7 +124,7 @@ const pending = count => Array.from({length: count}, (_, index) => `p${index}`);
     const h = setup(800);
     h.plan(null, [], {completed: [{...h.job('from-snapshot'), completed_at: 990}]});
     assert.ok(h.ids().includes('from-snapshot'), 'Fresh connections receive recent worker completions');
-    h.advance(20000);
+    h.advance(80000);
     assert.ok(!h.ids().includes('from-snapshot'), 'Snapshot history keeps its original expiry');
     h.plan(null, [], {completed: [{...h.job('too-old'), completed_at: 980}]});
     assert.ok(!h.ids().includes('too-old'));
@@ -163,7 +165,7 @@ const pending = count => Array.from({length: count}, (_, index) => `p${index}`);
     h.rows('[data-job-id="clicked"]')[0].click();
     assert.deepEqual(h.socket.messages.at(-1), {action:'queue_promote', job_id:'clicked', priority:true});
     assert.equal(h.rows('[data-job-id="clicked"]')[0].dataset.promoted, 'true');
-    h.plan('running', ['clicked', 'first'], {jobs:[{...h.job('clicked'), promoted:true}, h.job('first')]});
+    h.plan('running', ['clicked', 'first'], {jobs:[{...h.job('clicked'), promoted:true, isNext:true}, h.job('first')]});
     assert.equal(h.rows('[data-next="true"]')[0].dataset.jobId, 'clicked');
     assert.equal(h.rows('[data-job-id="clicked"]')[0].dataset.promoted, 'true');
     h.plan('clicked', ['first'], {running:{...h.job('clicked'), promoted:true, percent:50}});
@@ -215,9 +217,10 @@ const pending = count => Array.from({length: count}, (_, index) => `p${index}`);
     h.plan(null, []);
     let failed = h.rows('[data-job-id="oom"]')[0];
     assert.equal(failed.dataset.state, 'failed');
-    assert.equal(failed.querySelector('.styler-queue-task-state').textContent, 'failed');
+    assert.equal(failed.querySelector('.styler-queue-task-state').textContent, 'Failed');
     assert.equal(failed.querySelector('wa-progress-bar'), null);
-    assert.equal(failed.title, 'CUDA out of memory');
+    assert.match(failed.title, /^CUDA out of memory\nFailed/);
+    assert.match(failed.title, /No comparable completed tasks yet/);
     h.advance(31000);
     assert.ok(h.ids().includes('oom'), 'Failures outlive the success history');
     for (let i = 0; i < 8; i++) h.complete(`success-${i}`, 1031 + i / 100);
@@ -318,3 +321,13 @@ console.log('Styler queue layout, chronology, priority, progress, expiry, loadin
     h.close();
     console.log('Queue target navigation, priority, retry and delete actions passed');
 })().catch(error => {console.error(error); process.exitCode = 1;});
+
+{
+    const h = setup(800);
+    h.plan('running', ['blocked', 'eligible'], {jobs:[
+        {...h.job('blocked'),isNext:false}, {...h.job('eligible'),isNext:true},
+    ]});
+    assert.equal(h.rows('[data-next="true"]')[0].dataset.jobId,'eligible',
+        'The server chooses the next eligible task; it need not be the first pending row');
+    h.close();
+}

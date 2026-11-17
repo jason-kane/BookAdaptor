@@ -20,6 +20,7 @@ function setup(markup = '') {
         virtualConsole,
     });
     const {window} = dom;
+    window.eval(fs.readFileSync("src/artifact_editor/static/js/queue-panels.js", "utf8"));
     Object.defineProperty(window.document, 'currentScript', {value: window.document.querySelector('script')});
     window.matchMedia = () => ({matches: true});
     window.requestAnimationFrame = callback => callback();
@@ -86,7 +87,7 @@ function setup(markup = '') {
 
 (async () => {
     {
-        const h = setup('<wa-button data-regenerate></wa-button><span id="styler-queue-loading" hidden></span><div id="styler-job-queue"></div><button id="styler-queue-toggle"></button><button data-style-retag="artist" data-engine="zit"></button><span class="retag-status"></span>');
+        const h = setup('<wa-button data-regenerate></wa-button><span id="styler-queue-loading" hidden></span><div id="styler-job-queue" data-queue-panel aria-label="GPU queue"><button id="styler-queue-toggle"></button></div><button data-style-retag="artist" data-engine="zit"></button><span class="retag-status"></span>');
         const {window, hooks} = h;
         const warnings = [];
         window.console.warn = (...message) => warnings.push(message);
@@ -123,7 +124,7 @@ function setup(markup = '') {
         assert.equal(hooks.monotonicQueuePercent('p', '55'), 55);
         assert.equal(hooks.monotonicQueuePercent('p', '40'), 55);
         assert.equal(hooks.monotonicQueuePercent('p', null), 55);
-        for (const [state, label] of [['clearing_vram', 'Cleaning'], ['preparing', 'Preparing'], ['running', 'Running'], ['complete', 'Done'], ['queued', 'queued']]) {
+        for (const [state, label] of [['clearing_vram', 'Cleaning'], ['preparing', 'Preparing'], ['running', 'Running'], ['complete', ''], ['queued', 'queued']]) {
             assert.equal(hooks.queueStatusLabel({state}), label);
         }
         assert.equal(hooks.jobLabel({action: 'styler_tag_sample', style_tag: 'a_b', engine: 'zit'}), 'Image tags · a b · Z-Image');
@@ -201,7 +202,8 @@ function setup(markup = '') {
         hooks.updateQueueRow(row, {job_id: 'job', label: 'Job label', state: 'queued', action: 'styler_sample'});
         assert.equal(row.querySelector('wa-progress-bar'), null);
         hooks.updateQueueRow(row, {job_id: 'job', label: 'Job label', state: 'running', percent: 27, action: 'styler_sample'});
-        assert.equal(row.querySelector('.styler-queue-task-state').textContent, '27%');
+        assert.equal(row.querySelector('.styler-queue-task-state').textContent, 'Running');
+        assert.ok(row.querySelector('wa-progress-bar').hasAttribute('indeterminate'), 'Raw model percentages cannot stand in for task timing');
         const indeterminate = hooks.queueTaskRow({job_id: 'indeterminate', label: 'Indeterminate', state: 'running', action: 'styler_sample'});
         window.document.body.append(indeterminate);
         hooks.updateRunningProgress({job_id: 'indeterminate', percent: null, state: 'running'});
@@ -302,10 +304,22 @@ function setup(markup = '') {
         const lazyRow = hooks.queueTaskRow({job_id: 'focus-lazy', label: 'Sample image', state: 'queued'});
         await hooks.focusQueueDestination(lazyRow);
         const lazyDetails = window.document.querySelector('#card_lazy wa-details');
+        lazyDetails.insertAdjacentHTML('beforeend', '<span>Loading sample controls</span>');
+        await new Promise(resolve => setImmediate(resolve));
+        assert.ok(!window.document.querySelector('#card_lazy').classList.contains('styler-queue-destination-focus'),
+            'Intermediate loading markup must not consume the engine-panel observer');
         lazyDetails.insertAdjacentHTML('beforeend', '<div data-sample-panel><img data-style-sample="lazy" data-engine="zit"></div>');
         await new Promise(resolve => setImmediate(resolve));
         assert.ok(lazyDetails.querySelector('[data-sample-panel]').classList.contains('styler-queue-destination-focus'));
         await new Promise(resolve => setImmediate(resolve));
+        window.document.body.insertAdjacentHTML('beforeend', '<div id="card_timeout" class="card-overview"><wa-details></wa-details></div>');
+        hooks.queueJobs.set('focus-timeout', {job_id:'focus-timeout',style_tag:'timeout',engine:'zit',action:'styler_sample'});
+        await hooks.focusQueueDestination(hooks.queueTaskRow({job_id:'focus-timeout',label:'Sample image',state:'queued'}));
+        const waits = [...h.timers.values()].filter(timer => timer.delay === 5_000).length;
+        assert.ok(waits > 0);
+        h.runTimer(5_000, waits - 1);
+        assert.ok(window.document.querySelector('#card_timeout').classList.contains('styler-queue-destination-focus'),
+            'A missing engine panel eventually falls back to its card');
     }
 
     {

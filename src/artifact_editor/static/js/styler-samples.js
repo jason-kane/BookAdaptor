@@ -593,6 +593,7 @@
         let observer;
         const focusTarget = target => {
             observer?.disconnect();
+            observer = null;
             target.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'});
             target.classList.remove('styler-queue-destination-focus');
             void target.offsetWidth;
@@ -603,7 +604,8 @@
             );
         };
         const target = queueDestination(job, card);
-        if (target) {
+        // A card is a fallback while its engine panel loads on expansion.
+        if (target && !(details && job.engine && target === card)) {
             if (details && !details.open) details.open = true;
             requestAnimationFrame(() => focusTarget(target));
             return;
@@ -611,11 +613,16 @@
         if (details) {
             observer = new MutationObserver(() => {
                 const expandedTarget = queueDestination(job, card);
-                if (expandedTarget) focusTarget(expandedTarget);
+                if (expandedTarget && expandedTarget !== card) focusTarget(expandedTarget);
             });
             observer.observe(details, {childList: true, subtree: true});
             if (!details.open) details.open = true;
-            window.setTimeout(() => observer?.disconnect(), settings.navigation.expandedCardWaitMs);
+            window.setTimeout(() => {
+                if (!observer) return;
+                observer.disconnect();
+                observer = null;
+                if (card?.isConnected) focusTarget(card);
+            }, settings.navigation.expandedCardWaitMs);
             return;
         }
         const fallback = queueDestination(job, null);
@@ -876,7 +883,11 @@
         state.title = queueStatusDescription(job);
         state.setAttribute('aria-label', queueStatusDescription(job));
         window.TaskTiming?.bind(progress, job, state, {compact: true});
-        if (window.TaskTiming) row.title = TaskTiming.describe(job).title;
+        if (window.TaskTiming) {
+            const timingTitle = TaskTiming.describe(job).title;
+            row.title = job.state === 'failed' && job.message
+                ? `${job.message}\n${timingTitle}` : timingTitle;
+        }
     }
 
     // Queue layout and animation
