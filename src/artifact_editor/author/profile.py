@@ -73,11 +73,11 @@ def write_json(path, data):
 
 
 def bibliography(directory):
-    from artifact_editor.library.storage import is_shelf_link
+    from artifact_editor.library.storage import is_library_book_link
     entries = []
     for path in Path(directory).iterdir():
         if (not path.is_dir() or path.name.startswith('.') or path.name == '__pycache__'
-                or (path.is_symlink() and not is_shelf_link(path, Path(directory).name, path.name))):
+                or (path.is_symlink() and not is_library_book_link(path, Path(directory).name, path.name))):
             continue
         config = read_json(path / 'config.json')
         publication_year = str(config.get('publication_year') or '')

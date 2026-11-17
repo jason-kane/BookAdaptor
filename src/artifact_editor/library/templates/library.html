@@ -30,6 +30,8 @@ body:has(.library-page) > .wa-stack > .wa-split { flex-wrap: wrap; gap: .75rem 1
 .library-series h3 small { margin-inline-start: .25rem; font-size: .75rem; font-weight: normal; color: var(--wa-color-text-quiet); }
 .library-books { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: .65rem; margin-top: .35rem; }
 .library-book { display: block; min-width: 0; --spacing: .75rem; position: relative; border: 1px solid var(--wa-color-surface-border, #30313e); border-radius: .5rem; }
+.library-book[data-location="active"] { border: 2px solid #b8bcc4; }
+.library-book[data-location="storage"] { border: 1px solid #244a78; }
 .library-book::part(body) { padding: .75rem; }
 .library-book:hover, .library-book:focus-within { border-color: var(--wa-color-focus, #8c83d9); }
 .library-book a, .library-book-heading { display: flex; flex-direction: column; gap: .65rem; align-items: flex-start; color: inherit; text-decoration: none; }
@@ -78,6 +80,7 @@ body:has(.library-page) > .wa-stack > .wa-split { flex-wrap: wrap; gap: .75rem 1
       <p>Shares disk with Storage</p>
       <p><strong>{{ disk.free|filesizeformat(binary=True) }} free</strong> of {{ disk.total|filesizeformat(binary=True) }}</p>
       {% endif %}
+      {% if speeds.get(name) %}<p class="library-speed">Approx. {{ speeds[name].read_mbps }} MB/s read · {{ speeds[name].write_mbps }} MB/s write</p>{% endif %}
       {% else %}<p>Unavailable</p>{% endif %}
     </article>
     {% endfor %}

@@ -9,6 +9,7 @@ import re
 import subprocess
 import shutil
 import time
+from pathlib import Path
 from typing import Any
 import fnv_hash_fast
 
@@ -734,6 +735,20 @@ def assemble_mp4(
     Assemble all the images in framedir with the audio in wavfile at FPS.
     Output is videofile.
     """
+    # os.replace() publishes an encoded file atomically, which replaces a
+    # symlink instead of writing through it. For the managed Active->Shelf
+    # media layout, encode beside the Shelf target so the Active link survives.
+    output_link = Path(videofile)
+    if output_link.is_symlink():
+        active_root = Path(os.path.abspath(const.LIBRARY_DIR))
+        try:
+            relative = Path(os.path.abspath(videofile)).relative_to(active_root)
+        except ValueError:
+            raise ValueError("Video output symlink must be inside the Active library")
+        expected = (Path(const.SHELF_DIR) / relative).resolve(strict=False)
+        if output_link.resolve(strict=False) != expected:
+            raise ValueError("Video output symlink must point to its mirrored Shelf path")
+        videofile = str(expected)
     log.info(f"START assemble_mp4({fps=}, {framedir=}, {wavfile=}, {videofile=})")
     # tie it all together
     #

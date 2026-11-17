@@ -1,8 +1,7 @@
-"""Book placement, writable Shelf access, and verified background transfers.
+"""Active catalog, managed book links, and verified background transfers.
 
-Stored books never appear as links beneath /active. PostgreSQL records retain
-their identities. Shelf books have validated links beneath /active so existing
-editors and workers use the same paths while their data stays on the Shelf disk.
+Active is authoritative. A real book directory may contain asset links into
+Shelf; a whole-book link in Active identifies a book placed on Shelf or Storage.
 """
 from contextlib import contextmanager
 from functools import wraps
@@ -41,35 +40,56 @@ def location_roots():
     return {'active': active, 'shelf': Path(getattr(const, 'SHELF_DIR', '/home/jkane/books')), 'storage': stored}
 
 
-def is_shelf_link(path, author, title):
-    """Recognize only the exact managed link for this book, never arbitrary links."""
+def managed_link_location(path, author, title):
+    """Return the tier named by an exact whole-book link from Active."""
     if Path(path).parent.is_symlink():
         raise StorageError('Author directories must not be symbolic links.')
-    expected = book_path(location_roots()['shelf'], author, title)
-    return Path(path).is_symlink() and os.readlink(path) == str(expected.absolute())
+    path = Path(path)
+    if not path.is_symlink():
+        return None
+    paths = location_roots()
+    target = os.readlink(path)
+    for location in ('shelf', 'storage'):
+        expected = paths[location] / component(author) / component(title)
+        if target == str(expected.absolute()):
+            return location
+    return None
+
+
+def is_shelf_link(path, author, title):
+    return managed_link_location(path, author, title) == 'shelf'
+
+
+def is_library_book_link(path, author, title):
+    return managed_link_location(path, author, title) in ('shelf', 'storage')
 
 
 def placements(author, title):
-    result = {}
-    for name, root in location_roots().items():
-        path = root / component(author) / component(title)
-        if name == 'active' and is_shelf_link(path, author, title):
-            continue
-        path = book_path(root, author, title)
-        if path.is_dir():
-            result[name] = path
-    return result
-
-
-def ensure_shelf_link(author, title):
     paths = location_roots()
-    destination = book_path(paths['shelf'], author, title)
-    if not paths['shelf'].is_dir() or not destination.is_dir():
-        raise StorageError('Shelf is unavailable or this book is missing from Shelf.')
+    active = paths['active'] / component(author) / component(title)
+    if active.is_symlink():
+        location = managed_link_location(active, author, title)
+        if location is None:
+            raise StorageError('Books must not be arbitrary symbolic links.')
+        target = paths[location] / component(author) / component(title)
+        return {location: target} if target.is_dir() else {}
+    # A physical Active book is authoritative, even when some of its media is
+    # mirrored on Shelf or a stale whole-book copy exists elsewhere.
+    return {'active': active} if active.is_dir() else {}
+
+
+def ensure_location_link(author, title, location):
+    paths = location_roots()
+    if location not in ('shelf', 'storage'):
+        raise StorageError('Only Shelf or Storage books can be linked into Active.')
+    destination = book_path(paths[location], author, title)
+    if not paths[location].is_dir() or not destination.is_dir():
+        raise StorageError(f'{location.title()} is unavailable or this book is missing there.')
     link = paths['active'] / component(author) / component(title)
     if link.parent.is_symlink():
         raise StorageError('Author directories must not be symbolic links.')
-    if is_shelf_link(link, author, title):
+    current = managed_link_location(link, author, title)
+    if current == location:
         return link
     if link.exists() or link.is_symlink():
         raise StorageError('A different copy already exists in Active. Resolve the duplicate first.')
@@ -78,7 +98,7 @@ def ensure_shelf_link(author, title):
     # Shelf profile when this author has never been opened from Active.
     profile = destination.parent / 'author.json'
     target_profile = link.parent / 'author.json'
-    if profile.is_file() and not profile.is_symlink() and not target_profile.exists():
+    if location == 'shelf' and profile.is_file() and not profile.is_symlink() and not target_profile.exists():
         try:
             with target_profile.open('xb') as output, profile.open('rb') as source:
                 shutil.copyfileobj(source, output)
@@ -87,9 +107,88 @@ def ensure_shelf_link(author, title):
     try:
         link.symlink_to(destination.absolute(), target_is_directory=True)
     except FileExistsError:
-        if not is_shelf_link(link, author, title):
+        if managed_link_location(link, author, title) != location:
             raise StorageError('A different copy appeared in Active. Nothing was overwritten.')
     return link
+
+
+def ensure_shelf_link(author, title):
+    return ensure_location_link(author, title, 'shelf')
+
+
+def ensure_shelf_media_path(author, title, relative, *, directory=False):
+    """Route a new or existing generated media path to the parallel Shelf tree."""
+    relative = Path(relative)
+    if relative.is_absolute() or '..' in relative.parts or not relative.parts:
+        raise StorageError('Invalid media path.')
+    paths = location_roots()
+    active_book = paths['active'] / component(author) / component(title)
+    shelf_book = paths['shelf'] / component(author) / component(title)
+    if not paths['shelf'].is_dir():
+        raise StorageError('Shelf is unavailable; generated media cannot be routed there.')
+
+    if active_book.is_symlink():
+        location = managed_link_location(active_book, author, title)
+        if location == 'storage':
+            raise StorageError('Storage is read-only; move this book to Active or Shelf before rendering.')
+        if location != 'shelf' or not shelf_book.is_dir():
+            raise StorageError('The Active book link does not resolve to Shelf.')
+        output = shelf_book / relative
+        if directory:
+            output.mkdir(parents=True, exist_ok=True)
+        else:
+            output.parent.mkdir(parents=True, exist_ok=True)
+        return active_book / relative
+    if not active_book.is_dir():
+        raise StorageError('This book is missing from Active.')
+
+    active_path, shelf_path = active_book / relative, shelf_book / relative
+    if active_path.is_symlink():
+        if os.readlink(active_path) != str(shelf_path.absolute()):
+            raise StorageError('Media path is an unmanaged symbolic link.')
+        if directory and not shelf_path.is_dir():
+            raise StorageError('Shelf media directory is missing.')
+        if not directory and shelf_path.exists() and not shelf_path.is_file():
+            raise StorageError('Shelf media path is not a file.')
+        return active_path
+
+    if active_path.exists() and shelf_path.exists():
+        raise StorageError('Media exists in both Active and Shelf; refusing to overwrite either copy.')
+    shelf_path.parent.mkdir(parents=True, exist_ok=True)
+    if active_path.exists():
+        if directory:
+            def signature(root):
+                count = total = 0
+                for current, dirs, files in os.walk(root):
+                    if any((Path(current) / name).is_symlink() for name in dirs + files):
+                        raise StorageError('Generated media contains an unmanaged symbolic link.')
+                    for name in files:
+                        count += 1
+                        total += (Path(current) / name).stat().st_size
+                return count, total
+            shutil.copytree(active_path, shelf_path, copy_function=shutil.copy2)
+            if signature(active_path) != signature(shelf_path):
+                raise StorageError('Shelf media copy verification failed; the Active copy was kept.')
+            shutil.rmtree(active_path)
+        else:
+            shutil.copy2(active_path, shelf_path)
+            if (active_path.stat().st_size != shelf_path.stat().st_size
+                    or hashlib.sha256(active_path.read_bytes()).digest()
+                    != hashlib.sha256(shelf_path.read_bytes()).digest()):
+                shelf_path.unlink(missing_ok=True)
+                raise StorageError('Shelf media copy verification failed; the Active copy was kept.')
+            active_path.unlink()
+    elif directory:
+        shelf_path.mkdir(parents=True, exist_ok=True)
+    active_path.parent.mkdir(parents=True, exist_ok=True)
+    active_path.symlink_to(shelf_path.absolute(), target_is_directory=directory)
+    return active_path
+
+
+def remove_managed_link(author, title):
+    path = location_roots()['active'] / component(author) / component(title)
+    if managed_link_location(path, author, title):
+        path.unlink()
 
 
 def remove_shelf_link(author, title):
@@ -99,25 +198,31 @@ def remove_shelf_link(author, title):
 
 
 def sync_shelf_catalog(author=None):
-    """Expose existing Shelf books through the working catalog without copying data."""
+    """Ensure external books have their authoritative entry beneath Active."""
     paths = location_roots()
-    if not paths['shelf'].is_dir():
-        return
     excluded = {'lost+found', '__pycache__', 'loras', 'sounds', 'global_characters', 'Theater'}
-    authors = [paths['shelf'] / component(author)] if author else paths['shelf'].iterdir()
-    for directory in authors:
-        if not directory.is_dir() or directory.is_symlink() or directory.name.startswith('.') or directory.name in excluded:
+    for location in ('shelf', 'storage'):
+        root = paths[location]
+        if not root.is_dir():
             continue
-        for book in directory.iterdir():
-            if not book.is_dir() or book.is_symlink() or book.name.startswith('.') or book.name == '__pycache__':
+        other_location = 'storage' if location == 'shelf' else 'shelf'
+        other_root = paths[other_location]
+        authors = [root / component(author)] if author else root.iterdir()
+        for directory in authors:
+            if not directory.is_dir() or directory.is_symlink() or directory.name.startswith('.') or directory.name in excluded:
                 continue
-            try:
-                with book_lock(directory.name, book.name):
-                    if set(placements(directory.name, book.name)) == {'shelf'}:
-                        ensure_shelf_link(directory.name, book.name)
-            except StorageError:
-                # The catalog still shows duplicates and in-progress moves.
-                continue
+            for book in directory.iterdir():
+                if not book.is_dir() or book.is_symlink() or book.name.startswith('.') or book.name == '__pycache__':
+                    continue
+                try:
+                    with book_lock(directory.name, book.name):
+                        active = paths['active'] / directory.name / book.name
+                        if not active.exists() and not active.is_symlink():
+                            if (other_root / directory.name / book.name).is_dir():
+                                continue
+                            ensure_location_link(directory.name, book.name, location)
+                except StorageError:
+                    continue
 
 
 def transfer_identity(paths, source, target):
@@ -135,10 +240,31 @@ def move_controls(author, title, location, status=None):
     if resume:
         return [dict(target=resume_target, source=status.get('source', 'active' if resume_target == 'storage' else 'storage'),
                      available=paths[resume_target].is_dir(), resume=True)]
-    if len(copies) > 1:
+    controls = []
+    active_book = paths['active'] / component(author) / component(title)
+    split_media = active_book.is_dir() and any(
+        path.is_symlink() for path in active_book.glob('chapter/*/frames')
+    )
+    if location == 'active' and split_media:
+        # The whole-book mover does not merge existing mirrored assets yet.
         return []
-    return [dict(target=target, source=location, available=root.is_dir(), resume=False)
-            for target, root in paths.items() if target != location]
+    active_link_target = managed_link_location(
+        active_book, author, title
+    )
+    for target, root in paths.items():
+        if target == location or not root.is_dir():
+            continue
+        target_path = root / component(author) / component(title)
+        # Returning a whole-book link to Active is valid only when it already
+        # names the current source. Never offer a move into a partially mirrored
+        # destination, which the whole-book transfer intentionally won't merge.
+        if target == 'active':
+            if active_link_target != location:
+                continue
+        elif target_path.exists() or target_path.is_symlink():
+            continue
+        controls.append(dict(target=target, source=location, available=True, resume=False))
+    return controls
 
 
 def mount_identity(active, stored):
@@ -208,16 +334,25 @@ def book_lock(author, title, *, exclusive=False, wait=False):
 
 def assert_active(author, title):
     copies = placements(author, title)
-    if len(copies) > 1:
-        raise StorageError('Copies exist in multiple locations. Resolve the duplicate before editing or processing.')
+    if not copies:
+        paths = location_roots()
+        external = [location for location in ('shelf', 'storage')
+                    if (paths[location] / component(author) / component(title)).is_dir()]
+        if len(external) == 1:
+            ensure_location_link(author, title, external[0])
+            copies = placements(author, title)
+        elif len(external) > 1:
+            raise StorageError('This book exists in more than one external location. Resolve it before editing.')
     if 'storage' in copies:
         raise StorageError('This book is in storage and is read-only. Move it to Active or Shelf in the library first.')
     if 'shelf' in copies:
         ensure_shelf_link(author, title)
-    else:
+    elif 'active' not in copies:
         path = location_roots()['active'] / component(author) / component(title)
-        if is_shelf_link(path, author, title):
-            raise StorageError('Shelf is unavailable or this book is missing from Shelf.')
+        location = managed_link_location(path, author, title)
+        if location:
+            raise StorageError(f'{location.title()} is unavailable or this book is missing there.')
+        raise StorageError('This book is missing from Active.')
 
 
 def task_identity(task):
@@ -291,9 +426,10 @@ def register_guards(app):
                 if directory.is_dir() and any(p.is_dir() for p in directory.iterdir() if not p.name.startswith('.')):
                     raise StorageError('Move this author’s stored books to active before researching the bibliography or renaming the author.')
                 if endpoint == 'library.author.change_pen_name':
-                    shelf_author = location_roots()['shelf'] / component(author)
-                    if shelf_author.is_dir() and any(p.is_dir() for p in shelf_author.iterdir() if not p.name.startswith('.')):
-                        raise StorageError('Move this author’s Shelf books to Active before renaming the author across disks.')
+                    for location in ('shelf', 'storage'):
+                        external_author = location_roots()[location] / component(author)
+                        if external_author.is_dir() and any(p.is_dir() for p in external_author.iterdir() if not p.name.startswith('.')):
+                            raise StorageError(f'Move this author’s {location.title()} books to Active before renaming the author across disks.')
                 lock = author_lock(author, exclusive=True)
                 lock.__enter__()
                 g.library_book_lock = lock
@@ -643,17 +779,18 @@ def execute_transfer(task):
             # An Active catalog link is not an existing physical destination.
             # Remove it only under the book's exclusive transfer lock.
             if target == 'active':
-                remove_shelf_link(author, title)
+                remove_managed_link(author, title)
             report(state='running', message='Checking book files…')
             def progress(**fields):
                 # Publish completion after restoring the working catalog link.
                 if fields.get('state') != 'complete':
                     report(**fields)
             transfer(book_path(paths[source], author, title), book_path(paths[target], author, title), transfer_id, progress)
-            if target == 'shelf':
-                ensure_shelf_link(author, title)
+            if target in ('shelf', 'storage'):
+                remove_managed_link(author, title)
+                ensure_location_link(author, title, target)
             else:
-                remove_shelf_link(author, title)
+                remove_managed_link(author, title)
             report(state='complete', phase='complete', message=f'Book moved to {target.title()} successfully.')
     except Exception as error:
         report(state='failed', message=str(error))

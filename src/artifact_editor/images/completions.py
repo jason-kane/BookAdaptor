@@ -49,8 +49,8 @@ def chapter_image_snapshot(identity, library_dir=None):
     book_dir = root / identity['author'] / identity['title']
     allowed_root = root
     if book_dir.is_symlink():
-        from artifact_editor.library.storage import is_shelf_link, location_roots
-        if root == location_roots()['active'].resolve() and is_shelf_link(book_dir, identity['author'], identity['title']):
+        from artifact_editor.library.storage import is_library_book_link, location_roots
+        if root == location_roots()['active'].resolve() and is_library_book_link(book_dir, identity['author'], identity['title']):
             allowed_root = book_dir.resolve()
     chapter_dir = book_dir / "chapter" / f"{identity['chapter_number']:04}"
     if not chapter_dir.resolve().is_relative_to(allowed_root):

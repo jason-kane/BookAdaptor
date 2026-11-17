@@ -9,7 +9,6 @@ x-book-storage: &book-storage
   type: bind
   source: /media/jkane/External/BookAdaptor
   target: /storage
-  read_only: true
   bind:
     create_host_path: false
 
@@ -189,6 +188,11 @@ services:
       - ./active:/active
       - ./active-test:/active-test
       - *book-storage
+      - type: bind
+        source: /media/jkane/External/BookAdaptor
+        target: /storage-transfer
+        bind:
+          create_host_path: false
       - *book-shelf
       - *library-locks
       - ./assets:/assets

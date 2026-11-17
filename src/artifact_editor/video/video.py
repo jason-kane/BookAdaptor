@@ -14,10 +14,19 @@ def book_to_video(chapter, aspect=None, force=False, progress=None):
     from PIL import Image
     from cpu_queue import Batch
     from gpu_tasks import render_context
+    from artifact_editor.library.storage import ensure_shelf_media_path
 
     aspect = aspect or chapter.get_aspect()
-    framedir = Path(const.LIBRARY_DIR) / chapter.chapterdir / "frames" / aspect
+    chapter_media = Path('chapter') / f'{int(chapter.number):04}'
+    frames_path = ensure_shelf_media_path(
+        chapter.author.name, chapter.title, chapter_media / 'frames', directory=True,
+    )
+    framedir = frames_path / aspect
     framedir.mkdir(parents=True, exist_ok=True)
+    ensure_shelf_media_path(
+        chapter.author.name, chapter.title,
+        chapter_media / f'{chapter.safe_title()}.mp4',
+    )
     mplan = chapter.get_masterplan(force=True)
     if not mplan.words or mplan.words[-1].end_frame < 0:
         raise ValueError("The chapter has no narration to render")

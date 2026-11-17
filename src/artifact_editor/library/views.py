@@ -21,6 +21,83 @@ from artifact_editor.author.profile import bibliography, bibliography_groups
 
 log = logger.log(__name__)
 
+
+def _location_speeds(paths):
+    """Measure each physical device once with a temporary 10 MB file."""
+    import json
+    import time
+    import uuid
+
+    from cpu_queue import connection
+
+    size = 10 * 1024 * 1024
+    results = {}
+    try:
+        client = connection()
+    except Exception:
+        return results
+    try:
+        devices = {}
+        for name, root in paths.items():
+            try:
+                if root.is_dir():
+                    devices[name] = root.stat().st_dev
+            except OSError:
+                continue
+        for device in set(devices.values()):
+            names = [name for name, value in devices.items() if value == device]
+            cache_key = f'library_device_speed:{device}'
+            try:
+                cached = client.get(cache_key)
+                result = json.loads(cached) if cached else None
+            except Exception:
+                result = None
+            if not isinstance(result, dict):
+                # Active/Shelf are writable roots. Storage is read-only, so its
+                # paired transfer mount provides the writable side of the same disk.
+                target = paths[names[0]]
+                if 'storage' in names:
+                    writable = paths['storage'].parent / 'storage-transfer'
+                    if not writable.is_dir():
+                        # The on-demand artifactserver may not have the alias
+                        # that CPU workers use for storage transfers.
+                        writable = paths['storage']
+                    if writable.is_dir() and writable.stat().st_dev == device:
+                        target = writable
+                probe = target / f'.library-speed-{uuid.uuid4().hex}.tmp'
+                payload = b'\0' * size
+                write_start = time.perf_counter()
+                try:
+                    with probe.open('xb') as handle:
+                        handle.write(payload)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    write_seconds = max(time.perf_counter() - write_start, 1e-9)
+                    read_start = time.perf_counter()
+                    with probe.open('rb') as handle:
+                        while handle.read(1024 * 1024):
+                            pass
+                    read_seconds = max(time.perf_counter() - read_start, 1e-9)
+                    result = {
+                        'write_mbps': round(size / write_seconds / (1024 * 1024), 1),
+                        'read_mbps': round(size / read_seconds / (1024 * 1024), 1),
+                    }
+                    client.set(cache_key, json.dumps(result), nx=True)
+                    cached = client.get(cache_key)
+                    result = json.loads(cached) if cached else result
+                except (OSError, ValueError):
+                    result = None
+                finally:
+                    try:
+                        probe.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            for name in names:
+                results[name] = result
+    finally:
+        client.close()
+    return results
+
 bp = Blueprint(
     'library',
     __name__,
@@ -31,7 +108,7 @@ bp = Blueprint(
 )
 
 def library_authors():
-    """Merge physical inventories, keeping Shelf writable and Storage read-only."""
+    """Inventory the Active catalog and reconcile whole-book external links."""
     from pathlib import Path
     from .storage import location_roots, placements, sync_shelf_catalog
     sync_shelf_catalog()
@@ -40,24 +117,22 @@ def library_authors():
     excluded = {'home', 'active', 'lost+found', 'global_characters', 'Theater',
                 'loras', 'sounds', 'stockpile', 'style_exploration', '__pycache__'}
     names = set()
-    for root in paths.values():
-        if root.is_dir():
-            names.update(p.name for p in root.iterdir() if p.is_dir() and not p.is_symlink()
-                         and not p.name.startswith('.') and p.name not in excluded)
+    if active.is_dir():
+        names.update(p.name for p in active.iterdir() if p.is_dir() and not p.is_symlink()
+                     and not p.name.startswith('.') and p.name not in excluded)
     authors = []
     for name in sorted(names):
         author = Author(name)
         books = []
-        for location, root in paths.items():
-            directory = root / name
-            if directory.is_dir():
-                for book in bibliography(directory):
-                    copies = placements(name, book['title'])
-                    if location not in copies:
-                        continue  # Shelf's Active catalog link is not a second copy.
-                    book['location'] = location
-                    book['conflict'] = len(copies) > 1
-                    books.append(book)
+        directory = active / name
+        if directory.is_dir():
+            for book in bibliography(directory):
+                copies = placements(name, book['title'])
+                if not copies:
+                    continue
+                book['location'] = next(iter(copies))
+                book['conflict'] = False
+                books.append(book)
         author.book_groups = bibliography_groups(books)
         author.book_count = len(books)
         author.processed_count = sum(book['processed'] for book in books)
@@ -123,9 +198,10 @@ def library_page(section):
                 capacity[name] = None
         except OSError:
             capacity[name] = None
+    speeds = _location_speeds(paths)
     return render_template('library.html', authors=authors, section=section,
                            storage_available=paths['storage'].is_dir(), shelf_available=paths['shelf'].is_dir(),
-                           capacity=capacity)
+                           capacity=capacity, speeds=speeds)
 
 
 @bp.route('/textoviva')
@@ -157,7 +233,7 @@ def move_book(author, title):
     from cpu_queue import Batch, connection
     from .storage import (StorageError, location_roots, placements, book_path, book_lock, check_jobs,
                           pending_key, status_key, transfer_identity, can_resume,
-                          TRANSFER_SLOT, release_transfer_slot)
+                          TRANSFER_SLOT, release_transfer_slot, managed_link_location)
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return jsonify(error='Choose Active, Shelf, or Storage.'), 400
@@ -183,8 +259,8 @@ def move_book(author, title):
             if not paths[source].is_dir():
                 raise StorageError(f'{source.title()} is not mounted.')
             destination = book_path(paths[target], author, title) if target != 'active' else paths['active'] / author / title
-            from .storage import is_shelf_link
-            virtual_destination = target == 'active' and is_shelf_link(destination, author, title)
+            virtual_destination = (target == 'active'
+                                   and managed_link_location(destination, author, title) == source)
             resumable = not virtual_destination and can_resume(destination, previous, target)
             if not book_path(paths[source], author, title).is_dir() and not resumable:
                 raise StorageError('The source book was not found.')
