@@ -5,6 +5,8 @@ const {JSDOM} = require('jsdom');
 (async () => {
     const dom = new JSDOM('<body><script data-styler-websocket="ws://example/styler-ws"></script><div class="card-overview"><img data-style-sample="joe_quesada" data-engine="zit" data-sample-url="/styles/show_sample/joe_quesada_zit_sampler.png"><div id="tag_cloud_joe_quesada" class="tags-removable" data-style-tag="joe_quesada"><wa-tag>manual tag</wa-tag><label class="style-tag-picker-label">Add Tag<input class="style-tag-picker"></label></div></div></body>', {runScripts: 'outside-only'});
     const {window} = dom;
+    window.setInterval = () => 1;
+    window.eval(fs.readFileSync("src/artifact_editor/static/js/task-timing.js", "utf8"));
     const connections = [];
     class Socket extends window.EventTarget {
         static OPEN = 1;
@@ -27,10 +29,11 @@ const {JSDOM} = require('jsdom');
     assert.equal(window.document.querySelector('wa-spinner'), null, 'Queued cards must remain idle');
     assert.ok(window.document.querySelector('img[data-style-sample]'));
     socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({style_tag:'joe_quesada', engine:'zit', state:'running', percent:45, message:'Sampling'})}));
-    assert.equal(window.document.querySelector('wa-progress-bar').getAttribute('value'), '45');
+    assert.ok(window.document.querySelector('wa-progress-bar').hasAttribute('indeterminate'));
+    assert.equal(window.document.querySelector('wa-progress-bar').getAttribute('value'), null);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(socket.messages.length, 1, 'Progress must not trigger more sample requests');
-    assert.match(window.document.querySelector('[data-style-sample]').textContent, /Sampling \(45%\)/);
+    assert.match(window.document.querySelector('[data-style-sample]').textContent, /Sampling · Learning duration/);
     socket.dispatchEvent(new window.MessageEvent('message', {data: JSON.stringify({style_tag:'joe_quesada', engine:'zit', state:'complete', filename:'/styles/show_sample/joe_quesada_zit_sampler.png'})}));
     assert.equal(window.document.querySelector('img').getAttribute('src'), '/styles/show_sample/joe_quesada_zit_sampler.png');
     assert.equal(window.document.querySelectorAll('[data-style-sample]').length, 0);

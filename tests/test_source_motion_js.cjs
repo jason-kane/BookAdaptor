@@ -29,17 +29,25 @@ function picker() {
         '[data-source-play]': element(),
         '[data-source-scrub]': element(),
         '[data-source-caption]': element(),
+        '[data-source-chooser-toggle]': element(),
+        '[data-source-chooser]': element({hidden: false}),
+        '[data-source-crop-start]': element(),
+        '[data-source-crop-cancel]': element({hidden: true}),
+        '[data-source-crop-save]': element({hidden: true}),
+        'input[name="source_crop"]': element({value: ''}),
+        '[data-source-crop-help]': element(),
     };
     for (const frame of ['first', 'last']) {
         controls[`[data-source-frame="${frame}"]`] = canvas();
         controls[`[data-source-zoom="${frame}"]`] = element({ dataset: {sourceZoom: frame}, value: 1 });
-        controls[`[data-source-zoom-label="${frame}"]`] = element();
+        controls[`[data-source-zoom-percent="${frame}"]`] = element({dataset: {sourceZoomPercent: frame}, value: 100});
         controls[`[data-source-edit="${frame}"]`] = element({ dataset: {sourceEdit: frame} });
     }
     const result = element({ controls, isConnected: true, dataset: {outputWidth: 160, outputHeight: 80, motionDuration: 4},
         querySelector(selector) { assert.ok(controls[selector], selector); return controls[selector]; },
         querySelectorAll(selector) {
             if (selector === '[data-source-zoom]') return ['first','last'].map(f=>controls[`[data-source-zoom="${f}"]`]);
+            if (selector === '[data-source-zoom-percent]') return ['first','last'].map(f=>controls[`[data-source-zoom-percent="${f}"]`]);
             if (selector === '[data-source-edit]') return ['first','last'].map(f=>controls[`[data-source-edit="${f}"]`]);
             if (selector === 'button[data-source-image]') return result.thumbnails;
             throw new Error(selector);

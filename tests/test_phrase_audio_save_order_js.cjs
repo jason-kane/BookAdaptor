@@ -8,8 +8,8 @@ test('audio regeneration waits for pending phrase text save', async () => {
     let saved;
     const pending = new Promise(resolve => saved = resolve);
     vm.runInNewContext(fs.readFileSync('src/artifact_editor/static/js/chapter-import.js','utf8'), {
-        document: {addEventListener: (name, callback) => listeners[name] = callback},
-        window: {chapterPhraseSaves: {7: pending}}, console,
+        document: {getElementById: () => null, querySelector: () => null, addEventListener: (name, callback) => listeners[name] = callback},
+        window: {addEventListener() {}, chapterPhraseSaves: {7: pending}}, console,
     });
     let prevented = false, requested = false;
     listeners['htmx:confirm']({preventDefault: () => prevented = true,

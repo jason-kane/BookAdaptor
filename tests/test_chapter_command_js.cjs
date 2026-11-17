@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const listeners = {};
 vm.runInNewContext(fs.readFileSync('src/artifact_editor/static/js/chapter-import.js', 'utf8'), {
-    document: {addEventListener: (name, callback) => listeners[name] = callback}, window: {},
+    document: {getElementById: () => null, querySelector: () => null, addEventListener: (name, callback) => listeners[name] = callback}, window: {addEventListener() {}},
 });
 const command = {action: 'chapter_assign_characters', job_id: 'current', author: 'Writer',
     title: 'Book', chapter_number: 4, language: 'english'};
@@ -19,9 +19,9 @@ const status = {id: 'video-progress-import', dataset: {}, textContent: ''};
 const container = {dataset: {chapterImport: 'import'}};
 const button = {id: 'import_btn', closest: () => container};
 vm.runInNewContext(fs.readFileSync('src/artifact_editor/static/js/chapter-import.js', 'utf8'), {
-    document: {addEventListener: (name, callback) => feedback[name] = callback,
-        getElementById: () => status},
-    window: {setTimeout: callback => timers.push(callback)},
+    document: {getElementById: () => null, querySelector: () => null, addEventListener: (name, callback) => feedback[name] = callback,
+        getElementById: id => id === status.id ? status : null, querySelector: () => null},
+    window: {addEventListener() {}, setTimeout: callback => timers.push(callback)},
 });
 feedback.click({target: {closest: () => button}});
 assert.match(status.textContent, /Connecting/);

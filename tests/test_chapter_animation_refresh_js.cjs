@@ -13,7 +13,7 @@ function setup() {
     const status = {
         dataset: {videoJob: 'animation-job', videoState: 'running'},
         closest(selector) {
-            return ['[data-image-editor-url]', '[data-animation-description-status]'].includes(selector) ? panel : null;
+            return selector === '[data-image-editor-url]' ? panel : null;
         },
     };
     const players = {};
@@ -35,7 +35,7 @@ function setup() {
         },
         querySelectorAll(selector) {
             if (selector === 'video.chapter-animation-video') return videos;
-            if (selector.includes('[data-video-job]')) return [status];
+            if (selector === '[data-image-editor-url] [data-video-job]') return [status];
             return [];
         },
         getElementById() { return null; },
@@ -47,7 +47,7 @@ function setup() {
     vm.runInNewContext(fs.readFileSync('src/artifact_editor/static/js/chapter-timeline.js', 'utf8'), {
         document, window: {videojs}, videojs, htmx, console,
     });
-    const dispatch = (name, event = {}) => handlers.get(name)?.forEach(handler => handler(event));
+    const dispatch = (name, event = {}) => handlers.get(name)?.forEach(handler => handler({type: name, detail: {}, ...event}));
     return {status, requests, players, videos, dispatch, disposed: () => disposed};
 }
 

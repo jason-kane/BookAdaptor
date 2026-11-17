@@ -160,3 +160,23 @@ docker compose up -d --no-deps --force-recreate video_worker websocket artifacts
 
 The obsolete `drawing.fifo` / `gpu_service` integration is outside this worker
 protocol. ComfyUI continues to execute its own image, audio, and animation jobs.
+
+## JavaScript regression tests
+
+Use a Node version supported by `package.json`, then install the pinned test dependencies:
+
+```sh
+npm ci
+npm run test:js
+```
+
+This runs the Node and jsdom regression suites without starting browsers, model
+services, or generation jobs. The service-table suite renders a Home page with
+Python; set `PYTHON` to your project environment's interpreter when needed:
+
+```sh
+PYTHON=.venv/bin/python npm run test:js
+```
+
+The separate `tests/test_styler_queue_browser.cjs` Playwright check is not part
+of this command.

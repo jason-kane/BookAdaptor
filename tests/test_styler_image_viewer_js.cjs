@@ -3,7 +3,11 @@ const fs = require('node:fs');
 const {JSDOM} = require('jsdom');
 const dom = new JSDOM(`<body>${fs.readFileSync('src/styler/templates/sample-viewer.html', 'utf8')}<wa-tab-panel id="active"></wa-tab-panel><wa-tab-panel hidden><button data-style-viewer><img src="/hidden.png"></button></wa-tab-panel></body>`, {runScripts:'outside-only', url:'http://example.test'});
 const {window} = dom;
-const centered = [];
+    window.setInterval = () => 1;
+    window.eval(fs.readFileSync("src/artifact_editor/static/js/task-timing.js", "utf8"));
+const centered = [], timers = [];
+window.setTimeout = (callback, delay) => {timers.push({callback, delay}); return timers.length;};
+window.clearTimeout = id => {if (timers[id - 1]) timers[id - 1].cancelled = true;};
 window.HTMLElement.prototype.scrollIntoView = function(options) { centered.push({element:this, options}); };
 const panel = window.document.getElementById('active');
 function add(name) {
@@ -39,11 +43,15 @@ function status(state, style_tag='van_gogh') {
 }
 status('running');
 assert.equal(progress.hidden, false);
-assert.match(progress.textContent, /Vincent van Gogh — Qwen Image 2.1: Sampling \(45%\)/);
-assert.equal(window.document.getElementById('styler-viewer-progress-bar').getAttribute('value'), '45');
+assert.match(progress.textContent, /Vincent van Gogh — Qwen Image 2.1: Sampling · Learning duration/);
+assert.ok(window.document.getElementById('styler-viewer-progress-bar').hasAttribute('indeterminate'));
+assert.equal(window.document.getElementById('styler-viewer-progress-bar').getAttribute('value'), null);
 status('complete', 'another_style');
 assert.equal(progress.hidden, false);
 status('complete');
+assert.equal(progress.hidden, false, 'Keep completion visible during the dissolve');
+assert.ok(progress.classList.contains('styler-progress-dissolving'));
+timers.find(timer => timer.delay === 650 && !timer.cancelled).callback();
 assert.equal(progress.hidden, true);
 const completed = add('websocket-completed');
 completed.dispatchEvent(new window.CustomEvent('styler:sample-complete', {bubbles:true}));

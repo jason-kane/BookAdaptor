@@ -10,7 +10,7 @@ test('old terminal video messages cannot override prerequisite-owned disabled st
     const status = {dataset: {videoJob:'old-video',videoState:'failed'}, closest: () => notice};
     vm.runInNewContext(fs.readFileSync('src/artifact_editor/static/js/textoviva-player.js','utf8'), {
         window: {}, document: {addEventListener: (name, fn) => handlers[name] = fn,
-            querySelectorAll: () => [status]},
+            querySelector: () => null, querySelectorAll: () => [status]},
     });
     for (let i=0;i<5;i++) handlers['htmx:wsAfterMessage']();
     assert.equal(button.disabled, true);

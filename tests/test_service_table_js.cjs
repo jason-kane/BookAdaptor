@@ -25,6 +25,7 @@ w.fetch=async url=>{
  if(url.includes('/members/')){memberStarts.push(url);return {ok:true,json:async()=>({started:true})};}
  return {ok:true,json:async()=>metadata,text:async()=>{infoCalls++;return '<p>Current Docker state</p>';}};
 };
+const serviceRowCount=w.document.querySelectorAll('.service-table tbody tr:not(.table-detail)').length;
 for(const file of ['vendor/datatables/jquery-3.7.1.min.js','vendor/datatables/dataTables-2.3.4.min.js',
  'vendor/datatables/colReorder-2.1.0.min.js','js/service-info.js','js/panel-versions.js','js/service-table.js','js/service-members.js']) {
  w.eval(fs.readFileSync(root+'home/static/'+file,'utf8'));
@@ -34,7 +35,7 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
 (async()=>{
  await settle();
  const stylerLink=w.document.querySelector('[data-panel-id="styles"] [data-member-detail] a');
- assert.equal(stylerLink.href,'http://localhost:8082/styles/');
+ assert.equal(stylerLink.href,'http://localhost:8080/programs/styler', 'The program launcher ensures Styler is running before opening it');
  const redisBrowser=w.document.querySelector('#redis-contents [data-service-members]');
  assert.equal(redisBrowser.querySelector('[data-member-select]'),null);
  assert.equal(memberStarts.length,0);
@@ -45,7 +46,7 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
  assert.equal(redisBrowser.querySelector('[data-member-detail="redis"]').hidden,false);
  assert.match(redisBrowser.querySelector('[data-member-detail="redis"] [data-member-message]').textContent,/Stopped/);
  assert.equal(redisBrowser.querySelector('[data-member-start="redis"]').disabled,false);
- assert.equal(table.rows().count(),9);
+ assert.equal(table.rows().count(),serviceRowCount);
  assert.equal(w.document.querySelectorAll('.table-detail').length,0);
  assert.equal(w.document.querySelector('.table-tools').hidden,false);
  const filter=w.document.querySelector('tfoot th[data-label="Name"] input');
@@ -80,7 +81,7 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
  assert.ok(csv.includes('"Compose service","Version","Name"'));
  assert.equal(csv.trim().split('\r\n').length,3);
  w.document.querySelector('[data-table-reset]').click();
- assert.equal(table.rows({search:'applied'}).count(),9);
+ assert.equal(table.rows({search:'applied'}).count(),serviceRowCount);
  table.page.len(3).draw();
  assert.equal(table.rows({page:'current'}).count(),3);
  // Detached pages still retain live data because updates hold references to cells.

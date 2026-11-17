@@ -1,0 +1,13 @@
+{
+  "name": "bookadaptor",
+  "private": true,
+  "scripts": {
+    "test:js": "node --test tests/*_js.cjs tests/test_props_events.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "31.0.1"
+  },
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  }
+}

@@ -27,7 +27,7 @@ test('shared socket forwards chapter snapshots and completions to the image rend
     assert.equal(received[1].detail.chapter_number, 3);
 });
 
-test('shared socket subscribes to the current chapter on every reconnect', () => {
+test('shared socket subscribes to chapter images and frames on every reconnect', () => {
     const sent = [];
     const identity = {author: 'Author', title: 'Book', chapter_number: 3, language: 'english'};
     const open = loadFunction('handleSocketOpen', {
@@ -35,15 +35,17 @@ test('shared socket subscribes to the current chapter on every reconnect', () =>
         targets: new Map(), pendingGPUProvider: null,
         updateWorkerResetControl() {}, reportQueueCapacity() {}, requestMissing() {},
         document: {
-            querySelector() {return {dataset: {chapterIdentity: JSON.stringify(identity)}};},
+            querySelector() {return {dataset: {chapterIdentity: JSON.stringify(identity), frameAspect: 'widescreen'}};},
             querySelectorAll() {return [];},
         },
     });
     open();
     open();
-    assert.equal(sent.length, 2);
+    assert.equal(sent.length, 4);
     assert.deepEqual(sent[0], {...identity, action: 'watch_chapter_images'});
-    assert.deepEqual(sent[1], sent[0]);
+    assert.deepEqual(sent[1], {...identity, aspect: 'widescreen', action: 'watch_chapter_frames'});
+    assert.deepEqual(sent[2], sent[0]);
+    assert.deepEqual(sent[3], sent[1]);
 });
 
 test('style pages without a chapter do not subscribe to image snapshots', () => {

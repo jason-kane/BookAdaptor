@@ -17,3 +17,6 @@ src_backup/**/*
 
 venv/*
 coverage/tmp/*
+
+# JavaScript test dependencies
+node_modules/
