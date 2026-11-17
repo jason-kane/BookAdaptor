@@ -8,13 +8,13 @@ import textwrap
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
-from copy import copy, deepcopy
+from copy import copy
 from functools import lru_cache
 from threading import Lock
 
 import redis
 from ascii_magic import AsciiArt
-from bs4 import Tag
+from bs4 import BeautifulSoup, Tag
 from flask import url_for
 from PIL import Image, UnidentifiedImageError
 
@@ -1215,10 +1215,13 @@ def generate_missing_metadata(chapter, progress=None, skip_existing_images=False
             progress(value, message)
 
     def process_batch(batch):
-        source_soup = chapter.get_xml()
+        # BeautifulSoup deepcopy reuses the document's mutable lxml builder.
+        # Concurrent copies can reset/close each other's parser. Share only an
+        # immutable snapshot; every worker must create its own XML parser.
+        source_xml = str(chapter.get_xml())
 
         def process_image(source_image):
-            local_soup = deepcopy(source_soup)
+            local_soup = BeautifulSoup(source_xml, "xml")
             local_chapter = copy(chapter)
             local_chapter.soup = local_soup
             # Metadata routines save after individual fields. Keep those writes
