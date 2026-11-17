@@ -51,6 +51,7 @@ def test_asset_steps_report_progress_and_complete_correct_milestones(monkeypatch
                          'chapter_missing_metadata', 'chapter_missing_images',
                          'chapter_missing_animations']
     assert calls[-3:] == ['animations', 'images', 'animations']
+    assert calls.index('speakers') < calls.index('audio')
     updates = [call.args for call in report.call_args_list]
     assert updates[0] == (0, 'Step 2/12: Adding missing characters')
     assert updates[-1] == (100, 'Step 11/12: Generating missing animations complete')

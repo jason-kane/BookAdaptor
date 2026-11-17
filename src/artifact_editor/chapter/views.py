@@ -881,6 +881,10 @@ def chapter_workflow_status():
 @bp.route("/")
 def chapter_base():
     from artifact_editor.phrases import htmx as phrases_htmx
+    preview_dir = os.path.join(const.LIBRARY_DIR, g.chapter.chapterdir, g.chapter.language)
+    typeset_previews_ready = all(os.path.isfile(os.path.join(preview_dir, filename)) for filename in (
+        "chapter.pdf", "chapter-1.png", "chapter.rainbow-1.png",
+    ))
 
     phrases = g.chapter.phrases()
 
@@ -889,6 +893,7 @@ def chapter_base():
         chapter_pdf_url=url_for(
             "library.book.chapter.typography.serve_chapter_pdf",
         ),
+        typeset_previews_ready=typeset_previews_ready,
         phrases=phrases,
         speakers=g.chapter.speakers(),
         previous_phrase_index=-1,
@@ -2333,6 +2338,47 @@ def import_chapter_content(chapter, sections_json=None, progress=None):
         )
 
         index = break_index + 1
+
+    # Fold forced one-word fragments into the previous phrase unless a quote,
+    # paragraph, illustration, section, or typesetting boundary prevents it.
+    phrase_index = 1
+    while phrase_index < len(phrases):
+        phrase = phrases[phrase_index]
+        if len(phrase["spoken"].split()) != 1:
+            phrase_index += 1
+            continue
+        previous = phrases[phrase_index - 1]
+        if (
+            phrase["section_index"] != previous["section_index"]
+            or phrase["section_type"] != previous["section_type"]
+            or phrase["typesetting_method"] != previous["typesetting_method"]
+            or "\n\n" in previous["spoken"]
+            or any(position == phrase_index for position, _ in illustration_positions)
+        ):
+            phrase_index += 1
+            continue
+        previous_run = previous["delta"][0].get("speech_run") if previous["delta"] else None
+        phrase_run = phrase["delta"][0].get("speech_run") if phrase["delta"] else None
+        if previous_run != phrase_run:
+            phrase_index += 1
+            continue
+
+        previous["spoken"] += phrase["spoken"]
+        previous["delta"].extend(phrase["delta"])
+        merged_doc = t.ops_to_internal_representation(previous["delta"])
+        latex = merged_doc.render_tree(mode="latex")
+        latex = latex.replace("\\end{center}", "\\end{center}\n\\vspace{-3.5em}")
+        latex = latex.replace(r"\emph{}", "").replace(r"\textbf{}", "")
+        latex = latex.replace("\t", r"\hspace*{2em}")
+        latex = latex.replace(" ''", " ``").replace("\n''", "\n``").replace("(''", "(``")
+        if latex.startswith("''"):
+            latex = "``" + latex[2:]
+        previous["latex"] = latex.strip() + previous["spoken"][len(previous["spoken"].rstrip()):]
+        del phrases[phrase_index]
+        illustration_positions = [
+            (position - 1 if position > phrase_index else position, filename)
+            for position, filename in illustration_positions
+        ]
 
     # clear any leading newlines from the first phrase.
     if out_ops:

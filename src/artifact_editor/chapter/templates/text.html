@@ -1453,25 +1453,31 @@
             <wa-tab-panel name="pdf">
                 <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll PDF preview">
                     <div id="chapter-pdf-scroll" class="chapter-rendered-scroll" data-scroll-viewport data-pdf-url="{{ chapter_pdf_url }}" tabindex="0" aria-label="PDF preview">
-                        <canvas id="the-canvas"></canvas>
+                        {% if typeset_previews_ready %}<canvas id="the-canvas"></canvas>{% else %}
+                        {% set preview_target = 'chapter-pdf-scroll' %}{% set preview_kind = 'pdf' %}{% set oob = false %}
+                        {% include 'chapter_typeset_required.html' %}{% endif %}
                     </div>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="image">
                 <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll image preview">
                     <div id="chapter-image-scroll" class="chapter-rendered-scroll chapter-preview-image-scroll" data-scroll-viewport tabindex="0" aria-label="Image preview">
-                        <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">
+                        {% if typeset_previews_ready %}<img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Chapter first page" loading="lazy">{% else %}
+                        {% set preview_target = 'chapter-image-scroll' %}{% set preview_kind = 'image' %}{% set oob = false %}
+                        {% include 'chapter_typeset_required.html' %}{% endif %}
                     </div>
                 </div>
             </wa-tab-panel>
             <wa-tab-panel name="rainbow">
                 <div class="chapter-tab-scroll-area" data-custom-scrollbar data-scrollbar-label="Scroll rainbow preview">
                     <div id="chapter-rainbow-scroll" class="chapter-rendered-scroll chapter-preview-rainbow-scroll" data-scroll-viewport tabindex="0" aria-label="Rainbow preview">
-                        <div class="chapter-rainbow-overlay">
+                        {% if typeset_previews_ready %}<div class="chapter-rainbow-overlay">
                             <div class="chapter-rainbow-background" aria-hidden="true"></div>
                             <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='rainbow', **chapter.kwargs) }}" alt="Chapter first page with rainbow phrase highlighting" loading="lazy">
                             <img data-typeset-preview src="{{ url_for('library.book.chapter.preview_image', kind='image', **chapter.kwargs) }}" alt="Plain text overlay for comparing rainbow alignment" loading="lazy">
-                        </div>
+                        </div>{% else %}
+                        {% set preview_target = 'chapter-rainbow-scroll' %}{% set preview_kind = 'rainbow' %}{% set oob = false %}
+                        {% include 'chapter_typeset_required.html' %}{% endif %}
                     </div>
                 </div>
             </wa-tab-panel>

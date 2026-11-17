@@ -785,6 +785,8 @@ def record_audio(
 
 @bp.route("/actions/merge_with_previous", methods=["POST"])
 def merge_with_previous():
+    from pathlib import Path
+
     chapter = g.chapter
 
     phrase_index = int(request.form.get("phrase_index", None))
@@ -864,14 +866,37 @@ def merge_with_previous():
     # save the book xml
     chapter.save_timeline()
 
+    # The merged phrase changes the LaTeX and both aligned text layers.
+    # Remove every generated page so stale previews cannot be mistaken for
+    # the merged chapter until the user explicitly typesets it again.
+    preview_dir = Path(const.LIBRARY_DIR) / chapter.chapterdir / chapter.language
+    for pattern in ("chapter.pdf", "chapter-*.png", "chapter.rainbow-*.png"):
+        for artifact in preview_dir.glob(pattern):
+            artifact.unlink(missing_ok=True)
+
+    preview_prompts = "".join(
+        render_template(
+            "chapter_typeset_required.html",
+            chapter=chapter,
+            preview_target=target,
+            preview_kind=kind,
+            oob=True,
+        )
+        for target, kind in (
+            ("chapter-pdf-scroll", "pdf"),
+            ("chapter-image-scroll", "image"),
+            ("chapter-rainbow-scroll", "rainbow"),
+        )
+    )
+
     if request.headers.get("HX-Target") == "chapter-phrase-list":
         return render_template(
             "chapter_phrase_list.html",
             phrases=list(chapter.phrases()),
             speakers=chapter.speakers(),
             chapter=chapter,
-        ), 200
-    return htmx.phrase_editor(chapter, previous_phrase, page), 200
+        ) + preview_prompts, 200
+    return htmx.phrase_editor(chapter, previous_phrase, page) + preview_prompts, 200
 
 
 @bp.route("/actions/generate_all_missing_audio", methods=["POST"])

@@ -210,6 +210,7 @@
     }
 
     const completedJobs = new Set();
+    const importedJobs = new Set();
     document.addEventListener('htmx:wsAfterSend', event => {
         const oneShot = event.detail.elt?.closest('#textoviva-one-shot')
             ?.querySelector('[data-workflow-action="textoviva_one_shot"]');
@@ -227,6 +228,15 @@
             const job = status.dataset.videoJob;
             const action = status.dataset.videoAction;
             const state = status.dataset.videoState;
+            const message = status.textContent || '';
+            if (action === 'textoviva_one_shot' && !importedJobs.has(job) &&
+                message.includes('Step 1/12: Import chapter complete')) {
+                importedJobs.add(job);
+                const timeline = document.querySelector(
+                    '#chapter-timeline-content > wa-tab-group > wa-tab-panel[name="timeline"]'
+                );
+                if (timeline && window.htmx) window.htmx.trigger(timeline, 'load-column');
+            }
             const oneShot = document.querySelector(
                 '#textoviva-one-shot [data-workflow-action="textoviva_one_shot"]'
             );

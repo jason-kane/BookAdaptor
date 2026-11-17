@@ -143,6 +143,22 @@ def merge_section_fragments(sections):
     return result
 
 
+def apply_body_typography(ops, book_config):
+    """Resolve Quill's default font/size from the book without changing custom runs."""
+    result = deepcopy(ops)
+    defaults = {'font': ('Helvetica', 'default_body_font'),
+                'size': ('16px', 'default_body_font_size')}
+    for op in result:
+        attributes = dict(op.get('attributes') or {})
+        for field, (quill_default, config_key) in defaults.items():
+            selected = book_config.get(config_key)
+            if selected and attributes.get(field) in (None, False, '', quill_default):
+                attributes[field] = selected
+        if attributes:
+            op['attributes'] = attributes
+    return result
+
+
 def prepare_sections(chapter, sections=None, delta=None):
     """Initialize legacy text once; refresh only copies explicitly tied to templates."""
     book = book_for(chapter)
@@ -155,6 +171,20 @@ def prepare_sections(chapter, sections=None, delta=None):
         prepared = []
         for section in merge_section_fragments(sections):
             if 'section_type' in section:
+                # Older chapter editors saved a plain copy of the generated
+                # heading without its template link. Reattach only matching
+                # headings that still use Quill's default typography.
+                if (section.get('section_type') == 'chapter_page'
+                        and not section.get('template')
+                        and 'chapter_page_delta' in book.config):
+                    expected = template_section('chapter_page', book, chapter)
+                    text = lambda ops: ''.join(''.join(op['insert'].split()) for op in ops)
+                    unformatted = all(
+                        (op.get('attributes') or {}).get('font') in (None, False, '', 'Helvetica')
+                        and (op.get('attributes') or {}).get('size') in (None, False, '', '16px')
+                        for op in section['ops'])
+                    if unformatted and text(section['ops']) == text(expected['ops']):
+                        section['template'] = 'chapter_page'
                 prepared.append(deepcopy(section))
             else:
                 for part in classify(section['ops'], chapter, section['typesetting_method']):
@@ -166,8 +196,10 @@ def prepare_sections(chapter, sections=None, delta=None):
         for kind in reversed(('book_page', 'chapter_page')):
             if not any(s.get('section_type') == kind for s in sections):
                 sections.insert(0, template_section(kind, book, chapter))
-    return [dict(s, ops=template_section(s['template'], book, chapter)['ops'])
-            if s.get('template') else s for s in sections]
+    result = [dict(s, ops=template_section(s['template'], book, chapter)['ops'])
+              if s.get('template') else s for s in sections]
+    return [dict(s, ops=apply_body_typography(s['ops'], book.config))
+            if s.get('section_type') == 'chapter_text' else s for s in result]
 
 
 def sections_path(chapter):

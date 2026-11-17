@@ -1,0 +1,11 @@
+{% if oob %}<div id="{{ preview_target }}" hx-swap-oob="innerHTML">{% endif %}
+<div class="chapter-typeset-required" data-typeset-invalidated>
+    <wa-button id="typeset-latex-{{ preview_kind }}-btn"
+        hx-post="{{ url_for('library.book.chapter.typeset_latex', **chapter.kwargs) }}"
+        hx-disabled-elt="this"
+        hx-target="#typeset-latex-status-{{ preview_kind }}" hx-swap="innerHTML"
+        variant="neutral" appearance="accent" size="medium">Typeset LaTeX</wa-button>
+    <div id="typeset-latex-status-{{ preview_kind }}" class="chapter-action-status"
+        role="status" aria-live="polite"></div>
+</div>
+{% if oob %}</div>{% endif %}

@@ -536,6 +536,15 @@ def run_video_job(client, task):
             )
             complete_step(chapter, "chapter_import")
 
+            # Refresh the chapter's LaTeX/PDF as part of the import workflow so
+            # the chapter preview reflects the text One Shot just imported.
+            from artifact_editor.chapter.typesetting import enqueue_typesetting
+            report_progress(client, job_id, 1, "Typesetting chapter LaTeX", action="textoviva_one_shot")
+            enqueue_typesetting(chapter, wait=True)
+            report_progress(
+                client, job_id, 8, "Step 1/12: Import chapter complete", action="textoviva_one_shot",
+            )
+
             begin_step(chapter, "chapter_add_all")
             report_progress(client, job_id, 8, "Adding all missing assets", action="textoviva_one_shot")
             run_chapter_add_all(

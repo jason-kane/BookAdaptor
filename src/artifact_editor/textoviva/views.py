@@ -473,6 +473,17 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
 
             candidates = [client.get("chapter_render:running")]
             candidates.extend(client.lrange(RENDER_QUEUE, 0, 99))
+            recent_jobs = []
+            for raw_recent in client.lrange("chapter_render:recent", 0, 2):
+                try:
+                    recent_jobs.append(json.loads(raw_recent))
+                except (TypeError, ValueError):
+                    continue
+            candidates.extend(
+                json.dumps(entry)
+                for entry in recent_jobs
+                if entry.get("action") == "textoviva_one_shot"
+            )
             for raw_task in candidates:
                 if not raw_task:
                     continue
@@ -488,7 +499,7 @@ def player_stack(chapter: Chapter, image_xml: Tag, embedded=False) -> str:
                     and candidate.get("language") == chapter.language
                 ):
                     one_shot_id = candidate["job_id"]
-                    one_shot_state = client.hgetall(f"video_job:{one_shot_id}")
+                    one_shot_state = client.hgetall(f"video_job:{one_shot_id}") or candidate
                     break
         except redis.RedisError:
             log.exception("Could not load the active One Shot job for the Textoviva player")

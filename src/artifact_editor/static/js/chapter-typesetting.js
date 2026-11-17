@@ -1,4 +1,8 @@
 document.addEventListener('chapter-typeset-complete', event => {
+    if (document.querySelector('[data-typeset-invalidated]')) {
+        window.location.reload();
+        return;
+    }
     const stamp = Date.now();
     if (event.detail.pdf_url && window.latex_rerender_url) {
         const pdf = new URL(event.detail.pdf_url, window.location.href);
