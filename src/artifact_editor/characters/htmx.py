@@ -159,6 +159,66 @@ def character_description_response(chapter, character_name, description):
     """
 
 
+def character_image_description_picker(chapter, character_tag):
+    from flask import g, has_request_context
+    from markupsafe import escape
+    from artifact_editor.images.source import source_images
+
+    filenames = getattr(g, "_character_source_images", None) if has_request_context() else None
+    if filenames is None:
+        filenames = source_images(chapter)
+        if has_request_context():
+            g._character_source_images = filenames
+    if not filenames:
+        return '<small>No source images are available for this book.</small>'
+    return f"""
+        <div class="character-image-description-picker">
+            <details class="character-source-chooser"
+                hx-get="{url_for('library.book.chapter.characters.character_source_images', **chapter.kwargs, character_tag=character_tag)}"
+                hx-trigger="toggle once"
+                hx-target="find .character-source-image-grid"
+                hx-swap="innerHTML">
+                <summary>Choose from Source</summary>
+                <div class="character-source-image-grid" role="group" aria-label="Book source images">
+                    <small>Open to load source images.</small>
+                </div>
+            </details>
+            <wa-button
+                hx-post="{url_for('library.book.chapter.characters.describe_from_image', **chapter.kwargs, character_tag=character_tag)}"
+                hx-include="closest .character-image-description-picker"
+                hx-target="#{character_tag}_description"
+                hx-swap="outerHTML transition:true"
+                hx-disabled-elt="this">Augment from Image</wa-button>
+        </div>
+    """
+
+
+def character_source_image_grid(chapter, character_tag):
+    from flask import g, has_request_context
+    from markupsafe import escape
+    from artifact_editor.images.source import source_images
+
+    filenames = getattr(g, "_character_source_images", None) if has_request_context() else None
+    if filenames is None:
+        filenames = source_images(chapter)
+        if has_request_context():
+            g._character_source_images = filenames
+    choices = []
+    for filename in filenames:
+        preview = url_for(
+            "library.book.chapter.characters.character_source_image",
+            **chapter.kwargs, filename=filename, height=160,
+        )
+        choices.append(f"""
+            <label class="character-source-image-option" title="{escape(filename)}">
+                <input type="radio" name="source_image" value="{escape(filename)}" required>
+                <img loading="lazy" src="{escape(preview)}" alt="{escape(filename)}">
+                <span>{escape(filename)}</span>
+            </label>
+        """)
+    return ''.join(choices) if choices else '<small>No source images are available for this book.</small>'
+
+
 def voice_selector(chapter, character, character_name):
     out = f"""<wa-select
         id="{character_name}_voice_selector"
@@ -626,6 +686,8 @@ def character_data(chapter, character_dict: dict[str, Any], book_scope=False):
                 hx-target="#{tag}_description"
                 hx-params="none"
                 hx-swap="outerHTML transition:true">Extract Text Description</wa-button>
+
+            {character_image_description_picker(chapter, tag)}
 
             <wa-button
                 hx-post="{url_for('library.book.chapter.characters.fanciful_description', **chapter.kwargs, character_tag=tag)}"

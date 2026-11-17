@@ -12,10 +12,22 @@ def reference_workflow(kind, description):
     if not description:
         raise ValueError('Enter a description before opening the workflow.')
     if kind == 'characters':
-        prompt = ('Full-body image of a single character, entire body visible from head to feet, '
-                  'centered with space above the head and below the feet. Plain, solid-color background '
-                  'with strong contrast against the character so its outline and details are clearly visible. '
-                  'no scenery, no text. Character description: ' + description)
+        prompt = (
+            'Create a clear character design reference illustration of exactly one character. '
+            'Show the entire figure from head to feet, large and centered, in a relaxed neutral '
+            'standing pose facing forward, with arms slightly separated from the torso and both '
+            'hands and feet visible. Keep the face fully visible and readable; do not cover it '
+            'with hair, a hat brim, a mask, or shadow. Use soft, even front lighting and balanced '
+            'exposure so facial features, skin or fur, hair, clothing colors, materials, and small '
+            'accessories are easy to distinguish. Use a simple light neutral background with gentle '
+            'contrast. This is a usable visual reference, not a dramatic scene: no silhouette, '
+            'backlighting, deep shadows, spotlight, dramatic color cast, monochrome treatment, '
+            'cropped limbs, multiple views, extra characters, text, or decorative frame. Follow '
+            'the character description closely: preserve every specified physical feature, species, '
+            'age, color, garment, and accessory; do not omit described details or invent new ones. '
+            'Include described equipment or carried items, but no other props. No scenery. '
+            'Character description: ' + description
+        )
         width, height = 768, 1152
     elif kind == 'props':
         prompt = ('A single prop, fully visible and centered on a plain, solid-color background '

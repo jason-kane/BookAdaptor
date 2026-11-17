@@ -1,4 +1,5 @@
 import glob
+import io
 import json
 import os
 import random
@@ -12,6 +13,7 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    send_file,
     url_for,
 )
 
@@ -323,6 +325,54 @@ def generate_description(character_tag):
         character_tag,
         description,
     )
+
+
+@bp.route("<character_tag>/actions/describe_from_image", methods=["POST"])
+def describe_from_image(character_tag):
+    """Augment the character's text description with a selected source image."""
+    filename = request.form.get("source_image", "")
+    if not filename:
+        return "Choose a source image", 400
+    try:
+        description = characters.augment_description_from_image(
+            g.chapter, character_tag, filename,
+        )
+    except (ValueError, FileNotFoundError):
+        return "The selected source image is unavailable", 400
+    return htmx.character_description_response(
+        g.chapter, character_tag, description,
+    )
+
+
+@bp.route("source_image/<path:filename>", methods=["GET"])
+def character_source_image(filename):
+    from PIL import Image, ImageOps
+    from artifact_editor.images.source import source_image_path
+
+    try:
+        path = source_image_path(g.chapter, filename)
+        height = request.args.get("height", 160, type=int)
+        if height not in (160, 800):
+            return "Invalid source image size", 400
+        with Image.open(path) as original:
+            preview = ImageOps.exif_transpose(original)
+            preview.thumbnail((height, height))
+            output = io.BytesIO()
+            preview.save(output, format="PNG")
+    except (ValueError, FileNotFoundError, OSError):
+        return "Source image not found", 404
+    output.seek(0)
+    fingerprint = f"{path.stat().st_mtime_ns}-{path.stat().st_size}-{height}"
+    return send_file(
+        output, mimetype="image/png", etag=fingerprint, max_age=3600,
+    )
+
+
+@bp.route("<character_tag>/actions/source_images", methods=["GET"])
+def character_source_images(character_tag):
+    if not characters.get_character(g.chapter, character_tag):
+        return "Character not found", 404
+    return htmx.character_source_image_grid(g.chapter, character_tag)
 
 
 @bp.route("<character_tag>/actions/fanciful_description", methods=["POST"])
