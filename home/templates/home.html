@@ -645,6 +645,11 @@
     {% include 'service_table.html' %}
 
     <div id="service-panels" class="wa-grid service-panels" data-view="list" style="--min-column-size: 40ch;">
+      {% call service_panel('polish', 'Polish', 'polish.svg', status='Beta', version_service='home', managed=false) %}
+        <a href="{{ url_for('polish.index') }}"><p>Open Polish</p></a>
+        <p>Review side-by-side diffs and react to each change.</p>
+      {% endcall %}
+
       {% call service_panel('library', 'Library', 'library.png', status='Beta', version_service='artifactserver') %}
         <div class="wa-stack">
           <a href="{{ url_for('home.program_page', service_name='artifactserver') }}">

@@ -19,7 +19,7 @@ def test_members_have_independent_action_and_ui_rows():
     assert 'id="redis-member-redis"' in page
     assert 'id="redis-member-redisinsight"' in page
     assert 'hx-get="/programs/redis/panel-status"' in page
-    assert page.count('data-service-members') == 8
+    assert page.count('data-service-members') == len(create_app({'TESTING': True}).extensions['home_panel_services'])
 
 
 def test_member_start_is_scoped_to_its_panel():

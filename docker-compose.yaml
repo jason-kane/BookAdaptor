@@ -19,6 +19,7 @@ x-library-locks: &library-locks
 
 services:
   home:
+    image: bookadaptor-home:latest
     build:
       context: ./home
       additional_contexts:
@@ -28,6 +29,7 @@ services:
       - "8080:8080"
     volumes:
       - ./home:/app/home:ro
+      - .:/polish-workspace
       - ./active:/active:ro
       - *book-shelf
       - ./src/redis:/app/src/redis:ro
@@ -35,8 +37,34 @@ services:
       - ./src/todo:/data/todo
       - ./docker-compose.yaml:/docker-compose.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - POLISH_WORKSPACE=/polish-workspace
     networks:
       - home-network
+
+  polish_worker:
+    profiles: ["on-demand"]
+    image: bookadaptor-home:latest
+    command: ["python", "-m", "home.polish.worker"]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./home:/app/home:ro
+      - ./src/redis:/app/src/redis:ro
+      - ./src/postgres:/app/src/postgres:ro
+      - ./src/todo:/data/todo
+      - .:/polish-workspace:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - POLISH_WORKSPACE=/polish-workspace
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://127.0.0.1:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
+  polish_validator:
+    profiles: ["validation"]
+    image: bookadaptor-polish-validation:latest
+    build:
+      context: ./docker/polish-validation
 
   redis:
     profiles: ["on-demand", "test"]

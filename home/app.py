@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Flask, request
 
 from home.views import bp
+from home.polish import bp as polish_bp
 from home.service_info import PANEL_SERVICES, TABLE_ROWS
 from home.service_members import MEMBER_METADATA
 from src.redis.home_panel import home_panel
@@ -15,9 +16,13 @@ from src.postgres.home_panel import home_panel as postgres_home_panel
 def create_app(config=None):
     app = Flask(__name__, static_url_path="/home-static")
     app.config["TODO_DIR"] = os.environ.get("TODO_DIR", "/data/todo")
+    app.config["POLISH_WORKSPACE"] = os.environ.get("POLISH_WORKSPACE")
+    app.config["OLLAMA_BASE_URL"] = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    app.config["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
     if config:
         app.config.update(config)
     app.register_blueprint(bp)
+    app.register_blueprint(polish_bp)
     app.extensions["home_panels"] = {"redis": home_panel(app), "postgres": postgres_home_panel(app)}
     app.extensions["home_panel_services"] = {
         **PANEL_SERVICES,

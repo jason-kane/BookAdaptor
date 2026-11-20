@@ -1,5 +1,6 @@
 """Display metadata for Home's Compose service members; owned panels add their own."""
 MEMBER_METADATA = {
+    "home": {"name": "Home", "image": "polish.svg", "description": "Polish review desk."},
     "artifactserver": {"name": "Library", "image": "library.png", "description": "Book and video editor."},
     "glances": {"name": "Glances", "image": "glances.png", "description": "Monitor CPU, GPU, RAM, and disk usage."},
     "comfyui": {"name": "Comfy UI", "image": "comfyui.png", "description": "Image and workflow generation.", "path": "/", "port": 8188},

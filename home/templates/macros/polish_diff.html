@@ -1,0 +1,12 @@
+{% macro diff_lines(rows) %}
+<div class="diff-row-group">
+  {% for row in rows %}
+    {% for side in ['before', 'after'] %}
+      {% set line = row[side] %}
+      <div class="diff-line {{ side }} {{ 'changed' if row.changed and line else '' }} {{ 'gap' if not line else '' }}">
+        <span class="line-number" aria-hidden="true">{{ line[0] if line else '' }}</span><span class="change-mark" aria-hidden="true">{{ ('−' if side == 'before' else '+') if row.changed and line else '' }}</span><code>{{ line[1] if line else '' }}</code>
+      </div>
+    {% endfor %}
+  {% endfor %}
+</div>
+{% endmacro %}

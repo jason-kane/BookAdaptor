@@ -6,6 +6,7 @@ import subprocess
 from .programs import compose_command
 
 PANEL_SERVICES = {
+    "polish": ("home",),
     "library": ("artifactserver", "redis"),
     "theater": ("artifactserver", "redis"),
     "therapy": ("artifactserver", "redis"),
@@ -18,6 +19,7 @@ PANEL_SERVICES = {
 
 
 TABLE_ROWS = (
+    {"panel": "polish", "name": "Polish", "service": "home", "path": "/polish", "port": 8080, "status": "Beta"},
     {"panel": "library", "name": "Library", "service": "artifactserver", "program": "artifactserver", "status": "Beta"},
     {"panel": "theater", "name": "Theater", "service": "artifactserver", "path": "/theater/", "port": 8082, "status": "Beta"},
     {"panel": "therapy", "name": "Therapy", "service": "artifactserver", "path": "/therapy/", "port": 8082, "status": "Broken"},

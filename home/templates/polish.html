@@ -1,0 +1,116 @@
+{% from 'macros/polish_diff.html' import diff_lines %}
+<!DOCTYPE html>
+<html lang="en" class="wa-dark wa-theme-glossy wa-palette-elegant wa-brand-indigo">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Polish · BookAdaptor</title>
+  <link rel="icon" href="{{ url_for('static', filename='images/polish.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.14.0/styles/themes/glossy.css">
+  <link rel="stylesheet" href="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.14.0/styles/color/palettes/elegant.css">
+  <script type="module" src="https://ka-p.webawesome.com/kit/98b31541fcd34215/webawesome@3.14.0/webawesome.loader.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css', v='9') }}">
+  <script defer src="{{ url_for('static', filename='js/polish.js', v='8') }}"></script>
+</head>
+<body>
+  <header class="topbar"><a href="{{ url_for('home.<lambda>') }}">← Home</a><span>BookAdaptor / Polish</span></header>
+  <main>
+    <div class="page-heading">
+      <div><p class="eyebrow">THE REVIEW DESK</p><h1>Polish<span aria-hidden="true">✦</span></h1>
+        <p class="intro">Review a suggested change against the status quo. Rate the model’s contribution.</p></div>
+      <div class="review-controls">
+        <div class="list-count" data-entry-count>{{ entries | length }} {{ 'preview entries' if preview else ('graded entries' if graded else 'entries to review') }}</div>
+        {% if not preview %}
+        <wa-button type="button" appearance="outlined" data-goals-toggle aria-expanded="false" aria-controls="polish-goals">Show Goals</wa-button>
+        <a href="{{ url_for('polish.index') if graded else url_for('polish.index', view='graded') }}">{{ 'Show ungraded' if graded else 'Show graded' }}</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="review-feedback" data-review-feedback role="status" aria-live="polite" hidden></div>
+    {% if not preview %}
+    <section id="polish-goals" class="goals-panel" aria-label="Accepted goals" hidden>
+      <h2>Goals <span data-goal-count>({{ goals | length }})</span></h2>
+      <p>Accepted goals for Polish and BookAdaptor. Goal suggestions join this list when rated Good or Awesome.</p>
+      <div class="model-discovery"><wa-button type="button" size="s" appearance="outlined" data-model-refresh>Refresh models</wa-button><span data-model-message role="status">Choose a model for a goal to seek one improvement.</span></div>
+      <ol data-goals-list>{% for goal in goals %}
+        <li data-goal-id="{{ goal.id }}"><h3>{{ goal.id }} · {{ goal.title }}</h3>{% if goal.evidence %}<p>{{ goal.evidence }}</p>{% endif %}</li>
+      {% endfor %}</ol>
+    </section>
+    <aside class="application-warnings" aria-label="Changes needing attention" {% if not warnings %}hidden{% endif %}>
+      <h2>Changes needing attention</h2>
+      <div data-warning-list>{% for item in warnings %}<p data-warning-entry="{{ item.id }}"><a href="{{ url_for('polish.index', view='graded') }}#entry-{{ item.id }}">{{ item.description }}</a> · {{ item.application_message }}{% if item.correction_entry_id %} <a href="{{ url_for('polish.index', new_entry=item.correction_entry_id) }}#entry-{{ item.correction_entry_id }}">Review second attempt</a>{% endif %}</p>{% endfor %}</div>
+    </aside>
+    {% endif %}
+    {% if preview %}
+    <aside class="preview-notice"><div><strong>Layout preview</strong><p>Sample entries only. Reactions here are temporary.</p></div><a href="{{ url_for('polish.index') }}">Back to your list →</a></aside>
+    {% endif %}
+    {% if not preview %}
+    <section class="rub-controls" aria-label="Generate polish improvements">
+      <div class="goal-actions">
+        <label>Model <select data-rub-model aria-label="Model for Rub one out" disabled><option value="">Choose a model</option></select></label>
+        <wa-button type="button" appearance="outlined" data-rub-start disabled>Rub one out</wa-button>
+        <wa-button type="button" appearance="outlined" data-six-start disabled>Six pack</wa-button>
+      </div>
+      <p class="rub-help">One small polish for the available goal with the lowest accumulated rating points. Ties are chosen randomly; unrated goals start at zero.</p>
+      <p class="rub-help">Six pack queues six distinct available goals with the same model; results appear here as each entry is ready to review.</p>
+      <p data-model-message role="status">Loading available models…</p>
+      <p data-rub-status role="status" aria-live="polite"></p>
+      <div data-six-status role="status" aria-live="polite"></div>
+    </section>
+    <section class="model-scores" aria-label="Model scores">
+      <h2>Model scores</h2>
+      <p>Good: +1 point · Awesome: +5 points · Bad: −0.5 points · Trash: −2.5 points.</p>
+      <table><thead><tr><th>Model</th><th>Rated entries</th><th>Points</th></tr></thead>
+        <tbody data-model-scores>{% for score in scores %}<tr><td>{{ score.model_label }}</td><td>{{ score.rated_count }}</td><td>{{ score.points }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+    <div class="review-list" aria-label="Polish entries" data-review-view="{{ 'preview' if preview else ('graded' if graded else 'ungraded') }}">
+      {% for entry in entries %}
+      <article class="review-entry" data-entry-id="{{ entry.id }}" data-preview="{{ 'true' if preview else 'false' }}"
+               {% if not preview %}data-reaction-url="{{ url_for('polish.react', entry_id=entry.id) }}"{% endif %}
+               aria-labelledby="entry-{{ entry.id }}">
+        <header class="entry-heading"><span class="entry-number">{{ '%02d' | format(loop.index) }}</span><h2 id="entry-{{ entry.id }}">{{ entry.description }}</h2></header>
+        <div class="entry-provenance">
+          {% if preview %}<span>Sample entry · no model attribution</span>
+          {% else %}
+          <span>Model: <strong>{{ entry.model_label or 'Unattributed (legacy entry)' }}</strong></span>
+          {% if entry.prompt_profile %}<span>Prompt: <code>{{ entry.prompt_profile.path }}</code> · {{ entry.prompt_profile.revision[:12] }}</span>{% endif %}
+          <span>Goal: <strong>{{ entry.goal_id or 'Unassigned (legacy entry)' }}</strong>{% if entry.goal_title %} · {{ entry.goal_title }}{% endif %}</span>
+          {% endif %}
+        </div>
+        <div class="diff-scroll" role="region" tabindex="0" aria-label="Side-by-side diff for entry {{ loop.index }}">
+          <div class="diff-grid">
+            <div class="diff-label">Before · Status quo{% if not entry.before_text %} · No existing text{% endif %}</div><div class="diff-label">After · Suggested change</div>
+            {% for section in entry.sections %}
+              {% if section.collapsed %}
+              <details class="diff-fold">
+                <summary><span class="fold-closed">… {{ section.rows | length }} unchanged {{ 'line' if section.rows | length == 1 else 'lines' }}</span><span class="fold-open">… Hide {{ section.rows | length }} unchanged {{ 'line' if section.rows | length == 1 else 'lines' }}</span></summary>
+                {{ diff_lines(section.rows) }}
+              </details>
+              {% else %}{{ diff_lines(section.rows) }}{% endif %}
+            {% else %}<div class="empty-text">Empty text</div><div class="empty-text">Empty text</div>{% endfor %}
+          </div>
+        </div>
+        <footer class="entry-footer">
+          <div class="reactions" role="group" aria-label="Reaction to entry {{ loop.index }}">
+            {% for reaction in reactions %}
+            <wa-button type="button" size="s" data-reaction="{{ reaction }}" aria-pressed="{{ 'true' if entry.reaction == reaction else 'false' }}"
+                       title="{{ reaction }} · {{ points[reaction] }} points{{ ' · applies immediately' if reaction in ['Good', 'Awesome'] else '' }}"
+                       appearance="{{ 'accent' if entry.reaction == reaction else 'outlined' }}">{{ reaction }}</wa-button>
+            {% endfor %}
+          </div>
+          <span class="reaction-status" role="status" aria-live="polite">{{ 'Saved: ' ~ entry.reaction if entry.reaction else 'How does this change feel?' }}</span>
+        </footer>
+        <p class="application-status" data-application-status="{{ entry.application_status if not preview else 'preview' }}" role="status" aria-live="polite">{{ entry.application_message if not preview else 'Preview only. No changes will be applied.' }}</p>
+        {% if not preview and entry.correction_entry_id %}<p class="application-status"><a href="{{ url_for('polish.index', new_entry=entry.correction_entry_id) }}#entry-{{ entry.correction_entry_id }}">Review second attempt</a></p>{% endif %}
+        {% if not preview and entry.validation_json %}<details class="validation-report"><summary>Validation checks</summary><pre>{{ entry.validation_json }}</pre></details>{% endif %}
+      </article>
+      {% endfor %}
+      <section class="empty-state" data-review-empty {% if entries %}hidden{% endif %}><span class="empty-symbol" aria-hidden="true">✦</span><h2>{{ 'Graded entries' if graded else 'All caught up.' }}</h2><p>{{ 'No graded entries yet.' if graded else 'No entries to review yet. Your side-by-side diffs will appear here.' }}</p><wa-button href="{{ url_for('polish.index', preview=1) }}" appearance="outlined">Preview the layout</wa-button></section>
+    </div>
+    <p class="desk-note">Good and Awesome apply after validation. Conflicts or failed checks block application. Changing a rating updates points; it does not undo an applied change.</p>
+    <noscript><p>Enable JavaScript to select reactions.</p></noscript>
+  </main>
+</body>
+</html>

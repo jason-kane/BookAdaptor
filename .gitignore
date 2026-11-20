@@ -20,3 +20,7 @@ coverage/tmp/*
 
 # JavaScript test dependencies
 node_modules/
+
+# Polish review data (persisted by the Home service)
+src/todo/polish.sqlite3*
+src/todo/polish-worker.lock

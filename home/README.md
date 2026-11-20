@@ -108,6 +108,93 @@ Open http://localhost:8080/. Home is the only service enabled by default. Other
 services use the `on-demand` profile (the test runner uses `test`). Explicitly
 requesting a service starts it and its declared dependencies.
 
+Polish is served directly by Home at `/polish` and appears in List, Array, and
+Icons views. It displays a vertical list of described, side-by-side text diffs
+with one changeable reaction per entry: Trash, Bad, Good, or Awesome.
+Diffs show four lines of unchanged context around each change. The “…” controls
+expand or collapse omitted prefix, middle, and suffix sections in place.
+Saved grades fade out and collapse from the default ungraded list. Show graded
+opens rating history for review or re-rating; application warnings remain visible
+above the queue. Show Goals toggles the accepted catalogue at the top and updates
+immediately when a goal proposal is accepted. The empty
+list links to `/polish?preview=1`, which shows sample entries with temporary
+reactions without inserting data. Real entries and reactions persist in
+`polish.sqlite3` alongside Home's TODO data (`TODO_DIR`); `POLISH_DB` in the app
+configuration can override the database path. Each new internal text proposal
+records a model label and an established goal. The initial goal catalogue is
+staged as proposals attributed to GPT 6.1 Sol Medium, all advancing G001;
+`docs/polish.md` describes their scope. General entry ingestion is not exposed yet. The installed Codex `$polish` skill opens a new browser tab at
+this endpoint. Good earns 1 point and Awesome earns 5; both immediately apply compatible
+goal or text-file targets. Git three-way merging preserves non-overlapping edits; overlapping edits
+produce warnings without overwriting targets or writing conflict markers.
+Bad earns −0.5 points and Trash −2.5; both skip application/conflict work. Home mounts the
+checkout at `/polish-workspace` for accepted text-file changes. Source application
+does not restart other services. Changing a rating updates points without undoing
+an already applied change. Polish's local CSS and JavaScript use versioned URLs; bump their
+`v` parameters in `polish.html` when changing assets.
+
+**Rub one out**, above Model scores, uses the selected model for one small
+polish toward the lowest-scoring available goal. A goal's score is the sum of
+current rating points on suggestions attributed to it, across all models; goals
+without ratings score zero. Ties are chosen randomly. Goals with queued or
+running searches are excluded. The chosen goal/score and job status are shown,
+and retries preserve the original selection.
+
+**Six pack** beside it reserves six distinct available goals and queues one
+small improvement for each with the same selected model and prompt snapshot.
+Progress is saved per job and as one batch, so each completed entry can be
+reviewed independently after a reload. It is available when at least six goals
+have no queued/running search or correction.
+
+Each accepted goal has a model selector and **Seek improvements**. Opening Goals
+starts the on-demand `polish_worker` for model discovery; it does not generate.
+The worker uses host networking to reach a host-local Ollama at
+`http://127.0.0.1:11434` (`OLLAMA_BASE_URL` overrides it). It reads the checkout
+through a separate read-only mount and persists its queue/progress in the shared
+Polish database. A selected model produces one attributed, ungraded entry;
+**Review new entry** opens it. Jobs survive page reloads, and failed/interrupted
+requests require explicit retries, except that proposal validation failures get
+one bounded correction attempt with the same model and diagnostic context.
+
+Code proposals are syntax/lint checked and run against the relevant tests in
+isolated baseline and patched checkouts before entering review. Positive ratings
+recheck the actual Git-merged result before any live source replacement. The
+validation image uses the existing application dependencies plus Node; build it
+with Docker's local builder (the base application image is local):
+
+```sh
+BUILDX_BUILDER=default docker compose build polish_validator
+```
+
+Checks run in disposable containers with no network, GPUs, Docker socket,
+provider credentials, or writable host mounts. The same relevant tests run before
+and after the diff. Missing coverage, failed baselines, or unavailable validation
+infrastructure block application. Candidate syntax/lint/test failures get at most
+one additional generation using the same model and the failure details. A
+corrected proposal requires its own review; a second failure stops. Bad/Trash
+entries do not start correction work, and Git conflicts never invoke the model.
+
+Each model has an editable Markdown prompt profile in `home/polish/prompts/`.
+YAML frontmatter controls structured output, system/user instruction delivery,
+Ollama thinking, and Python fragment indentation. Qwen3 profiles request no
+thinking and use relative-indentation fragments. Jobs/attempts retain the exact
+profile and revision hash. G018 searches expose the selected profile and recent
+validation failures so its prompting method can be improved through Polish.
+Profile frontmatter is validated before application; old jobs retain their
+original profile snapshots. No service restart is needed for prompt-file edits
+because each new search loads and snapshots the current profile.
+
+To enable OpenAI models, set `OPENAI_API_KEY` in the environment used by Compose,
+then recreate only the worker:
+
+```sh
+docker compose up -d --no-build --no-deps --force-recreate polish_worker
+```
+
+Keys remain in worker environment configuration and are never returned to the
+browser or stored with jobs. Refresh models after updating provider configuration.
+The worker uses the Home image; build `home` first on a fresh installation.
+
 Choosing Library opens a loader, starts `artifactserver` and its Redis dependency,
 waits for `/library/` to respond, then opens http://localhost:8082/library/.
 Choosing Styler starts `artifactserver`, Redis, and `websocket`, waits for `/styles/`

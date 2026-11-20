@@ -63,7 +63,7 @@ def test_each_panel_has_info_and_declared_service_mapping():
     with patch('home.service_info.snapshot') as query:
         page = app.test_client().get('/').get_data(as_text=True)
     query.assert_not_called()
-    assert page.count('<wa-tab panel="info">Info</wa-tab>') == 8
+    assert page.count('<wa-tab panel="info">Info</wa-tab>') == len(app.extensions['home_panel_services'])
     for name in app.extensions['home_panel_services']:
         assert f'/programs/panels/{name}/info' in page
     assert app.extensions['home_panel_services']['redis'] == ('redis', 'redisinsight')
