@@ -16,11 +16,22 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".ti
 
 
 def describe_animation_source(chapter, image):
+    """Describe the actual selected still, independently of story-derived metadata.
+
+    Args:
+        chapter (Chapter): The chapter object containing the image.
+        image (dict): The image dictionary containing the image file path.
+
+    Returns:
+        str: A concise factual description of the visible starting state of the image.
+    """
     """Describe the actual selected still, independently of story-derived metadata."""
     from artifact_editor import llm
     from llama_inference import chat_completion
 
     filename = chapter.get_image_filename(image)
+    if image is None:
+        raise ValueError('Image is None')
     if not filename or not Path(filename).is_file():
         raise ValueError('Choose a source image before generating its animation description.')
     path = Path(filename)
@@ -48,6 +59,7 @@ def describe_animation_source(chapter, image):
         description = description.strip()
         llm.set_cached_prompt(key, description, format='json')
     image['source_visual_description'] = description.strip()
+    # source_visual_description_sha256: SHA-256 hash of the source image for provenance tracking
     image['source_visual_description_sha256'] = digest
     return description.strip()
 

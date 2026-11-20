@@ -10,6 +10,12 @@ def read_chapter_source(path):
 
     Unimported chapters can still be previewed from their legacy source. Once
     imported, even an empty database chapter takes precedence over that file.
+
+    Parameters:
+        path (str): The path to the chapter source file.
+
+    Returns:
+        BeautifulSoup: A BeautifulSoup object representing the chapter content, or None if the file does not exist.
     """
     path = Path(path)
     if os.environ.get("CHAPTER_STORAGE", "xml") == "postgres":
