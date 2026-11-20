@@ -138,6 +138,37 @@ def test_frame_cuts_keep_first_intact_and_remove_later_title_audio_and_pause(boo
     assert textoviva.kept_ranges(chapter) == ([(3, 9)], 9)
 
 
+def test_manifest_maps_disjoint_source_ranges_and_exact_chapter_boundaries(book):
+    items = [dict(number=number, title=title, ranges=ranges, total=100,
+                  video=f'chapter-{number}.mp4', video_stamp=123,
+                  audio=f'chapter-{number}.wav', audio_stamp=456)
+             for number, title, ranges in [(1, 'Beginning', [(0, 29)]),
+                                            (3, 'Next\nChapter', [(4, 10), (20, 32)])]]
+    for item in items:
+        for key in ('video', 'audio'):
+            path = Path(book.bookdir).parent / item[key]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f'{key}-{item["number"]}'.encode())
+            item[key] = str(path)
+            item[key + '_size'] = path.stat().st_size
+        item['aspect'] = 'landscape'
+    manifest = textoviva.chapter_manifest(book, items, 25)
+    first, second = manifest['chapters']
+    assert (first['start_frame'], first['end_frame']) == (0, 29)
+    assert (second['start_frame'], second['end_frame'], second['frame_count']) == (29, 47, 18)
+    assert second['start_seconds'] == 29 / 25
+    assert second['segments'] == [
+        dict(source_start_frame=4, source_end_frame=10, book_start_frame=29, book_end_frame=35),
+        dict(source_start_frame=20, source_end_frame=32, book_start_frame=35, book_end_frame=47)]
+    assert manifest['total_frames'] == 47
+    import hashlib
+    assert first['source_video_sha256'] == hashlib.sha256(b'video-1').hexdigest()
+    assert second['source_video_sha256'] == hashlib.sha256(b'video-3').hexdigest()
+    assert second['source_audio_sha256'] == hashlib.sha256(b'audio-3').hexdigest()
+    assert textoviva.table_of_contents(manifest) == (
+        '00:00:00 Chapter 1: Beginning\n00:00:01 Chapter 3: Next Chapter\n')
+
+
 def test_editor_role_changes_can_reuse_frames_but_changed_text_cannot(book):
     chapter = make_chapter(book, xml=timeline())
     path = pages.sections_path(chapter)
@@ -177,24 +208,35 @@ def test_assembly_reuses_exact_frames_and_trims_audio(book, monkeypatch):
     plan = textoviva.plan(book)
     original_encode = tools.assemble_mp4
     seen = []
+    encoded_frames=[]
     def encode(**kwargs):
         directory = Path(kwargs['framedir'])
         links = sorted(directory.glob('frame_*.png'))
         seen.extend(path.resolve() for path in links)
         assert all(path.is_symlink() for path in links)
-        assert kwargs['max_frames'] == 15
+        assert kwargs['max_frames'] == len(links)
+        encoded_frames.append(kwargs['max_frames'])
         with wave.open(kwargs['wavfile'], 'rb') as audio:
-            assert audio.getnframes() == 90000  # 15 frames at 8 FPS, 48kHz
+            assert audio.getnframes() == kwargs['max_frames'] * 6000  # 48kHz at 8 FPS
         return original_encode(**kwargs)
     monkeypatch.setattr(tools, 'assemble_mp4', encode)
     textoviva.execute({'arguments': dict(author=book.author.name, title=book.title,
                                         fingerprint=textoviva.fingerprint(plan))})
     assert len(seen) == 15
+    assert encoded_frames == [9,6]
     assert seen[9].name == 'frame_000003.png'
     probe = subprocess.run(['/usr/bin/ffprobe', '-v', 'error', '-show_streams', '-of', 'json',
                             str(textoviva.output_path(book))], check=True, capture_output=True, text=True)
     streams = json.loads(probe.stdout)['streams']
     assert int(next(s for s in streams if s['codec_type'] == 'video')['nb_frames']) == 15
+    manifest = json.loads(textoviva.companion_path(book, 'chapters').read_text())
+    assert manifest['total_frames'] == 15
+    assert [(c['start_frame'], c['end_frame']) for c in manifest['chapters']] == [(0, 9), (9, 15)]
+    assert manifest['chapters'][1]['segments'][0]['source_start_frame'] == 3
+    assert manifest['video_size_bytes'] == textoviva.output_path(book).stat().st_size
+    assert all(c['source_video_sha256'] == textoviva.file_sha256(c['source_video'])
+               for c in manifest['chapters'])
+    assert textoviva.companion_path(book, 'toc').read_text().startswith('00:00:00 Chapter 1:')
     assert next(s for s in streams if s['codec_type'] == 'audio')
     assert all(Path(chapter.get_video_filename()).read_bytes() == b'video' for chapter in items)
 

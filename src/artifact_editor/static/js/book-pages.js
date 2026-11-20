@@ -52,13 +52,26 @@ if (panel) {
             const data = await response.json();
             const job = data.job || {};
             const busy = ['queued', 'running', 'cancelling'].includes(job.state);
+            const updates = data.chapter_updates || [];
+            const updateStatus = document.getElementById('book-video-chapter-updates');
+            const changed = updates.filter(item => item.state === 'updated').map(item => item.number);
+            const added = updates.filter(item => item.state === 'new').map(item => item.number);
+            const removed = updates.filter(item => item.state === 'removed').map(item => item.number);
+            const setup = updates.some(item => item.state === 'segment_setup');
+            if (setup) updateStatus.textContent = 'This existing book video predates chapter segments. Rebuild it once to enable chapter-only replacement.';
+            else if (changed.length) updateStatus.textContent = `Updated chapter${changed.length === 1 ? '' : 's'}: ${changed.join(', ')}. Create Book Video will replace only these chapters.`;
+            else if (!data.ready && added.length) updateStatus.textContent = `Initial assembly will include chapters ${added.join(', ')}.`;
+            else if (added.length || removed.length) updateStatus.textContent = `${added.length ? `New chapters: ${added.join(', ')}. ` : ''}${removed.length ? `Removed chapters: ${removed.join(', ')}. ` : ''}Create Book Video will update the chapter list.`;
+            else updateStatus.textContent = data.ready ? 'Book video is up to date.' : '';
             document.getElementById('book-textoviva-tab').disabled = !data.enabled;
             document.getElementById('book-video-availability').textContent = data.enabled ? '' :
                 `Textoviva requires a video for every chapter.${data.missing.length ? ' Missing: ' + data.missing.join(', ') + '.' : ''}`;
-            button.disabled = submitting || busy || !data.enabled;
+            button.disabled = submitting || busy || !data.enabled || (data.ready && !updates.length);
             button.loading = submitting || busy;
+            button.textContent = data.ready && updates.length ? 'Update book video' : 'Create book video';
+            const updateNumbers = [...changed,...added].join(', ');
             status.textContent = requestError || (job.state === 'queued' ? 'Queued in CPU Queue' :
-                job.state === 'running' ? 'Assembling all chapters from saved frames and narration…' :
+                job.state === 'running' ? (updateNumbers ? `Updating chapter${changed.length + added.length === 1 ? '' : 's'} ${updateNumbers} and remuxing the unchanged segments…` : 'Assembling chapter segments from saved frames and narration…') :
                 job.state === 'complete' ? 'Book video ready' : job.message || '');
             if (data.ready) {
                 video.hidden = false;

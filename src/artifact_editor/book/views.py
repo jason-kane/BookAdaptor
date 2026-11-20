@@ -58,7 +58,7 @@ def save_page_template(author, title, kind):
 @bp.route('/textoviva', methods=['GET', 'POST'])
 def book_textoviva(author, title):
     from flask import jsonify
-    from .textoviva import availability, enqueue
+    from .textoviva import availability, chapter_updates, enqueue
     book = Book(Author(author), title)
     if request.method == 'POST':
         try:
@@ -70,7 +70,7 @@ def book_textoviva(author, title):
     try:
         job_id = client.get(f'book_textoviva:{author}:{title}')
         job = json.loads(client.get(f'cpu_job:{job_id}') or '{}') if job_id else {}
-        return jsonify(**availability(book), job={key: job[key] for key in
+        return jsonify(**availability(book), chapter_updates=chapter_updates(book), job={key: job[key] for key in
                        ('job_id', 'state', 'message', 'duration_seconds') if key in job})
     finally:
         client.close()
@@ -85,6 +85,32 @@ def book_textoviva_video(author, title):
         return 'Create the book video first.', 404
     response = send_file(path, mimetype='video/mp4', conditional=True,
                          as_attachment=request.args.get('download') == '1', download_name=f'{title}.mp4')
+    response.cache_control.no_cache = True
+    return response
+
+
+@bp.route('/textoviva/companion/<kind>')
+def book_textoviva_companion(author, title, kind):
+    from flask import send_file
+    from .textoviva import companion_path, output_path
+    if kind not in ('chapters', 'toc'):
+        return 'Unknown companion file.', 404
+    book = Book(Author(author), title)
+    path = companion_path(book, kind)
+    if not path.is_file():
+        return 'Create the book video to generate its chapter companion files.', 404
+    # A crash between publication steps must not expose an older cut map for
+    # a newer video. The manifest is published last and identifies its MP4.
+    import json
+    try:
+        manifest = json.loads(companion_path(book, 'chapters').read_text(encoding='utf-8'))
+        stat = output_path(book).stat()
+        if (manifest['video_size_bytes'], manifest['video_mtime_ns']) != (stat.st_size, stat.st_mtime_ns):
+            return 'Chapter companion files do not match the book video. Create the book video again.', 409
+    except (OSError, ValueError, KeyError):
+        return 'Chapter companion files are unavailable. Create the book video again.', 409
+    response = send_file(path, as_attachment=True, download_name=f'{title}{path.suffixes[-2]}{path.suffix}',
+                         mimetype='application/json' if kind == 'chapters' else 'text/plain')
     response.cache_control.no_cache = True
     return response
 
@@ -499,12 +525,13 @@ def table_of_contents(author, title):
     storage_conflict = len(book_locations) > 1
 
     from .pages import templates
-    from .textoviva import availability
+    from .textoviva import availability, chapter_updates
     return render_template(
         "book.html",
         book=book,
         page_templates=templates(book),
         textoviva_status=availability(book),
+        textoviva_updates=chapter_updates(book),
         storage_available=locations['storage'].is_dir(),
         shelf_available=locations['shelf'].is_dir(),
         book_location=book_location,

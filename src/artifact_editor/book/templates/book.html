@@ -8,7 +8,7 @@
 <script src="/static/js/characters.js"></script>
 <script defer src="{{ url_for('static', filename='js/library-storage.js', v='5') }}"></script>
 <script defer src="{{ url_for('static', filename='js/book-lora-training.js', v='websocket-1') }}"></script>
-<script type="module" src="{{ url_for('static', filename='js/book-pages.js', v='4') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/book-pages.js', v='5') }}"></script>
 {% endblock %}
 
 {% block styles %}
@@ -124,11 +124,14 @@
              data-status-url="{{ url_for('library.book.book_textoviva', author=author.name, title=title) }}"
              data-video-url="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title) }}">
             <h3>Textoviva</h3>
-            <p>Create one video with all {{ textoviva_status.count }} chapters in order. Chapter one stays intact; later chapters omit Book Page sections. Existing chapter frames and narration are reused.</p>
+            <p>Create one video with all {{ textoviva_status.count }} chapters in order. Chapter one stays intact; later chapters omit Book Page sections. Existing chapter frames and narration are reused; later updates replace only changed chapter segments.</p>
             <wa-button id="create-book-video" variant="brand" {% if not textoviva_status.enabled %}disabled{% endif %}>Create book video</wa-button>
+            <p id="book-video-chapter-updates" role="status" aria-live="polite">Checking chapter updates…</p>
             <p id="book-textoviva-status" role="status" aria-live="polite"></p>
             <video id="book-video" controls preload="metadata" {% if not textoviva_status.ready %}hidden{% endif %} {% if textoviva_status.ready %}src="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title) }}"{% endif %}></video>
             <a id="book-video-download" href="{{ url_for('library.book.book_textoviva_video', author=author.name, title=title, download=1) }}" {% if not textoviva_status.ready %}hidden{% endif %}>Download book video</a>
+            <a href="{{ url_for('library.book.book_textoviva_companion', author=author.name, title=title, kind='chapters') }}">Download chapter frame/time manifest</a>
+            <a href="{{ url_for('library.book.book_textoviva_companion', author=author.name, title=title, kind='toc') }}">Download chapter table of contents</a>
         </div>
     </wa-tab-panel>
     <wa-tab-panel name="characters">
