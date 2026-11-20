@@ -63,18 +63,22 @@ def create_app(config=None):
         return {"home_panels": app.extensions["home_panels"], "service_table_rows": TABLE_ROWS}
 
     @app.route("/home-todo/", methods=["GET", "POST"])
-    def todo():
+    def todo() -> str:
         directory = Path(app.config["TODO_DIR"])
         directory.mkdir(parents=True, exist_ok=True)
         filename = directory / "home.json"
         if request.method == "POST":
+            delta = request.form.get("delta", "")
+            if not delta:
+                return "Missing 'delta' parameter", 400
             try:
-                delta = json.loads(request.form.get("delta", ""))
-            except ValueError:
-                return "Invalid JSON", 400
+                delta = json.loads(delta)
+            except json.JSONDecodeError as e:
+                return f"Invalid JSON: {e}", 400
             filename.write_text(json.dumps(delta, indent=2))
             return "", 204
-        return app.response_class(filename.read_text() if filename.exists() else "{}",
-                                  mimetype="application/json")
+        content = filename.read_text() if filename.exists() else "{}"
+        return app.response_class(content, mimetype="application/json")
+
 
     return app
