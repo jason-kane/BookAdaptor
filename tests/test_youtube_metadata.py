@@ -34,7 +34,7 @@ def test_short_threshold_and_long_description_fallback():
 def test_title_example():
     result = metadata.title_defaults('The Pasture', 'Robert Frost',
                                     {'genre': 'poetry', 'content_format': 'poem'})
-    assert result['upload_title'] == 'The Pasture by Robert Frost #booktok #poetry #frost #poem'
+    assert result['upload_title'] == 'The Pasture by Robert Frost #booktube #poetry #frost #poem'
 
 
 def test_upload_tags_follow_content_format():
@@ -47,7 +47,7 @@ def test_upload_tags_follow_content_format():
 def test_title_includes_chapter_and_book():
     result = metadata.title_defaults('Selected Poems', 'Robert Frost',
                                     {'genre': 'poetry', 'content_format': 'poem'}, 'The Pasture')
-    assert result['upload_title'] == 'The Pasture — Selected Poems by Robert Frost #booktok #poetry #frost #poem'
+    assert result['upload_title'] == 'The Pasture — Selected Poems by Robert Frost #booktube #poetry #frost #poem'
     assert result['title_title'] == 'The Pasture — Selected Poems'
 
 

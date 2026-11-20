@@ -31,7 +31,7 @@ def title_defaults(title, author, config, chapter_title=''):
     last_name = hashtag(author.split()[-1]) if author.split() else ''
     category = hashtag(config.get('genre') or config.get('category') or '')
     content_format = hashtag(config.get('content_format') or '')
-    tags = ['booktok', category, last_name, content_format]
+    tags = ['booktube', category, last_name, content_format]
     generated_title = f'{title} by {author} ' + ' '.join('#' + tag for tag in tags if tag)
     return dict(upload_title=generated_title, title_title=title,
                 upload_tags='book,literature,story,audiobook' + (',poem' if content_format == 'poem' else ''),
