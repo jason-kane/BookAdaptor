@@ -153,6 +153,26 @@ def move_image(chapter, image_index, target_type, target_index, position, librar
     chapter.save_timeline()
 
 
+def move_silence(chapter, silence_index, target_type, target_index, position):
+    """Move an added silence beside another timeline item."""
+    if target_type not in ("phrase", "image", "silence", "scene") or position not in ("before", "after"):
+        raise ValueError("Invalid timeline destination")
+    soup = chapter.get_xml()
+    silence = soup.find("silence", attrs={"index": str(silence_index)})
+    target = soup.find(target_type, attrs={"index": str(target_index)})
+    if silence is None or target is None:
+        raise ValueError("Timeline item no longer exists; reload the chapter")
+    if silence is target:
+        return
+    silence.extract()
+    if position == "before":
+        target.insert_before(silence)
+    else:
+        target.insert_after(silence)
+    update_image_frames(soup)
+    chapter.save_timeline()
+
+
 def update_image_frames(soup):
     last_image = None
     frames = 0

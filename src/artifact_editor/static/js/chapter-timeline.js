@@ -177,7 +177,7 @@ function initializeChapterTimeline() {
     };
     list.addEventListener('dragstart', event => {
         const item = destination(event);
-        if (saving || !item || !['image', 'scene'].includes(item.dataset.timelineType)) {
+        if (saving || !item || !['image', 'scene', 'silence'].includes(item.dataset.timelineType)) {
             event.preventDefault();
             return;
         }

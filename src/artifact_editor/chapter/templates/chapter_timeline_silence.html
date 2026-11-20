@@ -1,5 +1,7 @@
 <div class="phrase-container wa-stack wa-gap-s" id="timeline-silence-{{ silence['index'] }}"
      data-timeline-type="silence" data-timeline-index="{{ silence['index'] }}">
+    <span class="chapter-silence-drag-handle" draggable="true" title="Drag to move silence"
+          aria-label="Drag to move silence">⠿</span>
     {% with timing=entry.timing if entry is defined else timing, timing_id='chapter-silence-timing-' ~ silence['index'] %}
     {% include "chapter_phrase_timing.html" %}
     {% endwith %}

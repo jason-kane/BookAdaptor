@@ -805,14 +805,23 @@ def timeline_scene_image(scene_index):
 @bp.post("/timeline/move-image")
 def move_timeline_image():
     from .timeline import move_image
+    from .timeline import move_silence
     from .scenes import move_scene
     from artifact_editor.phrases.htmx import chapter_timing_updates
 
     try:
         item_type = request.form.get("item_type", "image")
-        if item_type not in ("image", "scene"):
+        if item_type not in ("image", "scene", "silence"):
             raise ValueError("Invalid draggable timeline item")
-        if item_type == "scene":
+        if item_type == "silence":
+            move_silence(
+                g.chapter,
+                int(request.form["image_index"]),
+                request.form["target_type"],
+                int(request.form["target_index"]),
+                request.form["position"],
+            )
+        elif item_type == "scene":
             move_scene(
                 g.chapter,
                 int(request.form["image_index"]),
