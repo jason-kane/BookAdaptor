@@ -197,6 +197,19 @@ def _sync(session, row, tree, baseline=None):
     positions = {}
     legacy_indexes = set()
     paragraph_position = 0
+    explicit_identities = {_identity(tag) for tag in root.find_all(list(KINDS))
+                           if _identity(tag) is not None}
+
+    def record_identity(node):
+        identity = _identity(node)
+        if identity is None and baseline is not None:
+            old = _find(baseline, node)
+            candidate = _identity(old) if old is not None else None
+            # A new inserted tag can take an existing tag's numeric index.
+            # Its identity must not alias the existing tag after renumbering.
+            if candidate not in explicit_identities:
+                identity = candidate
+        return identity
 
     def encode(node, paragraph=None):
         nonlocal paragraph_position
@@ -205,10 +218,9 @@ def _sync(session, row, tree, baseline=None):
         if node is root:
             entity = row
         elif node.name in KINDS:
-            identity = _identity(node)
-            if identity is None and baseline is not None:
-                old = _find(baseline, node)
-                identity = _identity(old) if old is not None else None
+            identity = record_identity(node)
+            if identity is not None and identity in kept:
+                raise ValueError("Timeline records must have distinct database identities")
             entity = records.get(identity)
             if entity is not None and not isinstance(entity, KINDS[node.name]):
                 raise ValueError("Timeline record kind cannot change")
@@ -249,10 +261,7 @@ def _sync(session, row, tree, baseline=None):
     desired_indexes = {}
     seen_indexes = set()
     for tag in root.find_all(list(KINDS)):
-        identity = _identity(tag)
-        if identity is None and baseline is not None:
-            old = _find(baseline, tag)
-            identity = _identity(old) if old is not None else None
+        identity = record_identity(tag)
         try:
             index = _typed("index", tag.get("index"))
         except ValueError:

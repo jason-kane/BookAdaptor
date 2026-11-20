@@ -96,6 +96,30 @@ def test_attribute_removal_and_phrase_content(chapter, engine):
     assert actual.phrase.text == 'New words'
 
 
+def test_inserted_phrase_has_distinct_identity_and_edit_survives_reload(chapter, engine):
+    from artifact_editor.chapter.timeline import add_phrase_below
+
+    tree = load(chapter, engine)
+    original_id = storage._identity(tree.phrase)
+    chapter.get_xml = lambda: chapter.soup
+    chapter.save_timeline = lambda: storage.replace_content(chapter, chapter.soup, engine=engine)
+    inserted = add_phrase_below(chapter, 0, position='above')
+    assert storage._identity(inserted) != original_id
+    actual = load(again(chapter), engine)
+    first, second = actual.find_all('phrase')
+    assert [p['index'] for p in (first, second)] == ['0', '1']
+    assert storage._identity(second) == original_id
+    assert first.get_text() == ''
+    assert second.get_text() == 'Hello Jack & Jill!'
+
+    inserted.string = 'she screamed:'
+    inserted['delta'] = '[{"insert":"she screamed:"}]'
+    storage.save_records(chapter, [inserted], engine=engine)
+    actual = load(again(chapter), engine)
+    assert actual.find('phrase', index='0').get_text() == 'she screamed:'
+    assert actual.find('phrase', index='1').get_text() == 'Hello Jack & Jill!'
+
+
 def test_move_reindex_and_delete_preserve_identity_and_task_reference(chapter, engine):
     tree = load(chapter, engine)
     identity = storage._identity(tree.image)
