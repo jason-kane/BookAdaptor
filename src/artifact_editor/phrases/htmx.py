@@ -348,7 +348,19 @@ def chapter_audio_controls(chapter, phrase_xml, oob=False):
         **chapter.kwargs,
     )
     return f"""<div id="chapter-audio-controls-{phrase_xml['index']}" class="wa-stack wa-gap-xs"{oob_attribute}>
-        {pronunciation_textarea(chapter, phrase_xml, target=target)}
+        <div style="display:flex; align-items:flex-end; gap:var(--wa-space-s)">
+            <div style="flex:1; min-width:0">{pronunciation_textarea(chapter, phrase_xml, target=target)}</div>
+            <wa-button pill size="small" type="button"
+                aria-label="Generate pronunciation from phrase text"
+                title="Generate pronunciation from phrase text"
+                data-regenerate-phrase="{phrase_xml['index']}"
+                hx-post="{url_for('library.book.chapter.phrases.pronunciation.repronounce_phrase', phrase_index=phrase_xml['index'], **chapter.kwargs)}"
+                hx-target="{target}" hx-swap="outerHTML" hx-disabled-elt="this"
+                hx-on::before-request="this.loading=true"
+                hx-on::after-request="this.loading=false">
+                <wa-icon name="wand-magic-sparkles" aria-hidden="true"></wa-icon>
+            </wa-button>
+        </div>
         {soundslike(phrase_xml, soundslike_url, key=phrase_xml['index'])}
         {audio_player(chapter, phrase_xml)}
         <div class="wa-cluster">
@@ -397,11 +409,12 @@ def chapter_merge_with_previous_button(chapter, phrase_xml):
         variant="neutral">Merge with Previous</wa-button>"""
 
 
-def pronunciation_textarea(chapter, phrase_xml, target=None):
+def pronunciation_textarea(chapter, phrase_xml, target=None, oob=False):
     target = target or f"#phrase-{phrase_xml['index']}"
+    oob_attribute = ' hx-swap-oob="outerHTML"' if oob else ""
     return f"""
     <wa-textarea
-        id="pronounce_{phrase_xml['index']}"
+        id="pronounce_{phrase_xml['index']}"{oob_attribute}
         class="pronunciation-input"
         label="Pronunciation (IPA)"
         name="pronunciation"

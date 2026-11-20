@@ -231,26 +231,27 @@ def delete_global_pronunciation(key):
 
 @bp.route("actions/repronounce_phrase/<phrase_index>", methods=["POST"])
 def repronounce_phrase(phrase_index, force=True):
-    """
-    """
-    page = request.form.get("page", 0)
+    """Replace pronunciation using the current phrase and its configured voice."""
+    g.chapter.load_xml(force=True)
     phrase_xml = g.chapter.get_phrase(phrase_index)
 
     if phrase_xml is None:
-        log.error("Invalid phrase_index: %s", phrase_index)
-        return
+        return "Phrase not found", 404
 
-    pronunciation = phrases.repronounce_phrase(g.chapter, phrase_xml)
-
-    phrase_xml = g.chapter.get_phrase(phrase_index)
-    phrase_xml.attrs["pronunciation"] = pronunciation
+    # A fresh pronunciation must come from the words, not a manual IPA override.
+    for attribute in ("pronunciation", "pronunciation_override", "filtered_pronunciation"):
+        phrase_xml.attrs.pop(attribute, None)
     g.chapter.save_phrase(phrase_xml)
+    from artifact_editor.phrases.views import regenerate_phrase
 
-    log.info(f"Repronounced phrase {phrase_index} with new pronunciation: {phrase_xml.attrs.get('pronunciation', '')}")
-    phrase_xml = g.chapter.get_phrase(phrase_index)
-    log.info(f"Same, right? {phrase_xml.attrs.get('pronunciation', '')}")
-
-    return audio_htmx.pronunciation_textarea(g.chapter, phrase_xml), 200
+    response = regenerate_phrase(int(phrase_index), force=True)
+    if request.headers.get("HX-Target") == f"chapter-audio-controls-{phrase_index}":
+        return response
+    if response[1] != 200:
+        return response
+    return phrases_htmx.pronunciation_textarea(
+        g.chapter, g.chapter.get_phrase(phrase_index)
+    ), 200
 
 
 # /Mark%20Twain/A%20Connecticut%20Yankee%20in%20King%20Arthurs%20Court/0001/audio/pronunciation/bedivere.wav

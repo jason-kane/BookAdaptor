@@ -6,6 +6,41 @@ from artifact_editor.chapter import views
 
 log = logging.getLogger(__name__)
 
+@pytest.mark.parametrize("text,invalidated", [("New words.\n", True), ("Original words.\n", False)])
+def test_phrase_text_save_invalidates_pronunciation_and_refreshes_field(monkeypatch, text, invalidated):
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from bs4 import BeautifulSoup
+    from flask import Flask, g
+    from artifact_editor.phrases import htmx
+
+    phrase = BeautifulSoup('<phrase index="1">Original words.</phrase>', 'xml').phrase
+    attributes = {name: 'old' for name in (
+        'pronunciation', 'pronunciation_override', 'filtered_pronunciation',
+        'src', 'audio_generation_id')}
+    phrase.attrs.update(attributes)
+    chapter = SimpleNamespace(get_phrase=lambda _: phrase, save_phrase=Mock())
+    refresh = Mock(return_value='<wa-textarea hx-swap-oob="outerHTML"></wa-textarea>')
+    monkeypatch.setattr(htmx, 'pronunciation_textarea', refresh)
+    monkeypatch.setattr(views, '_sync_sections_from_phrase_deltas', Mock())
+    app = Flask(__name__)
+    with app.test_request_context(method='POST', data={
+            'delta': json.dumps({'ops': [{'insert': text, 'attributes': {'bold': True}}]})}):
+        g.chapter = chapter
+        body, status = views.save_phrase_delta(1)
+    assert status == 200
+    assert phrase.get_text() == text
+    chapter.save_phrase.assert_called_once_with(phrase)
+    if invalidated:
+        assert all(name not in phrase.attrs for name in attributes)
+        refresh.assert_called_once_with(chapter, phrase, target='#chapter-audio-controls-1', oob=True)
+        assert 'hx-swap-oob' in body
+    else:
+        assert all(phrase[name] == value for name, value in attributes.items())
+        refresh.assert_not_called()
+        assert body == ''
+
 @pytest.mark.parametrize('illustration', [False, True])
 @pytest.mark.parametrize('method', ['plain', 'verse'])
 def test_import_chapter_runs_without_http_context_and_places_images_after_audio(monkeypatch, tmp_path, method, illustration):

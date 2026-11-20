@@ -18,17 +18,24 @@ spec.loader.exec_module(helpers)
 
 
 @pytest.mark.parametrize('changed', [True, False])
-def test_wording_changes_clear_old_audio_and_ipa_but_formatting_edits_preserve_them(changed):
+def test_wording_changes_clear_old_audio_and_ipa_but_formatting_edits_preserve_them(changed, monkeypatch):
     phrase = BeautifulSoup('<paragraph><phrase index="2" src="old.wav" pronunciation="old" pronunciation_override="old" audio_generation_id="old">Old text.</phrase></paragraph>', 'xml').phrase
     chapter = SimpleNamespace(get_phrase=lambda _: phrase, save_phrase=Mock())
     save = helpers.function('src/artifact_editor/chapter/views.py', 'save_phrase_delta',
         t=SimpleNamespace(ops_to_internal_representation=lambda ops: SimpleNamespace(render_tree=lambda **_: ops[0]['insert'])),
         compress_ops=lambda ops: ops, _sync_sections_from_phrase_deltas=Mock())
+    refresh = Mock(return_value='<wa-textarea hx-swap-oob="outerHTML"></wa-textarea>')
+    monkeypatch.setitem(sys.modules, 'artifact_editor.phrases.htmx',
+                        SimpleNamespace(pronunciation_textarea=refresh))
     text = 'New phrase.' if changed else 'Old text.'
     app = flask.Flask(__name__)
     with app.test_request_context(method='POST', data={'delta': helpers.json.dumps({'ops': [{'insert': text}]})}):
         flask.g.chapter = chapter
-        assert save(2) == ('', 200)
+        assert save(2) == (refresh.return_value if changed else '', 200)
+    if changed:
+        refresh.assert_called_once_with(chapter, phrase, target='#chapter-audio-controls-2', oob=True)
+    else:
+        refresh.assert_not_called()
     assert phrase.get_text() == text
     for key in ('src', 'pronunciation', 'pronunciation_override', 'audio_generation_id'):
         assert (key not in phrase.attrs) == changed

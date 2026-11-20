@@ -1347,7 +1347,6 @@ def phrase_editor(phrase_index: int):
     id="phrase_{phrase.index}_ta" class="phrase-editor"
     hx-swap-oob="true"
 >
-<h1>Spot This</h1>
 </div>
     """
 
@@ -1465,6 +1464,7 @@ def phrase_editor(phrase_index: int):
                     delta: contents,
                 }}, swap: 'none', onError: function (err) {{
                     console.error('Error updating:', err);
+                    document.getElementById('chapter-timeline-status').textContent = 'Phrase save failed. Your edit may not have been saved.';
                 }}
             }}));
         }});
@@ -2866,7 +2866,8 @@ def save_phrase_delta(phrase_index: int):
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         return f"Invalid phrase delta: {error}", 400
 
-    if phrase_xml.get_text().strip() != plain_text.strip():
+    text_changed = phrase_xml.get_text().strip() != plain_text.strip()
+    if text_changed:
         # IPA overrides and generated audio belong to the previous spoken text.
         # Keep them for formatting-only edits, but never speak stale IPA after
         # a wording change. A fresh src will be derived from the new text.
@@ -2879,6 +2880,13 @@ def save_phrase_delta(phrase_index: int):
     phrase_xml.attrs.pop("latex_rainbow", None)
     g.chapter.save_phrase(phrase_xml)
     _sync_sections_from_phrase_deltas(g.chapter)
+    if text_changed:
+        from artifact_editor.phrases.htmx import pronunciation_textarea
+
+        return pronunciation_textarea(
+            g.chapter, phrase_xml,
+            target=f"#chapter-audio-controls-{phrase_index}", oob=True,
+        ), 200
     return "", 200
 
 
